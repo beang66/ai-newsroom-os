@@ -1,2 +1,10 @@
 .env
+.env.*
+!.env.example
 __pycache__/
+*.pyc
+.headline_deps/
+node_modules/
+local_data/
+
+.article-workspace/

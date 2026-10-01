@@ -1,6 +1,6 @@
 {
-  "name": "AI Newsroom OS",
-  "description": "기자가 취재 자료를 정리하고, 증거 기반의 구조화된 기사를 작성하며, 기사 품질 및 팩트를 검토할 수 있도록 지원하는 데스크톱 우선 AI 뉴스룸 워크스페이스입니다.",
+  "name": "AI-Newsroom OS",
+  "description": "기자를 위한 조용한 편집실: 자료 검색, 인터뷰 전사, 기사 작성, 구조 점검, 검증, 발행 준비 및 플랫폼 변환",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -1,107 +1,62 @@
 @import "tailwindcss";
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
-
-@theme {
-  --font-sans: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-  --font-serif: 'Pretendard Variable', 'Pretendard', sans-serif;
-  --font-mono: 'Pretendard Variable', 'Pretendard', sans-serif;
-
-  /* Point Mint Color Palette from Dong-A Ilbo */
-  --color-point: #008285;
-  --color-point-hover: #006b6e;
-  --color-point-dark: #005558;
-  --color-point-light: #edf7f7;
-  --color-point-subtle: #f4fafb;
-  --color-point-border: #bce3e4;
-  --color-point-text: #006b6e;
-
-  /* Typography scale with strict 10pt floor */
-  --text-2xs: 10pt;
-  --text-2xs--line-height: 1.45;
-  --text-xs: 10pt;
-  --text-xs--line-height: 1.45;
-  --text-sm: 10.5pt;
-  --text-sm--line-height: 1.5;
-  --text-base: 12pt;
-  --text-base--line-height: 1.6;
-  --text-lg: 14pt;
-  --text-lg--line-height: 1.5;
-  --text-xl: 16pt;
-  --text-xl--line-height: 1.4;
-  --text-2xl: 20pt;
-  --text-2xl--line-height: 1.35;
-  --text-3xl: 24pt;
-  --text-3xl--line-height: 1.3;
-}
 
 @layer base {
-  *, ::before, ::after {
-    font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-  }
-
-  html {
-    font-size: 11pt;
-    background-color: #ffffff;
-    color: #000000;
+  :root {
+    --bg-canvas: #F6F7F8;
+    --bg-paper: #FFFFFF;
+    --text-primary: #20252C;
+    --text-secondary: #626C78;
+    --border-subtle: #E3E6E9;
+    --action-primary: #2457D6;
+    --status-review: #D97706;
+    --status-critical: #DC2626;
   }
 
   body {
-    font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-    color: #000000;
-    background-color: #ffffff;
-    letter-spacing: -0.01em;
-    font-size: 11pt;
-    line-height: 1.55;
-  }
-
-  input, textarea, button, select {
-    font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
-    font-size: 10.5pt;
+    font-family: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.015em;
   }
 }
 
-/* Global 10pt floor guarantee across all selectors */
-.text-2xs,
-.text-xs,
-[class*="text-[8px]"],
-[class*="text-[9px]"],
-[class*="text-[10px]"],
-[class*="text-[11px]"],
-[class*="text-[12px]"],
-[class*="text-[13px]"] {
-  font-size: 10pt !important;
-  line-height: 1.45 !important;
+/* Korean line breaking and editorial reading typography */
+.editorial-body {
+  font-size: 17.5px;
+  line-height: 1.75;
+  color: #20252C;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
-.text-sm {
-  font-size: 10.5pt !important;
-  line-height: 1.5 !important;
+.editorial-title {
+  font-size: 32px;
+  line-height: 1.3;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  word-break: keep-all;
 }
 
-.font-editorial {
-  font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
-  letter-spacing: -0.015em;
+.editorial-subtitle {
+  font-size: 18px;
+  line-height: 1.55;
+  color: #626C78;
+  word-break: keep-all;
 }
 
-.font-mono-code {
-  font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
-  font-feature-settings: 'tnum' 1, 'cv05' 1;
-  letter-spacing: -0.005em;
-}
-
-/* Minimalist Editorial Scrollbar */
+/* Custom scrollbars for professional workstation feel */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #ffffff;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d4d4d4;
-  border-radius: 2px;
+  background: #D1D5DB;
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #008285;
+  background: #9CA3AF;
 }
-

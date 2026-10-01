@@ -392,9 +392,58 @@ export class ArticleWorkspace extends HTMLElement {
         });
       } else this.caption(p);
     };
+    const normalizeDropBlocks = () => {
+      let wrapper = null;
+      for (const node of [...b.childNodes]) {
+        const inline =
+          node.nodeType === Node.TEXT_NODE ||
+          (node.nodeType === Node.ELEMENT_NODE &&
+            !/^(P|DIV|FIGURE|UL|OL|H[1-6]|BLOCKQUOTE)$/.test(node.tagName));
+        if (inline) {
+          if (!wrapper) {
+            wrapper = document.createElement("div");
+            b.insertBefore(wrapper, node);
+          }
+          wrapper.append(node);
+        } else wrapper = null;
+      }
+    };
+    const scrollDrag = (y, dt) => {
+      let node = b,
+        scroller = null;
+      while (node) {
+        const style = getComputedStyle(node);
+        if (
+          /(auto|scroll)/.test(style.overflowY) &&
+          node.scrollHeight > node.clientHeight + 1
+        ) {
+          scroller = node;
+          break;
+        }
+        node = node.parentElement || node.getRootNode()?.host;
+      }
+      const rect = scroller?.getBoundingClientRect();
+      const top = Math.max(
+          rect?.top || 0,
+          this.q(".toolbar").getBoundingClientRect().bottom,
+        ),
+        bottom = Math.min(rect?.bottom || innerHeight, innerHeight - 48),
+        edge = 80;
+      const speed =
+        y < top + edge
+          ? -Math.min(1, (top + edge - y) / edge)
+          : y > bottom - edge
+            ? Math.min(1, (y - bottom + edge) / edge)
+            : 0;
+      if (speed) {
+        if (scroller) scroller.scrollTop += speed * dt * 0.7;
+        else window.scrollBy(0, speed * dt * 0.7);
+      }
+    };
     b.ondragstart = (e) => {
       const f = e.target.closest("figure");
       if (f) {
+        normalizeDropBlocks();
         e.dataTransfer.setData(
           "application/x-article-photo",
           f.dataset.photoId,
@@ -499,6 +548,7 @@ export class ArticleWorkspace extends HTMLElement {
       const image = e.target.closest("figure img"),
         figure = image?.closest("figure");
       if (!figure || e.button !== 0) return;
+      normalizeDropBlocks();
       e.preventDefault();
       const start = { x: e.clientX, y: e.clientY },
         previousSelect = document.body.style.userSelect;
@@ -525,14 +575,7 @@ export class ArticleWorkspace extends HTMLElement {
         const dt = Math.min(32, now - last);
         last = now;
         ghost.style.transform = `translate3d(${point.x + 14}px,${point.y + 14}px,0)`;
-        const bottom = innerHeight - 48,
-          speed =
-            point.y > bottom - 80
-              ? Math.min(1, (point.y - bottom + 80) / 80)
-              : point.y < 110
-                ? -Math.min(1, (110 - point.y) / 80)
-                : 0;
-        if (speed) window.scrollBy(0, speed * dt * 0.7);
+        scrollDrag(point.y, dt);
         this.dropY = point.y;
         updateDrop();
         this.scrollFrame = requestAnimationFrame(tick);
@@ -589,14 +632,7 @@ export class ArticleWorkspace extends HTMLElement {
       const tick = (now) => {
         const dt = Math.min(32, now - last);
         last = now;
-        const bottom = innerHeight - 48;
-        const speed =
-          this.dropY > bottom - 80
-            ? Math.min(1, (this.dropY - bottom + 80) / 80)
-            : this.dropY < 110
-              ? -Math.min(1, (110 - this.dropY) / 80)
-              : 0;
-        if (speed) window.scrollBy(0, speed * dt * 0.7);
+        scrollDrag(this.dropY, dt);
         updateDrop();
         this.scrollFrame = requestAnimationFrame(tick);
       };
@@ -957,7 +993,7 @@ export class ArticleWorkspace extends HTMLElement {
     this.q("[data-main]").innerHTML =
       '<div class="preview-view"><div class="preview-shell"><iframe class="preview-frame" title="기사 미리보기"></iframe></div></div>';
     const f = this.q("iframe");
-    f.srcdoc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><link rel="stylesheet" href="${new URL("donga-fonts.css", ASSETS)}"><link rel="stylesheet" href="${new URL("donga-preview.css", ASSETS)}"><style>@media print{html,body{margin:0}.article{margin:0 auto}figure{break-inside:avoid}h1{break-after:avoid}}</style></head><body><article class="article"><div class="category">${esc(this.state.category)}</div><h1 class="title">${field(this.state.title)}</h1><div class="meta"><span>입력 ${time(this.state.createdAt)}</span><span>업데이트 ${time(this.state.updatedAt)}</span></div>${this.state.subtitle ? `<div class="subtitle">${field(this.state.subtitle)}</div>` : ""}<div class="body">${html.innerHTML}</div></article></body></html>`;
+    f.srcdoc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${new URL("donga-fonts.css", ASSETS)}"><link rel="stylesheet" href="${new URL("donga-preview.css", ASSETS)}"><style>@media print{html,body{margin:0}.article{margin:0 auto}figure{break-inside:avoid}h1{break-after:avoid}}</style></head><body><article class="article"><header class="preview-head"><div class="category">${esc(this.state.category)}</div><h1 class="title">${field(this.state.title)}</h1><div class="meta"><span>입력 ${time(this.state.createdAt)}</span><span>업데이트 ${time(this.state.updatedAt)}</span></div></header><section class="preview-body">${this.state.subtitle ? `<div class="subtitle">${field(this.state.subtitle)}</div>` : ""}<div class="body">${html.innerHTML}</div></section></article></body></html>`;
     f.onload = async () => {
       await f.contentDocument.fonts.ready;
       this.fitPreview();
@@ -967,14 +1003,20 @@ export class ArticleWorkspace extends HTMLElement {
     const f = this.q("iframe"),
       s = this.q(".preview-shell");
     if (!f?.contentDocument?.body || !s) return;
-    const w = Math.min(738, this.q(".preview-view").clientWidth - 24),
-      scale = w / 738,
-      h = f.contentDocument.documentElement.scrollHeight;
-    f.style.height = h + "px";
-    f.style.transform = `scale(${scale})`;
-    s.style.width = w + "px";
-    s.style.height = h * scale + "px";
+    // Use the available viewport, never scale the rendered article.
+    const width = this.q(".preview-view").clientWidth;
+    const gutter = Math.max(
+      0,
+      innerWidth - document.documentElement.clientWidth,
+    );
+    f.style.width = `${width + gutter}px`;
+    f.style.transform = "none";
+    s.style.width = `${width}px`;
+    const height = f.contentDocument.body.scrollHeight;
+    f.style.height = `${height}px`;
+    s.style.height = `${height}px`;
   }
+
   getSelection() {
     return this.shadowRoot.getSelection?.() || window.getSelection();
   }

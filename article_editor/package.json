@@ -1,14 +1,24 @@
 {
   "name": "article-workspace",
-  "version": "12.0.0",
+  "version": "14.0.0",
   "private": true,
   "type": "module",
   "description": "Portable article editor with Donga preview and Unsplash photo editing",
   "scripts": {
     "test": "node tests/geometry.mjs && node tests/component.mjs",
-    "test:browser": "node tests/browser.mjs"
+    "test:browser": "node tests/browser.mjs",
+    "test:drag-responsive": "node tests/drag-responsive.mjs"
   },
-  "devDependencies": {"jsdom": "^30.1.1", "playwright": "^1.61.1"},
-  "peerDependencies": {"react": ">=18"},
-  "peerDependenciesMeta": {"react": {"optional": true}}
+  "devDependencies": {
+    "jsdom": "^30.1.1",
+    "playwright": "^1.61.1"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  }
 }

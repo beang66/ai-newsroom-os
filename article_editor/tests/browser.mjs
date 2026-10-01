@@ -163,6 +163,8 @@ try {
       "<p>시가 새로 조성한 도심 공원을 주민들에게 개방했다. 공원에는 산책로와 쉼터가 마련됐다. 주민들은 일상에서 녹지를 누릴 수 있게 됐다.</p><p>공원은 기존 유휴 부지를 활용해 조성됐다. 시는 공원 이용 안내를 제공하고 시설 관리에 나설 계획이다.</p>";
     e.changed();
   });
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await page.setViewportSize({ width: 1366, height: 900 });
   await page.locator("[data-preview]").click();
   assert.ok(await page.locator("[data-count]").isVisible());
   const frame = page.frameLocator("iframe");
@@ -197,7 +199,7 @@ try {
     await frame
       .locator(".body")
       .evaluate((n) => n.getBoundingClientRect().width),
-    684,
+    343,
   );
   await page.screenshot({
     path: new URL("03-mobile-preview.png", out).pathname,

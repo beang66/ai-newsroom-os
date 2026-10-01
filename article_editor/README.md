@@ -1,4 +1,4 @@
-# 기사 작성 워크스페이스 v13
+# 기사 작성 워크스페이스 v14
 
 ## 실행
 
@@ -57,7 +57,7 @@ Python 3.10 이상이 필요합니다. 실행 창을 열어 둔 채 사용하세
 
 - `assets/article-workspace.js`: 기능 Web Component + Shadow DOM.
 - `assets/theme.css`: 편집 화면 스타일. `theme-url`로 다른 테마를 붙일 수 있습니다. 기능은 `data-*` 속성으로 동작합니다.
-- `assets/donga-preview.css` / `donga-fonts.css`: 미리보기만 사용하는 독립 스타일/글꼴. 최신 교정값 본문684px/18px/32.4px, 제목676px/34px/47.6px을 유지했습니다.
+- `assets/donga-preview.css` / `donga-fonts.css`: 미리보기만 사용하는 독립 스타일/글꼴. 넓은 PC 화면의 본문684px/18px/32.4px, 제목676px/34px/47.6px을 기준으로 화면 폭에 따라 레이아웃을 바꿉니다.
 - `react/ArticleWorkspace.tsx`: React 연결 래퍼. 제목·부제·본문 값은 서식을 포함한 HTML입니다.
 - `article-change` 이벤트: 원고 내용 변경. `article-saved` 이벤트: 실제 저장 성공.
 
@@ -137,3 +137,9 @@ Unsplash 공식 문서: https://unsplash.com/documentation
 - 교체하기의 사진 검색하기/사진 첨부하기 메뉴는 교체 아이콘 바로 아래에 표시됩니다.
 - 완료된 모자이크를 클릭해 선택하고 Backspace 또는 Delete를 누르면 해당 모자이크만 삭제합니다. 되돌리기로 복구할 수 있습니다.
 - 본문 Enter 문단과 Shift+Enter 줄바꿈 각각을 사진 삽입 위치로 인식합니다. 붙여넣은 DIV 안의 BR과 중첩 문단에서도 텍스트와 강조 서식을 유지합니다.
+
+## v14 위로 이동·반응형 미리보기
+- 글자와 BR만으로 입력된 본문도 사진 이동 위치로 인식합니다. 첫 줄 위로 사진 이동 가능합니다.
+- 위/아래 자동 스크롤은 전체 페이지와 독립 스크롤 패널 모두 지원합니다.
+- 화면 전체 축소를 제거하고 동아일보 실제 기사 CSS의 1280px/1024px/767px 반응형 규칙을 적용했습니다. 제목/본문은 별도로 너비를 계산하며 좁은 화면에서 제목24px/본문18px로 표시합니다.
+- GitHub 업데이트: 이 폴더 안의 파일을 기존 작업 브랜치의 article_editor 안에 반영합니다. 공용 앱의 루트 파일은 덮어쓰지 않습니다. 로컬의 기존 .env와 .article-workspace 원고 폴더는 유지하세요.

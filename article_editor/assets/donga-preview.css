@@ -111,3 +111,85 @@ em {
 u {
   text-decoration: underline;
 }
+
+/* Article-area layout translated from Donga view.css/layout.css, 2026-10-01.
+   The side columns reserve the original space without displaying unrelated UI. */
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+body {
+  padding: 30px 0 80px;
+}
+.article {
+  width: 100%;
+  max-width: 1312px;
+  padding: 0 16px;
+}
+.preview-head {
+  margin-left: 268px;
+  margin-right: 336px;
+}
+.preview-body {
+  margin-left: 264px;
+  margin-right: 332px;
+}
+.title {
+  width: 100%;
+  max-width: 676px;
+}
+.body {
+  width: 100%;
+}
+.category {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  margin-bottom: 0;
+}
+figure {
+  max-width: 100%;
+}
+@media screen and (max-width: 1280px) {
+  .preview-head {
+    margin: 0;
+  }
+  .title {
+    max-width: none;
+  }
+  .preview-body {
+    margin: 0;
+    width: calc(100% - 298px);
+  }
+}
+@media screen and (max-width: 1024px) {
+  .preview-body {
+    width: 100%;
+  }
+}
+@media screen and (max-width: 767px) {
+  .title {
+    font-size: 24px;
+    line-height: 33.6px;
+  }
+}
+@media print {
+  html {
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+  .article {
+    width: 684px;
+    max-width: 100%;
+    padding: 0;
+  }
+  .preview-head,
+  .preview-body {
+    margin: 0;
+    width: 100%;
+  }
+  .title {
+    font-size: 34px;
+    line-height: 47.6px;
+  }
+}

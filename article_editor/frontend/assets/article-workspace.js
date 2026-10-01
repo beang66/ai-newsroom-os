@@ -8,6 +8,7 @@ import {
   moveMask,
   resizeCrop,
 } from "./image-editor.js";
+import { createApi } from "../src/api/client.js";
 const ASSETS = new URL(".", import.meta.url),
   esc = (s) =>
     String(s ?? "").replace(
@@ -181,15 +182,12 @@ export class ArticleWorkspace extends HTMLElement {
     if (this.isConnected) this.render();
   }
   async api(path, payload) {
-    const r = await fetch((this.getAttribute("api-base") || "") + path, {
-      method: payload ? "POST" : "GET",
-      headers: payload ? { "Content-Type": "application/json" } : {},
-      body: payload ? JSON.stringify(payload) : undefined,
-      signal: this.controller.signal,
-    });
-    const d = await r.json();
-    if (!r.ok) throw Error(d.error || "요청을 완료하지 못했어요.");
-    return d;
+    // All core access is centralised in frontend/src/api/client.js.
+    return createApi(this.getAttribute("api-base") || "").json(
+      path,
+      payload,
+      this.controller.signal,
+    );
   }
   capture() {
     if (this.mode !== "edit") return;
@@ -1138,16 +1136,10 @@ export class ArticleWorkspace extends HTMLElement {
     }
   }
   async importPhoto(p, action = "edit") {
-    const r = await fetch(
-      (this.getAttribute("api-base") || "") +
-        "/api/unsplash/photo/" +
-        encodeURIComponent(p.id),
+    const client = createApi(this.getAttribute("api-base") || "");
+    const data = await this.blobData(
+      await client.blob(client.photoPath(p.id), this.controller.signal),
     );
-    if (!r.ok) {
-      const d = await r.json();
-      throw Error(d.error);
-    }
-    const data = await this.blobData(await r.blob());
     if (action === "download") {
       const a = document.createElement("a");
       a.href = data;

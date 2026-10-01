@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 const src = fs.readFileSync(
-  new URL("../assets/image-editor.js", import.meta.url),
+  new URL("../frontend/assets/image-editor.js", import.meta.url),
   "utf8",
 );
 const { cropForRatio, clampCrop, resizeCrop } = await import(

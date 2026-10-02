@@ -12,7 +12,12 @@ article_editor/
 │   │   ├─ image-editor.js
 │   │   ├─ theme.css / donga-preview.css / donga-fonts.css
 │   └─ src/
-│       └─ api/client.js      ★ the ONLY place the UI talks to the core
+│       └─ api/                ★ the ONLY place the UI talks to the core
+│           ├─ index.js        connection switch — HTTP now, IPC at release
+│           ├─ core-api.js     contract: routes + named methods (api.assist…)
+│           ├─ http.js         HTTP transport (delegates to client.js)
+│           ├─ ipc.js          IPC transport (pywebview bridge; not wired yet)
+│           └─ client.js       fetch implementation (error / cancel / blob)
 ├─ core/                      ← runs outside the browser (local runtime). No UI, no DOM.
 │   ├─ config.py              env/keys/models/versions/limits (+ FRONTEND path)
 │   ├─ errors.py              shared RequestError
@@ -31,12 +36,17 @@ article_editor/
 ## Rules
 
 - The **frontend never imports core code**. It only calls the core over HTTP,
-  through `frontend/src/api/client.js`.
+  through `frontend/src/api/` — `createAppApi()` (see `frontend/src/api/README.md`).
+- UI code must not bypass that boundary: no `fetch(`, no `"/api/…"` literals,
+  no `<img src="/api/…">`. Enforced by `npm run check:api-boundary`.
 - The **core never imports frontend code**. It only serves `frontend/` read-only.
 - The stable interface is the HTTP surface:
   `GET /api/status`, `POST /api/assist`, `POST /api/articles/save`,
   `GET /api/unsplash/search`, `GET /api/unsplash/photo/:id[/track]`.
   Internal module layout can change freely; these contracts stay.
+- **Local transport is a detail.** Development uses HTTP (works in a browser too);
+  the release build switches the same contract to the pywebview IPC bridge by changing
+  `frontend/src/api/index.js` only. Plan and risks: `docs/IPC_MIGRATION.md`.
 
 ## Sensitive configuration (keys) — backend-managed (hard rule)
 

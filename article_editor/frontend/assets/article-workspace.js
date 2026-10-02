@@ -8,7 +8,7 @@ import {
   moveMask,
   resizeCrop,
 } from "./image-editor.js";
-import { createApi } from "../src/api/client.js";
+import { createAppApi } from "../src/api/index.js";
 const ASSETS = new URL(".", import.meta.url),
   esc = (s) =>
     String(s ?? "").replace(
@@ -83,13 +83,14 @@ async function stored(value, key = "current") {
 }
 export class ArticleWorkspace extends HTMLElement {
   static get observedAttributes() {
-    return ["theme-url"];
+    return ["theme-url", "api-base"];
   }
   attributeChangedCallback(name, oldValue, newValue) {
     if (name === "theme-url") {
       const link = this.shadowRoot?.querySelector("link[rel=stylesheet]");
       if (link) link.href = newValue || new URL("theme.css", ASSETS);
     }
+    if (name === "api-base") this._core = null; // 주소가 바뀌면 연결 지점을 다시 만든다
   }
   constructor() {
     super();
@@ -110,6 +111,7 @@ export class ArticleWorkspace extends HTMLElement {
     this.saveStatus = "자동 저장 대기";
     this.editRevision = 0;
     this.controller = new AbortController();
+    this._core = null;
   }
   q(s) {
     return this.shadowRoot.querySelector(s);
@@ -181,13 +183,15 @@ export class ArticleWorkspace extends HTMLElement {
     this.cache = {};
     if (this.isConnected) this.render();
   }
-  async api(path, payload) {
-    // All core access is centralised in frontend/src/api/client.js.
-    return createApi(this.getAttribute("api-base") || "").json(
-      path,
-      payload,
-      this.controller.signal,
-    );
+  get core() {
+    // 코어 연결 지점은 frontend/src/api/ 하나뿐이다(계약·전송·전환 스위치 모두 그 안).
+    // 테스트나 호스트는 this.core 에 객체를 넣어 대체할 수 있다.
+    if (!this._core)
+      this._core = createAppApi({ base: this.getAttribute("api-base") || "" });
+    return this._core;
+  }
+  set core(value) {
+    this._core = value;
   }
   capture() {
     if (this.mode !== "edit") return;
@@ -818,7 +822,7 @@ export class ArticleWorkspace extends HTMLElement {
     const regenerate = this.q(`[data-regenerate="${type}"]`);
     if (regenerate) regenerate.disabled = true;
     try {
-      const d = await this.api("/api/assist", {
+      const d = await this.core.assist({
         kind: "metadata",
         requested: type,
         body,
@@ -876,7 +880,7 @@ export class ArticleWorkspace extends HTMLElement {
     this.diskSavePromise = (async () => {
       do {
         const revision = this.editRevision;
-        const d = await this.api("/api/articles/save", { draft: this.value });
+        const d = await this.core.saveArticle(this.value);
         this.state.articleId = d.articleId;
         this.savedRevision = revision;
         await stored(this.state, this.getAttribute("draft-key") || "current");
@@ -1158,7 +1162,7 @@ export class ArticleWorkspace extends HTMLElement {
       const k = area.querySelector("[data-keywords]");
       k.textContent = "검색어를 추천 중입니다.";
       try {
-        const d = await this.api("/api/assist", {
+        const d = await this.core.assist({
           kind: "photo_keywords",
           body,
         });
@@ -1178,9 +1182,8 @@ export class ArticleWorkspace extends HTMLElement {
     }
   }
   async importPhoto(p, action = "edit") {
-    const client = createApi(this.getAttribute("api-base") || "");
     const data = await this.blobData(
-      await client.blob(client.photoPath(p.id), this.controller.signal),
+      await this.core.photoBytes(p.id, this.controller.signal),
     );
     if (action === "download") {
       const a = document.createElement("a");
@@ -1228,12 +1231,7 @@ export class ArticleWorkspace extends HTMLElement {
     try {
       const d =
         this.photoPages.get(cacheKey) ||
-        (await this.api(
-          "/api/unsplash/search?q=" +
-            encodeURIComponent(query) +
-            "&page=" +
-            page,
-        ));
+        (await this.core.searchPhotos(query, page, this.controller.signal));
       this.photoPages.set(cacheKey, d);
       if (!a.isConnected || this.searchToken !== token) return;
       a.innerHTML = `<div class="photo-grid">${d.photos.map((p) => `<div class="photo-card"><button class="photo-select" data-photo="${esc(p.id)}" data-action="edit" aria-label="사진 편집해서 넣기"><img src="${esc(p.urls.small)}" alt="${esc(p.alt_description || "검색 사진")}"></button><a href="${esc(p.user.links.html)}?utm_source=article_workspace&utm_medium=referral" target="_blank" rel="noopener">${esc(p.user.name)} / Unsplash</a><div class="row"><button data-photo="${esc(p.id)}" data-action="insert">본문에 넣기</button><button data-photo="${esc(p.id)}" data-action="edit">편집해서 넣기</button><button data-photo="${esc(p.id)}" data-action="download">다운로드</button></div></div>`).join("")}</div>${d.photos.length ? "" : '<div class="empty">다른 검색어로 찾아보세요.</div>'}`;
@@ -1735,12 +1733,7 @@ export class ArticleWorkspace extends HTMLElement {
           }),
       );
     const track = async () => {
-      if (photo.unsplashId)
-        await this.api(
-          "/api/unsplash/photo/" +
-            encodeURIComponent(photo.unsplashId) +
-            "/track",
-        );
+      if (photo.unsplashId) await this.core.trackPhoto(photo.unsplashId);
     };
     this.q("[data-original-download]").onclick = async () => {
       try {
@@ -1820,7 +1813,7 @@ export class ArticleWorkspace extends HTMLElement {
     const a = this.q("[data-flow-result]");
     a.textContent = "요약을 준비 중입니다.";
     try {
-      const d = await this.api("/api/assist", {
+      const d = await this.core.assist({
         kind: "flow",
         body: plain(this.state.bodyHtml),
       });

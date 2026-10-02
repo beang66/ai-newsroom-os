@@ -27,7 +27,7 @@ let source = fs
     new URL("../frontend/assets/article-workspace.js", import.meta.url),
     "utf8",
   )
-  .replace(/^import[\s\S]*?from ['"]\.\/image-editor\.js['"];?\n/, "")
+  .replace(/^import[\s\S]*?from ["'][^"']+["'];?\r?\n/gm, "")
   .replace(
     /new URL\(["']\.["'],\s*import\.meta\.url\)/,
     "new URL('http://127.0.0.1:8765/assets/')",
@@ -50,19 +50,27 @@ el.value = fixture;
 assert.equal(el.shadowRoot.querySelectorAll("[data-preview]").length, 1);
 assert.equal(el.shadowRoot.querySelectorAll("[data-title]").length, 1);
 const calls = [];
-el.api = async (path, p) => {
-  calls.push(p);
-  return p.requested === "headline"
-    ? {
-        headline_candidates: ["추천 제목 하나", "추천 제목 둘", "추천 제목 셋"],
-      }
-    : {
-        subtitle_candidates: [
-          "첫 줄\n둘째 줄",
-          "다른 첫 줄\n다른 둘째 줄",
-          "마지막 첫 줄\n마지막 둘째 줄",
-        ],
-      };
+// 코어 연결 지점(계약)을 대체한다 — UI는 core-api.js 의 메서드만 호출한다.
+el.core = {
+  assist: async (payload) => {
+    calls.push(payload);
+    return payload.requested === "headline"
+      ? {
+          headline_candidates: ["추천 제목 하나", "추천 제목 둘", "추천 제목 셋"],
+        }
+      : {
+          subtitle_candidates: [
+            "첫 줄\n둘째 줄",
+            "다른 첫 줄\n다른 둘째 줄",
+            "마지막 첫 줄\n마지막 둘째 줄",
+          ],
+        };
+  },
+  saveArticle: async () => ({ articleId: "0".repeat(32) }),
+  searchPhotos: async () => ({ photos: [], totalPages: 1 }),
+  photoBytes: async () => new Blob([]),
+  trackPhoto: async () => ({ tracked: true }),
+  status: async () => ({ ready: false }),
 };
 await el.suggest("headline", true);
 await el.suggest("subheadline", true);

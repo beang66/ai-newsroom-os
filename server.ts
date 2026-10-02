@@ -4,7 +4,9 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
-dotenv.config();
+// 워크스페이스 공용 .env(appCoreTest/.env)까지 함께 읽는다.
+// 앞 파일이 우선이므로 ai-newsroom-os/.env 가 있으면 그 값이 이긴다.
+dotenv.config({ path: [".env", "../.env"] });
 
 const app = express();
 const PORT = 3000;

@@ -3,7 +3,17 @@ import os, pathlib, threading
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Frontend static assets are separated from the core (served read-only by the API layer).
 FRONTEND = ROOT / 'frontend'
-for line in (ROOT / '.env').read_text(encoding='utf-8-sig').splitlines() if (ROOT / '.env').exists() else []:
+
+# Shared .env chain. 모든 키의 단일 원본은 워크스페이스 최상단(appCoreTest/.env).
+# 가까운 파일이 우선하고, 실제 OS 환경변수는 어떤 .env보다 우선한다(setdefault).
+def env_lines():
+    for folder in [ROOT, *list(ROOT.parents)[:3]]:
+        path = folder / '.env'
+        if path.is_file():
+            yield from path.read_text(encoding='utf-8-sig').splitlines()
+
+
+for line in env_lines():
     if '=' in line and not line.lstrip().startswith('#'):
         key, value = line.split('=', 1)
         os.environ.setdefault(key.strip(), value.strip().strip('\"\''))

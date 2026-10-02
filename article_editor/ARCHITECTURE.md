@@ -82,20 +82,29 @@ External LLM / Unsplash / ...
 - 로컬에서 실행 가능한 AI(임베딩·로컬 모델)는 키가 필요 없으므로 **앱 내 실행 허용**.
 - 로컬에 저장되는 데이터(기사/사본)는 **Encryption Manager**가 기기에서 암·복호화한다(키는 백엔드가 아님, 사용자/프로젝트 키).
 
-### 코드상 위치 (교체 지점)
-현재 키를 읽는 곳을 **딱 두 곳으로 격리**해 두었고, 이 두 곳이 **백엔드 프록시 어댑터**로 교체된다:
-- `app/core/ai/client.py`            — 현재 `OPENAI_API_KEY` 읽음
-- `app/core/integrations/unsplash.py` — 현재 `UNSPLASH_ACCESS_KEY` 읽음
+### 코드상 위치 (구현됨)
 
-목표 구조:
+키를 읽는 곳은 **local 경로 한 곳뿐**이고, 배포 경로(remote)는 키를 아예 읽지 않는다.
+
 ```
-app/core/ai/providers/
-  ├─ local.py     (기기 실행, 키 불필요)
-  └─ backend.py   (우리 백엔드 프록시 호출; JWT만 사용)
+app/core/ai/client.py          ← 파사드 (openai_call / structured_call / output_text 이름 유지)
+        └─ app/core/ai/providers/
+              ├─ local.py      외부 API 직접 호출 (OPENAI_API_KEY 필요, 개발 전용)
+              └─ backend.py    우리 백엔드 프록시 호출 (JWT만 사용)
+app/core/backend_proxy.py      프록시 공통 클라이언트 (AI·Unsplash 공용: 경로·JWT·에러 매핑)
+app/core/integrations/unsplash.py   local 이면 UNSPLASH_ACCESS_KEY, remote 면 프록시
 ```
-전환 스위치(개발 편의):
-- `AI_BACKEND=local`  → 개발 전용(로컬 `.env` 키, gitignore). **배포본에 사용 금지**
-- `AI_BACKEND=remote` → 배포 기본. 로컬 키 없음, 백엔드 프록시만 사용.
+
+전환 스위치:
+- `AI_BACKEND=local`  → 개발 전용(로컬 `.env` 키). **배포본에 사용 금지**
+- `AI_BACKEND=remote` → 배포 기본(`AI_BACKEND_URL` + `APP_TOKEN`/JWT 필요). 로컬 키 없음
+- 기본값: 개발 실행 = `local`, **배포 exe = `remote`** (frozen 감지) → 배포본은 키가 없어도 안전하게 동작하고, 없으면 안내 메시지를 낸다
+
+백엔드 경로 규약(백엔드와 합의): `POST {AI_BACKEND_URL}/ai/<openai path>`,
+`GET {AI_BACKEND_URL}/unsplash/<unsplash path>`, `GET {AI_BACKEND_URL}/unsplash/absolute?url=`.
+응답 모양은 OpenAI/Unsplash와 동일하게 유지한다(코어 파싱 변경 없음).
+
+검증: `dev/tests/test_server.py::BackendProxyTests` — 스텁 백엔드로 라우팅·JWT 헤더·503 안내를 확인한다.
 
 ## Cloud (Supabase) — Control Plane & 공유/협업 계층
 

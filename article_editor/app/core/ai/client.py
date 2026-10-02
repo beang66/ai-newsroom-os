@@ -1,18 +1,18 @@
-import json, os, urllib.request, urllib.error
+"""AI 호출 파사드 — 실제 경로는 `providers/`가 고른다 (local | backend).
+
+`openai_call` / `structured_call` / `output_text` 이름을 그대로 유지해서
+router.py 와 기존 테스트가 바뀌지 않는다. 경로 선택은 `AI_BACKEND` 값 하나로 끝난다.
+"""
+import json
 
 from ..config import TEXT_MODEL
 from ..errors import RequestError
+from . import providers
+
+
 def openai_call(path, payload):
-    key = os.environ.get('OPENAI_API_KEY', '')
-    if not key: raise RequestError('서버의 .env에 OPENAI_API_KEY를 설정해 주세요.', 503)
-    req = urllib.request.Request('https://api.openai.com/v1/' + path, data=json.dumps(payload).encode(), headers={'Content-Type':'application/json','Authorization':'Bearer '+key}, method='POST')
-    try:
-        with urllib.request.urlopen(req, timeout=210) as response: return json.load(response)
-    except urllib.error.HTTPError as error:
-        messages={401:'API 키를 확인해 주세요.',403:'이 모델을 사용할 권한이 없습니다. OpenAI 계정과 모델 설정을 확인해 주세요.',429:'API 사용 한도 또는 요청 한도에 도달했어요. 결제·사용량을 확인해 주세요.'}
-        raise RequestError(messages.get(error.code, 'OpenAI 요청이 실패했습니다. 모델 설정을 확인한 뒤 다시 시도해 주세요.'),502) from None
-    except (TimeoutError, urllib.error.URLError):
-        raise RequestError('OpenAI에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.',504) from None
+    return providers.call(path, payload)
+
 
 def output_text(result):
     return ''.join(part.get('text','') for output in result.get('output',[]) for part in output.get('content',[]) if part.get('type')=='output_text')

@@ -74,3 +74,30 @@
   - **팀 DB/Storage 저장** (현재는 로컬 JSON: `app/core/storage.py`)
   - 서버 자동 로그/요청 추적
 - 키 소유권: Unsplash Access Key·OpenAI Key는 현재 서버(`app/core/ai/client.py`, `app/core/integrations/unsplash.py`)에 위치 → 추후 백엔드 프록시로 교체 예정.
+
+## 8. 백엔드 프록시 연결 (구현됨 — `AI_BACKEND=remote`)
+
+배포본은 **앱에 운영키가 없고**, 모든 외부 호출이 우리 백엔드를 지난다.
+
+```env
+# .env (워크스페이스 최상단, gitignore)
+AI_BACKEND=remote
+AI_BACKEND_URL=https://<백엔드 주소>
+APP_TOKEN=<사용자 JWT>        # 세션 관리가 붙기 전까지 임시 주입(개발·시험용)
+```
+
+백엔드가 제공해야 하는 경로(응답 모양은 원 서비스와 동일하게):
+
+| 메서드 | 경로 | 대응 | 비고 |
+|---|---|---|---|
+| POST | `/ai/responses` | OpenAI Responses API | 본문: 모델·instructions·input·text.format (코어가 만든 payload 그대로) |
+| POST | `/ai/images/generations` | OpenAI 이미지 생성 | 본문 그대로, 응답 `data[0].b64_json` |
+| GET | `/unsplash/search/photos?query=&per_page=&page=` | Unsplash 검색 | 응답 `results/total/total_pages` |
+| GET | `/unsplash/photos/<id>` | Unsplash 사진 조회 | 응답 `links.download_location` 포함 |
+| GET | `/unsplash/download/<...>` 또는 `/unsplash/absolute?url=` | 다운로드 추적 | 호출만 하면 됨 |
+| GET | `/unsplash/absolute?url=<절대URL>` | 절대 URL 중계 | 백엔드가 host 검증(api.unsplash.com만) |
+
+- 인증: `Authorization: Bearer <사용자 JWT>` (앱은 키가 아니라 **토큰만** 안다)
+- 백엔드는 여기서 `OPENAI_API_KEY`·`UNSPLASH_ACCESS_KEY`·`UNSPLASH_SECRET_KEY`를 보유한다
+- 앱에서 확인: `python app/launcher.py --check` → `[진단] AI 경로 : remote (백엔드 주소 설정, 토큰 설정)`
+- 검증 코드: `dev/tests/test_server.py::BackendProxyTests`

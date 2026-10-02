@@ -105,6 +105,13 @@ def shell_parts():
     return shell, store
 
 
+def backend_info():
+    """AI 호출 경로 요약 — local(개발 .env 키) / remote(우리 백엔드 프록시)."""
+    from core import config
+
+    return config.AI_BACKEND, bool(config.AI_BACKEND_URL), bool(config.APP_TOKEN)
+
+
 def print_diagnostics(url, server):
     try:
         status = json.loads(runtime.fetch(runtime.status_url(server.port)))
@@ -118,6 +125,8 @@ def print_diagnostics(url, server):
     print(f'[진단] 서버 스레드 : {"실행 중" if server.is_running() else "중단"}')
     print(f'[진단] 코어 상태   : {json.dumps(status, ensure_ascii=False)}')
     print(f'[진단] .env        : {env_source() or "없음(OS 환경변수만 사용)"}')
+    ai, has_url, has_token = backend_info()
+    print(f'[진단] AI 경로     : {ai} (백엔드 주소 {"설정" if has_url else "없음"}, 토큰 {"설정" if has_token else "없음"})')
     print(f'[진단] 로그        : {LOG_PATH}')
 
 

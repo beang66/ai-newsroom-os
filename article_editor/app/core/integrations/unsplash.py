@@ -1,7 +1,26 @@
-import os, json, urllib.request, urllib.parse, urllib.error
+"""Unsplash 어댑터 — `AI_BACKEND` 에 따라 직접 호출(local) 또는 백엔드 프록시(remote).
 
+키(`UNSPLASH_ACCESS_KEY`)는 local 경로에서만 읽는다(개발 전용).
+remote 경로는 앱에 키가 없고, 백엔드가 대신 호출한다.
+"""
+from __future__ import annotations
+
+import json
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from .. import backend_proxy
 from ..errors import RequestError
+
+
 def unsplash_get(path):
+    if backend_proxy.enabled():
+        if path.startswith('https://'):
+            return backend_proxy.get('/unsplash/absolute', {'url': path})
+        return backend_proxy.get('/unsplash' + path)
+
     key=os.environ.get('UNSPLASH_ACCESS_KEY','')
     if not key:raise RequestError('사진 검색을 사용하려면 .env에 UNSPLASH_ACCESS_KEY를 넣어 주세요.',503)
     if path.startswith('https://'):

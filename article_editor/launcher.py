@@ -1,81 +1,179 @@
-"""Start this exact workspace on an unused local port and open its editor."""
-from pathlib import Path
+"""기사 작업실 실행기 — 로컬 코어를 띄우고 창(또는 브라우저)을 연다.
+
+개발 실행
+    python launcher.py                  브라우저 모드(기본, 기존과 동일)
+    python launcher.py --window         데스크톱 창(pywebview)
+    python launcher.py --check          창을 띄우지 않고 진단
+    python launcher.py --smoke write    창 검증 하네스(데스크톱 셸)
+
+배포본(exe)도 **같은 CLI**를 쓴다. 다만 인자가 없으면 창 모드가 기본이고,
+진단 로그는 `.article-workspace/logs/app.log` 에 남는다(packaging/README.md).
+
+서버는 별도 프로세스가 아니라 이 프로세스의 스레드에서 돈다(desktop/runtime.py).
+배포본에서 `sys.executable` 이 자기 자신이라 재실행 루프가 되는 문제를 없앤다.
+"""
+from __future__ import annotations
+
+import json
 import os
-import socket
-import subprocess
 import sys
-import time
-import urllib.request
 import webbrowser
+from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+_APP_DIR = Path(__file__).resolve().parent
+if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_APP_DIR))
 
-def available_port():
-    for port in range(8877, 8900):
+from app_paths import APP_ROOT, BUNDLE, ENV_DIRS, FRONTEND, FROZEN, WORKSPACE  # noqa: E402
+from desktop import runtime  # noqa: E402
+
+LOG_PATH = WORKSPACE / 'logs' / 'app.log'
+
+
+class _Tee:
+    """콘솔과 로그 파일에 동시에 쓴다. 창 모드 exe 는 콘솔이 없어 sys.stdout 이 None 이다."""
+
+    def __init__(self, stream, log):
+        self._targets = (stream, log)
+
+    def write(self, text):
+        for target in self._targets:
+            if target is None:
+                continue
+            try:
+                target.write(text)
+            except Exception:
+                pass
+
+    def flush(self):
+        for target in self._targets:
+            if target is None:
+                continue
+            try:
+                target.flush()
+            except Exception:
+                pass
+
+
+def prepare_output():
+    """배포본은 진단용 로그를 남기고, 콘솔이 없으면 로그로 대체한다."""
+    log = None
+    if FROZEN:
         try:
-            with socket.socket() as probe:
-                probe.bind(('127.0.0.1', port))
-            return port
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            log = open(LOG_PATH, 'a', encoding='utf-8')
         except OSError:
-            continue
-    raise RuntimeError('8877~8899 포트가 사용 중입니다. 실행 중인 편집기를 닫고 다시 시도해 주세요.')
+            log = None
+    if log is not None:
+        sys.stdout = _Tee(sys.stdout, log)
+        sys.stderr = _Tee(sys.stderr, log)
+    if sys.stdout is None or sys.stderr is None:
+        sink = open(os.devnull, 'w', encoding='utf-8')
+        sys.stdout = sys.stdout or sink
+        sys.stderr = sys.stderr or sink
+    return log
 
-def start_server(port):
-    env = dict(os.environ, PORT=str(port))
-    return subprocess.Popen([sys.executable, str(ROOT / 'server.py')], cwd=ROOT, env=env)
 
-def wait_ready(url, process):
-    for _ in range(100):
-        if process.poll() is not None:
-            raise RuntimeError('서버 실행에 실패했습니다. 이 창의 오류 메시지를 확인해 주세요.')
+def fatal(message):
+    """창 모드 exe 는 콘솔이 없으므로 OS 메시지 상자로도 알린다."""
+    text = f'{message}\n\n실행 폴더: {APP_ROOT}\n로그: {LOG_PATH}' if LOG_PATH.is_file() else message
+    print(message, file=sys.stderr, flush=True)
+    if FROZEN and os.name == 'nt':
         try:
-            with urllib.request.urlopen(url, timeout=1) as response:
-                page = response.read().decode('utf-8')
-            if '<article-workspace' not in page:
-                raise RuntimeError('새 편집기 시작 화면을 확인하지 못했습니다.')
-            return
-        except OSError:
-            time.sleep(.1)
-    raise RuntimeError('서버를 여는 데 시간이 오래 걸립니다. 다시 실행해 주세요.')
+            import ctypes
 
-def stop_server(process):
-    if process.poll() is None:
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
+            ctypes.windll.user32.MessageBoxW(None, text, '기사 작업실', 0x10)
+        except Exception:
+            pass
+
+
+def env_source():
+    """실제로 읽히는 .env 위치(없으면 None)."""
+    for folder in ENV_DIRS:
+        if (folder / '.env').is_file():
+            return str(folder / '.env')
+    return None
+
+
+def shell_parts():
+    """pywebview 셸 모듈과 사용자 데이터 폴더(창 없이 확인 가능)."""
+    from desktop import shell
+
+    store = shell.storage_dir()
+    store.mkdir(parents=True, exist_ok=True)
+    return shell, store
+
+
+def print_diagnostics(port, url, server):
+    try:
+        status = json.loads(runtime.fetch(runtime.status_url(port)))
+    except Exception as error:  # 진단 실패가 실행을 막지는 않는다
+        status = {'error': str(error)}
+    print('[진단] 실행 모드  : ' + ('배포본(exe)' if FROZEN else '개발(파이썬)'))
+    print(f'[진단] 앱 폴더    : {APP_ROOT}')
+    print(f'[진단] 리소스      : {BUNDLE}')
+    print(f'[진단] 시작 화면  : {"있음" if (FRONTEND / "index.html").is_file() else "없음"}  {FRONTEND}')
+    print(f'[진단] 주소        : {url} (포트 {port})')
+    print(f'[진단] 서버 스레드 : {"실행 중" if server.is_running() else "중단"}')
+    print(f'[진단] 코어 상태   : {json.dumps(status, ensure_ascii=False)}')
+    print(f'[진단] .env        : {env_source() or "없음(OS 환경변수만 사용)"}')
+    print(f'[진단] 로그        : {LOG_PATH}')
+
 
 def main():
-    port = available_port()
-    process = start_server(port)
-    url = f'http://127.0.0.1:{port}/index.html'
+    args = sys.argv[1:]
+    log = prepare_output()
     try:
-        wait_ready(url, process)
-        print(f'새 기사 편집기 v14: {url}\n실행 폴더: {ROOT}\n이 창을 열어 둔 채 사용하세요. 종료하려면 Ctrl+C를 누르세요.', flush=True)
-        if '--check' in sys.argv:
-            if '--window' in sys.argv:
-                from desktop import shell
-                store = shell.storage_dir()
-                store.mkdir(parents=True, exist_ok=True)
-                print(f'데스크톱 셸: pywebview={shell.shell_available()}, webview2={shell.webview2_version()}, storage={store}', flush=True)
-            print('STARTUP CHECK PASSED', flush=True)
-            return
-        if '--window' in sys.argv:
-            from desktop.shell import run_window
-            print('데스크톱 셸(pywebview) 창 모드 — 창을 닫으면 종료됩니다.', flush=True)
-            run_window(url, debug='--debug' in sys.argv)
-            return
-        webbrowser.open(url)
-        process.wait()
+        if '--smoke' in args:
+            from desktop import smoke
+
+            index = args.index('--smoke')
+            mode = args[index + 1] if index + 1 < len(args) and args[index + 1] in ('write', 'read') else 'write'
+            return smoke.run(mode=mode, debug='--debug' in args)
+
+        port = runtime.available_port()
+        server = runtime.start_server(port)
+        url = server.url
+        # 개발 기본값은 브라우저(기존 동작), 배포본 기본값은 창이다.
+        use_window = '--window' in args or (FROZEN and '--browser' not in args)
+        try:
+            runtime.wait_ready(url, server)
+            print(
+                f'새 기사 편집기 v14: {url}\n실행 폴더: {APP_ROOT}\n이 창을 열어 둔 채 사용하세요. 종료하려면 Ctrl+C를 누르세요.',
+                flush=True,
+            )
+            if '--check' in args:
+                print_diagnostics(port, url, server)
+                if use_window:
+                    shell, store = shell_parts()
+                    print(
+                        f'데스크톱 셸: pywebview={shell.shell_available()}, webview2={shell.webview2_version()}, storage={store}',
+                        flush=True,
+                    )
+                print('STARTUP CHECK PASSED', flush=True)
+                return 0
+            if use_window:
+                shell, store = shell_parts()
+                if not shell.shell_available():
+                    print('데스크톱 셸(pywebview)을 찾지 못해 브라우저 모드로 엽니다. 설치: pip install pywebview', flush=True)
+                else:
+                    print('데스크톱 셸(pywebview) 창 모드 — 창을 닫으면 종료됩니다.', flush=True)
+                    shell.run_window(url, debug='--debug' in args)
+                    return 0
+            webbrowser.open(url)
+            server.serve_forever()
+        finally:
+            server.stop()
+        return 0
     except KeyboardInterrupt:
-        pass
+        return 0
+    except Exception as error:
+        fatal(str(error))
+        return 1
     finally:
-        stop_server(process)
+        if log is not None:
+            log.close()
+
 
 if __name__ == '__main__':
-    try:
-        main()
-    except Exception as error:
-        print(str(error), file=sys.stderr)
-        sys.exit(1)
+    sys.exit(main())

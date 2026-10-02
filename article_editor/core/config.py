@@ -1,18 +1,17 @@
-import os, pathlib, threading
+import os, pathlib, sys, threading
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-# Frontend static assets are separated from the core (served read-only by the API layer).
-FRONTEND = ROOT / 'frontend'
+_APP_DIR = pathlib.Path(__file__).resolve().parent.parent
+if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_APP_DIR))
+
+# 실행 위치는 app_paths.py 한 곳에서만 판단한다(개발/배포 exe 동일 규칙).
+from app_paths import APP_ROOT, FRONTEND, env_lines  # noqa: E402
+
+# ROOT = 앱 폴더(개발: article_editor/, 배포 exe: exe가 놓인 폴더).
+ROOT = APP_ROOT
 
 # Shared .env chain. 모든 키의 단일 원본은 워크스페이스 최상단(appCoreTest/.env).
 # 가까운 파일이 우선하고, 실제 OS 환경변수는 어떤 .env보다 우선한다(setdefault).
-def env_lines():
-    for folder in [ROOT, *list(ROOT.parents)[:3]]:
-        path = folder / '.env'
-        if path.is_file():
-            yield from path.read_text(encoding='utf-8-sig').splitlines()
-
-
 for line in env_lines():
     if '=' in line and not line.lstrip().startswith('#'):
         key, value = line.split('=', 1)

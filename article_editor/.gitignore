@@ -8,3 +8,8 @@ node_modules/
 local_data/
 
 .article-workspace/
+
+# 배포본 빌드 산출물 (packaging/build_windows.bat)
+build/
+dist/
+

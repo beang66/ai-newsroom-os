@@ -60,12 +60,13 @@
 2. **실제 OS 파일 드래그&드롭** — 합성 이벤트 전달은 확인했지만 OS→웹뷰 경로는 실기 확인 필요.
 3. **인쇄** — `window.print()`(미리보기 iframe) 동작 확인.
 4. **macOS 실기** — WKWebView는 별도 엔진. 필요 시 번들러 타깃 baseline을 낮춘다.
-5. **패키징/업데이트** — PyInstaller 동봉, 모델은 별도 다운로드 팩, 앱 업데이트 방식은 미정(Update Manager와 함께 결정).
+5. ~~**패키징**~~ **해결(2026-10-02)** — PyInstaller 한 갈래로 exe 배포본을 만든다(§9). 남은 미정 항목은 **자동 업데이트** 방식이며, 모델은 별도 다운로드 팩으로 둔다(Update Manager와 함께 결정).
 6. **트레이/단일 인스턴스/알림** — 현재 없음. 필요해지면 브리지로 추가하거나 Electron 재검토.
 
 ## 7. 되돌리기 / 영향 범위
 
-- 기본 실행은 **브라우저 모드 그대로**다(`python launcher.py`). 창 모드는 `--window` 를 준 경우에만 동작한다.
+- 개발 실행의 기본은 **브라우저 모드 그대로**다(`python launcher.py`). 창 모드는 `--window` 를 준 경우에만 동작한다. 배포 exe 는 인자가 없으면 창 모드가 기본이고 `--browser` 로 브라우저를 쓸 수 있다.
+- 코어 서버는 별도 프로세스가 아니라 **같은 프로세스의 데몬 스레드**에서 돈다(§9). `python server.py` 는 직접 실행용으로 그대로 남아 있다.
 - 셸 제거 시 `desktop/` 삭제 + `launcher.py`의 `--window` 갈래 제거로 끝난다(프론트/코어 무변경).
 - `start_windows.bat` 은 인자를 그대로 전달하도록 `%*` 만 추가했다(기존 동작 동일).
 
@@ -73,3 +74,25 @@
 
 - 자동 업데이트·트레이·단일 인스턴스가 **필수 요구**가 되고 직접 구현 비용이 과도해질 때 → Electron 재검토.
 - 설치 용량·권한 모델이 최우선이 되고 Rust 유지보수를 감수할 수 있을 때 → Tauri 재검토.
+
+## 9. 패키징 — PyInstaller 배포본 (2026-10-02 추가)
+
+| 결정 | 이유 |
+|---|---|
+| 진입점은 `launcher.py` 하나 | 개발 실행(CLI)과 배포 exe 가 같은 코드 경로를 쓴다. 갈라지면 조용히 어긋난다 |
+| 코어 서버를 **스레드로** 서빙 (`desktop/runtime.py`) | 배포 exe 에서 `sys.executable` 이 자기 자신이라 `subprocess` 재실행이 루프가 된다. 창과 같은 프로세스면 포트·수명이 한 곳에서 관리된다 |
+| Host/Origin 검사는 **실제 바인딩 포트**로 (`core/api.py:port()`) | 런처가 빈 포트(8877~8899)를 고르므로 `config.PORT`(8765)와 비교하면 모든 요청이 403 이 된다 |
+| 경로는 `app_paths.py` 한 곳 | `BUNDLE`(번들 내부의 읽기 전용 `frontend/`)과 `APP_ROOT`(exe 폴더 = `.env`·`.article-workspace`)를 분리 → **포터블** |
+| 창 모드 exe 는 콘솔 없음 | `sys.stdout` 이 None 이 되므로 `launcher.py` 가 `.article-workspace/logs/app.log` 로 tee 한다. 치명 오류는 OS 메시지 상자로도 알린다 |
+| `AINewsroom.exe` + `AINewsroom-debug.exe` | 사용자용은 깔끔하게, 지원·검증용은 콘솔로(같은 `_internal/` 공유) |
+| torch/transformers 제외 | 번들이 **28 MB**. 로컬 모델은 지연 import 라 없어도 동작한다(503 안내) |
+| WebView2 DLL | pywebview 의 PyInstaller 훅이 `webview/lib/**` 를 자동 수집. `Util.dll_path()` 가 번들 안에서 같은 상대경로로 찾는다 |
+
+산출물·빌드·포터블 규칙·문제 해결은 `../packaging/README.md` 에 있다.
+
+검증(Windows, PyInstaller 6.22.3)
+
+- `AINewsroom-debug.exe --check` → `STARTUP CHECK PASSED` (앱 폴더=exe 폴더, 리소스=`_internal`)
+- `AINewsroom.exe` → 창 제목 `AI Newsroom — 기사 작성`, `127.0.0.1:8877` 리스닝, `GET /api/status` 정상
+- `--smoke write` → **7/7 PASS**, `--smoke read` → **7/7 PASS**
+  (표식이 **다른 exe 프로세스에서도 유지** = 배포본 IndexedDB 영속 확인)

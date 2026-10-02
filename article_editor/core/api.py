@@ -2,7 +2,7 @@ import os, re, json, mimetypes, urllib.request, urllib.parse, urllib.error
 from http.server import BaseHTTPRequestHandler
 
 from . import config
-from .config import PORT, PIPELINE_VERSION, HEADLINE_MODEL, SUBTITLE_MODEL, LIMIT, ROOT, FRONTEND
+from .config import PIPELINE_VERSION, HEADLINE_MODEL, SUBTITLE_MODEL, LIMIT, ROOT, FRONTEND
 from .errors import RequestError
 from .ai.local_models import headline_dependencies_ready
 from .integrations.unsplash import unsplash_get, selected_unsplash
@@ -18,8 +18,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status);self.send_header('Content-Type',mime);self.send_header('Content-Length',str(len(raw)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.end_headers()
         try:self.wfile.write(raw)
         except (BrokenPipeError,ConnectionResetError):pass
+    def port(self):
+        # 설정값(PORT)이 아니라 실제로 바인딩된 포트를 쓴다.
+        # 런처/배포본은 빈 포트(8877~8899)를 골라 서빙하므로 검사가 어긋나면 안 된다.
+        return self.server.server_address[1]
     def allowed(self):
-        return self.headers.get('Host') in (f'localhost:{PORT}',f'127.0.0.1:{PORT}')
+        return self.headers.get('Host') in (f'localhost:{self.port()}',f'127.0.0.1:{self.port()}')
     def do_GET(self):
         if not self.allowed():return self.send(403,{'error':'로컬 주소로 접속해 주세요.'})
         if self.path=='/api/status':return self.send(200,{'ready':bool(os.environ.get('OPENAI_API_KEY')),'headline_ready':headline_dependencies_ready(),'headline_model':HEADLINE_MODEL,'subtitle_model':SUBTITLE_MODEL,'pipeline_version':PIPELINE_VERSION,'unsplash_ready':bool(os.environ.get('UNSPLASH_ACCESS_KEY')),'workspace_version':'3.0.0'})
@@ -56,7 +60,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ('/','/index.html'):return self.send(200,(FRONTEND/'index.html').read_bytes(),'text/html; charset=utf-8')
         self.send(404,{'error':'찾을 수 없는 경로입니다.'})
     def do_POST(self):
-        if not self.allowed() or self.headers.get('Origin') not in (f'http://localhost:{PORT}',f'http://127.0.0.1:{PORT}'):return self.send(403,{'error':'워크스페이스에서 요청해 주세요.'})
+        if not self.allowed() or self.headers.get('Origin') not in (f'http://localhost:{self.port()}',f'http://127.0.0.1:{self.port()}'):return self.send(403,{'error':'워크스페이스에서 요청해 주세요.'})
         if self.path not in ('/api/assist','/api/articles/save'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:

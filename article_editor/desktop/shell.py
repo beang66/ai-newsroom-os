@@ -17,9 +17,11 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent  # article_editor/
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+_APP_DIR = Path(__file__).resolve().parent.parent  # article_editor/
+if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_APP_DIR))
+
+from app_paths import APP_ROOT  # noqa: E402
 
 WINDOW_TITLE = 'AI Newsroom — 기사 작성'
 WINDOW_SIZE = (1280, 900)
@@ -37,7 +39,7 @@ def storage_dir() -> Path:
     override = os.environ.get('DESKTOP_STORAGE_DIR')
     if override:
         return Path(override).expanduser()
-    return ROOT / '.article-workspace' / 'webview'
+    return APP_ROOT / '.article-workspace' / 'webview'
 
 
 def shell_available() -> bool:
@@ -84,7 +86,7 @@ def run_window(url: str, *, debug: bool = False, on_ready=None) -> None:
 
 
 def main() -> int:
-    import launcher  # 기존 포트 선택·서버 기동·준비 확인 재사용
+    from desktop import runtime  # 포트 선택·서버 기동·준비 확인
 
     try:
         import webview  # noqa: F401
@@ -97,11 +99,10 @@ def main() -> int:
         )
         return 2
 
-    port = launcher.available_port()
-    server = launcher.start_server(port)
-    url = f'http://127.0.0.1:{port}{URL_PATH}'
+    server = runtime.start_server(runtime.available_port())
+    url = f'http://127.0.0.1:{server.port}{URL_PATH}'
     try:
-        launcher.wait_ready(url, server)
+        runtime.wait_ready(url, server)
         print(
             f'데스크톱 셸(pywebview): {url}\n'
             f'사용자 데이터: {storage_dir()}\n'
@@ -112,7 +113,7 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        launcher.stop_server(server)
+        server.stop()
     return 0
 
 

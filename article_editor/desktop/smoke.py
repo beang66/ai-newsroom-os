@@ -2,8 +2,9 @@
 
 실제 창을 띄운 뒤 항목별로 자동 확인하고 결과를 JSON으로 남긴다.
 
-    python desktop/smoke.py --mode write   # IndexedDB 에 표식 기록
-    python desktop/smoke.py --mode read    # 이전 실행 표식이 남아 있는지 확인(영속성)
+    python desktop/smoke.py --mode write      # IndexedDB 에 표식 기록
+    python desktop/smoke.py --mode read       # 이전 실행 표식이 남아 있는지 확인(영속성)
+    AINewsroom-debug.exe --smoke write        # 배포 exe 로 같은 검증(packaging/)
 
 자동 확인
   1) 창 부팅: 커스텀 엘리먼트 승격 + Shadow DOM 렌더
@@ -24,14 +25,15 @@ import threading
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+_APP_DIR = Path(__file__).resolve().parent.parent
+if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_APP_DIR))
 
-import launcher  # noqa: E402
-import shell  # noqa: E402
+from app_paths import WORKSPACE  # noqa: E402
+from desktop import runtime  # noqa: E402
+from desktop import shell  # noqa: E402
 
-RESULT_PATH = ROOT / '.article-workspace' / 'desktop-shell-smoke.json'
+RESULT_PATH = WORKSPACE / 'desktop-shell-smoke.json'
 
 BOOT_JS = """JSON.stringify((() => {
   const host = document.querySelector('article-workspace');
@@ -188,40 +190,38 @@ def runner(window, mode, checks, timeout):
         destroy(window)
 
 
-def main():
-    parser = argparse.ArgumentParser(description='데스크톱 셸 검증 스파이크')
-    parser.add_argument('--mode', choices=('write', 'read'), default='write')
-    parser.add_argument('--timeout', type=float, default=45)
-    parser.add_argument('--debug', action='store_true')
-    args = parser.parse_args()
+def run(mode='write', timeout=45.0, debug=False):
+    """창을 띄워 항목별로 확인하고 종료 코드를 돌려준다.
 
+    배포 exe(`AINewsroom-debug.exe --smoke write`)도 이 함수를 그대로 쓴다.
+    """
     try:
         import webview
     except ImportError:
         print('pywebview 미설치: pip install pywebview', file=sys.stderr)
         return 2
 
-    port = launcher.available_port()
-    server = launcher.start_server(port)
-    url = f'http://127.0.0.1:{port}/index.html'
+    port = runtime.available_port()
+    server = runtime.start_server(port)
+    url = server.url
     checks = []
     store = shell.storage_dir()
     try:
-        launcher.wait_ready(url, server)
+        runtime.wait_ready(url, server)
         store.mkdir(parents=True, exist_ok=True)
         window = webview.create_window('shell-smoke', url, width=1100, height=820, min_size=(900, 600))
         webview.start(
             runner,
-            args=(window, args.mode, checks, args.timeout),
+            args=(window, mode, checks, timeout),
             private_mode=False,
             storage_path=str(store),
-            debug=args.debug,
+            debug=debug,
         )
     except Exception as error:
         print(f'셸 실행 실패: {error}', file=sys.stderr)
         return 3
     finally:
-        launcher.stop_server(server)
+        server.stop()
 
     print(f'storage_path = {store}')
     print(f'webview2     = {shell.webview2_version()}')
@@ -229,13 +229,13 @@ def main():
     for name, ok, detail in checks:
         passed += 1 if ok else 0
         print(f"{'PASS' if ok else 'FAIL'}  {name}  {json.dumps(detail, ensure_ascii=False)}")
-    print(f'--- {passed}/{len(checks)} passed (mode={args.mode}) ---')
+    print(f'--- {passed}/{len(checks)} passed (mode={mode}) ---')
 
     RESULT_PATH.parent.mkdir(parents=True, exist_ok=True)
     RESULT_PATH.write_text(
         json.dumps(
             {
-                'mode': args.mode,
+                'mode': mode,
                 'storage_path': str(store),
                 'webview2': shell.webview2_version(),
                 'checks': [{'item': name, 'ok': ok, 'detail': detail} for name, ok, detail in checks],
@@ -246,6 +246,15 @@ def main():
         encoding='utf-8',
     )
     return 0 if checks and passed == len(checks) else 1
+
+
+def main():
+    parser = argparse.ArgumentParser(description='데스크톱 셸 검증 스파이크')
+    parser.add_argument('--mode', choices=('write', 'read'), default='write')
+    parser.add_argument('--timeout', type=float, default=45)
+    parser.add_argument('--debug', action='store_true')
+    args = parser.parse_args()
+    return run(mode=args.mode, timeout=args.timeout, debug=args.debug)
 
 
 if __name__ == '__main__':

@@ -124,6 +124,10 @@ app/core/integrations/unsplash.py   local 이면 UNSPLASH_ACCESS_KEY, remote 면
 | 앱 → Supabase **직접** | 일반 사용자 범위(프로젝트 목록·메타·공유) | 사용자 **JWT** + 엄격한 **RLS** + DB constraint |
 | 앱 → **우리 백엔드** | service_role 작업 · 외부 LLM · 결제 · webhook · 운영키 | 서버가 비밀키 보유 |
 
+구현 위치(2026-10-02): `app/core/managers/session_manager.py`(로그인·갱신·로그아웃),
+`app/core/integrations/supabase.py`(Auth·PostgREST), `app/core/auth.py`(토큰 보관 — 프론트에는 상태만),
+`app/core/backend_proxy.py`(백엔드 호출, 로그인 JWT 우선). 진단: `python dev/checks/backend_check.py`
+
 ### 키 구분 (중요)
 - Supabase **anon / publishable key** → **앱에 포함 가능**(공개 전제, RLS로 보호)
 - Supabase **service_role / secret key** → **앱 금지**(백엔드 서버에만)

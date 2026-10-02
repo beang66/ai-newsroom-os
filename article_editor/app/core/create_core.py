@@ -7,6 +7,7 @@ from .managers import (
     ProjectManager,
     StorageManager,
     AIManager,
+    SessionManager,
     CollaborationManager,
     SyncManager,
     EncryptionManager,
@@ -18,6 +19,7 @@ class Core:
     def __init__(self):
         self.storage = StorageManager()
         self.ai = AIManager()
+        self.session = SessionManager()
         self.project = ProjectManager(self.storage)
         self.collaboration = CollaborationManager()
         self.sync = SyncManager()

@@ -30,7 +30,10 @@ def enabled() -> bool:
 
 
 def token() -> str:
-    return config.APP_TOKEN or ''
+    """사용자 토큰 — 로그인 세션이 우선, 없으면 APP_TOKEN(개발·시험용)."""
+    from . import auth
+
+    return auth.current_token() or config.APP_TOKEN or ''
 
 
 def _base() -> str:

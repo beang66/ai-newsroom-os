@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 import core.api as api
 import core.ai.client as ai_client
+import core.auth as auth
 import core.config as core_config
 import core.ai.router as ai_router
 import core.integrations.unsplash as unsplash
@@ -248,6 +249,131 @@ class BackendProxyTests(ApiTestCase):
             status, raw, _ = self.request('/api/assist', {'kind': 'flow', 'body': '가' * 100})
         self.assertEqual(status, 503)
         self.assertIn('AI_BACKEND_URL', json.loads(raw)['error'])
+
+
+class SupabaseSessionTests(ApiTestCase):
+    """로그인(Supabase Auth) → 코어가 토큰 보관 → 백엔드 호출에 그 토큰을 쓴다.
+
+    프론트는 토큰을 받지 않는다(상태만). 앱은 anon 키로 로그인하고, 이후 호출은 JWT로 한다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.seen = []
+        seen = cls.seen
+
+        class Stub(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def _send(self, payload, status=200):
+                body = json.dumps(payload).encode() if payload is not None else b''
+                self.send_response(status)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                if body:
+                    self.wfile.write(body)
+
+            def do_GET(self):
+                seen.append(('GET', self.path, self.headers.get('Authorization'), None))
+                if self.path.startswith('/auth/v1/health'):
+                    self._send({'version': 'test'})
+                elif self.path.startswith('/rest/v1/projects'):
+                    self._send([{'id': 'p1', 'name': '테스트 프로젝트'}])
+                else:
+                    self._send({'ok': True})
+
+            def do_POST(self):
+                size = int(self.headers.get('Content-Length', '0'))
+                raw = self.rfile.read(size) if size else b''
+                payload = json.loads(raw) if raw else {}
+                seen.append(('POST', self.path, self.headers.get('Authorization'), payload))
+                if self.path.startswith('/auth/v1/token'):
+                    self._send(
+                        {
+                            'access_token': 'jwt-from-supabase',
+                            'refresh_token': 'refresh-1',
+                            'expires_in': 3600,
+                            'user': {'id': 'u-1', 'email': payload.get('email', 'user@example.com')},
+                        }
+                    )
+                elif self.path.startswith('/auth/v1/logout'):
+                    self._send(None, status=204)
+                elif self.path == '/ai/responses':
+                    text = json.dumps({'headline_candidates': ['제목 하나', '제목 둘', '제목 셋']}, ensure_ascii=False)
+                    self._send({'output': [{'content': [{'type': 'output_text', 'text': text}]}]})
+                else:
+                    self._send({'ok': True})
+
+        cls.stub = ThreadingHTTPServer(('127.0.0.1', 0), Stub)
+        threading.Thread(target=cls.stub.serve_forever, daemon=True).start()
+        cls.stub_url = 'http://127.0.0.1:' + str(cls.stub.server_port)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.stub.shutdown()
+        cls.stub.server_close()
+        super().tearDownClass()
+
+    def setUp(self):
+        auth.clear()
+        self.addCleanup(auth.clear)
+
+    def remote(self, token=''):
+        return patch.multiple(
+            core_config,
+            AI_BACKEND='remote',
+            AI_BACKEND_URL=self.stub_url,
+            APP_TOKEN=token,
+            SUPABASE_URL=self.stub_url,
+            SUPABASE_ANON_KEY='anon-test',
+        )
+
+    def test_status_without_login(self):
+        with self.remote():
+            status, raw, _ = self.request('/api/session')
+        self.assertEqual(status, 200)
+        state = json.loads(raw)
+        self.assertFalse(state['signedIn'])
+        self.assertTrue(state['supabase'])
+
+    def test_sign_in_returns_state_without_token(self):
+        with self.remote():
+            status, raw, _ = self.request('/api/session', {'email': 'writer@example.com', 'password': 'pw-123456'})
+        self.assertEqual(status, 200)
+        state = json.loads(raw)
+        self.assertTrue(state['signedIn'])
+        self.assertEqual(state['email'], 'writer@example.com')
+        self.assertNotIn('token', json.dumps(state).lower().replace('signedin', ''))
+        path = [item for item in self.seen if item[1].startswith('/auth/v1/token')][-1][1]
+        self.assertIn('grant_type=password', path)
+
+    def test_backend_call_uses_user_token(self):
+        with self.remote():
+            self.request('/api/session', {'email': 'writer@example.com', 'password': 'pw-123456'})
+            status, raw, _ = self.request(
+                '/api/assist', {'kind': 'metadata', 'requested': 'headline', 'body': '가' * 100}
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(raw)['headline_candidates'][0], '제목 하나')
+        method, path, authorization, _ = self.seen[-1]
+        self.assertEqual((method, path), ('POST', '/ai/responses'))
+        self.assertEqual(authorization, 'Bearer jwt-from-supabase')
+
+    def test_sign_out_clears_token(self):
+        with self.remote():
+            self.request('/api/session', {'email': 'writer@example.com', 'password': 'pw-123456'})
+            status, raw, _ = self.request('/api/session/signout', {})
+            self.assertEqual(status, 200)
+            self.assertFalse(json.loads(raw)['signedIn'])
+        self.assertEqual(auth.current_token(), '')
+
+    def test_sign_in_validates_input(self):
+        with self.remote():
+            self.assertEqual(self.request('/api/session', {'email': 'nope', 'password': 'pw-123456'})[0], 400)
+            self.assertEqual(self.request('/api/session', {'email': 'a@b.c', 'password': '123'})[0], 400)
 
 
 if __name__ == '__main__':

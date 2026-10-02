@@ -27,6 +27,10 @@ AI_BACKEND = os.environ.get('AI_BACKEND', _DEFAULT_AI_BACKEND).strip().lower()
 AI_BACKEND_URL = (os.environ.get('AI_BACKEND_URL') or '').rstrip('/')
 # 사용자 토큰(JWT) 자리 — 세션 관리가 붙기 전까지 환경변수로 주입한다.
 APP_TOKEN = os.environ.get('APP_TOKEN', '')
+# Supabase(Control Plane: Auth / Postgres / Storage) — 앱은 anon 키 + 사용자 JWT로 직접 접근한다.
+# service_role 키는 절대 앱에 두지 않는다(백엔드 전용, ARCHITECTURE.md).
+SUPABASE_URL = (os.environ.get('SUPABASE_URL') or '').rstrip('/')
+SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
 LIMIT = threading.BoundedSemaphore(3)
 HEADLINE_MODEL = os.environ.get('HEADLINE_MODEL', 'onebeans/keT5-news-title-gen')
 SUBTITLE_MODEL = os.environ.get('SUBTITLE_MODEL', 'gogamza/kobart-summarization')

@@ -97,7 +97,39 @@ APP_TOKEN=<사용자 JWT>        # 세션 관리가 붙기 전까지 임시 주�
 | GET | `/unsplash/download/<...>` 또는 `/unsplash/absolute?url=` | 다운로드 추적 | 호출만 하면 됨 |
 | GET | `/unsplash/absolute?url=<절대URL>` | 절대 URL 중계 | 백엔드가 host 검증(api.unsplash.com만) |
 
-- 인증: `Authorization: Bearer <사용자 JWT>` (앱은 키가 아니라 **토큰만** 안다)
-- 백엔드는 여기서 `OPENAI_API_KEY`·`UNSPLASH_ACCESS_KEY`·`UNSPLASH_SECRET_KEY`를 보유한다
-- 앱에서 확인: `python app/launcher.py --check` → `[진단] AI 경로 : remote (백엔드 주소 설정, 토큰 설정)`
-- 검증 코드: `dev/tests/test_server.py::BackendProxyTests`
+## 9. Render(백엔드) · Supabase(DB/Auth) 연결 설정 (구현됨)
+
+`.env`(워크스페이스 최상단)에 아래를 채우면 코어가 자동으로 잡는다.
+
+```env
+# 우리 백엔드 (Render)
+AI_BACKEND=remote
+AI_BACKEND_URL=https://<render 서비스 주소>
+APP_TOKEN=                # 세션(로그인)이 붙기 전 임시 주입(선택 — 로그인 토큰이 우선)
+
+# Supabase (Auth / Postgres)
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_ANON_KEY=<anon(publishable) 키>   # 공개 전제. service_role 키는 앱에 금지(백엔드 전용)
+```
+
+연결 진단:
+
+```
+python dev/checks/backend_check.py
+```
+
+- 설정 여부(값은 출력하지 않음) · Supabase `/auth/v1/health` · 백엔드 `/ai/health`(없으면 `/health`)
+- `SUPABASE_CHECK_EMAIL` / `SUPABASE_CHECK_PASSWORD` 를 넣으면 **실제 로그인까지** 시험한다
+
+로그인·세션 계약 — 코어가 토큰을 보관하고, 프론트는 상태만 본다(토큰은 절대 넘기지 않는다):
+
+| 메서드 | 경로 | 동작 |
+|---|---|---|
+| GET | `/api/session` | `{signedIn, email, userId, expiresIn, supabase, backend}` — **토큰 없음** |
+| POST | `/api/session` | `{email, password}` → Supabase Auth 로그인 → 위와 같은 상태 |
+| POST | `/api/session/signout` | 로그아웃(토큰 폐기) |
+
+- 로그인 후 코어는 백엔드 호출에 `Authorization: Bearer <사용자 JWT>` 를 붙인다(`APP_TOKEN` 보다 우선).
+- 만료 60초 전부터 refresh token 으로 자동 갱신한다.
+- 토큰은 **메모리에만** 둔다(재시작하면 재로그인). 디스크 저장은 보안 P1('앱 잠금')과 함께 결정한다.
+- 검증: `dev/tests/test_server.py::SupabaseSessionTests` (로그인 → 코어 토큰 보관 → 백엔드 호출에 그 토큰 사용)

@@ -8,6 +8,8 @@
 
 export const ROUTES = Object.freeze({
   status: "/api/status",
+  session: "/api/session",
+  signOut: "/api/session/signout",
   assist: "/api/assist",
   articlesSave: "/api/articles/save",
   unsplashSearch: "/api/unsplash/search",
@@ -27,6 +29,13 @@ export function createCoreApi(transport) {
   return {
     /** 코어 준비 상태 */
     status: (signal) => transport.json(ROUTES.status, null, signal),
+    /** 로그인 상태 — **토큰은 오지 않는다**(프론트는 토큰을 모른다) */
+    session: (signal) => transport.json(ROUTES.session, null, signal),
+    /** 로그인 (Supabase Auth). 성공하면 session() 과 같은 모양을 돌려준다 */
+    signIn: (email, password, signal) =>
+      transport.json(ROUTES.session, { email, password }, signal),
+    /** 로그아웃 */
+    signOut: (signal) => transport.json(ROUTES.signOut, {}, signal),
     /** AI 편집 보조: kind = metadata | flow | photo_keywords | image | captions */
     assist: (payload, signal) => transport.json(ROUTES.assist, payload, signal),
     /** 원고 디스크 저장 (파일: .article-workspace/articles) */

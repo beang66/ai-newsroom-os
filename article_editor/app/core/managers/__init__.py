@@ -7,6 +7,7 @@ implementation may change freely, the API contract stays stable.
 from .project_manager import ProjectManager
 from .storage_manager import StorageManager
 from .ai_manager import AIManager
+from .session_manager import SessionManager
 from .collaboration_manager import CollaborationManager
 from .sync_manager import SyncManager
 from .encryption_manager import EncryptionManager
@@ -16,6 +17,7 @@ __all__ = [
     "ProjectManager",
     "StorageManager",
     "AIManager",
+    "SessionManager",
     "CollaborationManager",
     "SyncManager",
     "EncryptionManager",

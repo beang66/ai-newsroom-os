@@ -53,7 +53,7 @@
 | 3 자료 찾기·인터뷰 **STT** | **로컬 가능(권장)** | whisper.cpp/ONNX 로 기기 내 변환 → 외부 키 불필요. 클라우드 STT 를 쓰면 백엔드 프록시 필요 |
 | 4 **팩트체크 서랍**(지식 저장소) | **로컬 모델 + 공유만 Supabase** | 추론은 코어 인프로세스(Qwen3), 팀 공유 지식은 Supabase 테이블/Storage 직접 |
 | 6 **보관함·발행 이력** | **Supabase 직접** | 기사 목록/조회를 앱에 노출 + RLS. 집계·통계가 필요해지면 그때 백엔드 |
-| 7 **카드뉴스·영상** | **로컬 렌더(ffmpeg) + 공유는 Storage** | 서버 렌더링은 무겁고 비쌈 → 배포용 결과물만 Storage |
+| 7 **카드뉴스·영상** | **팀은 Playwright 렌더 + n8n 로 구축 중(§8)** | 호스팅 주체 결정 필요. 공유 결과물만 Storage |
 | 8 **CMS 연동** | **백엔드 필요**(2장 6번) | CMS 자격증명·콜백은 서버에만 |
 | 알림(메일/Slack, 예정) | **백엔드 필요**(2장 6번) | 발송·스케줄은 서버 몫 |
 
@@ -89,3 +89,30 @@ python dev/checks/backend_check.py --url https://<서비스>.onrender.com
 2. **암호화 키 백업** — 사용자가 키를 잃으면 공유 데이터 복구 불가. 서버 보관 여부 결정 필요.
 3. **카드뉴스·영상**을 기기 렌더로 갈지 서버 렌더로 갈지(비용/성능).
 4. **발행 이력·통계**를 Supabase 뷰로 충분한지, 서버 집계가 필요한지.
+
+## 8. 새로 올라온 코드 — platform-generator (2026-10-02, jeongminimi)
+
+브랜치 `feature/platform-generator`(`8f140fd`, **main 미병합**)에 **카드뉴스·SNS 생성 파이프라인**이 올라왔다.
+로컬 사본: `C:\ai-newsroom-os\ai-newsroom-os-platform-generator` (main 사본은 `C:\ai-newsroom-os\ai-newsroom-os-main`)
+
+| 구성 | 내용 |
+|---|---|
+| `platform-generator/server.js` | Express + **Playwright(chromium)** 렌더 서비스. `GET /health`, `POST /render`(HTML 템플릿 → PNG), `/output` 정적 서빙. **`app.listen(3000)` 하드코딩** |
+| `package.json` | `express ^5.2.1`, `playwright ^1.63.0` (start 스크립트 없음 → `node server.js`) |
+| `workflows/10_Content_Generate_API.json` | n8n webhook → 정규화·검증 → 플랫폼 분기 → 11·12 호출 → 응답 |
+| `workflows/11_Instagram_Generate.json` | OpenAI 초안 → **검수1(원문 왜곡 팩트체크)** → **검수2(요구사항)** → 14 호출 |
+| `workflows/12_Threads_Generate.json` | 위와 같은 구조(Threads) |
+| `workflows/14_Instagram_Render.json` | 카드 분할 → `POST /render` |
+| 실제 호출 대상 | **OpenAI**(n8n 계정 크리덴셜, 30회 언급), `http://localhost`(렌더러), `api.unsplash.com` |
+
+### 이 코드가 백엔드 인벤토리에 주는 영향
+
+1. **7번(카드뉴스·영상) 정정** — 로컬 ffmpeg 가정이 아니라 **팀은 Playwright 렌더 + n8n** 으로 구축 중.
+   렌더러(chromium)와 n8n 은 **호스팅 주체 결정이 필요**(Render 무료 플랜 부적합 → 사내 서버/컨테이너 권장).
+2. **키 소유권 중복 위험** — LLM 키가 (a) 우리 백엔드 프록시, (b) n8n 크리덴셜 두 곳에 생길 수 있다.
+   → "앱·워크플로 모두 백엔드 프록시 경유"로 일원화하거나, n8n 을 내부망 전용으로 못 박기.
+3. **파이프라인 중복 주의** — SNS용 **2단 검수(팩트체크+요구사항)** 가 앱의 `ai/router.py` 파이프라인과 겹친다.
+   공통 규칙(팩트체크·검수)의 소유 위치를 정해 중복 구현을 막을 것.
+4. **`POST /render` 계약은 우리 백엔드 계약과 별개** — 앱이 직접 호출할지, 백엔드가 중계할지 결정 필요.
+5. `PORT` 하드코딩(3000) — 웹앱(`server.ts`)과 동일한 수정 필요.
+

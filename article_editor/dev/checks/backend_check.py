@@ -64,7 +64,13 @@ def main() -> int:
     print()
 
     print('=== 도달성 ===')
-    if supabase.configured():
+    if config.SUPABASE_URL and not config.SUPABASE_URL.startswith(('http://', 'https://')):
+        check(
+            False,
+            'SUPABASE_URL 형식',
+            'REST 주소(https://<ref>.supabase.co)를 넣어 주세요. DB 접속 문자열은 백엔드(Render)에만',
+        )
+    elif supabase.configured():
         try:
             supabase.auth_health()
             check(True, 'Supabase Auth /auth/v1/health')

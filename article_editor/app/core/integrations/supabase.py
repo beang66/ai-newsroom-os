@@ -37,7 +37,14 @@ def host() -> str:
 def _base() -> str:
     if not configured():
         raise RequestError('Supabase 주소/키(SUPABASE_URL, SUPABASE_ANON_KEY)가 설정되어 있지 않습니다.', 503)
-    return config.SUPABASE_URL
+    base = config.SUPABASE_URL
+    if not base.startswith(('http://', 'https://')):
+        raise RequestError(
+            'SUPABASE_URL 은 REST 주소(https://<ref>.supabase.co)여야 합니다. '
+            'DB 접속 문자열(postgresql://…)은 앱에 두지 말고 백엔드(Render)에만 두세요.',
+            503,
+        )
+    return base
 
 
 def _headers(access_token: str = '', extra: dict | None = None) -> dict:

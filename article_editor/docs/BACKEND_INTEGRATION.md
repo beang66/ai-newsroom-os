@@ -118,8 +118,13 @@ SUPABASE_ANON_KEY=<anon(publishable) 키>   # 공개 전제. service_role 키는
 python dev/checks/backend_check.py
 ```
 
-- 설정 여부(값은 출력하지 않음) · Supabase `/auth/v1/health` · 백엔드 `/ai/health`(없으면 `/health`)
+- 설정 여부(값은 출력하지 않음) · Supabase `/auth/v1/health` · 백엔드 `/ai/health`(없으면 `/api/health` → `/health`)
 - `SUPABASE_CHECK_EMAIL` / `SUPABASE_CHECK_PASSWORD` 를 넣으면 **실제 로그인까지** 시험한다
+- `--url https://<주소>` 로 .env 를 고치지 않고 임시로 찍어볼 수 있고, `--strict` 는 계약 미구현을 실패로 처리한다(CI용)
+
+**현재 상태(2026-10-02):** Render 서비스는 `beang66/ai-newsroom-os` @ **`main`** = 기존 웹앱(Express, `yarn build` + `node dist/server.cjs`)이라
+`/api/health` 만 있습니다. 진단 결과는 `PASS 백엔드 /api/health 도달함(웹앱형 Express, status=ok) - /ai/* 는 아직 없음` 이며,
+계약 경로가 하나도 없어 원격 AI·사진은 아직 동작하지 않습니다. 전면수정 범위와 계약 전체는 **`docs/BACKEND_CONTRACT.md`** 참고.
 
 로그인·세션 계약 — 코어가 토큰을 보관하고, 프론트는 상태만 본다(토큰은 절대 넘기지 않는다):
 

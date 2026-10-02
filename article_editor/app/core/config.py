@@ -7,6 +7,9 @@ if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
 # 실행 위치는 app_paths.py 한 곳에서만 판단한다(개발/배포 exe 동일 규칙).
 from app_paths import APP_ROOT, BUNDLE, FRONTEND, env_lines  # noqa: E402
 
+# 공개 기본값(커밋됨) — 새 PC·배포본에서 .env 없이 동작하게 한다. .env/OS 환경변수가 우선.
+from . import defaults  # noqa: E402
+
 # ROOT = 앱 폴더(개발: article_editor/, 배포 exe: exe가 놓인 폴더).
 ROOT = APP_ROOT
 
@@ -21,16 +24,16 @@ PIPELINE_VERSION = '2026-10-01-subtitle-fast-v4'
 TEXT_MODEL = os.environ.get('OPENAI_TEXT_MODEL', 'gpt-4.1-mini')
 IMAGE_MODEL = os.environ.get('OPENAI_IMAGE_MODEL', 'gpt-image-1')
 # 외부 호출 경로. local = 로컬 .env 키로 외부 API 직접(개발 전용), remote = 우리 백엔드 프록시.
-# 배포본(exe)은 remote 가 기본이다 — 앱에 운영키를 두지 않는다(ARCHITECTURE.md).
-_DEFAULT_AI_BACKEND = 'remote' if getattr(sys, 'frozen', False) else 'local'
+# 배포본(exe)이거나 백엔드 주소가 있으면 remote 가 기본이다 — 앱에 운영키를 두지 않는다(ARCHITECTURE.md).
+AI_BACKEND_URL = (os.environ.get('AI_BACKEND_URL') or defaults.AI_BACKEND_URL or '').rstrip('/')
+_DEFAULT_AI_BACKEND = 'remote' if (getattr(sys, 'frozen', False) or AI_BACKEND_URL) else 'local'
 AI_BACKEND = os.environ.get('AI_BACKEND', _DEFAULT_AI_BACKEND).strip().lower()
-AI_BACKEND_URL = (os.environ.get('AI_BACKEND_URL') or '').rstrip('/')
 # 사용자 토큰(JWT) 자리 — 세션 관리가 붙기 전까지 환경변수로 주입한다.
 APP_TOKEN = os.environ.get('APP_TOKEN', '')
 # Supabase(Control Plane: Auth / Postgres / Storage) — 앱은 anon 키 + 사용자 JWT로 직접 접근한다.
 # service_role 키는 절대 앱에 두지 않는다(백엔드 전용, ARCHITECTURE.md).
-SUPABASE_URL = (os.environ.get('SUPABASE_URL') or '').rstrip('/')
-SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
+SUPABASE_URL = (os.environ.get('SUPABASE_URL') or defaults.SUPABASE_URL or '').rstrip('/')
+SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY') or defaults.SUPABASE_ANON_KEY
 # 로컬 모델 — 배포본은 동봉하지 않고 첫 사용 때 내려받는다(docs/LOCAL_MODELS.md 설계 B).
 # 매니페스트는 앱에 동봉(읽기 전용), 실제 파일은 **설치 경로 안** APP_ROOT/models/ 에 쌓인다(포터블).
 MODELS_DIR = pathlib.Path(os.environ.get('MODELS_DIR') or (APP_ROOT / 'models'))

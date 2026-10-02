@@ -18,8 +18,11 @@
 
 ## Render 배포
 
-1. Render → **New → Web Service** → 이 저장소 연결, Root Directory = `backend`
+1. Render → **New → Web Service** → 이 저장소 연결
+   - **Branch: `feature/app-core`** ← `main` 에는 이 `backend/` 폴더가 없어서 배포가 실패한다
+   - **Root Directory: `backend`**
 2. Runtime: **Python**, Build Command: *(비움)*, Start Command: `python server.py`
+   - `PORT` 는 Render 가 주입하고 `HOST` 기본값이 `0.0.0.0` 이라 그대로 뜬다(코드 수정 불필요)
 3. 환경변수(대시보드에서 입력 — **값을 저장소에 넣지 않는다**)
 
 | 변수 | 필수 | 값 |

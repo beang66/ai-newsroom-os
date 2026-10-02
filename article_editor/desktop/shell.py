@@ -99,7 +99,7 @@ def main() -> int:
         )
         return 2
 
-    server = runtime.start_server(runtime.available_port())
+    server = runtime.start_server()
     url = f'http://127.0.0.1:{server.port}{URL_PATH}'
     try:
         runtime.wait_ready(url, server)

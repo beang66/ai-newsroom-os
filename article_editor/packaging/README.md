@@ -95,6 +95,7 @@ dist\AINewsroom\
 | 증상 | 확인할 것 |
 |---|---|
 | 창이 뜨지 않음 | `AINewsroom-debug.exe --check` → `.article-workspace\logs\app.log` |
+| 다른 프로그램이 8877~8899 를 쓰는 중 | 런처는 **배타 바인딩**이라 그 포트를 건너뛰고 다음 포트에 뜹니다(남의 프로그램을 밀어내지 않습니다). 23개가 모두 차 있으면 안내 후 종료 |
 | "Windows의 PC 보호" 경고 | 코드 서명이 없어서 나오는 SmartScreen 안내. 인증서를 넣고 `signtool`로 서명 |
 | WebView2 없음 안내 | Evergreen 부트스트래퍼 설치 |
 | 내보내기·드래그·인쇄 | `desktop/README.md`의 "사람이 직접 확인해야 하는 항목" 참고 |

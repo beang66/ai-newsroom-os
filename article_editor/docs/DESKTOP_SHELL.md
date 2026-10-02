@@ -82,6 +82,7 @@
 | 진입점은 `launcher.py` 하나 | 개발 실행(CLI)과 배포 exe 가 같은 코드 경로를 쓴다. 갈라지면 조용히 어긋난다 |
 | 코어 서버를 **스레드로** 서빙 (`desktop/runtime.py`) | 배포 exe 에서 `sys.executable` 이 자기 자신이라 `subprocess` 재실행이 루프가 된다. 창과 같은 프로세스면 포트·수명이 한 곳에서 관리된다 |
 | Host/Origin 검사는 **실제 바인딩 포트**로 (`core/api.py:port()`) | 런처가 빈 포트(8877~8899)를 고르므로 `config.PORT`(8765)와 비교하면 모든 요청이 403 이 된다 |
+| 포트는 **배타 바인딩** (`core/bootstrap.py:LoopbackServer`) | Windows 는 `SO_REUSEADDR`(HTTPServer 기본값) 때문에 **남이 쓰는 포트에도 바인딩이 '성공'**하고, 그 경우 요청은 먼저 잡은 쪽으로 가서 우리 앱이 조용히 죽은 서버가 된다(실측: 8888 점유 중 바인딩 성공, 응답은 `FOREIGN`). `allow_reuse_address=False` + Windows `SO_EXCLUSIVEADDRUSE` 로 10048 실패 → 런처는 **다음 포트로 이동**, `server.py` 는 안내 후 종료. 남의 포트를 밀어내지도, 빼앗기지도 않는다 |
 | 경로는 `app_paths.py` 한 곳 | `BUNDLE`(번들 내부의 읽기 전용 `frontend/`)과 `APP_ROOT`(exe 폴더 = `.env`·`.article-workspace`)를 분리 → **포터블** |
 | 창 모드 exe 는 콘솔 없음 | `sys.stdout` 이 None 이 되므로 `launcher.py` 가 `.article-workspace/logs/app.log` 로 tee 한다. 치명 오류는 OS 메시지 상자로도 알린다 |
 | `AINewsroom.exe` + `AINewsroom-debug.exe` | 사용자용은 깔끔하게, 지원·검증용은 콘솔로(같은 `_internal/` 공유) |
@@ -96,3 +97,7 @@
 - `AINewsroom.exe` → 창 제목 `AI Newsroom — 기사 작성`, `127.0.0.1:8877` 리스닝, `GET /api/status` 정상
 - `--smoke write` → **7/7 PASS**, `--smoke read` → **7/7 PASS**
   (표식이 **다른 exe 프로세스에서도 유지** = 배포본 IndexedDB 영속 확인)
+- 포트 충돌 실측(2026-10-02, 외부 `python -m http.server` 로 점유)
+  - 점유 전(SO_REUSEADDR): 8888 이 점유된 상태에서 우리 서버가 **바인딩 성공**, 응답은 상대(`FOREIGN`) → 우리 앱은 조용히 죽은 서버
+  - 점유 후(배타 바인딩): 8888 바인딩이 **10048 로 실패** → 8878(또는 8889)로 자동 이동·정상 서빙, 상대 서버는 계속 정상 응답, 종료 시 포트 반납
+  - `python server.py`(고정 8765) 점유 시: 안내 출력 후 **exit 1**, 상대 프로그램은 계속 200 응답(가로채지 않음)

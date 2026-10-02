@@ -104,16 +104,16 @@ def shell_parts():
     return shell, store
 
 
-def print_diagnostics(port, url, server):
+def print_diagnostics(url, server):
     try:
-        status = json.loads(runtime.fetch(runtime.status_url(port)))
+        status = json.loads(runtime.fetch(runtime.status_url(server.port)))
     except Exception as error:  # 진단 실패가 실행을 막지는 않는다
         status = {'error': str(error)}
     print('[진단] 실행 모드  : ' + ('배포본(exe)' if FROZEN else '개발(파이썬)'))
     print(f'[진단] 앱 폴더    : {APP_ROOT}')
     print(f'[진단] 리소스      : {BUNDLE}')
     print(f'[진단] 시작 화면  : {"있음" if (FRONTEND / "index.html").is_file() else "없음"}  {FRONTEND}')
-    print(f'[진단] 주소        : {url} (포트 {port})')
+    print(f'[진단] 주소        : {url} (포트 {server.port})')
     print(f'[진단] 서버 스레드 : {"실행 중" if server.is_running() else "중단"}')
     print(f'[진단] 코어 상태   : {json.dumps(status, ensure_ascii=False)}')
     print(f'[진단] .env        : {env_source() or "없음(OS 환경변수만 사용)"}')
@@ -131,8 +131,7 @@ def main():
             mode = args[index + 1] if index + 1 < len(args) and args[index + 1] in ('write', 'read') else 'write'
             return smoke.run(mode=mode, debug='--debug' in args)
 
-        port = runtime.available_port()
-        server = runtime.start_server(port)
+        server = runtime.start_server()
         url = server.url
         # 개발 기본값은 브라우저(기존 동작), 배포본 기본값은 창이다.
         use_window = '--window' in args or (FROZEN and '--browser' not in args)
@@ -143,7 +142,7 @@ def main():
                 flush=True,
             )
             if '--check' in args:
-                print_diagnostics(port, url, server)
+                print_diagnostics(url, server)
                 if use_window:
                     shell, store = shell_parts()
                     print(

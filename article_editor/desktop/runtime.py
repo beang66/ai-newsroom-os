@@ -8,7 +8,6 @@ PyInstaller 배포본에서는 ``sys.executable`` 이 **자기 자신**이라 �
 """
 from __future__ import annotations
 
-import socket
 import sys
 import threading
 import time
@@ -20,17 +19,6 @@ if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))
 
 PORT_RANGE = range(8877, 8900)
-
-
-def available_port():
-    for port in PORT_RANGE:
-        try:
-            with socket.socket() as probe:
-                probe.bind(('127.0.0.1', port))
-            return port
-        except OSError:
-            continue
-    raise RuntimeError('8877~8899 포트가 사용 중입니다. 실행 중인 편집기를 닫고 다시 시도해 주세요.')
 
 
 def index_url(port):
@@ -81,9 +69,24 @@ class LocalServer:
         self._httpd.server_close()
 
 
-def start_server(port):
-    """빈 포트에 코어 서버를 띄우고 바로 쓸 수 있는 LocalServer 를 돌려준다."""
-    return LocalServer(port).start()
+def start_server(ports=PORT_RANGE):
+    """빈 포트에 코어 서버를 띄우고 바로 쓸 수 있는 LocalServer 를 돌려준다.
+
+    포트를 '찍어 보고' 나서 다시 바인딩하지 않는다. 그 사이에 다른 프로그램이
+    끼어들 수 있고, Windows 는 SO_REUSEADDR 때문에 이미 쓰이는 포트에도 바인딩이
+    성공해 버려 조용히 엉뚱한 서버가 되기 때문이다. 그냥 배타적으로 바인딩해 보고,
+    이미 쓰이면 다음 포트로 넘어간다 → 남의 포트를 밀어내지도, 빼앗기지도 않는다.
+    """
+    first, last = ports.start, ports.stop - 1
+    failure = None
+    for port in ports:
+        try:
+            return LocalServer(port).start()
+        except OSError as error:  # 이미 다른 프로그램이 쓰는 포트
+            failure = error
+    raise RuntimeError(
+        f'{first}~{last} 포트가 모두 사용 중입니다. 실행 중인 편집기를 닫고 다시 시도해 주세요.'
+    ) from failure
 
 
 def wait_ready(url, server=None, retries=100, delay=.1):

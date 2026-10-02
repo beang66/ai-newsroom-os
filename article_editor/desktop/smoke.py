@@ -201,8 +201,7 @@ def run(mode='write', timeout=45.0, debug=False):
         print('pywebview 미설치: pip install pywebview', file=sys.stderr)
         return 2
 
-    port = runtime.available_port()
-    server = runtime.start_server(port)
+    server = runtime.start_server()
     url = server.url
     checks = []
     store = shell.storage_dir()

@@ -1201,3 +1201,16 @@ small,
 .body-editor {
   position: relative;
 }
+
+.preview-view {
+  max-width: none;
+  width: 100%;
+  padding: 0;
+}
+.preview-shell {
+  width: 100%;
+  overflow: hidden;
+}
+.preview-frame {
+  transform: none;
+}

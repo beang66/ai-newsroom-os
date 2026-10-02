@@ -132,7 +132,7 @@ def models_cli(args):
         print('취소했습니다.' if result.get('cancelled') else '설치를 마쳤습니다.', flush=True)
 
     status = manager.status()
-    print(f"모델 폴더: {status['dir']}", flush=True)
+    print(f"모델 폴더(설치 경로 안): {status['dir']}", flush=True)
     for row in status['models']:
         state = '설치됨' if row['installed'] else ('일부' if row['filesDone'] else '없음')
         source = '설정됨' if row['sourceConfigured'] else '없음(매니페스트 base 또는 --from 필요)'

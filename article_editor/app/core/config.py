@@ -32,14 +32,17 @@ APP_TOKEN = os.environ.get('APP_TOKEN', '')
 SUPABASE_URL = (os.environ.get('SUPABASE_URL') or '').rstrip('/')
 SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
 # 로컬 모델 — 배포본은 동봉하지 않고 첫 사용 때 내려받는다(docs/LOCAL_MODELS.md 설계 B).
-# 매니페스트는 앱에 동봉(읽기 전용), 실제 파일은 APP_ROOT/models/ 에 쌓인다(포터블).
+# 매니페스트는 앱에 동봉(읽기 전용), 실제 파일은 **설치 경로 안** APP_ROOT/models/ 에 쌓인다(포터블).
 MODELS_DIR = pathlib.Path(os.environ.get('MODELS_DIR') or (APP_ROOT / 'models'))
 MODELS_MANIFEST = pathlib.Path(
     os.environ.get('MODELS_MANIFEST') or (BUNDLE / 'models_manifest.json')
 )
+# 허깅페이스 캐시도 설치 경로 안에 둔다(제목·부제 모델이 사용자 프로필로 새지 않게).
+# .env 로 HF_HOME / HEADLINE_CACHE_DIR 를 주면 그쪽이 우선한다(디스크가 좁을 때).
+HF_HOME = os.environ.setdefault('HF_HOME', str(MODELS_DIR / 'hf'))
 LIMIT = threading.BoundedSemaphore(3)
 HEADLINE_MODEL = os.environ.get('HEADLINE_MODEL', 'onebeans/keT5-news-title-gen')
 SUBTITLE_MODEL = os.environ.get('SUBTITLE_MODEL', 'gogamza/kobart-summarization')
-HEADLINE_CACHE = os.environ.get('HEADLINE_CACHE_DIR') or None
+HEADLINE_CACHE = os.environ.get('HEADLINE_CACHE_DIR') or str(MODELS_DIR / 'hf')
 HEADLINE_LOCK = threading.Lock()
 SUBTITLE_LOCK = threading.Lock()

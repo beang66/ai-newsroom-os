@@ -93,6 +93,8 @@ dist\AINewsroom\
   AINewsroom-debug.exe --models install --from "\\서버\배포\models\..."   # 사내망/오프라인 설치
   ```
 - 매니페스트 생성: `python dev/checks/make_model_manifest.py --dir <모델폴더> --id <id> --out app/models_manifest.json`
+- **저장 위치는 설치 폴더 안**입니다: 모델은 `<exe 폴더>/models/`, 허깅페이스 캐시(제목·부제)는 그 안 `models/hf/`.
+  폴더째 복사하면 모델도 따라옵니다. 쓰기 권한이 없는 곳(예: Program Files)이면 `MODELS_DIR` 를 지정하세요.
 
 ## 검증 기록 (2026-10-02, Windows · PyInstaller 6.22.3)
 

@@ -67,7 +67,27 @@
 
 ## 6. 남은 결정·작업
 
-1. **호스팅**: 매니페스트의 `base` 를 실제 주소로 채운다(Render 정적 파일 / S3 / 사내 서버 등). 채우면 앱이 자동 다운로드.
+1. **호스팅(창고 주소 `base`)**: 매니페스트에는 파일 16개·크기·SHA-256 이 이미 적혀 있고, **어디서 받을지(주소의 앞부분)** 만 비어 있다.
+   `base` + `/` + `path` 가 실제 다운로드 주소가 된다(`core/managers/model_manager.py`).
+
+   ```
+   base   https://huggingface.co/<계정>/<repo>/resolve/main
+   path   base/Qwen3-0.6B/model.safetensors
+   실제   https://huggingface.co/<계정>/<repo>/resolve/main/base/Qwen3-0.6B/model.safetensors
+   ```
+
+   | 창고(호스팅) | 준비 | 비용 | 비고 |
+   |---|---|---|---|
+   | 사내 서버·공유 폴더(SMB·USB) | 없음(이미 동작) | 0 | 외부망 불필요. `--from "\\서버\경로"` |
+   | Hugging Face Hub | repo 생성 + 업로드 | 0 | CDN·이어받기, LFS 지문 = SHA-256(매니페스트 그대로 검증). 비공개면 토큰 필요 |
+   | GitHub Releases | 태그 + 자산 업로드 | 0 | 파일당 2 GB 까지(1.5 GB 사프텐서 OK). 비공개면 토큰 |
+   | Cloudflare R2 / S3 | 버킷 | GB당 소액 | 운영용. R2 는 egress 무료 |
+   | Render | 유료 디스크 | — | **부적합**: 디스크가 휘발성 + git 에 2 GB 커밋 필요 |
+   | Supabase Storage | — | 유료 필요 | **부적합**: 무료 1 GB 총량·파일 크기 제한 |
+
+   참고: `base/Qwen3-0.6B/*`(1.5 GB)는 원래 허깅페이스에서 받은 파일이라 공개 모델이면 HF 주소를 그대로 쓸 수 있다.
+   `Qwen3-0.6B-Q8_0.gguf`(639 MB)는 이쪽에서 만든 변환본이라 **직접 올려야 한다**.
+   파일마다 다른 주소를 쓰고 싶으면 매니페스트에 파일별 `url` 을 지원하도록 확장한다.
 2. **런타임**: torch 유지 vs **GGUF(Q8_0, 639 MB)** 기반 — 모델 폴더에 gguf 가 이미 있으므로, 런타임만 정하면
    다운로드를 **2.18 GB → 0.64 GB** 로 줄일 수 있다(사프텐서 제외).
 3. **팩트체크 실행 방식**: 인프로세스(권장) / 자식 프로세스 / uvicorn 유지 — §4.
@@ -98,6 +118,19 @@ python app/launcher.py --models install --from "\\서버\배포\models\factcheck
 # 상태만
 python app/launcher.py --models
 ```
+
+### 저장 위치 — 설치 경로 안
+
+| 대상 | 기본 위치 | 바꾸는 방법 |
+|---|---|---|
+| 모델 파일(팩트체크 2.18 GB) | **`<설치 폴더>/models/`** (배포본은 exe 옆, 개발은 `article_editor/models/`) | `.env` 의 `MODELS_DIR` |
+| 매니페스트(읽기 전용, 앱에 동봉) | `_internal/models_manifest.json` | `MODELS_MANIFEST`(테스트용) |
+| 제목·부제 모델 캐시(허깅페이스) | **`<설치 폴더>/models/hf/`** | `.env` 의 `HF_HOME` / `HEADLINE_CACHE_DIR` |
+
+- 폴더째 복사하면 모델도 따라온다(포터블). `%LOCALAPPDATA%` 나 사용자 프로필(`.cache\huggingface`)에는 쓰지 않는다.
+- Program Files 처럼 쓰기 권한이 없는 곳에 두면 설치를 시작할 때 **2 GB 를 받기 전에** 안내하고 멈춘다(503):
+  "설치 폴더에 쓰기 권한이 없으면 관리자 권한으로 실행하거나 `.env` 에 `MODELS_DIR` 를 지정해 주세요."
+- 필요한 여유 공간: 모델 2.18 GB + 받는 중 임시 파일 1개분(`.part`).
 
 검증 기록: 로컬 폴더 설치 2/2 파일 설치됨 · 이어받기(`Range: bytes=N-` → 206) 확인 · 해시 불일치 시 파일 삭제 후 502 ·
 취소 시 `cancelled=true` · **배포 exe 에서 `--models` 동작(매니페스트 동봉 확인)**.

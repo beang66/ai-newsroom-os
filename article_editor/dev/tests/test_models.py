@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -20,6 +21,7 @@ if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
 
 from core import config  # noqa: E402
+from app_paths import env_lines  # noqa: E402
 from core.errors import RequestError  # noqa: E402
 from core.managers.model_manager import ModelManager  # noqa: E402
 
@@ -67,6 +69,25 @@ class Stub(BaseHTTPRequestHandler):
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+class PathDefaultsTests(unittest.TestCase):
+    """기본 저장 위치가 **설치 폴더 안**인지 확인한다(사용자 프로필로 새지 않게)."""
+
+    @staticmethod
+    def _configured(key):
+        """`.env` 에 직접 적어 둔 항목은 기본값 검사에서 제외한다."""
+        return any(line.strip().startswith(key + '=') for line in env_lines())
+
+    def test_models_and_cache_live_inside_install_folder(self):
+        self.assertEqual(config.MODELS_MANIFEST, config.BUNDLE / 'models_manifest.json')
+        self.assertTrue(config.MODELS_MANIFEST.is_file(), '매니페스트는 앱에 동봉된다')
+        if not (self._configured('MODELS_DIR') or os.environ.get('MODELS_DIR')):
+            self.assertEqual(config.MODELS_DIR, config.APP_ROOT / 'models')
+        if not (self._configured('HF_HOME') or self._configured('HEADLINE_CACHE_DIR')):
+            expected = str(config.MODELS_DIR / 'hf')
+            self.assertEqual(config.HF_HOME, expected)
+            self.assertEqual(config.HEADLINE_CACHE, expected)
 
 
 class ModelInstallTests(unittest.TestCase):
@@ -170,6 +191,16 @@ class ModelInstallTests(unittest.TestCase):
             ModelManager().install()
         self.assertEqual(caught.exception.status, 503)
         self.assertIn('--from', caught.exception.message)
+
+    def test_unwritable_models_dir_reports_clearly(self):
+        # 설치 폴더에 쓸 수 없을 때(예: Program Files) 2 GB 를 받기 전에 안내하고 멈춘다
+        blocker = self.root / 'blocker'
+        blocker.write_text('폴더가 아니라 파일', encoding='utf-8')
+        config.MODELS_DIR = blocker / 'models'
+        with self.assertRaises(RequestError) as caught:
+            ModelManager().install()
+        self.assertEqual(caught.exception.status, 503)
+        self.assertIn('MODELS_DIR', caught.exception.message)
 
     def test_cancel(self):
         Stub.delay = 0.02

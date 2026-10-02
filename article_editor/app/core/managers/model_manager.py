@@ -103,6 +103,23 @@ class ModelManager:
                 digest.update(block)
         return digest.hexdigest()
 
+    def _ensure_dir(self, path: Path) -> None:
+        """설치 폴더에 모델을 쓸 수 있는지 먼저 확인한다(2 GB 를 받기 전에 실패시키기 위해).
+
+        Program Files 처럼 쓰기 권한이 없는 곳에 설치한 경우를 안내한다.
+        """
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            probe = path / '.write-test'
+            probe.write_bytes(b'')
+            probe.unlink(missing_ok=True)
+        except OSError as error:
+            raise RequestError(
+                '모델을 저장할 수 없습니다: %s (%s). 설치 폴더에 쓰기 권한이 없으면 관리자 권한으로 실행하거나 '
+                '.env 에 MODELS_DIR 를 지정해 주세요.' % (path, error),
+                503,
+            ) from None
+
     @staticmethod
     def _local_root(source: str):
         """로컬/UNC 폴더면 Path, URL 이면 None."""
@@ -176,6 +193,7 @@ class ModelManager:
             raise RequestError(
                 '모델 원본 주소가 없습니다. 매니페스트의 base 를 채우거나 --from <폴더|URL> 로 지정하세요.', 503
             )
+        self._ensure_dir(self.target(item))  # 저장 가능한지 먼저 확인(쓰기 권한 없으면 즉시 503)
 
         with self._lock:
             if self._busy:
@@ -215,7 +233,7 @@ class ModelManager:
             )
 
         root = self.target(item)
-        root.mkdir(parents=True, exist_ok=True)
+        self._ensure_dir(root)
         local = self._local_root(base)
         if local is not None and not local.is_dir():
             raise RequestError('모델 원본 폴더를 찾지 못했습니다: ' + str(local), 404)

@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import FactCheckDrawer from "./FactCheckDrawer";
 import { 
   Sparkles, 
   Search, 
@@ -8,7 +9,7 @@ import {
   Bold, 
   Italic, 
   Quote, 
-  Wand2,
+  Wand2, 
   AlertTriangle,
   Eye,
   Edit3,
@@ -23,7 +24,8 @@ import {
   Share2,
   Bookmark,
   Heart,
-  MessageSquare
+  MessageSquare,
+  ShieldCheck
 } from "lucide-react";
 
 export default function ArticleWriter({ 
@@ -39,6 +41,9 @@ export default function ArticleWriter({
 }) {
   // 1. 화면 뷰 모드: 'editor' (에디터만) | 'split' (에디터+미리보기 나란히) | 'preview' (미리보기 전체)
   const [viewMode, setViewMode] = useState("editor");
+
+  // 팩트체크 & 근거자료 우측 슬라이더(Drawer) 열림 상태
+  const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(false);
 
   // 2. 미리보기 플랫폼 탭: 'donga' (동아일보 공식 웹) | 'naver' (네이버 뉴스 포털)
   const [previewPlatform, setPreviewPlatform] = useState("donga");
@@ -216,15 +221,19 @@ export default function ArticleWriter({
           </button>
 
           <button
-            onClick={onRunFactCheck}
+            onClick={() => {
+              setIsFactCheckDrawerOpen(true);
+              if (onRunFactCheck) onRunFactCheck();
+            }}
             className={`px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 ${
-              factCheckActive
-                ? "bg-amber-600 text-white shadow-xs"
+              factCheckActive || isFactCheckDrawerOpen
+                ? "bg-slate-900 text-white shadow-xs"
                 : "bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/80"
             }`}
+            title="취재파일 업로드 및 원문 근거자료 검증 슬라이더를 엽니다"
           >
-            <CheckCircle2 className={`w-4 h-4 ${factCheckActive ? "text-white" : "text-emerald-600"}`} />
-            <span>{factCheckActive ? "팩트체크 진행 중..." : "기사 팩트체크"}</span>
+            <ShieldCheck className={`w-4 h-4 ${factCheckActive || isFactCheckDrawerOpen ? "text-emerald-400" : "text-emerald-600"}`} />
+            <span>기사 팩트체크 & 근거자료</span>
           </button>
 
           <button
@@ -303,9 +312,19 @@ export default function ArticleWriter({
 
       </div>
 
-      {/* 팩트체크 진행 배너 */}
-      {factCheckActive && factCheckIssues.length > 0 && (
-        <div className="bg-amber-50/90 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3 animate-float-in">
+      {/* ──────────────────────────────────────────
+          2. 메인 작업 영역: [좌측 기사 작성/미리보기] + [우측 팩트체크 검증실] 나란히 배치
+         ────────────────────────────────────────── */}
+      <div className="flex items-start gap-6 w-full min-w-0">
+
+        {/* [좌측 메인 컬럼]: 기사 에디터 / 미리보기 */}
+        <div className="flex-1 min-w-0 space-y-5">
+
+          {/* 팩트체크 진행 배너 */}
+          {factCheckActive && factCheckIssues.length > 0 && (
+            <div className={`bg-amber-50/90 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3 animate-float-in ${
+              !isFactCheckDrawerOpen && viewMode === "editor" ? "w-full max-w-4xl mx-auto" : "w-full"
+            }`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm md:text-base">
               <AlertTriangle className="w-5 h-5 text-amber-600" />
@@ -356,9 +375,12 @@ export default function ArticleWriter({
 
         {/* ──────────────────
             [A] 기사 작성 에디터 캔버스 (viewMode가 'editor' 또는 'split'일 때 표시)
+            - 단독 에디터 모드일 때 실제 기사/문서 작성 CMS 스타일로 가운데 집중 배치(max-w-4xl mx-auto)
            ────────────────── */}
         {(viewMode === "editor" || viewMode === "split") && (
-          <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-6 md:p-8 space-y-6 shadow-xs relative min-h-[640px]">
+          <div className={`bg-white/95 rounded-3xl border border-slate-200/90 p-6 md:p-10 space-y-6 shadow-sm relative min-h-[640px] ${
+            !isFactCheckDrawerOpen && viewMode === "editor" ? "w-full max-w-4xl mx-auto" : "w-full"
+          }`}>
             
             {/* 기사 헤드라인 영역 */}
             <div 
@@ -507,7 +529,9 @@ export default function ArticleWriter({
             [B] 실시간 포털/신문 미리보기 캔버스 (viewMode가 'preview' 또는 'split'일 때 표시)
            ────────────────── */}
         {(viewMode === "preview" || viewMode === "split") && (
-          <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-5 md:p-8 space-y-5 shadow-xs">
+          <div className={`bg-white/95 rounded-3xl border border-slate-200/90 p-5 md:p-8 space-y-5 shadow-xs ${
+            viewMode === "preview" ? "w-full max-w-4xl mx-auto" : "w-full"
+          }`}>
             
             {/* 미리보기 상단 플랫폼 전환 탭 (동아일보 vs 네이버 뉴스) */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -647,6 +671,23 @@ export default function ArticleWriter({
           </div>
         )}
 
+          {/* grid 닫기 */}
+          </div>
+
+        {/* 좌측 컬럼 flex-1 닫기 */}
+        </div>
+
+        {/* [우측 컬럼]: 팩트체크 & 근거자료 검증 패널 (나란히 인라인 배치되어 절대 겹치지 않음) */}
+        {isFactCheckDrawerOpen && (
+          <FactCheckDrawer
+            isOpen={isFactCheckDrawerOpen}
+            onClose={() => setIsFactCheckDrawerOpen(false)}
+            article={article}
+            setArticle={setArticle}
+          />
+        )}
+
+      {/* 메인 flex 컨테이너 닫기 */}
       </div>
 
       {/* ──────────────────────────────────────────
@@ -874,6 +915,28 @@ export default function ArticleWriter({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────
+          우측 사이드 플로팅 슬라이더 토글 버튼
+          (패널이 닫혀 있을 때만 우측 가장자리에 표시)
+         ────────────────────────────────────────── */}
+      {!isFactCheckDrawerOpen && (
+        <div className="fixed right-0 top-1/2 -translate-y-1/2 z-40 animate-float-in">
+          <button
+            onClick={() => setIsFactCheckDrawerOpen(true)}
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs py-3.5 px-3 rounded-l-2xl shadow-xl border-y border-l border-slate-700 transition-all hover:pl-4 group cursor-pointer active:scale-95"
+            title="취재파일 업로드 및 원문 근거자료 검증 슬라이더 열기"
+          >
+            <div className="flex flex-col items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <ShieldCheck className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+              <span className="[writing-mode:vertical-rl] tracking-widest text-[11px] font-bold text-slate-200">
+                팩트체크 · 근거자료
+              </span>
+            </div>
+          </button>
         </div>
       )}
 

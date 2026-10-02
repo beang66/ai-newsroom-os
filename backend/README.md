@@ -53,6 +53,7 @@ AI_BACKEND_URL=https://<render 서비스 주소>
 | GET | `/ai/health` | (자체 응답) 준비 상태 |
 | POST | `/ai/responses` | `{OPENAI_BASE}/responses` |
 | POST | `/ai/images/generations` | `{OPENAI_BASE}/images/generations` |
+| POST | `/ai/audio/transcriptions` | `{OPENAI_BASE}/audio/transcriptions` (multipart 그대로) |
 | GET | `/unsplash/search/photos` | `{UNSPLASH_BASE}/search/photos` |
 | GET | `/unsplash/photos/<id>` | `{UNSPLASH_BASE}/photos/<id>` |
 | GET | `/unsplash/download/<...>` | `{UNSPLASH_BASE}/download/<...>` |

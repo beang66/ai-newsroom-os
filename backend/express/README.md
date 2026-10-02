@@ -39,6 +39,7 @@ app.use(createAiProxyRouter());   // ★ 반드시 app.use(express.json({ limit:
 | GET | `/ai/health` | 자체 응답(진단용) |
 | POST | `/ai/responses` | `{OPENAI_BASE}/responses` |
 | POST | `/ai/images/generations` | `{OPENAI_BASE}/images/generations` |
+| POST | `/ai/audio/transcriptions` | `{OPENAI_BASE}/audio/transcriptions` (multipart 그대로) |
 | GET | `/unsplash/search/photos` · `/unsplash/photos/<id>` · `/unsplash/download/<...>` | `{UNSPLASH_BASE}/...` |
 | GET | `/unsplash/absolute?url=` | 절대 URL(host가 `api.unsplash.com`일 때만) |
 

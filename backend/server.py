@@ -18,6 +18,7 @@
 앱 계약
     GET  /ai/health
     POST /ai/responses | /ai/images/generations      (본문·응답을 그대로 중계)
+    POST /ai/audio/transcriptions                    (녹음 전사, multipart 본문 그대로 중계)
     GET  /unsplash/search/photos | /unsplash/photos/<id> | /unsplash/download/<...> | /unsplash/absolute?url=
 
 무저장: 요청·응답 본문을 로그나 디스크에 남기지 않는다(경로·상태·사용자만).
@@ -38,7 +39,7 @@ UNSPLASH_BASE = (os.environ.get('UNSPLASH_BASE_URL') or 'https://api.unsplash.co
 SUPABASE_URL = (os.environ.get('SUPABASE_URL') or '').rstrip('/')
 SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
 AUTH_REQUIRED = os.environ.get('AUTH_REQUIRED', 'true').lower() != 'false'
-ALLOWED_AI = {'responses', 'images/generations'}
+ALLOWED_AI = {'responses', 'images/generations', 'audio/transcriptions'}
 RATE_LIMIT = int(os.environ.get('RATE_LIMIT_PER_MIN', '120'))
 TIMEOUT = 210
 
@@ -178,7 +179,8 @@ class Handler(BaseHTTPRequestHandler):
             OPENAI_BASE + '/' + sub,
             body,
             {
-                'Content-Type': 'application/json',
+                # 전사는 multipart 라 앱이 보낸 Content-Type(boundary 포함)을 그대로 넘긴다
+                'Content-Type': self.headers.get('Content-Type') or 'application/json',
                 'Authorization': 'Bearer ' + os.environ.get('OPENAI_API_KEY', ''),
             },
             method='POST',

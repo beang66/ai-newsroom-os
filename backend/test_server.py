@@ -46,6 +46,8 @@ class Stub(BaseHTTPRequestHandler):
         size = int(self.headers.get('Content-Length', '0'))
         raw = self.rfile.read(size) if size else b'{}'
         SEEN.append(('POST', self.path, self.headers.get('Authorization')))
+        if self.path.endswith('/audio/transcriptions'):  # multipart — 본문이 그대로 왔는지만 돌려준다
+            return self._send({'contentType': self.headers.get('Content-Type'), 'raw': raw.decode('latin-1')})
         self._send({'path': self.path, 'echo': json.loads(raw or b'{}')})
 
 
@@ -129,6 +131,16 @@ class ProxyTests(unittest.TestCase):
         method, path, authorization = SEEN[-1]
         self.assertEqual((method, path), ('POST', '/openai/v1/responses'))
         self.assertEqual(authorization, 'Bearer test-openai-key')
+
+    def test_transcription_forwards_multipart_as_is(self):
+        body = b'--b1\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n--b1--\r\n'
+        request = urllib.request.Request(self.base + '/ai/audio/transcriptions', data=body, headers={
+            'Authorization': 'Bearer good-token', 'Content-Type': 'multipart/form-data; boundary=b1'})
+        with urllib.request.urlopen(request) as response:
+            payload = json.load(response)
+        self.assertEqual(payload['contentType'], 'multipart/form-data; boundary=b1')
+        self.assertEqual(payload['raw'].encode('latin-1'), body)
+        self.assertEqual(SEEN[-1][1:], ('/openai/v1/audio/transcriptions', 'Bearer test-openai-key'))
 
     def test_unsplash_search_forwards(self):
         status, payload = self.call('/unsplash/search/photos?query=sea&per_page=3', token='good-token')

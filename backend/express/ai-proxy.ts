@@ -70,7 +70,7 @@ async function guard(req: Request, res: Response): Promise<string | null> {
 async function relay(
   res: Response,
   url: string,
-  init: { method: string; headers: Record<string, string>; body?: string },
+  init: { method: string; headers: Record<string, string>; body?: string | Buffer },
 ): Promise<void> {
   try {
     const upstream = await fetch(url, init);
@@ -109,6 +109,19 @@ export function createAiProxyRouter(): Router {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY || ""}`,
       },
       body: JSON.stringify(req.body ?? {}),
+    });
+  });
+
+  // 녹음 전사: multipart 본문을 파싱하지 않고 그대로 넘긴다(boundary 포함 Content-Type 유지)
+  router.post("/ai/audio/transcriptions", express.raw({ type: "multipart/form-data", limit: "40mb" }), async (req, res) => {
+    if (!(await guard(req, res))) return;
+    await relay(res, `${OPENAI_BASE}/audio/transcriptions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": req.headers["content-type"] || "multipart/form-data",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY || ""}`,
+      },
+      body: req.body as Buffer,
     });
   });
 

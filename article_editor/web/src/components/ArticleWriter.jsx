@@ -1,5 +1,7 @@
 import React, { useState, useRef } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
+// 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
+import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useAutosave } from "./EditorialAssist";
 import { 
   Sparkles, 
   Search, 
@@ -49,20 +51,11 @@ export default function ArticleWriter({
   const [previewPlatform, setPreviewPlatform] = useState("donga");
 
   // 3. 사진/미디어 관리 상태
-  const [photos, setPhotos] = useState(article.photos || [
-    {
-      id: "photo-1",
-      url: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80",
-      caption: "국내 연구진이 개발한 차세대 AI 반도체 NPU 웨이퍼 시제품",
-      source: "동아일보 DB",
-      provider: "김동아 기자",
-      ratio: "16:9 (동아일보 대표)"
-    }
-  ]);
+  const [photos, setPhotos] = useState(article.photos || []);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [newCaption, setNewCaption] = useState("");
   const [newSource, setNewSource] = useState("동아일보 DB");
-  const [newProvider, setNewProvider] = useState("김동아 기자");
+  const [newProvider, setNewProvider] = useState("");
   const [newRatio, setNewRatio] = useState("16:9");
 
   // 4. CMS 발행 이관 상태
@@ -80,6 +73,10 @@ export default function ArticleWriter({
 
   const editorRef = useRef(null);
   const photoInputRef = useRef(null);
+
+  const headlineSuggest = useSuggestions("headline", article);
+  const subtitleSuggest = useSuggestions("subtitle", article);
+  const saveStatus = useAutosave(article);
 
   // 텍스트 드래그 선택 서식 툴바
   const handleSelection = () => {
@@ -111,34 +108,14 @@ export default function ArticleWriter({
   };
 
   const handleRegenerateTitle = () => {
-    const titles = [
-      "AI 반도체 기술 대도약, 글로벌 시장 주도권 쟁탈전 개막",
-      "국내 연구진, 초거대 AI용 고성능 NPU 자체 개발 성공",
-      "GPU 한계 넘는다... 차세대 PIM·NPU 반도체 생태계 급부상"
-    ];
-    const randomTitle = titles[Math.floor(Math.random() * titles.length)];
-    setArticle((prev) => ({ ...prev, suggestedTitle: randomTitle, title: randomTitle }));
+    headlineSuggest.request(); // 코어 제목 추천 → 아래 후보 목록에서 고른다
     setIsTitleConfirmed(false);
   };
 
+  // ponytail: 초안 생성 AI 는 아직 코어 계약이 없다 — 연결 전까지 안내만 한다
   const handleGenerateDraft = () => {
-    setIsGenerating(true);
-    setTimeout(() => {
-      setArticle((prev) => ({
-        ...prev,
-        title: "AI 반도체 개척자들... 초거대 AI 시대의 차세대 주도권 경쟁",
-        suggestedTitle: "AI 반도체 개척자들... 초거대 AI 시대의 차세대 주도권 경쟁",
-        subtitle: "국내 주요 반도체 기업, NPU 및 PIM 기술로 글로벌 시장에 도전장",
-        content: `인공지능(AI) 기술의 급격한 발전에 따라 고성능·고효율 AI 반도체의 수요가 폭발적으로 증가하고 있다. 기존 GPU 중심의 연산 시스템은 높은 전력 소비와 발열 문제로 한계에 부딪히고 있으며, 이에 따라 NPU(신경망 처리장치)와 PIM(지능형 반도체)이 차세대 대안으로 주목받고 있다.
-
-국내 주요 기업과 연구진은 초거대 AI 모델 지원을 위한 고성능 AI 반도체를 자체 개발하여 글로벌 빅테크 기업들과 경쟁을 펼치고 있다. 이번 취재 결과, 국내 개발진은 데이터 병목 현상을 해결하고 전력 소비를 최대 70% 감소시키는 성과를 얻어냈다.
-
-전문가들은 "단순한 칩 제조를 넘어 인공지능 알고리즘과의 최적화 소프트웨어가 향후 반도체 패권의 승패를 결정지을 것"이라고 조언했다. 이에 따른 정부 차원의 집중 지원과 실증 사업 확대가 시급한 시점이다.`
-      }));
-      setIsGenerating(false);
-      setShowDraftModal(false);
-      setIsTitleConfirmed(false);
-    }, 1200);
+    alert("AI 초안 생성은 아직 코어에 연결되지 않았어요.");
+    setShowDraftModal(false);
   };
 
   const applyFormat = (formatType) => {
@@ -206,7 +183,7 @@ export default function ArticleWriter({
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={() => setShowDraftModal(true)}
-            className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-black text-xs md:text-sm transition shadow-xs flex items-center gap-2 cursor-pointer active:scale-95"
+            className="px-4.5 py-2.5 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full font-black text-xs md:text-sm transition shadow-xs flex items-center gap-2 cursor-pointer active:scale-95 border border-[#23211F]"
           >
             <Wand2 className="w-4 h-4 text-amber-300" />
             <span>AI 기사 초안 생성</span>
@@ -214,9 +191,9 @@ export default function ArticleWriter({
           
           <button
             onClick={onOpenSearch}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/80 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2"
+            className="px-4.5 py-2.5 bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95"
           >
-            <Search className="w-4 h-4 text-slate-600" />
+            <Search className="w-4 h-4 text-[#57514A]" />
             <span>취재자료 검색</span>
           </button>
 
@@ -225,12 +202,12 @@ export default function ArticleWriter({
               setIsFactCheckDrawerOpen(true);
               if (onRunFactCheck) onRunFactCheck();
             }}
-            className={`px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 ${
+            className={`px-4.5 py-2.5 rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95 ${
               factCheckActive || isFactCheckDrawerOpen
-                ? "bg-slate-900 text-white shadow-xs"
-                : "bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/80"
+                ? "bg-[#23211F] text-[#FAF8F5] border border-[#23211F] shadow-xs"
+                : "bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB]"
             }`}
-            title="취재파일 업로드 및 원문 근거자료 검증 슬라이더를 엽니다"
+            title="취재파일 업로드 및 원문 근거자료 검증 패널을 엽니다"
           >
             <ShieldCheck className={`w-4 h-4 ${factCheckActive || isFactCheckDrawerOpen ? "text-emerald-400" : "text-emerald-600"}`} />
             <span>기사 팩트체크 & 근거자료</span>
@@ -238,7 +215,7 @@ export default function ArticleWriter({
 
           <button
             onClick={() => setShowPhotoModal(true)}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/80 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2"
+            className="px-4.5 py-2.5 bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95"
           >
             <ImageIcon className="w-4 h-4 text-purple-600" />
             <span>사진·미디어 편집 ({photos.length})</span>
@@ -247,14 +224,15 @@ export default function ArticleWriter({
 
         {/* 우측: 뷰 모드 전환 및 [CMS 최종 발행] 버튼 */}
         <div className="flex items-center gap-3 flex-wrap">
-          {/* 뷰 모드 전환 탭 */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200/70 shadow-inner">
+          {saveStatus && <span className="text-[11px] font-bold text-slate-500" data-testid="save-status">{saveStatus}</span>}
+          {/* 뷰 모드 전환 탭 (레퍼런스 이미지 스타일 알약 캡슐) */}
+          <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-full border border-[#DDD6CB]/80 shadow-inner">
             <button
               onClick={() => setViewMode("editor")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
                 viewMode === "editor"
-                  ? "bg-white text-slate-950 shadow-2xs scale-[1.02]"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-[#23211F] shadow-2xs scale-[1.02]"
+                  : "text-[#6E6861] hover:text-[#23211F]"
               }`}
               title="기사 작성 에디터만 넓게 봅니다"
             >
@@ -264,10 +242,10 @@ export default function ArticleWriter({
 
             <button
               onClick={() => setViewMode("split")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
                 viewMode === "split"
-                  ? "bg-white text-slate-950 shadow-2xs scale-[1.02]"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-[#23211F] shadow-2xs scale-[1.02]"
+                  : "text-[#6E6861] hover:text-[#23211F]"
               }`}
               title="에디터와 실시간 포털 미리보기를 나란히 봅니다"
             >
@@ -277,10 +255,10 @@ export default function ArticleWriter({
 
             <button
               onClick={() => setViewMode("preview")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
                 viewMode === "preview"
-                  ? "bg-white text-slate-950 shadow-2xs scale-[1.02]"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-[#23211F] shadow-2xs scale-[1.02]"
+                  : "text-[#6E6861] hover:text-[#23211F]"
               }`}
               title="실시간 최종 포털/신문 뷰만 집중해서 봅니다"
             >
@@ -293,7 +271,7 @@ export default function ArticleWriter({
           <button
             onClick={handleCmsExport}
             disabled={isCmsExporting}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs md:text-sm rounded-xl transition shadow-sm cursor-pointer flex items-center gap-2 active:scale-95"
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs md:text-sm rounded-full transition shadow-sm cursor-pointer flex items-center gap-2 active:scale-95"
             title="현재 기사를 CMS(신문/포털 송고 시스템)로 최종 발행합니다"
           >
             {isCmsExporting ? (
@@ -351,13 +329,13 @@ export default function ArticleWriter({
           <div className="flex items-center justify-end gap-2 pt-1">
             <button
               onClick={onSkipFactFix}
-              className="px-4 py-1.5 text-xs font-bold bg-slate-200/80 hover:bg-slate-300 text-slate-700 rounded-xl transition cursor-pointer"
+              className="px-4 py-1.5 text-xs font-bold bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full border border-[#DDD6CB] transition cursor-pointer"
             >
               건너뛰기
             </button>
             <button
               onClick={onApplyFactFix}
-              className="px-4 py-1.5 text-xs font-extrabold bg-slate-900 hover:bg-slate-800 text-white rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1"
+              className="px-4 py-1.5 text-xs font-extrabold bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full transition shadow-xs cursor-pointer flex items-center gap-1 border border-[#23211F]"
             >
               <Check className="w-3.5 h-3.5" />
               수정 적용
@@ -412,11 +390,11 @@ export default function ArticleWriter({
                 />
 
                 {(isTitleHovered || !isTitleConfirmed) && (
-                  <div className="absolute right-2 bottom-3 flex items-center gap-1.5 bg-white/95 p-1 rounded-xl shadow-md border border-slate-200 animate-float-in">
+                  <div className="absolute right-2 bottom-3 flex items-center gap-1.5 bg-white/95 p-1 rounded-full shadow-md border border-[#DDD6CB] animate-float-in">
                     {!isTitleConfirmed && (
                       <button
                         onClick={handleTitleConfirm}
-                        className="text-xs px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-900 font-bold rounded-lg border border-slate-200 shadow-2xs transition cursor-pointer flex items-center gap-1"
+                        className="text-xs px-3 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] font-bold rounded-full border border-[#DDD6CB] shadow-2xs transition cursor-pointer flex items-center gap-1"
                       >
                         <Check className="w-3 h-3 text-emerald-600" />
                         확정
@@ -424,9 +402,9 @@ export default function ArticleWriter({
                     )}
                     <button
                       onClick={handleRegenerateTitle}
-                      className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition cursor-pointer flex items-center gap-1"
+                      className="text-xs px-3 py-1 bg-white hover:bg-[#F5F2ED] text-[#23211F] font-bold rounded-full border border-[#DDD6CB] transition cursor-pointer flex items-center gap-1"
                     >
-                      <RotateCcw className="w-3 h-3 text-slate-500" />
+                      <RotateCcw className="w-3 h-3 text-[#6E6861]" />
                       다시 생성
                     </button>
                   </div>
@@ -434,15 +412,35 @@ export default function ArticleWriter({
               </div>
             </div>
 
+            <SuggestionList
+              state={headlineSuggest}
+              label="제목"
+              onPick={(value) => {
+                setArticle((prev) => ({ ...prev, title: value, suggestedTitle: value }));
+                headlineSuggest.clear();
+              }}
+            />
+
             {/* 부제 영역 */}
             <div className="space-y-1">
-              <label className="text-xs text-slate-400 font-semibold">부제 (부제목)</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-slate-400 font-semibold">부제 (부제목)</label>
+                <SuggestButton onClick={subtitleSuggest.request} busy={subtitleSuggest.busy} title="본문과 제목에 맞는 부제를 추천받습니다" />
+              </div>
               <input
                 type="text"
                 value={article.subtitle}
                 onChange={(e) => setArticle({ ...article, subtitle: e.target.value })}
                 placeholder="기사 부제를 입력하세요"
                 className="w-full text-sm md:text-base font-bold text-slate-700 border-b border-slate-200 pb-2 outline-none focus:border-slate-800 bg-transparent transition-colors"
+              />
+              <SuggestionList
+                state={subtitleSuggest}
+                label="부제"
+                onPick={(value) => {
+                  setArticle((prev) => ({ ...prev, subtitle: value }));
+                  subtitleSuggest.clear();
+                }}
               />
             </div>
 
@@ -485,7 +483,10 @@ export default function ArticleWriter({
             <div className="relative pt-1" ref={editorRef} onMouseUp={handleSelection}>
               <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-2">
                 <span>본문 작성 영역 (자유 작성 및 서식 적용)</span>
-                <span>공백 포함 {article.content.length.toLocaleString()}자</span>
+                <span className="flex items-center gap-2">
+                  <FlowSummaryButton body={article.content} />
+                  공백 포함 {article.content.length.toLocaleString()}자
+                </span>
               </div>
 
               {/* 드래그 플로팅 툴바 */}
@@ -595,9 +596,9 @@ export default function ArticleWriter({
                   {/* 바이라인 & 작성일자 */}
                   <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-100 pb-3">
                     <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-slate-800">김동아 기자</span>
+                      <span className="font-extrabold text-slate-800">기자</span>
                       <span>|</span>
-                      <span>입력 2026-10-02 17:00</span>
+                      <span>입력 {article.createdAt}</span>
                     </div>
                     <div className="flex items-center gap-3">
                       <Bookmark className="w-3.5 h-3.5 text-slate-400" />
@@ -709,6 +710,15 @@ export default function ArticleWriter({
               </button>
             </div>
 
+            <PhotoFinder
+              body={article.content}
+              onPick={(photo) => {
+                const updated = [photo, ...photos];
+                setPhotos(updated);
+                setArticle((prev) => ({ ...prev, photos: updated }));
+              }}
+            />
+
             {/* 새 사진 업로드 폼 */}
             <div className="space-y-3.5 text-xs">
               <div>
@@ -739,7 +749,7 @@ export default function ArticleWriter({
                     type="text"
                     value={newProvider}
                     onChange={(e) => setNewProvider(e.target.value)}
-                    placeholder="김동아 기자"
+                    placeholder="기자 이름"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:bg-white"
                   />
                 </div>
@@ -864,7 +874,8 @@ export default function ArticleWriter({
               <div className="space-y-2">
                 <label className="font-bold text-slate-800 block">연결할 취재자료 선택</label>
                 <div className="space-y-2 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
-                  {["2026 차세대 반도체 산업 동향 보고서", "김성민 박사 인터뷰 전사본", "전력망 확충 회의록"].map((src, idx) => (
+                  {!article.linkedSources.length && <span className="text-slate-400">연결된 취재자료가 없어요.</span>}
+                  {article.linkedSources.map((src, idx) => (
                     <label key={idx} className="flex items-center gap-2.5 text-slate-800 text-xs cursor-pointer">
                       <input 
                         type="checkbox" 
@@ -892,14 +903,14 @@ export default function ArticleWriter({
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
               <button
                 onClick={() => setShowDraftModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
+                className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] text-xs font-bold rounded-full transition cursor-pointer"
               >
                 취소
               </button>
               <button
                 onClick={handleGenerateDraft}
                 disabled={isGenerating}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition shadow-xs cursor-pointer flex items-center gap-2"
+                className="px-5 py-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] text-xs font-bold rounded-full transition shadow-xs cursor-pointer flex items-center gap-2 border border-[#23211F]"
               >
                 {isGenerating ? (
                   <>
@@ -926,7 +937,7 @@ export default function ArticleWriter({
         <div className="fixed right-0 top-1/2 -translate-y-1/2 z-40 animate-float-in">
           <button
             onClick={() => setIsFactCheckDrawerOpen(true)}
-            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs py-3.5 px-3 rounded-l-2xl shadow-xl border-y border-l border-slate-700 transition-all hover:pl-4 group cursor-pointer active:scale-95"
+            className="flex items-center gap-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs py-3.5 px-3 rounded-l-2xl shadow-xl border-y border-l border-[#38332E] transition-all hover:pl-4 group cursor-pointer active:scale-95"
             title="취재파일 업로드 및 원문 근거자료 검증 슬라이더 열기"
           >
             <div className="flex flex-col items-center gap-2">

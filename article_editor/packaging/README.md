@@ -77,9 +77,10 @@ dist\AINewsroom\
 
 ## 로컬 AI 모델(선택)
 
-배포본에는 `torch`/`transformers`가 없습니다. `USE_LOCAL_MODELS=true` 로 두면 제목·부제 추천이
-"로컬 모델 패키지가 없습니다" 안내(503)로 돌아갑니다. 로컬 모델을 쓰려면 배포 환경에
-`requirements-headline.txt`를 설치하고 `HEADLINE_CACHE_DIR`(모델 캐시 경로)을 지정하세요.
+제목·부제 로컬 모델은 ONNX 변환본(`headline-ket5-onnx`, `subtitle-kobart-onnx`, 매니페스트로 설치)을
+`onnxruntime`+`tokenizers`로 돌립니다(2026-10-02부터 torch/transformers 불필요). 현재 spec 은
+`tokenizers`·`numpy`를 제외하므로 배포본에서 `USE_LOCAL_MODELS=true` 면 "로컬 모델이 설치되지 않았어요" 안내(503)가 납니다.
+로컬 모델을 쓰려면 `requirements-headline.txt`를 넣고 모델을 설치하세요.
 기본 구성은 원격 AI(`OPENAI_API_KEY`)입니다.
 
 ### 모델은 첫 사용 때 내려받습니다 (설계 B, `docs/LOCAL_MODELS.md`)
@@ -106,7 +107,7 @@ npm --prefix web run build    # → app/frontend/ (index.html + assets/*, 코어
 ```
 
 - 창 없이 개발: `npm --prefix web run dev` (Vite 5173, `/api` 는 로컬 코어 8765 로 프록시)
-- 옛 vanilla 프론트는 `app/frontend-legacy/`(gitignore)에 비교용으로만 남겨 둡니다.
+- 옛 vanilla 프론트(`app/frontend-legacy/`)는 2026-10-02 삭제했습니다. 필요하면 git `a5e9c94` 의 `app/frontend/` 에서 복원합니다.
 - 경계 검사는 `article_editor` 에서 `npm test` (대상: `web/src`, `web/src/api/` 예외)
 
 ## 검증 기록 (2026-10-02, Windows · PyInstaller 6.22.3)

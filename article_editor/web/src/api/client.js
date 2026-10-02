@@ -1,6 +1,6 @@
 // HTTP 전송 구현 — 실제 요청/응답을 다루는 유일한 파일.
 //
-// 호출 흐름: UI → frontend/src/api/index.js(전환 스위치) → http.js → 이 파일 → 코어
+// 호출 흐름: UI → web/src/api/index.js(전환 스위치) → http.js → 이 파일 → 코어
 // 계약(어떤 라우트가 있는지)은 core-api.js 에 있고, 이 파일은 경로를 해석하지 않는다.
 // UI 코드는 이 모듈을 직접 import 하지 말고 createAppApi()(index.js)를 쓴다.
 // (경계 검사: scripts/check-api-boundary.mjs)

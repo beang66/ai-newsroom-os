@@ -76,7 +76,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
                   active
                     ? isCollapsed
                       ? "bg-white text-slate-900 shadow-md border border-slate-200/80 scale-105"
-                      : "bg-[#18181B] text-white shadow-md shadow-slate-900/10"
+                      : "bg-[#23211F] text-white shadow-md shadow-slate-900/10"
                     : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
                 }`}
               >
@@ -140,7 +140,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
                 activeTab === "archive"
                   ? isCollapsed
                     ? "bg-white text-slate-900 shadow-md border border-slate-200/80 scale-105"
-                    : "bg-[#18181B] text-white shadow-md shadow-slate-900/10"
+                    : "bg-[#23211F] text-white shadow-md shadow-slate-900/10"
                   : !isCollapsed
                     ? "bg-white/80 text-slate-700 hover:bg-white hover:text-slate-900 shadow-sm border border-slate-200/60"
                     : "text-slate-600 hover:text-slate-900 hover:bg-white/60"

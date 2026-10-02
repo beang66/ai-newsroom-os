@@ -11,7 +11,6 @@ article_editor/
     src/api/           코어 계약(이식 완료) — UI는 여기만 거친다
     src/components/    화면(ArticleWriter·InterviewStudio·FormatConverter …)
   app/frontend/        **빌드 산출물**(npm run build 결과) ← 코어가 서빙, PyInstaller 동봉
-  app/frontend-legacy/ 옛 vanilla 프론트(비교용, gitignore)
   app/core/api.py      / · /assets/* · /favicon · /icons 정적 서빙
 ```
 
@@ -30,14 +29,17 @@ article_editor/
 
 ## 남은 일 (우선순위)
 
-1. **목업 → 코어 연결**(가장 큰 작업): `src/data/mockData.js` 를 걷어내고 계약으로 교체
+1. **목업 → 코어 연결**(가장 큰 작업): `mockData.js` 는 삭제(2026-10-02, 빈 상태 시작). 남은 화면을 계약으로 교체
    - 기사 저장/불러오기(`saveArticle`), 제목·부제(`assist` metadata), 요약(`assist` flow),
      사진 검색·선택(`searchPhotos`·`photoBytes`), 팩트체크(`factcheckRun`), 녹취 저장(`storage` 경로 추가 필요)
    - 코어에 없는 기능은 계약에 **추가**한다(예: `/api/interviews/*`, `/api/platform/convert`)
-2. **녹취(STT) 정리**: `src/utils/transcribe.js` 가 브라우저에서 외부 Whisper 를 직접 호출(키 노출·CORS).
-   → ① `@xenova/transformers` 는 package.json 에 없어 현재 동작 불가(의존성 추가 필요)
-   → ② 클라우드 경로는 **백엔드 프록시**(`/ai/audio/transcriptions`)로 이전하는 것을 권장
+2. ~~녹취(STT) 정리~~ — 완료(2026-10-02): `transcribe.js` 를 지우고 코어 `POST /api/interview/transcribe`
+   (`core/ai/transcribe.py`, Whisper `whisper-1`)로 옮김. 외부 호출은 providers 경로(local=.env 키 / remote=백엔드
+   `/ai/audio/transcriptions`, multipart 그대로 중계). 문장 합치기·화자 교대 규칙도 코어로 이식.
+   남은 것: 화자 분리(diarization) 없음(질문·침묵 기준 교대), 25MB 초과 파일 분할, 로컬 STT(비용 절감) 검토
 3. **웹폰트 로컬 번들**: Pretendard/Inter 를 `web/public` 또는 `assets` 로 넣어 CDN 없이 동일한 타이포 확보
 4. **React 테스트 도입**: 레거시 `component.mjs`/`browser.mjs` 를 대체할 스모크(Vitest+Testing Library 등)
+   - 2026-10-02: 화면 스모크 추가 — `npm run build:web && npm run test:ui` (dev/tests/ui-smoke.mjs, 실제 코어 + Edge). 코어 연결 표시·작성·팩트체크 서랍·자료 검색·플랫폼 변환·보관함·녹취 스튜디오·모바일 폭, 콘솔/페이지 오류·/api 5xx 없음. 컴포넌트 단위(Vitest) 테스트는 아직
+   - 2026-10-02: 옛 시험용 UI(기능 담당자 제작)의 코어 기능을 새 UI 에 연결 — 제목 "다시 생성"·부제 "AI 추천"(assist metadata), 사진 창의 Unsplash 찾기(photo_keywords·검색·원본 가져오기), 본문 "흐름 요약"(assist flow), 자동 저장(articles/save, 1.5초). 로직은 `web/src/api/editorial.js`·`web/src/components/EditorialAssist.jsx`, ArticleWriter 는 배치만. 화면 테스트는 가짜 백엔드(AI_BACKEND=remote)로 기능까지 검사
 5. **alert() 정리**: 화면 내 토스트/모달로 교체(창 모드에서 alert 은 흐름을 막는다)
-6. 레거시 자산 정리: `app/frontend-legacy/` 는 비교가 끝나면 제거(현재 gitignore)
+6. ~~레거시 자산 정리~~ — 2026-10-02 완료: `app/frontend-legacy/` 와 레거시 UI 테스트(component·geometry·browser·drag-responsive) 삭제. 복원은 git `a5e9c94`

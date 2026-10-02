@@ -29,7 +29,6 @@ MODEL_PATH = EMBEDDING_DIR
 CACHE_PATH = RUNTIME_DIR / "qwen3_embedding_vectors.sqlite3"
 
 DEFAULT_K = 10
-EXPANDED_K = 50
 MAX_K = 150
 
 
@@ -240,7 +239,10 @@ def rank_chunks(
     limit: int = DEFAULT_K,
     cache: VectorCache | None = None,
 ) -> list[dict]:
-    """Exact cosine ranking over the caller-provided chunk scope."""
+    """Rank the caller-provided chunk scope.
+
+    기본: DenseFly x2 + BM25 RRF (fusion.py, 버섯체 연구 최적안). FACTCHECK_RETRIEVAL=exact 면 Qwen 코사인만.
+    retrieval_score 는 두 방식 모두 Qwen 코사인(판정 단계 호환용)이다."""
 
     if not chunks:
         return []
@@ -252,9 +254,16 @@ def rank_chunks(
     query_vector = cache.encode([query], "query")[0]
 
     scores = corpus_vectors @ query_vector
-    order = np.lexsort(
-        (np.arange(len(chunks), dtype=np.int32), -scores)
-    )
+    engine = "qwen3-embedding-0.6b-exact"
+    if os.getenv("FACTCHECK_RETRIEVAL", "densefly-bm25-rrf") == "exact":
+        order = np.lexsort(
+            (np.arange(len(chunks), dtype=np.int32), -scores)
+        )
+    else:
+        from .fusion import LIST_K, fused_order
+        fused = fused_order(texts, corpus_vectors, query, query_vector, k=max(limit, LIST_K))
+        order = np.asarray(fused, dtype=np.int64)
+        engine = "qwen3-embedding-0.6b-densefly2-bm25-rrf"
 
     ranked = []
     for rank, idx in enumerate(order[:limit], 1):
@@ -264,23 +273,8 @@ def rank_chunks(
                 **chunks[idx],
                 "retrieval_rank": rank,
                 "retrieval_score": float(scores[idx]),
-                "retrieval_engine": "qwen3-embedding-0.6b-exact",
+                "retrieval_engine": engine,
             }
         )
     return ranked
 
-
-def capabilities() -> dict:
-    cache = get_vector_cache()
-    return {
-        "model": MODEL,
-        "revision": REVISION,
-        "model_path": str(cache.encoder.path),
-        "available": cache.encoder.available(),
-        "dimension": 1024,
-        "default_k": DEFAULT_K,
-        "expanded_k": EXPANDED_K,
-        "max_k": MAX_K,
-        "cache_path": str(CACHE_PATH),
-        "runtime_downloads": False,
-    }

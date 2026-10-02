@@ -6,7 +6,7 @@ JS가 WebView2(Chromium) 안에서 실행되고, 코어와의 통신도 기존 H
 
 설계 근거
 - APP_CORE_ARCHITECTURE.md §3: "Desktop Shell은 React를 유지할 수 있는 구조"
-- ARCHITECTURE.md: frontend/src/api/client.js 단일 경계 (IPC 교체 지점)
+- ARCHITECTURE.md: web/src/api/client.js 단일 경계 (IPC 교체 지점)
 
 주의: WebView2 사용자 데이터 폴더를 지정하지 않으면(private_mode=True 기본값)
 프론트의 IndexedDB 임시 저장이 재시작 때 사라진다. storage_dir() 를 반드시 넘긴다.

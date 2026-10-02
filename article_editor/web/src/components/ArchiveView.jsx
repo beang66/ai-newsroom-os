@@ -9,13 +9,13 @@ import {
   History, 
   FolderOpen
 } from "lucide-react";
-import { initialArticles, mockSources, mockInterviews } from "../data/mockData";
-
-export default function ArchiveView() {
-  const [selectedArticle, setSelectedArticle] = useState(initialArticles[0]);
+// ponytail: 코어에 원고 목록 API 가 아직 없다 — 지금 쓰는 기사 하나만 보인다. 목록 API 생기면 여기서 불러온다
+export default function ArchiveView({ article }) {
+  const articles = [article];
+  const [selectedArticle, setSelectedArticle] = useState(article);
   const [selectedTab, setSelectedTab] = useState("all"); // all | draft | published
 
-  const filteredArticles = initialArticles.filter((art) => {
+  const filteredArticles = articles.filter((art) => {
     if (selectedTab === "draft") return art.status === "작성 중";
     if (selectedTab === "published") return art.status === "발행본";
     return true;
@@ -89,7 +89,7 @@ export default function ArchiveView() {
                   <span className="text-slate-400">{art.updatedAt}</span>
                 </div>
 
-                <h4 className="text-sm font-extrabold text-slate-900 line-clamp-1">{art.title}</h4>
+                <h4 className="text-sm font-extrabold text-slate-900 line-clamp-1">{art.title || "(제목 없음)"}</h4>
                 <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">{art.subtitle}</p>
 
                 <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100 text-[11px] text-slate-400 font-semibold">
@@ -111,7 +111,7 @@ export default function ArchiveView() {
               </span>
               <span className="text-xs text-slate-400 font-semibold">ID: {selectedArticle.id}</span>
             </div>
-            <h3 className="text-xl font-extrabold text-slate-900">{selectedArticle.title}</h3>
+            <h3 className="text-xl font-extrabold text-slate-900">{selectedArticle.title || "(제목 없음)"}</h3>
             <p className="text-xs text-slate-600 font-bold">{selectedArticle.subtitle}</p>
           </div>
 
@@ -143,14 +143,9 @@ export default function ArchiveView() {
                     <span className="font-bold text-slate-900">취재자료 ({selectedArticle.linkedSources.length}건)</span>
                     <span className="text-[10px] bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded font-bold">공식 출처</span>
                   </div>
-                  {selectedArticle.linkedSources.map((srcId) => {
-                    const src = mockSources.find((s) => s.id === srcId);
-                    return src ? (
-                      <div key={src.id} className="text-slate-700 font-semibold">
-                        • [{src.category}] {src.title}
-                      </div>
-                    ) : null;
-                  })}
+                  {selectedArticle.linkedSources.map((srcId) => (
+                    <div key={srcId} className="text-slate-700 font-semibold">• {srcId}</div>
+                  ))}
                 </div>
               </div>
 
@@ -162,9 +157,7 @@ export default function ArchiveView() {
                     <span className="font-bold text-slate-900">인터뷰·녹취 전사본</span>
                     <span className="text-[10px] bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded font-bold">확인·수정본</span>
                   </div>
-                  {mockInterviews[0] && (
-                    <p className="text-slate-700 font-semibold">• {mockInterviews[0].title} ({mockInterviews[0].audioDuration})</p>
-                  )}
+                  {!selectedArticle.linkedInterviews.length && <p className="text-slate-400">연결된 녹취가 없어요.</p>}
                 </div>
               </div>
 
@@ -192,7 +185,7 @@ export default function ArchiveView() {
                     <span className="font-bold text-slate-900">편집·변환본 (카드뉴스 / 숏폼)</span>
                     <span className="text-[10px] bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded font-bold">자동 변환</span>
                   </div>
-                  <p className="text-slate-700">• 카드뉴스 3장 생성 완료 및 숏폼 스크립트 작성됨</p>
+                  <p className="text-slate-700">• 변환본 {selectedArticle.cardNews?.length || 0}건</p>
                 </div>
               </div>
 
@@ -204,7 +197,7 @@ export default function ArchiveView() {
                     <span className="font-bold text-slate-900">발행 이력 및 타임라인</span>
                     <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">히스토리</span>
                   </div>
-                  <p className="text-slate-600">• 2026-10-01 14:30 AI 초안 생성 -&gt; 16:20 팩트체크 검증 완료</p>
+                  <p className="text-slate-600">• {selectedArticle.createdAt} 작성 시작 · {selectedArticle.status}</p>
                 </div>
               </div>
             </div>

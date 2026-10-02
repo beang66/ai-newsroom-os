@@ -4,6 +4,8 @@ import re
 from difflib import SequenceMatcher
 from dataclasses import dataclass
 
+from .semantic_chunker_v3 import clean as _clean
+
 DIRECT_CONFLICT = "DIRECT_CONFLICT"
 ATTRIBUTED_OPPOSITION = "ATTRIBUTED_OPPOSITION"
 NO_CONFLICT = "NO_CONFLICT"
@@ -28,8 +30,6 @@ class AssertionRelation:
     reason: str = ""
 
 
-def _clean(text: str) -> str:
-    return re.sub(r"\s+", " ", text or "").strip()
 
 VALUE_RE = re.compile(
     r"\d{4}\s*년\s*\d{1,2}\s*월(?:\s*\d{1,2}\s*일)?|"

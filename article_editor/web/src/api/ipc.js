@@ -5,7 +5,7 @@
 //   bridge.core(path, payload)  -> JSON 결과 (없으면 예외/에러객체)
 //   bridge.coreBytes(path)      -> 이미지 바이트의 base64 문자열
 //
-// 전환 방법: frontend/src/api/index.js 의 mode 를 "ipc" 로 바꾸는 것만으로 끝난다.
+// 전환 방법: web/src/api/index.js 의 mode 를 "ipc" 로 바꾸는 것만으로 끝난다.
 import { createCoreApi } from "./core-api.js";
 
 export function createIpcCoreApi(bridge) {

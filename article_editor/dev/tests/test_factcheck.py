@@ -5,6 +5,7 @@
 """
 import json
 import unittest
+from pathlib import Path
 
 from test_server import ApiTestCase
 
@@ -63,3 +64,29 @@ class FactcheckModelTests(ApiTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FusionParityTests(unittest.TestCase):
+    """fusion.py 가 버섯체 연구 benchmark_densefly_bm25_fusion_v1.py(RRF_equal) 순위를 그대로 재현하는지."""
+    RESEARCH = Path(r'C:\ai-newsroom-os\archive-os.v2\research')
+
+    def test_reproduces_research_ranks(self):
+        q = self.RESEARCH / 'colab/Qwen3_Embedding_Fixed150_v1'
+        active = self.RESEARCH / 'mushroom-retrieval/active'
+        expected = active / 'artifacts/densefly-bm25-fusion-v1-20261002/results.json'
+        if not expected.is_file():
+            self.skipTest('버섯체 연구 산출물이 없는 PC')
+        import numpy as np
+        from core.ai.factcheck.fusion import fused_order
+        rows = lambda p: [json.loads(x) for x in p.read_text(encoding='utf-8').splitlines() if x.strip()]
+        texts = [r['text'] for r in rows(q / 'data/corpus_10k.jsonl')]
+        stress = rows(active / 'paraphrase_stress_v2.jsonl')
+        docs = np.load(q / 'outputs/corpus_embeddings_qwen3_0.6b_1024.npy').astype(np.float32)
+        queries = np.load(active / 'artifacts/densefly-ensemble-pareto-local-v1-20261002/stress_v2_qwen_embeddings.npy').astype(np.float32)
+        ranks = []
+        for row, qv in zip(stress, queries):
+            order = fused_order(texts, docs, row['stress_query'], qv)
+            gold = int(row['gold_chunk_id'])
+            ranks.append(order.index(gold) + 1 if gold in order else 10001)
+        want = json.loads(expected.read_text(encoding='utf-8'))['RRF_equal']['stress']['ranks']
+        self.assertEqual(ranks, want)

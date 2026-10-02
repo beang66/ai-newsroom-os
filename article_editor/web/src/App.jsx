@@ -5,16 +5,15 @@ import Sidebar from "./components/Sidebar";
 import ArticleWriter from "./components/ArticleWriter";
 import SourceSearch from "./components/SourceSearch";
 import InterviewStudio from "./components/interview/InterviewStudio";
-import PublishPrep from "./components/PublishPrep";
 import FormatConverter from "./components/FormatConverter";
 import ArchiveView from "./components/ArchiveView";
 
-import { initialArticles, mockFactCheckIssues } from "./data/mockData";
+import { createEmptyArticle } from "./data/article";
 import { coreSnapshot } from "./api/core";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("writer");
-  const [article, setArticle] = useState(initialArticles[0]);
+  const [article, setArticle] = useState(createEmptyArticle);
 
   // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
   const [core, setCore] = useState({ ok: false });
@@ -33,7 +32,7 @@ export default function App() {
 
   // Fact check sequential state
   const [factCheckActive, setFactCheckActive] = useState(false);
-  const [factCheckIssues, setFactCheckIssues] = useState(mockFactCheckIssues);
+  const [factCheckIssues, setFactCheckIssues] = useState([]);
   const [activeFactIndex, setActiveFactIndex] = useState(0);
 
   // Quick Source Search Modal inside Article Writer
@@ -166,11 +165,11 @@ export default function App() {
             )}
 
             {activeTab === "convert" && (
-              <FormatConverter />
+              <FormatConverter article={article} />
             )}
 
             {activeTab === "archive" && (
-              <ArchiveView />
+              <ArchiveView article={article} />
             )}
           </main>
         </div>

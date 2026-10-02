@@ -3,16 +3,11 @@ from __future__ import annotations
 import json
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
 
 _LOCK = threading.Lock()
 from .paths import RUNTIME_DIR
 _LOG_DIR = RUNTIME_DIR
 _LOG_PATH = _LOG_DIR / "factcheck_routing_events.jsonl"
-
-
-def log_path() -> Path:
-    return _LOG_PATH
 
 
 def _excerpt(text: str | None, limit: int = 1600) -> str:

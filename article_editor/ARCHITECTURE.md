@@ -28,7 +28,7 @@ article_editor/                ← 프로젝트 루트 (데이터·설정·문�
 │           ├─ ipc.js          IPC transport (pywebview bridge; not wired yet)
 │           └─ client.js       fetch 구현 (error / cancel / blob)
 ├─ dev/                        ← 개발용 (앱 실행에는 불필요)
-│   ├─ tests/                  회귀 테스트 (test_server.py · geometry · component · browser · fixtures)
+│   ├─ tests/                  회귀 테스트 (test_server.py · test_factcheck.py · test_local_models_onnx.py · ui-smoke.mjs · fixtures)
 │   ├─ checks/check-api-boundary.mjs
 │   └─ spikes/ipc_transport/   일회성 측정 도구 (IPC/무포트 전환)
 ├─ packaging/                  exe 빌드 (AINewsroom.spec · build_windows.bat · README)
@@ -42,7 +42,7 @@ article_editor/                ← 프로젝트 루트 (데이터·설정·문�
 
 - **실행 코드는 `app/` 안에만 둔다.** 데이터·설정(`.env`, `.article-workspace/`)·문서·도구는 루트에 둔다.
 - The **frontend never imports core code**. It only calls the core over HTTP,
-  through `app/frontend/src/api/` — `createAppApi()` (see `app/frontend/src/api/README.md`).
+  through `web/src/api/` — `createAppApi()` (see `web/src/api/README.md`).
 - UI code must not bypass that boundary: no `fetch(`, no `"/api/…"` literals,
   no `<img src="/api/…">`. Enforced by `npm run check:api-boundary`.
 - The **core never imports frontend code**. It only serves `app/frontend/` read-only.
@@ -51,10 +51,11 @@ article_editor/                ← 프로젝트 루트 (데이터·설정·문�
   `GET /api/unsplash/search`, `GET /api/unsplash/photo/:id[/track]`.
   `GET /api/factcheck/status`, `POST /api/factcheck/run`, `POST /api/semantic/parse`
   (factcheck.status / factcheck.run / semantic.parse — 구현: `app/core/ai/factcheck/`, 의존성: `requirements-factcheck.txt`).
+  `POST /api/interview/transcribe` (interview.transcribe — 녹음 → 화자별 대화. 구현: `app/core/ai/transcribe.py`, 외부 호출은 providers 경로 = 백엔드 `/ai/audio/transcriptions`).
   Internal module layout can change freely; these contracts stay.
 - **Local transport is a detail.** Development uses HTTP (works in a browser too);
   the release build switches the same contract to the pywebview IPC bridge by changing
-  `app/frontend/src/api/index.js` only. Plan and risks: `docs/IPC_MIGRATION.md`.
+  `web/src/api/index.js` only. Plan and risks: `docs/IPC_MIGRATION.md`.
 - 임시 스크립트는 `temp/` 안에만 만들고, 되풀이 쓸 도구는 `dev/`(tests·checks·spikes)로 승격한다.
 
 ## Sensitive configuration (keys) — backend-managed (hard rule)

@@ -1,16 +1,17 @@
 import React, { useState } from "react";
 import { Search, Calendar, Link2, Check, Filter } from "lucide-react";
-import { mockSources } from "../data/mockData";
+// ponytail: 취재자료 저장소 API 가 아직 없다 — 연결 전까지 빈 목록
+const sources = [];
 
 export default function SourceSearch({ onConnectToArticle, isModal = false, onClose }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("전체");
-  const [selectedSource, setSelectedSource] = useState(mockSources[0]);
+  const [selectedSource, setSelectedSource] = useState(null);
   const [connectedIds, setConnectedIds] = useState([]);
 
   const categories = ["전체", "공식문서", "통계", "회의록", "취재자료"];
 
-  const filteredSources = mockSources.filter((item) => {
+  const filteredSources = sources.filter((item) => {
     const matchesSearch = 
       item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.snippet.toLowerCase().includes(searchTerm.toLowerCase());

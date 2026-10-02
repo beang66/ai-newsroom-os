@@ -8,8 +8,8 @@
 | 항목 | 사실 |
 |---|---|
 | App Core | Python 전용 — `core/bootstrap.py`가 표준 라이브러리 `ThreadingHTTPServer`로 127.0.0.1 서빙 |
-| Frontend | JS/Web Component 1,838줄 + `app/frontend/src/api/client.js`(단 38줄)가 **유일한 HTTP 경계** |
-| 로컬 AI | `torch>=2.2`, `transformers`, KoBART/KeT5 → 모델 파일 수 GB |
+| Frontend | React UI(`web/`) — `web/src/api/` 가 **유일한 코어 경계** |
+| 로컬 AI | 제목·부제: onnxruntime+tokenizers(ONNX 1.07 GB), 팩트체크: torch+transformers(모델 수 GB) |
 | 요구 | "Desktop Shell은 React를 유지할 수 있는 구조"(설계문서 §3), **Windows/macOS**, 로컬 우선, 앱에 운영키 금지 |
 
 핵심 제약: App Core가 Python이므로 **배포 시 Python은 어차피 동봉**해야 한다. 따라서 셸 선택의 실제 기준은 "런타임을 몇 개 더 얹는가"와 "업데이트를 어떻게 배포하는가"다.

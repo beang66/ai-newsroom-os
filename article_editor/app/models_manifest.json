@@ -178,6 +178,59 @@
           "sha256": "cc02cedb56df2e4d3bb6b5478cef6aa0daa98930c96b46976c8acdd2432459a8"
         }
       ]
+    },
+    {
+      "id": "headline-ket5-onnx",
+      "label": "제목 초안 (KeT5 ONNX, 빔서치 내장)",
+      "kind": "headline",
+      "dir": "headline-ket5-onnx",
+      "base": "",
+      "files": [
+        {
+          "path": "beam.onnx",
+          "size": 382934365,
+          "sha256": "215f271b02a6a212e9e5183b759fedee0a7de513aa15bbffa8b5acb593ec8488"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 4369895,
+          "sha256": "1583f572a91206974a1dd08e6c14fcd853107cb57a6347373f2c1679d0fb3d5c"
+        }
+      ]
+    },
+    {
+      "id": "subtitle-kobart-onnx",
+      "label": "부제 초안 (KoBART ONNX)",
+      "kind": "subtitle",
+      "dir": "subtitle-kobart-onnx",
+      "base": "",
+      "files": [
+        {
+          "path": "cross_kv.onnx",
+          "size": 28362142,
+          "sha256": "080ddc240ef0ab8c3eca6dd7a62f272259ff892cbc34f6fc6360eba8b1954605"
+        },
+        {
+          "path": "decoder.onnx",
+          "size": 386246188,
+          "sha256": "131c887f91cacf8419938588e5ce24b35a66d942288e44e83f1b1495afcaa6e4"
+        },
+        {
+          "path": "encoder.onnx",
+          "size": 265527055,
+          "sha256": "964ad6d986980c5d357a5c2138f5fc1a3a3fe34257fb6bfcbed8fab0d9ef75e2"
+        },
+        {
+          "path": "generation.json",
+          "size": 167,
+          "sha256": "3ad161b4314ad24cb9324015dfd267d1f7f9b3e87b408a5cabe31dd4730b32b9"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 682152,
+          "sha256": "bbe85e16994a829e07452d71988917678cf788aa6cc11d0b32d9533c0968f109"
+        }
+      ]
     }
   ]
 }

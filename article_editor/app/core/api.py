@@ -78,11 +78,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send(404,{'error':'찾을 수 없는 경로입니다.'})
     def do_POST(self):
         if not self.allowed() or self.headers.get('Origin') not in (f'http://localhost:{self.port()}',f'http://127.0.0.1:{self.port()}'):return self.send(403,{'error':'워크스페이스에서 요청해 주세요.'})
-        if self.path not in ('/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        if self.path not in ('/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
-            if not 0<size<=(80_000_000 if self.path=='/api/articles/save' else 30_000_000):raise RequestError('요청 크기가 너무 큽니다.',413)
+            if not 0<size<=(80_000_000 if self.path=='/api/articles/save' else 40_000_000 if self.path=='/api/interview/transcribe' else 30_000_000):raise RequestError('요청 크기가 너무 큽니다.',413)
             data=json.loads(self.rfile.read(size))
             if not isinstance(data,dict):raise RequestError('잘못된 요청입니다.')
             if self.path=='/api/session':return self.send(200,CORE.session.sign_in(data))
@@ -94,6 +94,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if self.path=='/api/factcheck/run':result=CORE.ai.factcheck_run(data)
                 elif self.path=='/api/semantic/parse':result=CORE.ai.semantic_parse(data)
+                elif self.path=='/api/interview/transcribe':result=CORE.ai.transcribe(data)
                 else:result=CORE.ai.assist(data)
             finally:LIMIT.release()
             self.send(200,result)

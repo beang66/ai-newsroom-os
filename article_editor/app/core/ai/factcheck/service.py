@@ -3,6 +3,7 @@ import uuid
 from collections import Counter
 
 from .paths import settings
+from .semantic_chunker_v3 import clean as _clean
 from .assertion import (
     DIRECT_CONFLICT,
     analyze_assertion_relation,
@@ -29,8 +30,6 @@ def _get_provider():
     return _provider
 
 
-def _clean(text):
-    return re.sub(r"\s+", " ", text or "").strip()
 
 
 def _tokens(text):

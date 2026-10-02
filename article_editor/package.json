@@ -6,24 +6,13 @@
   "description": "Portable article editor with Donga preview and Unsplash photo editing",
   "scripts": {
     "test": "node dev/checks/check-api-boundary.mjs",
-    "test:legacy-ui": "node dev/tests/geometry.mjs && node dev/tests/component.mjs",
     "test:python": "python -m unittest discover -s dev/tests -p 'test_*.py'",
-    "test:browser": "node dev/tests/browser.mjs",
-    "test:drag-responsive": "node dev/tests/drag-responsive.mjs",
+    "test:ui": "node dev/tests/ui-smoke.mjs",
     "build:web": "npm --prefix web run build",
     "dev:web": "npm --prefix web run dev",
     "check:api-boundary": "node dev/checks/check-api-boundary.mjs"
   },
   "devDependencies": {
-    "jsdom": "^30.1.1",
-    "playwright": "^1.61.1"
-  },
-  "peerDependencies": {
-    "react": ">=18"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    }
+    "playwright": "^1.63.0"
   }
 }

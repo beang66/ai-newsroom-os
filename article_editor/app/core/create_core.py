@@ -3,17 +3,10 @@
 This is the integration layer the Frontend talks to (directly, or via ``core/api.py``).
 Internal implementations can change freely; the exposed API contract stays stable.
 """
-from .managers import (
-    ProjectManager,
-    StorageManager,
-    AIManager,
-    SessionManager,
-    ModelManager,
-    CollaborationManager,
-    SyncManager,
-    EncryptionManager,
-    UpdateManager,
-)
+from .managers.ai_manager import AIManager
+from .managers.model_manager import ModelManager
+from .managers.session_manager import SessionManager
+from .managers.storage_manager import StorageManager
 
 
 class Core:
@@ -22,11 +15,6 @@ class Core:
         self.ai = AIManager()
         self.session = SessionManager()
         self.models = ModelManager()
-        self.project = ProjectManager(self.storage)
-        self.collaboration = CollaborationManager()
-        self.sync = SyncManager()
-        self.encryption = EncryptionManager()
-        self.update = UpdateManager()
 
 
 def create_core():

@@ -1,68 +1,61 @@
-import importlib.util, threading
+"""로컬 제목(KeT5)·부제(KoBART) 초안 — ONNX 변환본을 onnxruntime + tokenizers 로 실행한다.
 
-from ..config import HEADLINE_MODEL, SUBTITLE_MODEL, HEADLINE_CACHE, HEADLINE_LOCK, SUBTITLE_LOCK
+변환본은 transformers 4.46.2 generate 와 후보 문장이 같다(기사 30건 30/30, dev/tools/convert_seq2seq_onnx.py).
+2026-10-02: 예전 transformers/torch 실행 경로를 지웠다 — 팩트체크(transformers>=4.51)와 버전이 충돌하지 않게.
+모델은 ModelManager 매니페스트(headline-ket5-onnx, subtitle-kobart-onnx)로 MODELS_DIR 에 설치한다.
+"""
+import importlib.util
+
+from ..config import HEADLINE_LOCK, SUBTITLE_LOCK, MODELS_DIR
 from ..errors import RequestError
 
-_headline_tokenizer = None
-_headline_model = None
-_subtitle_tokenizer = None
-_subtitle_model = None
+HEADLINE_ONNX = MODELS_DIR / 'headline-ket5-onnx'
+SUBTITLE_ONNX = MODELS_DIR / 'subtitle-kobart-onnx'
+_MARKER = {'headline': (HEADLINE_ONNX, 'beam.onnx'), 'subtitle': (SUBTITLE_ONNX, 'decoder.onnx')}
+_LABEL = {'headline': '제목', 'subtitle': '부제'}
+_onnx = {}
+
+
+def _ready(kind):
+    folder, marker = _MARKER[kind]
+    return (folder / marker).is_file() and all(importlib.util.find_spec(m) for m in ('onnxruntime', 'tokenizers'))
+
+
+def _onnx_model(kind):
+    """설치돼 있으면 모델(한 번만 로드), 없으면 None."""
+    if kind not in _onnx:
+        if not _ready(kind):
+            return None
+        from .onnx_seq2seq import BeamGraphModel, EncoderDecoderModel
+        _onnx[kind] = (BeamGraphModel if kind == 'headline' else EncoderDecoderModel)(_MARKER[kind][0])
+    return _onnx[kind]
+
+
+def _model(kind):
+    model = _onnx_model(kind)
+    if model is None:
+        raise RequestError(f'로컬 {_LABEL[kind]} 모델이 설치되지 않았어요. 모델 설치 후 다시 시도해 주세요.', 503)
+    return model
+
+
 def headline_dependencies_ready():
-    return importlib.util.find_spec('torch') is not None and importlib.util.find_spec('transformers') is not None
+    return _ready('headline') and _ready('subtitle')
+
 
 def load_headline_model():
-    global _headline_tokenizer, _headline_model
-    if _headline_model is not None:return _headline_tokenizer, _headline_model
-    if not headline_dependencies_ready():raise RequestError('로컬 제목 모델 실행 패키지가 없습니다. requirements-headline.txt를 설치해 주세요.',503)
-    try:
-        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-        options={'cache_dir':HEADLINE_CACHE} if HEADLINE_CACHE else {}
-        _headline_tokenizer=AutoTokenizer.from_pretrained(HEADLINE_MODEL,**options)
-        _headline_model=AutoModelForSeq2SeqLM.from_pretrained(HEADLINE_MODEL,**options)
-        _headline_model.eval()
-        return _headline_tokenizer,_headline_model
-    except Exception as exc:
-        raise RequestError('로컬 제목 모델을 불러오지 못했어요. 모델 설치와 인터넷 연결을 확인해 주세요.',503) from exc
+    """시작 시 미리 불러오기(bootstrap). 설치 안 됐으면 503."""
+    return _model('headline')
+
 
 def generate_headline_drafts(model_input):
     with HEADLINE_LOCK:
-        tokenizer,model=load_headline_model()
-        import torch
-        inputs=tokenizer(model_input,return_tensors='pt',max_length=512,truncation=True)
-        with torch.inference_mode():
-            outputs=model.generate(**inputs,max_new_tokens=52,num_beams=8,num_return_sequences=6,no_repeat_ngram_size=2,length_penalty=1.0,early_stopping=True)
-        values=tokenizer.batch_decode(outputs,skip_special_tokens=True)
-    return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+        return _model('headline').generate(model_input, max_new_tokens=52, num_beams=8, num_return_sequences=6, length_penalty=1.0)
 
-def load_subtitle_model():
-    global _subtitle_tokenizer, _subtitle_model
-    if _subtitle_model is not None:return _subtitle_tokenizer, _subtitle_model
-    if not headline_dependencies_ready():raise RequestError('로컬 부제 모델 실행 패키지가 없습니다. requirements-headline.txt를 설치해 주세요.',503)
-    try:
-        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-        options={'cache_dir':HEADLINE_CACHE} if HEADLINE_CACHE else {}
-        _subtitle_tokenizer=AutoTokenizer.from_pretrained(SUBTITLE_MODEL,**options)
-        _subtitle_model=AutoModelForSeq2SeqLM.from_pretrained(SUBTITLE_MODEL,**options)
-        _subtitle_model.eval()
-        return _subtitle_tokenizer,_subtitle_model
-    except Exception as exc:
-        raise RequestError('로컬 부제 모델을 불러오지 못했어요. 모델 설치와 인터넷 연결을 확인해 주세요.',503) from exc
 
 def generate_subtitle_drafts(facts):
-    tokenizer,model=load_subtitle_model()
-    if not facts:return []
+    """facts 하나당 부제 초안 목록(1~3개 근거 문장을 한 번에 처리)."""
+    if not facts:
+        return []
     with SUBTITLE_LOCK:
-        import torch
-        # 같은 생성 설정을 유지하되 1~3개 근거 문장을 한 번에 처리해
-        # 모델 호출 오버헤드만 줄인다.
-        inputs=tokenizer(
-            [fact['model_input'] for fact in facts],return_tensors='pt',padding=True,
-            max_length=512,truncation=True)
-        with torch.inference_mode():
-            outputs=model.generate(**inputs,max_new_tokens=58,min_new_tokens=10,num_beams=6,num_return_sequences=3,no_repeat_ngram_size=2,length_penalty=1.0,early_stopping=True)
-        values=tokenizer.batch_decode(outputs,skip_special_tokens=True)
-        results=[]
-        for index in range(len(facts)):
-            group=values[index*3:(index+1)*3]
-            results.append(list(dict.fromkeys(value.strip() for value in group if value.strip())))
-    return results
+        return _model('subtitle').generate([fact['model_input'] for fact in facts], max_new_tokens=58, min_new_tokens=10,
+                                           num_beams=6, num_return_sequences=3, no_repeat_ngram_size=2, length_penalty=1.0)

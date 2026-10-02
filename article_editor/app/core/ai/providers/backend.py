@@ -7,5 +7,5 @@ from __future__ import annotations
 from ... import backend_proxy
 
 
-def call(path: str, payload: dict) -> dict:
-    return backend_proxy.post('/ai/' + path, payload)
+def call(path: str, payload, content_type: str = 'application/json') -> dict:
+    return backend_proxy.post('/ai/' + path, payload, content_type=content_type)

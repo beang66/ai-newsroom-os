@@ -44,7 +44,7 @@
 
 ## 실행 환경
 
-OpenAI API 설정 외에 `requirements-headline.txt`의 로컬 제목 모델 패키지가 필요하다. 모델은 서버가 실행되는 동안 메모리에 한 번만 올리고 이후 요청에서 재사용한다. 모델 파일은 최초 실행 때 한 번 내려받는다.
+OpenAI API 설정 외에 `requirements-headline.txt`(onnxruntime·tokenizers)와 ONNX 변환 모델(`models/headline-ket5-onnx`, `models/subtitle-kobart-onnx`)이 필요하다. 2026-10-02부터 KeT5·KoBART 는 transformers 대신 ONNX 로 실행하며, 원본 generate 와 후보 문장이 같다(검증: `dev/tools/convert_seq2seq_onnx.py --parity`). 모델은 서버가 실행되는 동안 메모리에 한 번만 올리고 이후 요청에서 재사용한다.
 
 ## 관련 파일
 

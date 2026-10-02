@@ -1,7 +1,7 @@
 # 코어 호출 경계 통일 — IPC 전환 준비
 
 - 상태: **적용(2026-10-02)** · 결정: **개발 단계는 HTTP, 출시는 IPC**, 연결 지점은 지금부터 하나로 통일
-- 관련: `../app/frontend/src/api/README.md`, `DESKTOP_SHELL.md`, `../ARCHITECTURE.md`(frontend/core 경계)
+- 관련: `../web/src/api/README.md`, `DESKTOP_SHELL.md`, `../ARCHITECTURE.md`(frontend/core 경계)
 
 ## 1. 결정
 
@@ -9,8 +9,8 @@
 |---|---|
 | 지금(개발) | HTTP. `python app/launcher.py`(브라우저)와 창 모드 모두 동작 → 브라우저 개발 편의 유지 |
 | 출시(IPC) | pywebview 브리지. **포트 점유 없음** |
-| 전환 지점 | `app/frontend/src/api/index.js` 의 `createAppApi({ mode })` **한 곳** |
-| 절대 규칙 | UI는 `app/frontend/src/api/` 밖에서 코어와 직접 대화하지 않는다 (`npm run check:api-boundary`) |
+| 전환 지점 | `web/src/api/index.js` 의 `createAppApi({ mode })` **한 곳** |
+| 절대 규칙 | UI는 `web/src/api/` 밖에서 코어와 직접 대화하지 않는다 (`npm run check:api-boundary`) |
 
 ```
 UI ──(api.이름(...))──▶ index.js ──▶ http.js ─▶ client.js ─▶ app/core/api.py

@@ -1,4 +1,4 @@
-# app/frontend/src/api/ — 코어 연결 지점 (한 곳)
+# web/src/api/ — 코어 연결 지점 (한 곳)
 
 UI가 코어(App Core)와 대화하는 방법은 **여기 하나뿐**입니다.
 

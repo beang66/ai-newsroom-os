@@ -1,5 +1,5 @@
 import re
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 
 SOFT_LIMIT = 420
 HARD_LIMIT = 650
@@ -13,17 +13,9 @@ class AtomicUnit:
     field: str | None = None
 
 @dataclass
-class SemanticRelation:
-    source_id: str
-    target_id: str
-    type: str
-    strength: float
-    cue: str | None = None
-
-@dataclass
 class ChunkResult:
     units: list[AtomicUnit]
-    relations: list[SemanticRelation]
+    relations: list
 
 def clean(s):
     return re.sub(r"\s+", " ", s or "").strip()
@@ -191,42 +183,6 @@ def split_sentences(text):
             parts.append(tail)
     return [x for x in parts if x]
 
-def split_speaker_turns(text):
-    t = clean(text)
-    if t.count("○") < 2:
-        return []
-    return [clean(x) for x in re.split(r"(?=○)", t) if clean(x)]
-
-def meeting_units(text, soft_limit=SOFT_LIMIT):
-    turns = split_speaker_turns(text)
-    if not turns:
-        return narrative_units(text)
-    units, relations = [], []
-    prev_turn = None
-    prev_turn_last = None
-    group_seq = 0
-    for turn in turns:
-        group_seq += 1
-        parts = split_oversize_sentence(turn, soft_limit)
-        first_id = None
-        last_id = None
-        for idx, part in enumerate(parts):
-            uid = f"U{len(units)+1:04d}"
-            units.append(AtomicUnit(uid, part, "speaker_turn", f"G{group_seq:04d}"))
-            if first_id is None:
-                first_id = uid
-            if idx > 0 and last_id:
-                relations.append(SemanticRelation(uid, last_id, "CONTINUATION", 1.0, "same-turn"))
-            last_id = uid
-        if prev_turn is not None and prev_turn_last and first_id:
-            rel = detect_relation(prev_turn, turn)
-            if rel:
-                rtype, strength, cue = rel
-                relations.append(SemanticRelation(first_id, prev_turn_last, rtype, strength, cue))
-        prev_turn = turn
-        prev_turn_last = last_id
-    return ChunkResult(units, relations)
-
 def split_oversize_sentence(sentence, hard_limit=HARD_LIMIT):
     if len(sentence) <= hard_limit:
         return [sentence]
@@ -241,18 +197,6 @@ def split_oversize_sentence(sentence, hard_limit=HARD_LIMIT):
     if rest:
         out.append(rest)
     return out
-def model_relations(boundary, segments, domain):
-    # 규칙이 못 잡은 경계만 모델에 묻는다 (규칙 OR 모델). index i = segments[i-1] → segments[i]
-    asks = [i for i in range(1, len(segments)) if not segments[i][1]
-            and not detect_relation(segments[i - 1][0], segments[i][0])]
-    out = {}
-    for i, (label, p) in zip(asks, boundary.decide([(segments[i - 1][0], segments[i][0]) for i in asks], domain)):
-        if label == 1:
-            out[i] = ("MODEL_JOIN", 0.9, f"boundary-model p={p:.2f}")  # 0.9: expand_linked_units 대상
-        elif label == 2:
-            out[i] = ("INHERIT_TARGET", 0.5, f"boundary-model p={p:.2f}")  # 나누되 L의 대상 정보를 상속
-    return out
-
 def packed_units(text, boundary=None, domain="press", target=SOFT_LIMIT, hard_limit=HARD_LIMIT):
     """v3 경계 + 크기 묶기: 붙여야 하는 경계(규칙·모델 JOIN)는 자르지 않고, target을 넘을 때만
     '나눔' 확률이 가장 높은 경계에서 자른다. 의미 경계마다 자르면 청크가 너무 작아 문맥이 끊기기 때문."""
@@ -289,155 +233,6 @@ def packed_units(text, boundary=None, domain="press", target=SOFT_LIMIT, hard_li
     if cur:
         chunks.append(" ".join(x[0] for x in cur))
     return ChunkResult([AtomicUnit(f"U{i + 1:04d}", c, "narrative", f"G{i + 1:04d}") for i, c in enumerate(chunks)], [])
-
-def narrative_units(text, soft_limit=SOFT_LIMIT, hard_limit=HARD_LIMIT, meeting_mode=False, boundary=None, domain="press"):
-    segments = []
-    source_units = split_speaker_turns(text) if meeting_mode else split_sentences(text)
-    for sentence in source_units:
-        parts = split_oversize_sentence(sentence, soft_limit)
-        for i, part in enumerate(parts):
-            segments.append((part, i > 0))
-
-    units, relations = [], []
-    cur, cur_group = [], "G0001"
-    group_seq = 1
-    last_unit_id = None
-    pending_link = None
-
-    def flush():
-        nonlocal cur, last_unit_id, pending_link
-        if not cur:
-            return None
-        uid = f"U{len(units)+1:04d}"
-        units.append(AtomicUnit(uid, " ".join(cur), "narrative", cur_group))
-        if pending_link:
-            target_id, rel, strength, cue = pending_link
-            relations.append(SemanticRelation(
-                source_id=uid, target_id=target_id,
-                type=rel, strength=strength, cue=cue))
-            pending_link = None
-        cur = []
-        last_unit_id = uid
-        return uid
-
-    learned = model_relations(boundary, segments, domain) if boundary else {}
-    prev_sentence = None
-    for idx, (sentence, continuation) in enumerate(segments):
-        relation = (
-            ("CONTINUATION", 1.0, "oversize-sentence")
-            if continuation else
-            (detect_relation(prev_sentence or "", sentence) if prev_sentence else None)
-        ) or learned.get(idx)
-        if relation and relation[0] == "INHERIT_TARGET":
-            previous_id = flush()
-            pending_link = (previous_id, *relation)
-            relation = None
-            cur.append(sentence)
-        elif not cur:
-            cur.append(sentence)
-        elif relation:
-            proposed = len(" ".join(cur + [sentence]))
-            if proposed <= soft_limit:
-                cur.append(sentence)
-            else:
-                previous_id = flush()
-                rel, strength, cue = relation
-                pending_link = (previous_id, rel, strength, cue)
-                cur.append(sentence)
-        else:
-            flush()
-            group_seq += 1
-            cur_group = f"G{group_seq:04d}"
-            cur.append(sentence)
-        prev_sentence = sentence
-
-    flush()
-    return ChunkResult(units, relations)
-
-FIELD_START = re.compile(r"(?<!\d)(\d{1,2}(?:-\d+)?\.\s+)")
-def structured_units(text, boundary=None):
-    t = clean(text)
-    # 인용된 목차 참조('II. 증권의 권리내용 2. 권리의 내용'을 참조)는 필드 시작이 아니다
-    marks = [m for m in FIELD_START.finditer(t)
-             if not ("'" in t[max(0, m.start() - 40):m.start()] and "'" in t[m.end():m.end() + 60])]
-    if not marks:
-        return narrative_units(t, boundary=boundary, domain="dart")
-    units, relations = [], []
-    head = t[:marks[0].start()].strip()
-    if head:
-        units.append(AtomicUnit(f"U{len(units)+1:04d}", head, "section", f"G{len(units)+1:04d}"))
-    for i, m in enumerate(marks):
-        end = marks[i+1].start() if i+1 < len(marks) else len(t)
-        block = clean(t[m.start():end])
-        if not block:
-            continue
-        if len(block) <= HARD_LIMIT:
-            units.append(AtomicUnit(f"U{len(units)+1:04d}", block, "field", f"G{len(units)+1:04d}"))
-        else:
-            sub = narrative_units(block, boundary=boundary, domain="dart")
-            new_id = {}
-            for u in sub.units:
-                new_id[u.id] = u.id = f"U{len(units)+1:04d}"
-                u.kind = "field"
-                u.group_id = f"G{len(units)+1:04d}"
-                units.append(u)
-            for r in sub.relations:  # 필드 안 연결(모델 JOIN/INHERIT 포함)을 새 id로 보존
-                r.source_id, r.target_id = new_id[r.source_id], new_id[r.target_id]
-                relations.append(r)
-    return ChunkResult(units, relations)
-
-def add_adjacency_relations(result, strength=0.20):
-    # 모든 물리적 경계에는 원문 순서를 복원할 수 있는 저강도 연결을 남긴다.
-    # semantic expansion(min_strength=0.85)에는 포함되지 않는 안전망이다.
-    for prev, cur in zip(result.units, result.units[1:]):
-        result.relations.append(SemanticRelation(
-            source_id=cur.id,
-            target_id=prev.id,
-            type="ADJACENT",
-            strength=strength,
-            cue="source-order",
-        ))
-    return result
-
-def chunk_document(text, meta=None, boundary=None):
-    # boundary: boundary_model.BoundaryModel (선택). 없으면 규칙만 사용
-    meta = meta or {}
-    source = (meta.get("source") or "").lower()
-    if source == "opendart":
-        result = structured_units(text, boundary)
-    elif source in {"meeting", "transcript", "interview"}:
-        result = meeting_units(text)
-    else:
-        result = narrative_units(text, boundary=boundary)
-    return add_adjacency_relations(result)
-
-def to_dict(result):
-    return {
-        "units": [asdict(x) for x in result.units],
-        "relations": [asdict(x) for x in result.relations],
-    }
-
-def expand_linked_units(result, seed_ids, min_strength=0.85, max_hops=1):
-    by_id = {u.id: u for u in result.units}
-    adjacency = {}
-    for rel in result.relations:
-        if rel.strength < min_strength:
-            continue
-        adjacency.setdefault(rel.source_id, set()).add(rel.target_id)
-        adjacency.setdefault(rel.target_id, set()).add(rel.source_id)
-
-    selected = set(seed_ids)
-    frontier = set(seed_ids)
-    for _ in range(max_hops):
-        nxt = set()
-        for uid in frontier:
-            nxt.update(adjacency.get(uid, ()))
-        nxt -= selected
-        if not nxt:
-            break
-        selected.update(nxt)
-        frontier = nxt
-    return [u for u in result.units if u.id in selected and u.id in by_id]
 
 if __name__ == "__main__":
     # 목록 번호·도메인·인용 목차에서 문장을 자르지 않는지 확인

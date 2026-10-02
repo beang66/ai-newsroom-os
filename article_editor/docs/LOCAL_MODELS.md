@@ -10,7 +10,7 @@
 | `Qwen3-0.6B` (base) | 팩트체크 베이스 | **2,054 MB** (6 files) | `ai-newsroom-os/backend/models/base` |
 | `v10-paraphrase` (LoRA adapter) | 팩트체크 어댑터 | **28.5 MB** (8 files) | 같은 `models/adapters` |
 | 매니페스트 | 활성 모델 지정 | 1 KB | `models/active_model.json` (`model_id`, base, adapter, chunker, retrieval) |
-| KeT5 / KoBART (제목·부제) | 로컬 추론(선택) | HF 캐시에서 내려받음 | `HEADLINE_CACHE_DIR` |
+| KeT5 / KoBART (제목·부제) | 로컬 추론(선택) — ONNX 변환본(2026-10-02, torch 불필요) | 0.39 GB + 0.68 GB | `models/headline-ket5-onnx`, `models/subtitle-kobart-onnx` |
 
 **팩트체크 모델만 약 2.08 GB.** 여기에 런타임이 붙는다: torch(CPU) ≈ 250 MB, transformers/peft/numpy ≈ 80 MB.
 

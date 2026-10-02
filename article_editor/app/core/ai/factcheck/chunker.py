@@ -1,8 +1,7 @@
-import re,json,os
-from dataclasses import dataclass,asdict
+import re
+from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
-from .semantic_chunker_v3 import packed_units
+from .semantic_chunker_v3 import clean, packed_units
 
 @dataclass
 class EvidenceUnit:
@@ -20,8 +19,6 @@ DART_KEYS=[
  "주식총수 대비비율","자산총액 대비","향후 처리계획","기타 투자판단에 참고할 사항"
 ]
 
-def clean(s):
-    return re.sub(r"\s+"," ",s or "").strip()
 
 def fmt_date(s):
     s=str(s or "")

@@ -18,6 +18,7 @@ export const ROUTES = Object.freeze({
   factcheckStatus: "/api/factcheck/status",
   factcheckRun: "/api/factcheck/run",
   semanticParse: "/api/semantic/parse",
+  transcribe: "/api/interview/transcribe",
   unsplashSearch: "/api/unsplash/search",
   photo: (id) => "/api/unsplash/photo/" + encodeURIComponent(id),
   photoTrack: (id) => "/api/unsplash/photo/" + encodeURIComponent(id) + "/track",
@@ -60,6 +61,9 @@ export function createCoreApi(transport) {
     /** 의미 단위 청킹: source = frontend | opendart */
     semanticParse: (text, source = "frontend", signal) =>
       transport.json(ROUTES.semanticParse, { text, source }, signal),
+    /** 인터뷰 녹음 전사(Whisper) → { dialogues:[{id,speaker,speakerName,timestamp,text}], text, duration } */
+    transcribe: (filename, data, signal) =>
+      transport.json(ROUTES.transcribe, { filename, data }, signal),
     /** 원고 디스크 저장 (파일: .article-workspace/articles) */
     saveArticle: (draft, signal) =>
       transport.json(ROUTES.articlesSave, { draft }, signal),

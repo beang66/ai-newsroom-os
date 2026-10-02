@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
+import { transcribeAudio } from "../../api/editorial";
 import {
   Upload,
   Play,
@@ -32,114 +33,14 @@ function formatDuration(seconds) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-// 1시간 분량(약 58분)의 실전 취재 인터뷰 샘플 데이터
-const DEFAULT_1HOUR_DIALOGUES = [
-  {
-    id: 1,
-    speaker: "reporter",
-    speakerName: "김동아 기자",
-    timestamp: 0,
-    text: "대표님, 바쁘신 일정 중에도 시간 내주셔서 감사합니다. 이번에 개발 완료된 차세대 온디바이스 NPU 및 PIM 반도체 성과 발표에 대해 업계의 관심이 매우 뜨겁습니다. 먼저 이번 프로젝트를 시작하시게 된 계기와 배경부터 설명 부탁드립니다."
-  },
-  {
-    id: 2,
-    speaker: "interviewee",
-    speakerName: "홍길동 대표 (○○반도체)",
-    timestamp: 42,
-    text: "찾아와 주셔서 감사합니다. 아시다시피 최근 생성형 AI가 스마트폰부터 자율주행, 로봇까지 광범위하게 확산되면서 기존 GPU 기반 클라우드 연산 방식의 한계가 명확해졌습니다. 엄청난 전력 소모와 데이터센터 인프라 비용, 그리고 실시간 응답 지연 문제가 대표적이죠. 저희는 디바이스 자체에서 고성능 LLM을 초저전력으로 구동할 수 있는 칩셋이 필수적이라 판단하고 약 3년 전부터 독자 아키텍처 개발에 매진해 왔습니다."
-  },
-  {
-    id: 3,
-    speaker: "reporter",
-    speakerName: "김동아 기자",
-    timestamp: 165,
-    text: "공개된 자료에 따르면 기존 상용 칩 대비 전력 효율이 70% 이상 개선되었다고 들었습니다. 하드웨어 설계 관점에서 이를 어떻게 구현할 수 있었는지 기술적 핵심을 짚어주실 수 있나요?"
-  },
-  {
-    id: 4,
-    speaker: "interviewee",
-    speakerName: "홍길동 대표 (○○반도체)",
-    timestamp: 215,
-    text: "핵심은 크게 두 가지입니다. 첫째는 'PIM(Processing-In-Memory)' 구조를 채택하여 메모리와 연산 유닛 간의 데이터 병목(메모리 월 현상)을 원천 차단했습니다. 둘째는 정밀도를 잃지 않으면서도 연산량을 획기적으로 줄이는 동적 가중치 프루닝(Pruning) 및 양자화 전용 가속 회로를 내장한 것입니다. 이를 통해 불필요한 데이터 전송 전력을 완전히 없앴습니다."
-  },
-  {
-    id: 5,
-    speaker: "reporter",
-    speakerName: "김동아 기자",
-    timestamp: 410,
-    text: "현재 글로벌 빅테크 기업들도 자체 AI 가속기를 경쟁적으로 쏟아내고 있습니다. 국내 스타트업 및 연구진으로서 수율과 양산 가격 경쟁력은 어떻게 확보하고 계신가요?"
-  },
-  {
-    id: 6,
-    speaker: "interviewee",
-    speakerName: "홍길동 대표 (○○반도체)",
-    timestamp: 472,
-    text: "좋은 질문입니다. 저희는 최신 극미세 공정 대신 4나노 및 7나노 레거시/성숙 공정에서도 최고 효율을 낼 수 있는 회로 최적화에 집중했습니다. 그 결과 웨이퍼당 칩 생산 단가를 기존 글로벌 경쟁사 대비 40% 이상 낮출 수 있었고, 국내 파운드리 파트너십을 통해 초기 양산 수율을 이미 85% 이상 안정적으로 확보했습니다."
-  },
-  {
-    id: 7,
-    speaker: "reporter",
-    speakerName: "김동아 기자",
-    timestamp: 730,
-    text: "소프트웨어 생태계와의 호환성도 중요한 과제일 텐데요. PyTorch나 Hugging Face 같은 오픈소스 프레임워크와의 연동은 어떻게 지원됩니까?"
-  },
-  {
-    id: 8,
-    speaker: "interviewee",
-    speakerName: "홍길동 대표 (○○반도체)",
-    timestamp: 785,
-    text: "개발자 경험(DX)이 승패를 가른다고 생각합니다. 별도의 코드 수정 없이 단 한 줄의 플러그인 로드로 기존 파이토치 모델을 저희 NPU 바이너리로 원클릭 컴파일해 주는 전용 툴체인 소프트웨어를 함께 무료 공개했습니다. 이미 국내외 50여 개 AI 솔루션 파트너사에서 테스트를 진행하고 있습니다."
-  },
-  {
-    id: 9,
-    speaker: "reporter",
-    speakerName: "김동아 기자",
-    timestamp: 1120,
-    text: "올해 하반기와 2027년을 아우르는 상용화 로드맵과 글로벌 진출 계획은 어떻게 구체화되고 있습니까?"
-  },
-  {
-    id: 10,
-    speaker: "interviewee",
-    speakerName: "홍길동 대표 (○○반도체)",
-    timestamp: 1180,
-    text: "올해 3분기 말까지 주요 제조사용 양산 샘플 칩 공급을 완료하고, 내년 상반기 출시될 스마트 기기 및 AI 엣지 디바이스에 탑재될 예정입니다. 또한 미국 실리콘밸리에 현지 법인 설립을 마무리하여 북미와 일본의 자율주행 및 로봇 제조사들을 타깃으로 현지 PoC를 확대하고 있습니다."
-  },
-  {
-    id: 11,
-    speaker: "reporter",
-    speakerName: "김동아 기자",
-    timestamp: 1640,
-    text: "정부의 AI 반도체 육성 정책이나 인재 확보 측면에서 현업에서 체감하시는 가장 큰 애로사항은 무엇인가요?"
-  },
-  {
-    id: 12,
-    speaker: "interviewee",
-    speakerName: "홍길동 대표 (○○반도체)",
-    timestamp: 1710,
-    text: "가장 절실한 것은 실전 양산 경험을 갖춘 하드웨어-소프트웨어 풀스택 엔지니어의 공급입니다. 정부의 R&D 바우처나 실증 펀드 지원은 큰 힘이 되고 있지만, 장기적으로는 대학과 기업이 연계된 설계 전문 인력 양성 파이프라인이 더욱 촘촘해져야 글로벌 격차를 유지할 수 있습니다."
-  },
-  {
-    id: 13,
-    speaker: "reporter",
-    speakerName: "김동아 기자",
-    timestamp: 2280,
-    text: "마지막으로 이번 인터뷰 기사를 접할 산업계 관계자들과 독자들에게 전하고 싶으신 메시지가 있다면 말씀 부탁드립니다."
-  },
-  {
-    id: 14,
-    speaker: "interviewee",
-    speakerName: "홍길동 대표 (○○반도체)",
-    timestamp: 2340,
-    text: "한국이 메모리 반도체 강국을 넘어 AI 시대 시스템 반도체와 NPU 분야에서도 세계 최고 수준의 경쟁력을 가질 수 있다는 것을 이번 성과로 입증하고자 합니다. 국내 엔지니어들의 집념이 만든 혁신에 많은 관심과 응원을 부탁드립니다. 감사합니다."
-  }
-];
 
 export default function InterviewStudio({ onReturnToArticle }) {
   // 1. 녹음 파일 및 인터뷰 상태
   const [audioFile, setAudioFile] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
-  const [fileName, setFileName] = useState("2026_AI반도체_심층인터뷰_현장녹취.m4a");
-  const [dialogues, setDialogues] = useState(DEFAULT_1HOUR_DIALOGUES);
+  const [fileName, setFileName] = useState("");
+  const [dialogues, setDialogues] = useState([]);
+  const [sttStatus, setSttStatus] = useState(""); // "" | "전사 중…" | 오류 문구
 
   // 2. 뷰 모드 토글: 'speaker' (화자별 대화형) vs 'fullText' (전체 통 텍스트)
   const [viewMode, setViewMode] = useState("speaker");
@@ -150,7 +51,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
   // 4. 오디오 플레이어 상태
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(3520); // 58분 40초
+  const [duration, setDuration] = useState(0)
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
 
@@ -184,7 +85,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
   const handleAudioTimeUpdate = () => {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
-      setDuration(audioRef.current.duration || 3520);
+      setDuration(audioRef.current.duration || 0);
     }
   };
 
@@ -201,8 +102,15 @@ export default function InterviewStudio({ onReturnToArticle }) {
       setCurrentTime(0);
       setIsPlaying(false);
 
-      // 간단한 안내
-      alert(`"${file.name}" 파일이 성공적으로 로드되었습니다. 오디오 재생바와 인터뷰 텍스트를 바로 확인하실 수 있습니다.`);
+      // 코어 전사(Whisper) → 화자별 대화
+      setDialogues([]);
+      setSttStatus("전사 중…");
+      transcribeAudio(file)
+        .then((result) => {
+          setDialogues(result.dialogues || []);
+          setSttStatus("");
+        })
+        .catch((error) => setSttStatus("전사 실패: " + (error?.message || error)));
     }
   };
 
@@ -349,7 +257,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
               인터뷰·녹취 스튜디오
             </h2>
             <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-              전사 완료 (100%)
+              {sttStatus || (dialogues.length ? "전사 완료" : fileName ? "전사 결과 없음" : "녹음 파일 없음")}
             </span>
           </div>
 
@@ -358,10 +266,10 @@ export default function InterviewStudio({ onReturnToArticle }) {
             <span>•</span>
             <span className="flex items-center gap-1 text-slate-700 font-bold">
               <Clock className="w-3.5 h-3.5 text-slate-400" />
-              총 {formatDuration(duration)} (약 58분)
+              총 {formatDuration(duration)}
             </span>
             <span>•</span>
-            <span>화자 2명</span>
+            <span>화자 {new Set(dialogues.map((d) => d.speaker)).size}명</span>
             <span>•</span>
             <span>{totalChars.toLocaleString()}자 ({totalWords.toLocaleString()}단어)</span>
           </div>

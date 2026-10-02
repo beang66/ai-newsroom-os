@@ -8,6 +8,7 @@ reached only through the backend proxy (see ARCHITECTURE.md — backend-managed 
 import importlib.util
 
 from ..ai.router import assist as _assist
+from ..ai.transcribe import transcribe as _transcribe
 from ..errors import RequestError
 
 MAX_NODES, MAX_MATERIALS, MAX_TEXT = 200, 50, 500_000
@@ -24,6 +25,10 @@ class AIManager:
         """Run an AI task. ``payload['kind']`` selects the task
         (metadata / flow / photo_keywords / image / captions)."""
         return _assist(payload)
+
+    def transcribe(self, payload):
+        """인터뷰 녹음 전사 → 녹취 스튜디오 대화 목록. payload: {filename, data(base64)}"""
+        return _transcribe(payload)
 
     def factcheck_status(self):
         """팩트체크에 필요한 모델·런타임 준비 상태."""

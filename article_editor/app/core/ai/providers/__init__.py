@@ -11,5 +11,6 @@ from ... import backend_proxy
 from . import backend, local
 
 
-def call(path: str, payload: dict) -> dict:
-    return backend.call(path, payload) if backend_proxy.enabled() else local.call(path, payload)
+def call(path: str, payload, content_type: str = 'application/json') -> dict:
+    """payload 는 JSON 으로 보낼 dict, 또는 content_type 에 맞춘 원본 bytes(전사용 multipart)."""
+    return (backend.call if backend_proxy.enabled() else local.call)(path, payload, content_type)

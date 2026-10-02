@@ -5,6 +5,7 @@
 경로 규약(백엔드와 합의): 원래 대상 경로를 뒤에 그대로 붙인다.
     POST {AI_BACKEND_URL}/ai/responses              ← OpenAI Responses 프록시
     POST {AI_BACKEND_URL}/ai/images/generations     ← 이미지 생성 프록시
+    POST {AI_BACKEND_URL}/ai/audio/transcriptions   ← 녹음 전사(multipart 그대로)
     GET  {AI_BACKEND_URL}/unsplash/search/photos?query=..&page=..
     GET  {AI_BACKEND_URL}/unsplash/absolute?url=..  ← 다운로드 추적(절대 URL)
 
@@ -64,11 +65,11 @@ def _fail(error: urllib.error.HTTPError):
     ) from None
 
 
-def post(path: str, payload: dict, timeout: int = TIMEOUT) -> dict:
+def post(path: str, payload, timeout: int = TIMEOUT, content_type: str = 'application/json') -> dict:
     request = urllib.request.Request(
         _base() + path,
-        data=json.dumps(payload).encode(),
-        headers=dict(_headers(), **{'Content-Type': 'application/json'}),
+        data=payload if isinstance(payload, bytes) else json.dumps(payload).encode(),
+        headers=dict(_headers(), **{'Content-Type': content_type}),
         method='POST',
     )
     try:

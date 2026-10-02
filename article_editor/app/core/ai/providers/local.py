@@ -15,14 +15,14 @@ from ...errors import RequestError
 TIMEOUT = 210
 
 
-def call(path: str, payload: dict) -> dict:
+def call(path: str, payload, content_type: str = 'application/json') -> dict:
     key = os.environ.get('OPENAI_API_KEY', '')
     if not key:
         raise RequestError('서버의 .env에 OPENAI_API_KEY를 설정해 주세요.', 503)
     request = urllib.request.Request(
         'https://api.openai.com/v1/' + path,
-        data=json.dumps(payload).encode(),
-        headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key},
+        data=payload if isinstance(payload, bytes) else json.dumps(payload).encode(),
+        headers={'Content-Type': content_type, 'Authorization': 'Bearer ' + key},
         method='POST',
     )
     try:

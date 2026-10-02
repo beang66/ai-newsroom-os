@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Newspaper, Bell, User, Clock, CheckCircle2, FileEdit } from "lucide-react";
 
 export default function Header({
-  currentArticleTitle = "AI 반도체 개척자들...",
+  currentArticleTitle = "",
   status = "작성 중",
   // 로컬 코어 상태 — App.jsx 가 /api/status · /api/session 결과를 넘겨준다.
   coreReady = false,
@@ -91,9 +91,9 @@ export default function Header({
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 px-3 py-1 bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200/80 rounded-full text-xs font-bold text-slate-800 transition cursor-pointer">
                 <div className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-extrabold">
-                  {(email || "김").slice(0, 1)}
+                  {(email || "기").slice(0, 1)}
                 </div>
-                <span className="hidden sm:inline">{email || "김동아 기자"}</span>
+                <span className="hidden sm:inline">{email || "기자"}</span>
                 <span className="text-[10px] font-normal text-slate-400">| 편집부</span>
               </div>
             </div>

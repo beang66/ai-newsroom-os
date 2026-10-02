@@ -28,7 +28,11 @@ ONEFILE = os.environ.get('AINEWSROOM_ONEFILE', '').lower() not in ('', '0', 'fal
 ICON = APP_DIR / 'packaging' / 'app.ico'
 
 # 앱이 직접 읽는 정적 리소스(코어는 표준 라이브러리만 쓴다).
-datas = [(str(SRC / 'frontend'), 'frontend')]
+datas = [
+    (str(SRC / 'frontend'), 'frontend'),
+    # 모델 매니페스트(파일 목록·해시) — 실제 모델 파일은 첫 사용 때 models/ 로 내려받는다
+    (str(SRC / 'models_manifest.json'), '.'),
+]
 
 # pywebview 는 네이티브 백엔드를 런타임에 고르므로 직접 지목한다.
 hiddenimports = [

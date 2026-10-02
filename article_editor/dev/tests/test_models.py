@@ -1,0 +1,185 @@
+"""모델 설치(다운로드·이어받기·해시 검증·로컬 폴더) 테스트 — 작은 스텁으로 검증한다.
+
+실제 2 GB 모델은 받지 않는다. 파일 2개짜리 매니페스트를 만들어 경로만 확인한다.
+
+    python -m unittest discover -s dev/tests -p 'test_*.py'
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+import tempfile
+import threading
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+APP = Path(__file__).resolve().parents[2] / 'app'
+if str(APP) not in sys.path:
+    sys.path.insert(0, str(APP))
+
+from core import config  # noqa: E402
+from core.errors import RequestError  # noqa: E402
+from core.managers.model_manager import ModelManager  # noqa: E402
+
+FILES = {
+    'base/config.json': b'{"model":"stub"}' * 20,
+    'adapter/adapter_model.bin': bytes(range(256)) * 40,
+}
+RANGES: list[str] = []
+
+
+class Stub(BaseHTTPRequestHandler):
+    """/files/<path> 를 제공. Range 요청은 206 으로 응답한다(이어받기 확인용)."""
+
+    delay = 0.0
+
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        name = self.path.split('?')[0].lstrip('/files/')
+        if name not in FILES:
+            self.send_error(404)
+            return
+        data = FILES[name]
+        start = 0
+        header = self.headers.get('Range') or ''
+        if header.startswith('bytes='):
+            RANGES.append(header)
+            start = int(header[6:].split('-')[0])
+            self.send_response(206)
+            self.send_header('Content-Range', f'bytes {start}-{len(data) - 1}/{len(data)}')
+        else:
+            self.send_response(200)
+        body = data[start:]
+        self.send_header('Content-Type', 'application/octet-stream')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        for offset in range(0, len(body), 32):
+            self.wfile.write(body[offset : offset + 32])
+            if self.delay:
+                import time
+
+                time.sleep(self.delay)
+
+
+def digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+class ModelInstallTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.stub = ThreadingHTTPServer(('127.0.0.1', 0), Stub)
+        threading.Thread(target=cls.stub.serve_forever, daemon=True).start()
+        cls.base = 'http://127.0.0.1:' + str(cls.stub.server_port) + '/files'
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.stub.shutdown()
+        cls.stub.server_close()
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.manifest = self.root / 'manifest.json'
+        self.models_dir = self.root / 'models'
+        self.original = (config.MODELS_DIR, config.MODELS_MANIFEST)
+        config.MODELS_DIR = self.models_dir
+        config.MODELS_MANIFEST = self.manifest
+
+        def restore():
+            config.MODELS_DIR, config.MODELS_MANIFEST = self.original
+            self.temp.cleanup()
+
+        self.addCleanup(restore)
+        self.write_manifest()
+
+    def write_manifest(self, base=None, sha_override=None):
+        files = []
+        for name, data in FILES.items():
+            files.append({'path': name, 'size': len(data), 'sha256': sha_override or digest(data)})
+        manifest = {
+            'version': 1,
+            'models': [
+                {
+                    'id': 'stub-model',
+                    'label': '스텁 모델',
+                    'kind': 'test',
+                    'dir': 'stub-model',
+                    'base': self.base if base is None else base,
+                    'files': files,
+                }
+            ],
+        }
+        self.manifest.write_text(json.dumps(manifest), encoding='utf-8')
+
+    def target(self, name):
+        return self.models_dir / 'stub-model' / name
+
+    def test_downloads_and_verifies(self):
+        manager = ModelManager()
+        result = manager.install()
+        self.assertTrue(result['models'][0]['installed'])
+        for name, data in FILES.items():
+            self.assertEqual(self.target(name).read_bytes(), data)
+        self.assertEqual(list(self.models_dir.rglob('*.part')), [])
+        self.assertTrue(manager.verify()['ok'])
+
+    def test_second_install_skips_download(self):
+        manager = ModelManager()
+        manager.install()
+        RANGES.clear()
+        result = manager.install()
+        self.assertTrue(result['models'][0]['installed'])
+        self.assertEqual(RANGES, [], '이미 받은 파일은 다시 요청하지 않는다')
+
+    def test_resume_uses_range_header(self):
+        part = self.target('base/config.json.part')
+        part.parent.mkdir(parents=True, exist_ok=True)
+        data = FILES['base/config.json']
+        part.write_bytes(data[:20])
+        RANGES.clear()
+        result = ModelManager().install()
+        self.assertTrue(result['models'][0]['installed'])
+        self.assertTrue(any('bytes=20-' in record for record in RANGES), RANGES)
+        self.assertEqual(self.target('base/config.json').read_bytes(), data)
+
+    def test_hash_mismatch_fails_and_removes_file(self):
+        self.write_manifest(sha_override='0' * 64)
+        with self.assertRaises(RequestError) as caught:
+            ModelManager().install()
+        self.assertEqual(caught.exception.status, 502)
+        self.assertFalse(self.target('base/config.json').exists())
+
+    def test_local_folder_source(self):
+        source = self.root / 'src'
+        for name, data in FILES.items():
+            path = source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        self.write_manifest(base='')  # 매니페스트 base 가 비어도 --from 으로 설치(사내망)
+        result = ModelManager().install(source=str(source))
+        self.assertTrue(result['models'][0]['installed'])
+
+    def test_missing_source_reports(self):
+        self.write_manifest(base='')
+        with self.assertRaises(RequestError) as caught:
+            ModelManager().install()
+        self.assertEqual(caught.exception.status, 503)
+        self.assertIn('--from', caught.exception.message)
+
+    def test_cancel(self):
+        Stub.delay = 0.02
+        self.addCleanup(setattr, Stub, 'delay', 0.0)
+        manager = ModelManager()
+        threading.Timer(0.3, manager.cancel).start()
+        result = manager.install()
+        self.assertTrue(result['cancelled'])
+        self.assertFalse(result['models'][0]['installed'])
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

@@ -149,6 +149,23 @@ class ServerTests(ApiTestCase):
     def test_short_body(self):
         self.assertEqual(self.request('/api/assist', {'kind': 'metadata', 'body': '짧음'})[0], 400)
 
+    def test_models_status_endpoint(self):
+        status, raw, _ = self.request('/api/models')
+        self.assertEqual(status, 200)
+        payload = json.loads(raw)
+        self.assertTrue(payload['models'])
+        self.assertFalse(payload['busy'])
+        self.assertIn('dir', payload)
+
+    def test_models_install_without_source_is_rejected(self):
+        # 매니페스트에 base 가 아직 없으므로 동기 검증에서 503
+        status, raw, _ = self.request('/api/models/install', {'modelId': 'factcheck-qwen3-0.6b-v10'})
+        self.assertEqual(status, 503)
+        self.assertIn('원본 주소', json.loads(raw)['error'])
+
+    def test_models_install_unknown_id(self):
+        self.assertEqual(self.request('/api/models/install', {'modelId': 'nope'})[0], 404)
+
 
 class BackendProxyTests(ApiTestCase):
     """AI_BACKEND=remote 일 때 우리 백엔드 프록시로 나가는지 확인한다(스텁 백엔드).

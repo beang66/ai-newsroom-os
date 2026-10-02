@@ -112,6 +112,38 @@ def backend_info():
     return config.AI_BACKEND, bool(config.AI_BACKEND_URL), bool(config.APP_TOKEN)
 
 
+def models_cli(args):
+    """`--models status` / `--models install [--from <폴더|URL>]` — 모델 설치·상태."""
+    from core.managers.model_manager import ModelManager
+
+    manager = ModelManager()
+    if 'install' in args:
+        source = ''
+        if '--from' in args:
+            index = args.index('--from')
+            if index + 1 < len(args):
+                source = args[index + 1]
+
+        def progress(percent, path, done, total):
+            print(f'  {percent:3d}%  {path}  ({done / 1e6:.0f}/{total / 1e6:.0f} MB)', flush=True)
+
+        print('모델 설치를 시작합니다…', flush=True)
+        result = manager.install(source=source, on_progress=progress)
+        print('취소했습니다.' if result.get('cancelled') else '설치를 마쳤습니다.', flush=True)
+
+    status = manager.status()
+    print(f"모델 폴더: {status['dir']}", flush=True)
+    for row in status['models']:
+        state = '설치됨' if row['installed'] else ('일부' if row['filesDone'] else '없음')
+        source = '설정됨' if row['sourceConfigured'] else '없음(매니페스트 base 또는 --from 필요)'
+        print(
+            f"  {row['id']}: {state} ({row['filesDone']}/{row['files']} 파일, {row['bytesTotal'] / 1e9:.2f} GB)"
+            f"  원본 {source}",
+            flush=True,
+        )
+    return 0
+
+
 def print_diagnostics(url, server):
     try:
         status = json.loads(runtime.fetch(runtime.status_url(server.port)))
@@ -128,6 +160,19 @@ def print_diagnostics(url, server):
     ai, has_url, has_token = backend_info()
     print(f'[진단] AI 경로     : {ai} (백엔드 주소 {"설정" if has_url else "없음"}, 토큰 {"설정" if has_token else "없음"})')
     print(f'[진단] 로그        : {LOG_PATH}')
+    try:
+        from core.managers.model_manager import ModelManager
+
+        status = ModelManager().status()
+        rows = status['models']
+        if rows:
+            row = rows[0]
+            state = '설치됨' if row['installed'] else f"없음({row['filesDone']}/{row['files']} 파일)"
+            print(f"[진단] 모델        : {row['id']} {state}  {status['dir']}")
+        else:
+            print('[진단] 모델        : 매니페스트에 모델 없음')
+    except Exception as error:  # 진단 실패가 실행을 막지 않는다
+        print(f'[진단] 모델        : 확인 실패({error})')
 
 
 def main():
@@ -140,6 +185,9 @@ def main():
             index = args.index('--smoke')
             mode = args[index + 1] if index + 1 < len(args) and args[index + 1] in ('write', 'read') else 'write'
             return smoke.run(mode=mode, debug='--debug' in args)
+
+        if '--models' in args:
+            return models_cli(args)
 
         server = runtime.start_server()
         url = server.url

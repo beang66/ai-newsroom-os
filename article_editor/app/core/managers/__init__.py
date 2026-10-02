@@ -8,6 +8,7 @@ from .project_manager import ProjectManager
 from .storage_manager import StorageManager
 from .ai_manager import AIManager
 from .session_manager import SessionManager
+from .model_manager import ModelManager
 from .collaboration_manager import CollaborationManager
 from .sync_manager import SyncManager
 from .encryption_manager import EncryptionManager
@@ -18,6 +19,7 @@ __all__ = [
     "StorageManager",
     "AIManager",
     "SessionManager",
+    "ModelManager",
     "CollaborationManager",
     "SyncManager",
     "EncryptionManager",

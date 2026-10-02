@@ -5,7 +5,7 @@ if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))
 
 # 실행 위치는 app_paths.py 한 곳에서만 판단한다(개발/배포 exe 동일 규칙).
-from app_paths import APP_ROOT, FRONTEND, env_lines  # noqa: E402
+from app_paths import APP_ROOT, BUNDLE, FRONTEND, env_lines  # noqa: E402
 
 # ROOT = 앱 폴더(개발: article_editor/, 배포 exe: exe가 놓인 폴더).
 ROOT = APP_ROOT
@@ -31,6 +31,12 @@ APP_TOKEN = os.environ.get('APP_TOKEN', '')
 # service_role 키는 절대 앱에 두지 않는다(백엔드 전용, ARCHITECTURE.md).
 SUPABASE_URL = (os.environ.get('SUPABASE_URL') or '').rstrip('/')
 SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
+# 로컬 모델 — 배포본은 동봉하지 않고 첫 사용 때 내려받는다(docs/LOCAL_MODELS.md 설계 B).
+# 매니페스트는 앱에 동봉(읽기 전용), 실제 파일은 APP_ROOT/models/ 에 쌓인다(포터블).
+MODELS_DIR = pathlib.Path(os.environ.get('MODELS_DIR') or (APP_ROOT / 'models'))
+MODELS_MANIFEST = pathlib.Path(
+    os.environ.get('MODELS_MANIFEST') or (BUNDLE / 'models_manifest.json')
+)
 LIMIT = threading.BoundedSemaphore(3)
 HEADLINE_MODEL = os.environ.get('HEADLINE_MODEL', 'onebeans/keT5-news-title-gen')
 SUBTITLE_MODEL = os.environ.get('SUBTITLE_MODEL', 'gogamza/kobart-summarization')

@@ -82,6 +82,18 @@ dist\AINewsroom\
 `requirements-headline.txt`를 설치하고 `HEADLINE_CACHE_DIR`(모델 캐시 경로)을 지정하세요.
 기본 구성은 원격 AI(`OPENAI_API_KEY`)입니다.
 
+### 모델은 첫 사용 때 내려받습니다 (설계 B, `docs/LOCAL_MODELS.md`)
+
+- 배포본은 **매니페스트만** 동봉합니다(`_internal/models_manifest.json`). 실제 모델 파일(팩트체크 2.18 GB)은
+  첫 사용 때 `<exe 폴더>/models/` 로 내려받습니다(**포터블**, SHA-256 검증·이어받기).
+- 설치/상태 확인:
+  ```
+  AINewsroom-debug.exe --models                 # 상태
+  AINewsroom-debug.exe --models install         # 매니페스트 base 에서 다운로드
+  AINewsroom-debug.exe --models install --from "\\서버\배포\models\..."   # 사내망/오프라인 설치
+  ```
+- 매니페스트 생성: `python dev/checks/make_model_manifest.py --dir <모델폴더> --id <id> --out app/models_manifest.json`
+
 ## 검증 기록 (2026-10-02, Windows · PyInstaller 6.22.3)
 
 - `AINewsroom-debug.exe --check` → `STARTUP CHECK PASSED`

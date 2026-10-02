@@ -8,6 +8,7 @@ from .managers import (
     StorageManager,
     AIManager,
     SessionManager,
+    ModelManager,
     CollaborationManager,
     SyncManager,
     EncryptionManager,
@@ -20,6 +21,7 @@ class Core:
         self.storage = StorageManager()
         self.ai = AIManager()
         self.session = SessionManager()
+        self.models = ModelManager()
         self.project = ProjectManager(self.storage)
         self.collaboration = CollaborationManager()
         self.sync = SyncManager()

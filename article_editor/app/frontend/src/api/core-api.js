@@ -10,6 +10,9 @@ export const ROUTES = Object.freeze({
   status: "/api/status",
   session: "/api/session",
   signOut: "/api/session/signout",
+  models: "/api/models",
+  modelsInstall: "/api/models/install",
+  modelsCancel: "/api/models/cancel",
   assist: "/api/assist",
   articlesSave: "/api/articles/save",
   unsplashSearch: "/api/unsplash/search",
@@ -36,6 +39,14 @@ export function createCoreApi(transport) {
       transport.json(ROUTES.session, { email, password }, signal),
     /** 로그아웃 */
     signOut: (signal) => transport.json(ROUTES.signOut, {}, signal),
+    /** 로컬 모델 상태(설치 여부·진행률·마지막 오류) — 첫 사용 때 내려받는다 */
+    models: (signal) => transport.json(ROUTES.models, null, signal),
+    /** 모델 설치 시작(백그라운드). 진행률은 models() 로 폴링한다 */
+    installModels: (options, signal) =>
+      transport.json(ROUTES.modelsInstall, options || {}, signal),
+    /** 설치 취소 */
+    cancelModelInstall: (signal) =>
+      transport.json(ROUTES.modelsCancel, {}, signal),
     /** AI 편집 보조: kind = metadata | flow | photo_keywords | image | captions */
     assist: (payload, signal) => transport.json(ROUTES.assist, payload, signal),
     /** 원고 디스크 저장 (파일: .article-workspace/articles) */

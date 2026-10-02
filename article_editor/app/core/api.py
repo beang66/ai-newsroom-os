@@ -30,6 +30,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/session':
             try:return self.send(200,CORE.session.status())
             except RequestError as e:return self.send(e.status,{'error':e.message})
+        if self.path=='/api/models':
+            try:return self.send(200,CORE.models.status())
+            except RequestError as e:return self.send(e.status,{'error':e.message})
         path=urllib.parse.urlsplit(self.path)
         if path.path=='/api/unsplash/search':
             try:
@@ -64,7 +67,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send(404,{'error':'찾을 수 없는 경로입니다.'})
     def do_POST(self):
         if not self.allowed() or self.headers.get('Origin') not in (f'http://localhost:{self.port()}',f'http://127.0.0.1:{self.port()}'):return self.send(403,{'error':'워크스페이스에서 요청해 주세요.'})
-        if self.path not in ('/api/assist','/api/articles/save','/api/session','/api/session/signout'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        if self.path not in ('/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/models/install','/api/models/cancel'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
@@ -73,6 +76,8 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data,dict):raise RequestError('잘못된 요청입니다.')
             if self.path=='/api/session':return self.send(200,CORE.session.sign_in(data))
             if self.path=='/api/session/signout':return self.send(200,CORE.session.sign_out())
+            if self.path=='/api/models/install':return self.send(200,CORE.models.start_install(data))
+            if self.path=='/api/models/cancel':return self.send(200,CORE.models.cancel())
             if self.path=='/api/articles/save':return self.send(200,CORE.storage.save_article(data))
             if not LIMIT.acquire(blocking=False):raise RequestError('다른 AI 작업이 진행 중이에요. 잠시 후 다시 시도하세요.',429)
             try:result=CORE.ai.assist(data)

@@ -55,9 +55,9 @@ for (const dir of SCAN) {
 }
 
 if (findings.length) {
-  console.error("코어 호출 경계 위반 — frontend/src/api/ 를 통해서만 코어를 호출하세요.\n");
+  console.error("코어 호출 경계 위반 — web/src/api/ 를 통해서만 코어를 호출하세요.\n");
   console.error(findings.join("\n"));
   console.error(`\n총 ${findings.length}건.`);
   process.exit(1);
 }
-console.log("PASS api-boundary: 코어 호출이 frontend/src/api/ 로만 모여 있습니다.");
+console.log("PASS api-boundary: 코어 호출이 web/src/api/ 로만 모여 있습니다.");

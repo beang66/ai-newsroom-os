@@ -96,6 +96,19 @@ dist\AINewsroom\
 - **저장 위치는 설치 폴더 안**입니다: 모델은 `<exe 폴더>/models/`, 허깅페이스 캐시(제목·부제)는 그 안 `models/hf/`.
   폴더째 복사하면 모델도 따라옵니다. 쓰기 권한이 없는 곳(예: Program Files)이면 `MODELS_DIR` 를 지정하세요.
 
+## 프론트엔드 빌드 (React/Vite) — 포장 전 필수
+
+`app/frontend/` 는 **빌드 산출물**입니다(소스는 `article_editor/web/`). 예전처럼 손으로 고치는 곳이 아닙니다.
+
+```
+npm --prefix web install      # 최초 1회 (Node 20.19+ / 현재 v24 확인)
+npm --prefix web run build    # → app/frontend/ (index.html + assets/*, 코어가 서빙·spec 이 동봉)
+```
+
+- 창 없이 개발: `npm --prefix web run dev` (Vite 5173, `/api` 는 로컬 코어 8765 로 프록시)
+- 옛 vanilla 프론트는 `app/frontend-legacy/`(gitignore)에 비교용으로만 남겨 둡니다.
+- 경계 검사는 `article_editor` 에서 `npm test` (대상: `web/src`, `web/src/api/` 예외)
+
 ## 검증 기록 (2026-10-02, Windows · PyInstaller 6.22.3)
 
 - `AINewsroom-debug.exe --check` → `STARTUP CHECK PASSED`

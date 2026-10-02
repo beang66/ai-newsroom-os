@@ -97,6 +97,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', mime)
         self.send_header('Content-Length', str(len(payload)))
         self.send_header('Cache-Control', 'no-store')
+        # 연결을 재사용하지 않는다. 본문을 읽지 않고 응답한 경우(401/404 등) 남은 본문 바이트가
+        # 다음 요청으로 파싱되어 501/400 이 나는 문제를 막는다(Render 프록시가 연결을 재사용한다).
+        self.send_header('Connection', 'close')
+        self.close_connection = True
         self.end_headers()
         try:
             self.wfile.write(payload)
@@ -158,6 +162,8 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {'error': '지원하지 않는 경로입니다.'})
 
     def do_POST(self):
+        # 본문을 **먼저** 읽는다 — 401/404 로 조기 반환할 때 남은 본문이 다음 요청을 오염시키지 않게.
+        body = self._body()
         path = urllib.parse.urlsplit(self.path).path
         if not path.startswith('/ai/'):
             return self._json(404, {'error': '지원하지 않는 경로입니다.'})
@@ -166,7 +172,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(404, {'error': '지원하지 않는 AI 경로입니다.'})
         if self._guard() is None:
             return
-        body = self._body()
         if len(body) > 40_000_000:
             return self._json(413, {'error': '요청이 너무 큽니다.'})
         status, mime, raw = forward(
@@ -179,6 +184,13 @@ class Handler(BaseHTTPRequestHandler):
             method='POST',
         )
         self._send(status, raw, mime)
+
+
+    def _not_allowed(self):
+        # 지원하지 않는 메서드도 JSON 404 로 답한다(기본 501 HTML 은 본문을 남겨 연결을 오염시킬 수 있다).
+        self._json(404, {'error': '지원하지 않는 경로입니다.'})
+
+    do_PUT = do_PATCH = do_DELETE = do_OPTIONS = _not_allowed
 
 
 def main():

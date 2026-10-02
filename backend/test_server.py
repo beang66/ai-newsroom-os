@@ -143,6 +143,46 @@ class ProxyTests(unittest.TestCase):
             self.call('/unsplash/absolute?url=https://evil.example/a.jpg', token='good-token')[0], 400
         )
 
+    def test_unauthorized_post_closes_connection(self):
+        """401 로 답할 때 연결을 닫아야 한다 — 남은 본문이 다음 요청으로 파싱되면 501/400 이 난다."""
+        import socket
+
+        body = b'{"model": "x"}'
+        with socket.create_connection(('127.0.0.1', self.proxy.server_port), timeout=5) as sock:
+            sock.sendall(
+                b'POST /ai/responses HTTP/1.1\r\n'
+                b'Host: 127.0.0.1\r\n'
+                b'Content-Type: application/json\r\n'
+                b'Connection: keep-alive\r\n'
+                b'Content-Length: %d\r\n\r\n%s' % (len(body), body)
+            )
+            head = b''
+            while b'\r\n\r\n' not in head:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                head += chunk
+            self.assertIn(b'401', head.split(b'\r\n')[0])
+            self.assertIn(b'Connection: close', head)
+            sock.settimeout(3)
+            try:
+                while sock.recv(4096):
+                    pass  # 응답 본문을 다 읽으면 EOF(b'')로 끝나야 한다
+            except TimeoutError:
+                self.fail('서버가 연결을 닫지 않았습니다(남은 본문이 다음 요청을 오염시킬 수 있음)')
+
+    def test_unknown_method_is_json_404(self):
+        request = urllib.request.Request(
+            self.base + '/ai/responses', data=b'{}', method='PUT', headers={'Content-Type': 'application/json'}
+        )
+        try:
+            with urllib.request.urlopen(request) as response:
+                status, payload = response.status, json.load(response)
+        except urllib.error.HTTPError as error:
+            status, payload = error.code, json.load(error)
+        self.assertEqual(status, 404)
+        self.assertIn('error', payload)
+
     def test_auth_can_be_disabled_for_dev(self):
         original = self.proxy_module.AUTH_REQUIRED
         self.proxy_module.AUTH_REQUIRED = False

@@ -126,6 +126,20 @@ python dev/checks/backend_check.py
 `/api/health` 만 있습니다. 진단 결과는 `PASS 백엔드 /api/health 도달함(웹앱형 Express, status=ok) - /ai/* 는 아직 없음` 이며,
 계약 경로가 하나도 없어 원격 AI·사진은 아직 동작하지 않습니다. 전면수정 범위와 계약 전체는 **`docs/BACKEND_CONTRACT.md`** 참고.
 
+## 9-1. 배포 완료 — 우리 프록시로 전환 (2026-10-02)
+
+기존 Render 서비스를 **우리 프록시(Python)** 로 전환해 배포했다.
+
+- 주소: `https://ai-newsroom-os-x7mb.onrender.com` (Source `37501c3`, Runtime=Python, rootDir=`backend`)
+- 확인 결과: `/ai/health` **200** (`service=ainewsroom-proxy authRequired=True`),
+  `/ai/responses`·`/unsplash/*` 는 토큰 없이 **401**(경로 존재), 진단 `backend_check.py` **3/3 PASS**
+- 앱 기본값(`app/core/defaults.py`)에 주소를 심어 **`.env` 없이 remote 로 동작**한다(`AI_BACKEND` 기본이 remote)
+- 남은 것: Render **Environment** 에 `OPENAI_API_KEY`·`UNSPLASH_ACCESS_KEY` 등록
+  (지금은 `/ai/health` 가 `openai=false unsplash=false` → 실제 AI·사진 호출은 아직 실패한다)
+- 부수 수정: 401/404 로 조기 응답할 때 연결을 닫도록(`Connection: close`) 고쳤다.
+  읽지 않은 요청 본문이 남아 다음 요청으로 파싱되면서 **간헐적 501/400** 이 나던 문제
+  (`backend/server.py` + `backend/test_server.py` 회귀 테스트 2개).
+
 로그인·세션 계약 — 코어가 토큰을 보관하고, 프론트는 상태만 본다(토큰은 절대 넘기지 않는다):
 
 | 메서드 | 경로 | 동작 |

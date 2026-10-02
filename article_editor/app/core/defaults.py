@@ -14,4 +14,4 @@
 SUPABASE_URL = 'https://clivtnizzfrbtcceslem.supabase.co'
 SUPABASE_ANON_KEY = 'sb_publishable_qa-3xN4O8F00SR3K45z5OQ_aRwo995v'
 # 백엔드(Render) 주소 — 배포한 뒤 채우면 새 PC에서 `.env` 없이 remote 로 동작한다.
-AI_BACKEND_URL = ''
+AI_BACKEND_URL = 'https://ai-newsroom-os-x7mb.onrender.com'

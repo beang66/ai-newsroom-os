@@ -40,9 +40,50 @@ UI ──(api.이름(...))──▶ index.js ──▶ http.js ─▶ client.js 
 | 10 | **진단/로그** | 포트·HTTP 로그가 사라짐 | `--check`/`--smoke`는 계약 메서드 기준으로 유지. `app.log` 그대로 |
 | 11 | **셸 준비 확인 마커** | `desktop/runtime.py:wait_ready()`가 응답에 `<article-workspace` 문자열이 있는지로 "우리 서버가 맞는지"를 판별한다 | UI 엔트리를 React 등으로 교체하면 **마커도 함께 갱신**한다(또는 `/api/status` 계약 기반 확인으로 대체). 안 바꾸면 실행이 "시작 화면 확인 실패"로 죽는다 |
 
-## 4. 스파이크 순서 (출시 준비)
+## 4. 스파이크 실행 (`spikes/ipc_transport/spike.py`)
 
-1. `create_window(html=/file://)` 로드 시 ① IndexedDB 가용 ② `pywebview.api` 왕복(15MB base64) ③ `window.print()` ④ 상대 모듈 로딩
-2. JS API 호출이 UI를 막지 않는지 (3번 항목과 함께 100초짜리 더미 호출로 확인)
-3. 1~2 결과로 (a) IndexedDB 유지 / (b) 저장소 이전 중 택일 → 이전이면 `core-api.saveDraft` 계약 추가
-4. `ipc.js` 실제 구현 + `mode:"ipc"` 전환 → 창 스모크 7항목을 계약 기준으로 확장
+```
+python spikes/ipc_transport/spike.py --mode http|file|html|bridge
+```
+
+## 5. 측정 결과 (2026-10-02, Windows · WebView2 154.0.4258.48 · pywebview 6.2.1)
+
+| 로드 방식 | UI 모듈 로딩 | IndexedDB | 로컬 코어(HTTP) | 외부 백엔드 |
+|---|---|---|---|---|
+| `http://127.0.0.1:<포트>` (지금) | ✓ | ✓ (origin = 포트) | ✓ 200 | ✓ 200 (프리플라이트 + `Authorization` 통과) |
+| `file://` (로컬 파일 직접) | **✓** | **✓** (origin = `file://`) | ✗ `Failed to fetch` (Origin 검사 403) | ✓ 200 (백엔드가 `file://` 허용 시) |
+| `html=` (HTML 문자열) | ✗ 엘리먼트 미승격 | **✗ denied** ("access to the Indexed Database API is denied") | ✗ | ✓ 200 (`Origin: null`) |
+
+브리지(`--mode bridge`)
+
+| 항목 | 결과 | 판정 |
+|---|---|---|
+| 작은 왕복(`ping`) | **9 ms** | HTTP와 사실상 동일 |
+| 15MB 상행(JS→Python) | **381 ms** | 충분 |
+| 15MB 하행(Python→JS, base64 20MB) | **2,010 ms** | 사진 1장 가져올 때 2초 — 수용 |
+| 5초짜리 Python 호출 중 UI 타이머 | **314 ticks / 5.17s (정상 ≈312)** | **UI·렌더링 멈춤 없음** (pywebview가 별도 스레드에서 처리) |
+
+`window.pywebview` 는 **`js_api` 없이도 생성된다**(실측) → 브리지 존재 판단은 메서드로 해야 한다.
+(`index.js` 는 `typeof api.core === "function"` 으로 수정함)
+
+## 6. 결정 (측정 기반)
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 출시(IPC) 로드 방식 | **`file://` + IPC 브리지** | 모듈 로딩 ✓, IndexedDB ✓, 포트 불필요 |
+| `html=` 모드 | **폐기** | 모듈 해석 불가 + IndexedDB 차단 |
+| **초안(IndexedDB) 이전** | **불필요(보류)** | `file://` origin에서 그대로 동작. 게다가 origin에 포트가 없어 **"포트가 바뀌면 원고가 안 보이는" 문제가 원천 제거**됨 |
+| 대용량 사진 | 현행 유지(`photoBytes` → Blob) | 15MB 2초. 필요 시 파일 경로 방식으로 대체 |
+| 긴 AI 호출 | 현행 유지(단일 호출) | UI 멈춤 없음(실측) |
+| 취소(AbortSignal) | IPC에서는 "결과 무시"로 완화 | 브리지 호출은 중단 불가 |
+| 개발 모드 | HTTP 유지(`mode:"http"`), 브라우저에서도 동작 | 개발 편의 + 스파이크/자동화 재사용 |
+| 외부 백엔드 연결 | **코어가 프록시**(권장) — 프론트는 계약만 호출 | CORS 불필요, 토큰/키를 코어가 보관(`ARCHITECTURE.md` 원칙). 프론트 직접 호출도 가능하지만 백엔드가 `file://`/`null` Origin을 **명시 허용**해야 함 |
+| macOS | 미검증(별도 스파이크) | WKWebView는 `file://`에서 로컬 파일 접근/IndexedDB 정책이 다를 수 있음 |
+
+## 7. 남은 전환 작업
+
+1. 파이썬 브리지 노출: `bridge.core(path, payload)` / `bridge.coreBytes(path)` — `core/api.py` 라우팅 재사용
+2. `ipc.js` 실제 구현 검증(현 스텁 그대로 동작 예상) → `createAppApi({ mode: "ipc" })`
+3. 셸: 창을 `file://`(frontend/index.html)로 열고 `js_api=CoreBridge()` 전달. `wait_ready` 마커는 `file://` 로드에서는 HTTP 확인이 불가하므로 계약 기반 확인으로 교체
+4. 외부 백엔드 프록시 계약 추가(`ARCHITECTURE.md`의 백엔드 프록시 교체 지점)
+5. 창 스모크 7항목을 IPC 기준으로 확장 + macOS 스파이크

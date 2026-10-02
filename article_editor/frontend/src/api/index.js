@@ -13,6 +13,9 @@ export function createAppApi({ base = "", mode = "http", bridge } = {}) {
   const ipcBridge =
     bridge ??
     (typeof window !== "undefined" ? window.pywebview?.api : undefined);
-  if (mode !== "http" && ipcBridge) return createIpcCoreApi(ipcBridge);
+  // 주의: pywebview 는 js_api 없이도 window.pywebview 를 만든다(스파이크 실측).
+  // 그래서 "브리지가 있는가"는 메서드 존재로 판단한다.
+  const usable = ipcBridge && typeof ipcBridge.core === "function";
+  if (mode !== "http" && usable) return createIpcCoreApi(ipcBridge);
   return createHttpCoreApi(base);
 }

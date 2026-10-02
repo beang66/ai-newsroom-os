@@ -36,11 +36,11 @@ from desktop import shell  # noqa: E402
 RESULT_PATH = WORKSPACE / 'desktop-shell-smoke.json'
 
 BOOT_JS = """JSON.stringify((() => {
-  const host = document.querySelector('article-workspace');
+  const root = document.getElementById('root');
   return {
     state: document.readyState,
-    upgraded: !!customElements.get('article-workspace'),
-    shadow: !!(host && host.shadowRoot),
+    reactRoot: !!root,
+    mounted: !!(root && root.childElementCount > 0),
     idb: typeof indexedDB !== 'undefined',
     clipboard: !!(navigator.clipboard && navigator.clipboard.writeText),
     userAgent: navigator.userAgent,
@@ -91,7 +91,8 @@ IDB_READ_JS = """JSON.stringify((() => {
 })())"""
 
 DROP_JS = """JSON.stringify((() => {
-  const host = document.querySelector('article-workspace');
+  // 새 React 앱에는 드롭 전용 호스트 엘리먼트가 없다 → 창(웹뷰)이 드롭을 전달하는지 자체를 본다.
+  const host = document.body;
   if (!host) return { delivered: false, reason: 'no-host' };
   let flag = 'none';
   host.addEventListener('drop', () => { flag = 'received'; }, { capture: true, once: true });
@@ -159,12 +160,12 @@ def runner(window, mode, checks, timeout):
         deadline = time.time() + 25
         while time.time() < deadline:
             boot = safe_eval(window, BOOT_JS)
-            if isinstance(boot, dict) and boot.get('upgraded') and boot.get('shadow'):
+            if isinstance(boot, dict) and boot.get('reactRoot') and boot.get('mounted'):
                 break
             time.sleep(0.25)
 
-        ok_boot = isinstance(boot, dict) and bool(boot.get('upgraded')) and bool(boot.get('shadow'))
-        checks.append(('창 부팅: 커스텀 엘리먼트 승격 + Shadow DOM 렌더', ok_boot, boot))
+        ok_boot = isinstance(boot, dict) and bool(boot.get('reactRoot')) and bool(boot.get('mounted'))
+        checks.append(('창 부팅: React 마운트(#root 에 자식 노드)', ok_boot, boot))
         if isinstance(boot, dict):
             checks.append(('IndexedDB API 가용', bool(boot.get('idb')), boot.get('idb')))
             checks.append(('클립보드 API 가용', bool(boot.get('clipboard')), boot.get('clipboard')))

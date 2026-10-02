@@ -15,6 +15,9 @@ export const ROUTES = Object.freeze({
   modelsCancel: "/api/models/cancel",
   assist: "/api/assist",
   articlesSave: "/api/articles/save",
+  factcheckStatus: "/api/factcheck/status",
+  factcheckRun: "/api/factcheck/run",
+  semanticParse: "/api/semantic/parse",
   unsplashSearch: "/api/unsplash/search",
   photo: (id) => "/api/unsplash/photo/" + encodeURIComponent(id),
   photoTrack: (id) => "/api/unsplash/photo/" + encodeURIComponent(id) + "/track",
@@ -49,6 +52,14 @@ export function createCoreApi(transport) {
       transport.json(ROUTES.modelsCancel, {}, signal),
     /** AI 편집 보조: kind = metadata | flow | photo_keywords | image | captions */
     assist: (payload, signal) => transport.json(ROUTES.assist, payload, signal),
+    /** 팩트체크 준비 상태(모델·런타임 설치 여부) */
+    factcheckStatus: (signal) => transport.json(ROUTES.factcheckStatus, null, signal),
+    /** 팩트체크: nodes=[{id,type,text,linkedSourceIds?}], materials=[{id,title,content,date?,speaker?}] */
+    factcheckRun: (nodes, materials, signal) =>
+      transport.json(ROUTES.factcheckRun, { nodes, materials }, signal),
+    /** 의미 단위 청킹: source = frontend | opendart */
+    semanticParse: (text, source = "frontend", signal) =>
+      transport.json(ROUTES.semanticParse, { text, source }, signal),
     /** 원고 디스크 저장 (파일: .article-workspace/articles) */
     saveArticle: (draft, signal) =>
       transport.json(ROUTES.articlesSave, { draft }, signal),

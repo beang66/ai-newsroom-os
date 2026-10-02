@@ -95,7 +95,9 @@ def wait_ready(url, server=None, retries=100, delay=.1):
         if server is not None and not server.is_running():
             raise RuntimeError('서버 실행에 실패했습니다. 이 창의 오류 메시지를 확인해 주세요.')
         try:
-            if '<article-workspace' not in fetch(url, timeout=1):
+            html = fetch(url, timeout=1)
+            # 새 React 앱(#root)과 옛 커스텀 엘리먼트(<article-workspace>) 둘 다 허용한다.
+            if 'id="root"' not in html and '<article-workspace' not in html:
                 raise RuntimeError('새 편집기 시작 화면을 확인하지 못했습니다.')
             return
         except OSError:

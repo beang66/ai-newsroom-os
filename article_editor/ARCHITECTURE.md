@@ -49,6 +49,8 @@ article_editor/                ← 프로젝트 루트 (데이터·설정·문�
 - The stable interface is the HTTP surface:
   `GET /api/status`, `POST /api/assist`, `POST /api/articles/save`,
   `GET /api/unsplash/search`, `GET /api/unsplash/photo/:id[/track]`.
+  `GET /api/factcheck/status`, `POST /api/factcheck/run`, `POST /api/semantic/parse`
+  (factcheck.status / factcheck.run / semantic.parse — 구현: `app/core/ai/factcheck/`, 의존성: `requirements-factcheck.txt`).
   Internal module layout can change freely; these contracts stay.
 - **Local transport is a detail.** Development uses HTTP (works in a browser too);
   the release build switches the same contract to the pywebview IPC bridge by changing

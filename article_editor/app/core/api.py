@@ -30,6 +30,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/session':
             try:return self.send(200,CORE.session.status())
             except RequestError as e:return self.send(e.status,{'error':e.message})
+        if self.path=='/api/factcheck/status':
+            try:return self.send(200,CORE.ai.factcheck_status())
+            except RequestError as e:return self.send(e.status,{'error':e.message})
         if self.path=='/api/models':
             try:return self.send(200,CORE.models.status())
             except RequestError as e:return self.send(e.status,{'error':e.message})
@@ -59,15 +62,23 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200,raw,mime)
             except RequestError as e:return self.send(e.status,{'error':e.message})
             except Exception:return self.send(502,{'error':'사진을 가져오지 못했어요. 다시 시도해 주세요.'})
-        if path.path.startswith(('/assets/','/src/')):
+        if path.path.startswith('/assets/') or path.path.startswith('/src/') or path.path.startswith('/public/'):
+            # 빌드된 React 앱(Vite)도 여기서 서빙한다 — 정적 파일은 frontend/ 안으로 제한한다.
             file=(FRONTEND/path.path.lstrip('/')).resolve()
-            if (file.is_relative_to(FRONTEND/'assets') or file.is_relative_to(FRONTEND/'src')) and file.is_file() and file.suffix in ('.css','.js'):
-                return self.send(200,file.read_bytes(),mimetypes.guess_type(file.name)[0]+'; charset=utf-8')
+            if file.is_relative_to(FRONTEND) and file.is_file() and file.suffix in (
+                '.css','.js','.mjs','.map','.svg','.png','.jpg','.jpeg','.webp','.gif','.ico',
+                '.woff','.woff2','.ttf','.otf','.json','.txt',
+            ):
+                return self.send(200,file.read_bytes(),mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
         if self.path in ('/','/index.html'):return self.send(200,(FRONTEND/'index.html').read_bytes(),'text/html; charset=utf-8')
+        if self.path.startswith('/favicon') or self.path.startswith('/icons'):
+            file=(FRONTEND/self.path.lstrip('/')).resolve()
+            if file.is_relative_to(FRONTEND) and file.is_file():
+                return self.send(200,file.read_bytes(),mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
         self.send(404,{'error':'찾을 수 없는 경로입니다.'})
     def do_POST(self):
         if not self.allowed() or self.headers.get('Origin') not in (f'http://localhost:{self.port()}',f'http://127.0.0.1:{self.port()}'):return self.send(403,{'error':'워크스페이스에서 요청해 주세요.'})
-        if self.path not in ('/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/models/install','/api/models/cancel'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        if self.path not in ('/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
@@ -80,7 +91,10 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/models/cancel':return self.send(200,CORE.models.cancel())
             if self.path=='/api/articles/save':return self.send(200,CORE.storage.save_article(data))
             if not LIMIT.acquire(blocking=False):raise RequestError('다른 AI 작업이 진행 중이에요. 잠시 후 다시 시도하세요.',429)
-            try:result=CORE.ai.assist(data)
+            try:
+                if self.path=='/api/factcheck/run':result=CORE.ai.factcheck_run(data)
+                elif self.path=='/api/semantic/parse':result=CORE.ai.semantic_parse(data)
+                else:result=CORE.ai.assist(data)
             finally:LIMIT.release()
             self.send(200,result)
         except RequestError as e:self.send(e.status,{'error':e.message})

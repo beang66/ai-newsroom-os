@@ -12,7 +12,7 @@ _APP = Path(__file__).resolve().parents[2] / 'app'
 if str(_APP) not in sys.path:
     sys.path.insert(0, str(_APP))
 
-import unittest, threading, urllib.request, urllib.error, json, os, tempfile
+import unittest, threading, urllib.request, urllib.error, json, os, re, tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
@@ -54,11 +54,18 @@ class ApiTestCase(unittest.TestCase):
 
 class ServerTests(ApiTestCase):
     def test_static_assets(self):
-        for path, mime in [('/', 'text/html'), ('/assets/article-workspace.js', 'javascript'), ('/assets/donga-fonts.css', 'text/css'), ('/src/api/client.js', 'javascript')]:
-            status, raw, h = self.request(path)
-            self.assertEqual(status, 200)
-            self.assertIn(mime, h['Content-Type'])
-            self.assertGreater(len(raw), 100)
+        # 새 프론트는 Vite 빌드 결과(해시 파일명)를 코어가 그대로 서빙한다.
+        status, raw, headers = self.request('/')
+        self.assertEqual(status, 200)
+        self.assertIn('html', headers['Content-Type'])
+        self.assertIn(b'id="root"', raw)
+        html = raw.decode('utf-8', 'replace')
+        assets = re.findall(r'(?:src|href)="(?:\./)?(assets/[^"]+)"', html)
+        self.assertTrue(assets, 'index.html 에 빌드 자산 링크가 있어야 합니다(web/ 에서 npm run build)')
+        for path in assets:
+            status, body, headers = self.request('/' + path)
+            self.assertEqual(status, 200, path)
+            self.assertGreater(len(body), 100, path)
 
     def test_traversal(self):
         self.assertEqual(self.request('/assets/../server.py')[0], 404)

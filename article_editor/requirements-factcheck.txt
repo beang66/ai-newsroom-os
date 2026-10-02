@@ -1,0 +1,9 @@
+# 팩트체크·의미 청킹 (app/core/ai/factcheck) — 2026-10-02 검증 버전
+# 주의: Qwen3(판정·임베딩)은 transformers>=4.51 이 필요해 requirements-headline.txt(==4.46.2)와 충돌한다.
+numpy>=2.0
+torch>=2.8
+transformers>=4.51
+peft>=0.21
+onnxruntime>=1.20
+tokenizers>=0.21
+safetensors>=0.4

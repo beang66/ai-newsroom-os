@@ -24,7 +24,7 @@ w.fetch = async () => {
 };
 let source = fs
   .readFileSync(
-    new URL("../../app/frontend/assets/article-workspace.js", import.meta.url),
+    new URL("../../app/frontend-legacy/assets/article-workspace.js", import.meta.url),  // 레거시 UI(이식 전) 전용
     "utf8",
   )
   .replace(/^import[\s\S]*?from ["'][^"']+["'];?\r?\n/gm, "")

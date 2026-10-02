@@ -39,6 +39,7 @@ GPT(Codex)로 작업하다 토큰 한도로 2026-09-30부터 Claude로 이어서
 
 | 2026-09-30 18:20 | Claude | (사용자 승인 A) 제목 역할을 정석형·행위·결과형·수치·충격형 기준으로 변경, 역할명 "수치 강조형"→"수치·충격형", 부제 사실 선택을 "핵심 보충(경위·원인·결과) 우선, 후속 절차 후순위"로 변경. 변경 전 파일은 Claude 스크래치패드에 백업 | server.py(review_instructions 역할 3줄, angle_instructions subtitle_facts 문장), index.html(역할명), HUGGINGFACE_HEADLINE_GUIDE.md |
 | 2026-09-30 18:30 | Claude | ⚠️ 변경 후 역주행 기사 3회 모두 "원문 근거와 일치하는 부제를 완성하지 못했어요" 오류. 원인: 부제 사실이 핵심 사건 쪽으로 옮겨가며 여러 문장 정보(치매·역주행·3명)를 섞게 됐고, 마지막 안전 필터가 근거 문장에 없는 단어를 가진 부제를 모두 탈락시킴. 추가 발견: 최종 교열 단계 제목 최대 46자 제한 때문에 제목이 "정면충", "3"처럼 잘림 → 사용자에게 보고, 결정 대기 | - |
+| 2026-10-02 | Claude | 팩트체크·의미 청킹 이식(archive-os.v2 backend → app/core/ai/factcheck): AIManager.factcheck_status/run·semantic_parse, API `GET /api/factcheck/status`·`POST /api/factcheck/run`·`POST /api/semantic/parse`, core-api.js 메서드, 매니페스트에 임베딩·경계 모델 추가 후 3개 모델 설치(models/, 해시 검증), dev/tests/test_factcheck.py(5개, 전체 41개 통과). ⚠️ transformers 충돌: headline ==4.46.2 vs Qwen3 >=4.51 → 결정 대기 | app/core/ai/factcheck/*, app/core/managers/ai_manager.py, app/core/api.py, app/frontend/src/api/core-api.js, app/models_manifest.json, requirements-factcheck.txt, dev/tests/test_factcheck.py, ARCHITECTURE.md |
 
 ## 테스트 결과
 

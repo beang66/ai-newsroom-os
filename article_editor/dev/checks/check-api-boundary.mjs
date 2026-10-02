@@ -11,9 +11,9 @@ import { fileURLToPath } from "node:url";
 //   node scripts/check-api-boundary.mjs
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const SCAN = ["app/frontend"];
+const SCAN = ["web/src"];
 const SKIP = [
-  /^app[\\/]frontend[\\/]src[\\/]api[\\/]/, // 경계 자체(계약·전송)
+  /^web[\\/]src[\\/]api[\\/]/, // 계약·전송 경계 자체(여기만 코어를 안다)
   /[\\/]node_modules[\\/]/,
 ];
 const EXT = new Set([".js", ".mjs", ".ts", ".tsx"]);

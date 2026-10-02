@@ -3,6 +3,10 @@
 앱(데스크톱 코어)은 **운영키를 갖지 않는다**(`ARCHITECTURE.md` 하드 규칙).
 이 서비스가 키를 보관하고 대신 호출하며, 앱이 보낸 **사용자 JWT**를 Supabase로 검증한다.
 
+> **이미 Express(Render) 서비스를 쓰고 있다면 새로 만들 필요가 없다** — `express/README.md`의
+> 드롭인 라우터(`express/ai-proxy.ts`)를 `server.ts`에 3줄로 붙이면 끝난다. 아래는 별도 서비스로
+> 분리하고 싶을 때의 구성이다.
+
 ```
 앱(코어) ──Bearer <사용자 JWT>──▶ 이 서비스(Render) ──운영키──▶ OpenAI / Unsplash
                                       └─ Supabase /auth/v1/user 로 JWT 검증

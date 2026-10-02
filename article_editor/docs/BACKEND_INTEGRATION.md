@@ -132,4 +132,19 @@ python dev/checks/backend_check.py
 - 로그인 후 코어는 백엔드 호출에 `Authorization: Bearer <사용자 JWT>` 를 붙인다(`APP_TOKEN` 보다 우선).
 - 만료 60초 전부터 refresh token 으로 자동 갱신한다.
 - 토큰은 **메모리에만** 둔다(재시작하면 재로그인). 디스크 저장은 보안 P1('앱 잠금')과 함께 결정한다.
-- 검증: `dev/tests/test_server.py::SupabaseSessionTests` (로그인 → 코어 토큰 보관 → 백엔드 호출에 그 토큰 사용)
+## 10. 참조 구현 — `backend/` (Render 배포용 프록시)
+
+우리 백엔드가 아직 없다면 **`backend/`를 그대로 Render에 올리면 이 계약을 충족**한다(의존성 0).
+
+| 파일 | 역할 |
+|---|---|
+| `backend/server.py` | `/ai/health`, `/ai/responses`, `/ai/images/generations`, `/unsplash/*` 중계 + Supabase JWT 검증 + 사용자별 분당 제한 + 무저장 로그 |
+| `backend/test_server.py` | 스텁 업스트림으로 계약 테스트 8개 (`python backend/test_server.py`) |
+| `backend/render.yaml` | Render Blueprint(환경변수 **이름만**; 값은 대시보드에서) |
+| `backend/README.md` | 배포·환경변수·로컬 시험 절차 |
+
+배포: Render → **New → Web Service → Root Directory `backend` → Start `python server.py`**,
+환경변수 `OPENAI_API_KEY` · `UNSPLASH_ACCESS_KEY` · `SUPABASE_URL` · `SUPABASE_ANON_KEY`.
+
+검증 기록: `backend/test_server.py` **8/8 OK**, 그리고 앱까지 포함한 종단(코어 → 프록시 → 스텁 업스트림)으로
+`/api/assist` · `/api/unsplash/search` 가 왕복함을 확인(3/3 PASS, 실제 키 없이).

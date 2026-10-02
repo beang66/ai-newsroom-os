@@ -114,5 +114,29 @@ python dev/checks/backend_check.py --url https://<서비스>.onrender.com
 3. **파이프라인 중복 주의** — SNS용 **2단 검수(팩트체크+요구사항)** 가 앱의 `ai/router.py` 파이프라인과 겹친다.
    공통 규칙(팩트체크·검수)의 소유 위치를 정해 중복 구현을 막을 것.
 4. **`POST /render` 계약은 우리 백엔드 계약과 별개** — 앱이 직접 호출할지, 백엔드가 중계할지 결정 필요.
-5. `PORT` 하드코딩(3000) — 웹앱(`server.ts`)과 동일한 수정 필요.
+## 9. main 전면 개편 확인 — 순수 React SPA 프로토타입 (2026-10-02, sohyeon1628-prog)
+
+`origin/main` 이 `e933257` → **`ad63bda`** 로 바뀌었다(작업 전 백업: `backup/legacy-main`, `backup/origin-main`).
+
+| 항목 | 내용 |
+|---|---|
+| 구조 | 루트에 **서버가 없다** — `server.ts`·express 삭제. Vite + React 19 + Tailwind 4 SPA |
+| 스크립트 | `dev`/`build`/`preview`(vite), `lint`(oxlint) — **`start` 없음** |
+| 화면 | 기사 작성(`ArticleWriter`) · 팩트체크 서랍(`FactCheckDrawer`) · 플랫폼 변환(`FormatConverter`) · 녹취 스튜디오(`interview/*` 8개 + `interviewStudio.css` 3.5천 줄) · 발행 준비(`PublishPrep`) · 보관함(`ArchiveView`) · 자료 찾기(`SourceSearch`) |
+| 데이터 | **목업**(`src/data/mockData.js`) — 실제 API 연동 없음 |
+| 외부 호출 | **`src/utils/transcribe.js` 하나뿐**: ① `@xenova/transformers`(브라우저 로컬 Whisper) ② Groq/OpenAI Whisper 를 **브라우저에서 직접 호출**(`Authorization: Bearer <사용자 입력 키>`) |
+| 문서 | README 는 Vite 기본 템플릿 그대로 |
+
+### 우리 작업 관점 정리
+
+1. **배포**: 서버가 없으므로 Render **Static Site**(`npm run build` → `dist`)가 맞다.
+   우리 프록시가 쓰는 기존 Web Service 는 그대로 두면 된다.
+2. **백엔드가 필요한 지점은 STT 하나뿐**: 나머지는 목업이라 서버가 필요 없다.
+   STT 도 `@xenova/transformers` 로 **로컬(브라우저) 추론**이 이미 구현되어 있고,
+   **클라우드 STT(Groq/OpenAI) 경로만** 키 노출·CORS 문제가 있다 → 원하면 우리 프록시에
+   `/ai/audio/transcriptions`(멀티파트 중계·무저장)를 추가해 키를 감출 수 있다.
+3. **기능 중복**: 기사 작성·팩트체크·녹취·플랫폼 변환·보관함·발행이 우리 **로컬 앱**과 겹친다.
+   웹을 프로토타입으로 둘지 / 화면 참고자료로 삼을지 / 로컬 앱 화면을 웹 UI에 맞춰 개편할지 **방향 결정 필요**.
+4. 기존 Express 웹앱은 `backup/*` 브랜치에 보존되어 있다(되살릴 때 사용).
+
 

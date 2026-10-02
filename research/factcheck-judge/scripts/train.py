@@ -85,7 +85,7 @@ def main():
         args=TrainingArguments(
             output_dir=str(out / 'checkpoints'), num_train_epochs=args.epochs, learning_rate=args.lr,
             per_device_train_batch_size=args.batch, per_device_eval_batch_size=args.batch * 2,
-            gradient_accumulation_steps=args.accum, warmup_ratio=0.05, weight_decay=0.01, lr_scheduler_type='cosine',
+            gradient_accumulation_steps=args.accum, warmup_steps=0.05, weight_decay=0.01, lr_scheduler_type='cosine',
             bf16=True, eval_strategy='epoch', save_strategy='epoch', save_total_limit=1, load_best_model_at_end=True,
             metric_for_best_model='macro_recall', logging_steps=20, report_to=[], dataloader_num_workers=0,
             gradient_checkpointing=True, gradient_checkpointing_kwargs={'use_reentrant': False}),

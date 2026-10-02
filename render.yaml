@@ -8,7 +8,9 @@ services:
     plan: free
     branch: feature/app-core
     rootDir: backend
-    buildCommand: ""
+    # Render 는 빈 Build Command 를 허용하지 않는다(대시보드 "Cannot be blank").
+    # requirements.txt 는 주석뿐이라 이 명령은 사실상 무해하다(의존성 0).
+    buildCommand: "pip install -r requirements.txt"
     startCommand: python server.py
     healthCheckPath: /ai/health
     autoDeploy: true

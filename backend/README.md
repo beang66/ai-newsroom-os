@@ -21,7 +21,8 @@
 1. Render → **New → Web Service** → 이 저장소 연결
    - **Branch: `feature/app-core`** ← `main` 에는 이 `backend/` 폴더가 없어서 배포가 실패한다
    - **Root Directory: `backend`**
-2. Runtime: **Python**, Build Command: *(비움)*, Start Command: `python server.py`
+2. Runtime: **Python**, Build Command: **`pip install -r requirements.txt`**, Start Command: **`python server.py`**
+   - ⚠️ Render 대시보드는 **빈 Build Command 를 저장하지 않는다**("Cannot be blank"). 의존성이 0이어도 위 명령을 넣으면 된다(주석뿐이라 즉시 끝난다).
    - `PORT` 는 Render 가 주입하고 `HOST` 기본값이 `0.0.0.0` 이라 그대로 뜬다(코드 수정 불필요)
 3. 환경변수(대시보드에서 입력 — **값을 저장소에 넣지 않는다**)
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Sparkles,
   Upload,
@@ -23,7 +23,10 @@ import {
   Layers,
   ArrowRight,
   CheckSquare,
-  Square
+  Square,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
 } from "lucide-react";
 import { initialArticles } from "../data/mockData";
 
@@ -53,8 +56,7 @@ export default function FormatConverter() {
   // 1. 변환 대상 기사
   const [selectedArticle, setSelectedArticle] = useState(initialArticles[0]);
 
-  // 2. 플랫폼 다중 선택 (초기 진입 시는 간결한 초기 상태를 위해 비어있거나 선택 가능)
-  // 사용자가 원하는 플랫폼을 체크하면 오른쪽 편집기가 확장됩니다.
+  // 2. 플랫폼 다중 선택
   const [selectedPlatforms, setSelectedPlatforms] = useState(["instagram"]);
 
   // 3. 다중 선택 시 현재 작업 중인 플랫폼 탭
@@ -84,7 +86,7 @@ export default function FormatConverter() {
     threads: {
       title: "AI 반도체 패권 경쟁 현장",
       caption: "GPU 중심의 한계를 뛰어넘는 국내 AI 반도체 기술의 급부상 🧵",
-      text: `GPU 중심 연산의 한계를 뛰어넘는 국내 AI 반도체 기술의 급부상! 🧵\n\n기존 대비 전력 소비 70% 감소, 데이터 병목 현상을 해결한 초거대 AI 지원 반도체 현장을 취재했습니다.\n\n알고리즘 최적화와 함께 펼쳐지는 글로벌 패권 경쟁, 여러분의 의견은 어떠신가요?`,
+      text: `GPU 중심 연산의 한계를 뛰어넘는 국내 AI 반도체 기술의 급부상! 🧵\n\n기존 대비 전력 소비 70% 감소, 데이터 병목 현상을 해결한 초거대 AI 지원 반도체 현장을 취재했습니다.\n\n알고리즘 최적화와 함께 펼쳐지는 글로벌 패권 경쟁, 여러분의 의견은 어떠신가요?\n\n#ThreadsTech #AI반도체 #기술트렌드`,
       hashtags: ["#ThreadsTech", "#AI반도체", "#기술트렌드"],
       image: sampleImages[1],
       aspectRatio: "16:9",
@@ -105,6 +107,11 @@ export default function FormatConverter() {
     }
   });
 
+  // 마우스 커서 기반 드래그 이동 상태
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0, posX: 50, posY: 50 });
+  const [showGalleryPopover, setShowGalleryPopover] = useState(false);
+
   const fileInputRef = useRef(null);
   const [copiedStatus, setCopiedStatus] = useState("");
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
@@ -116,7 +123,7 @@ export default function FormatConverter() {
     {
       id: "instagram",
       label: "Instagram",
-      desc: "이미지 중심 · 1:1/4:5/16:9 · 캡션 및 해시태그",
+      desc: "이미지 중심 · 1:1 / 4:5 / 16:9 · 캡션 및 해시태그",
       icon: InstagramIcon,
       badge: "피드 포맷",
       themeColor: "from-purple-500 to-pink-500"
@@ -148,7 +155,6 @@ export default function FormatConverter() {
       } else {
         next = [...prev, platformId];
       }
-      // 활성 탭 동기화
       if (!next.includes(activePlatformTab) && next.length > 0) {
         setActivePlatformTab(next[0]);
       }
@@ -181,6 +187,44 @@ export default function FormatConverter() {
     }
   };
 
+  // 마우스 커서 기반 드래그 핸들러 (Pan)
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX,
+      y: e.clientY,
+      posX: platformData[activePlatformTab].positionX,
+      posY: platformData[activePlatformTab].positionY
+    });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging) return;
+    const deltaX = e.clientX - dragStart.x;
+    const deltaY = e.clientY - dragStart.y;
+
+    // 감도 조절 (픽셀 이동을 % 이동으로 변환)
+    const newX = Math.min(100, Math.max(0, dragStart.posX - deltaX * 0.25));
+    const newY = Math.min(100, Math.max(0, dragStart.posY - deltaY * 0.25));
+
+    updatePlatformField(activePlatformTab, "positionX", Math.round(newX));
+    updatePlatformField(activePlatformTab, "positionY", Math.round(newY));
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // 마우스 휠로 Zoom 확대/축소
+  const handleWheel = (e) => {
+    e.preventDefault();
+    const currentZoom = platformData[activePlatformTab].zoom;
+    const zoomStep = e.deltaY < 0 ? 5 : -5;
+    const newZoom = Math.min(180, Math.max(80, currentZoom + zoomStep));
+    updatePlatformField(activePlatformTab, "zoom", newZoom);
+  };
+
   // 해시태그 추가
   const addHashtag = (platform, tag) => {
     const currentText = platformData[platform].text;
@@ -211,56 +255,54 @@ export default function FormatConverter() {
     }, 1200);
   };
 
-  // 현재 활성 탭 플랫폼 정보
   const currentPlatformInfo = platforms.find((p) => p.id === activePlatformTab);
   const currentData = platformData[activePlatformTab];
 
   return (
-    <div className="w-full space-y-6 animate-float-in">
+    <div 
+      className="w-full space-y-6 animate-float-in"
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+    >
 
       {/* ──────────────────────────────────────────
-          1. 상단 타이틀 & 대상 기사 선택 바
+          1. 상단: 전환 중인 기사 표시 & 콤팩트 기사 변경 셀렉터
+          (기존의 불필요한 큰 상단 바를 제거하고 시원하게 상향 정렬)
          ────────────────────────────────────────── */}
-      <div className="relative overflow-hidden bg-white/90 rounded-3xl border border-slate-200/80 p-5 md:p-6 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-100/90 rounded-full text-xs font-extrabold text-slate-800 mb-1.5 border border-slate-200/60">
-              <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-              <span>원스톱 소셜 변환 스튜디오</span>
-            </div>
-            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
-              소셜 미디어 플랫폼 변환
-            </h2>
-            <p className="text-xs md:text-sm text-slate-500 font-medium">
-              선택한 기사 원문을 각 소셜 채널 특성에 맞춘 최적의 이미지 비율과 문구로 가공·배포합니다.
-            </p>
-          </div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="text-[11px] font-extrabold px-3 py-1 bg-[#EFECE6] text-[#23211F] rounded-full border border-[#DDD6CB] flex-shrink-0">
+            전환 중인 기사
+          </span>
+          <h2 className="text-sm md:text-base font-black text-slate-900 truncate">
+            {selectedArticle.title}
+          </h2>
+        </div>
 
-          {/* 대상 기사 선택기 */}
-          <div className="bg-slate-50/90 p-2.5 px-3.5 rounded-2xl border border-slate-200/90 min-w-[280px]">
-            <span className="text-[11px] font-bold text-slate-400 block mb-0.5">변환 대상 기사</span>
-            <select
-              value={selectedArticle.id}
-              onChange={(e) => {
-                const art = initialArticles.find((a) => a.id === parseInt(e.target.value));
-                if (art) setSelectedArticle(art);
-              }}
-              className="w-full bg-transparent text-xs md:text-sm font-extrabold text-slate-800 outline-none cursor-pointer"
-            >
-              {initialArticles.map((art) => (
-                <option key={art.id} value={art.id}>
-                  {art.title.slice(0, 26)}...
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* 기사 선택 기능 유지 (콤팩트 드롭다운) */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="text-[11px] text-slate-400 font-bold hidden md:inline">기사 변경:</span>
+          <select
+            value={selectedArticle.id}
+            onChange={(e) => {
+              const art = initialArticles.find((a) => a.id === parseInt(e.target.value));
+              if (art) setSelectedArticle(art);
+            }}
+            className="px-3.5 py-1.5 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] text-xs font-bold rounded-full border border-[#DDD6CB] outline-none cursor-pointer transition shadow-2xs"
+          >
+            {initialArticles.map((art) => (
+              <option key={art.id} value={art.id}>
+                {art.title.slice(0, 24)}...
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
       {/* ──────────────────────────────────────────
-          2단 메인 레이아웃
-          [왼쪽] 플랫폼 선택 & 컨트롤 영역 (w-full lg:w-72 xl:w-80)
-          [오른쪽] 대형 콘텐츠 편집 & 실시간 미리보기 영역 (flex-1)
+          2단 메인 레이아웃:
+          [왼쪽] 플랫폼 선택 패널 (w-full lg:w-72 xl:w-80)
+          [오른쪽] 실시간 피드 메인 편집 캔버스 (flex-1)
          ────────────────────────────────────────── */}
       <div className="flex flex-col lg:flex-row items-start gap-6 w-full">
 
@@ -276,7 +318,7 @@ export default function FormatConverter() {
                 <h3 className="text-sm font-extrabold text-slate-900">배포 플랫폼 선택</h3>
                 <p className="text-[11px] text-slate-400 font-medium">다중 선택 가능 (체크박스)</p>
               </div>
-              <span className="text-[11px] font-extrabold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200/70">
+              <span className="text-[11px] font-extrabold px-2.5 py-1 bg-[#EFECE6] text-[#23211F] rounded-full border border-[#DDD6CB]">
                 {selectedPlatforms.length}개 선택됨
               </span>
             </div>
@@ -291,31 +333,31 @@ export default function FormatConverter() {
                   <div
                     key={p.id}
                     onClick={() => togglePlatform(p.id)}
-                    className={`p-3.5 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center justify-between group ${
+                    className={`p-3.5 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center justify-between group active:scale-98 ${
                       isSelected
-                        ? "bg-slate-900 text-white border-slate-900 shadow-sm"
-                        : "bg-slate-50/70 hover:bg-slate-100/90 text-slate-800 border-slate-200/70"
+                        ? "bg-[#23211F] text-[#FAF8F5] border-[#23211F] shadow-sm"
+                        : "bg-[#EFECE6]/50 hover:bg-[#EFECE6] text-[#23211F] border-[#DDD6CB]"
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       {/* 체크박스 UI */}
                       <div className="flex-shrink-0">
                         {isSelected ? (
-                          <div className="w-5 h-5 rounded-md bg-white text-slate-950 flex items-center justify-center shadow-xs">
+                          <div className="w-5 h-5 rounded-md bg-white text-[#23211F] flex items-center justify-center shadow-xs">
                             <Check className="w-3.5 h-3.5 stroke-[3]" />
                           </div>
                         ) : (
-                          <div className="w-5 h-5 rounded-md border-2 border-slate-300 bg-white group-hover:border-slate-400 transition" />
+                          <div className="w-5 h-5 rounded-md border-2 border-[#DDD6CB] bg-white group-hover:border-[#23211F] transition" />
                         )}
                       </div>
 
                       {/* 플랫폼 아이콘 & 명칭 */}
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <Icon className={`w-4 h-4 ${isSelected ? "text-white" : "text-slate-700"}`} />
+                          <Icon className={`w-4 h-4 ${isSelected ? "text-white" : "text-[#23211F]"}`} />
                           <span className="text-sm font-extrabold tracking-tight">{p.label}</span>
                         </div>
-                        <span className={`text-[11px] block mt-0.5 ${isSelected ? "text-slate-300" : "text-slate-400"}`}>
+                        <span className={`text-[11px] block mt-0.5 ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
                           {p.badge}
                         </span>
                       </div>
@@ -329,35 +371,38 @@ export default function FormatConverter() {
               })}
             </div>
 
-            {/* 빠른 선택 가이드 메시지 */}
-            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/60 text-[11px] text-slate-500 leading-relaxed font-medium">
-              💡 플랫폼을 체크하면 오른쪽에 해당 포맷에 최적화된 <strong className="text-slate-700">대형 편집기</strong>와 <strong className="text-slate-700">실시간 피드 미리보기</strong>가 바로 열립니다.
+            {/* 안내 가이드 메시지 */}
+            <div className="p-3 bg-[#EFECE6]/60 rounded-2xl border border-[#DDD6CB] text-[11px] text-slate-600 leading-relaxed font-medium">
+              💡 플랫폼을 선택하면 오른쪽에 실제 포맷의 <strong className="text-slate-900">실시간 피드 편집 화면</strong>이 열리며, 이미지와 글을 화면 위에서 즉시 직접 수정할 수 있습니다.
             </div>
           </div>
 
-          {/* 작업 요약 및 배포 대상 위젯 */}
+          {/* 배포 대기 채널 위젯 */}
           {selectedPlatforms.length > 0 && (
             <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-3 animate-float-in">
               <span className="text-xs font-extrabold text-slate-900 block">배포 대기 채널</span>
               <div className="space-y-1.5">
                 {selectedPlatforms.map((pid) => {
                   const p = platforms.find((item) => item.id === pid);
+                  const isCurrent = activePlatformTab === pid;
                   return (
                     <div
                       key={pid}
                       onClick={() => setActivePlatformTab(pid)}
                       className={`flex items-center justify-between p-2.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                        activePlatformTab === pid
-                          ? "bg-slate-100 text-slate-950 border-slate-300"
-                          : "bg-slate-50 text-slate-600 border-slate-200/60 hover:bg-slate-100"
+                        isCurrent
+                          ? "bg-[#23211F] text-white border-[#23211F]"
+                          : "bg-[#EFECE6]/40 text-slate-700 border-[#DDD6CB] hover:bg-[#EFECE6]"
                       }`}
                     >
                       <div className="flex items-center gap-2">
                         {p && <p.icon className="w-3.5 h-3.5" />}
                         <span>{p?.label}</span>
                       </div>
-                      <span className="text-[10px] text-emerald-600 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
-                        준비됨
+                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                        isCurrent ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+                      }`}>
+                        {isCurrent ? "편집 중" : "준비됨"}
                       </span>
                     </div>
                   );
@@ -368,7 +413,7 @@ export default function FormatConverter() {
               <button
                 onClick={() => handlePublish("선택 플랫폼 전체")}
                 disabled={isPublishing}
-                className="w-full mt-2 py-3 bg-slate-950 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full mt-2 py-2.5 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs rounded-full shadow-xs transition flex items-center justify-center gap-2 cursor-pointer active:scale-95 border border-[#23211F]"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>선택된 {selectedPlatforms.length}개 채널 동시 배포</span>
@@ -379,22 +424,22 @@ export default function FormatConverter() {
         </div>
 
         {/* ──────────────────────────────────────────
-            [오른쪽] 대형 콘텐츠 편집 & 실시간 미리보기 영역
+            [오른쪽] 메인 실시간 플랫폼 피드 직접 편집 영역
            ────────────────────────────────────────── */}
         <div className="flex-1 min-w-0 w-full transition-all duration-300">
           
           {selectedPlatforms.length === 0 ? (
-            /* 초기 상태: 플랫폼을 선택하지 않았을 때의 간결한 안내 뷰 */
-            <div className="bg-white/95 rounded-3xl border border-slate-200/80 p-12 md:p-16 text-center space-y-4 shadow-xs">
-              <div className="w-16 h-16 rounded-3xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto border border-slate-200">
-                <Sparkles className="w-8 h-8 text-slate-400" />
+            /* 플랫폼 미선택 시 안내 */
+            <div className="bg-white/95 rounded-3xl border border-slate-200/80 p-12 text-center space-y-4 shadow-xs">
+              <div className="w-16 h-16 rounded-3xl bg-[#EFECE6] text-[#23211F] flex items-center justify-center mx-auto border border-[#DDD6CB]">
+                <Sparkles className="w-8 h-8 text-[#23211F]" />
               </div>
               <div className="space-y-1 max-w-md mx-auto">
-                <h4 className="text-lg font-black text-slate-900">
+                <h4 className="text-base md:text-lg font-black text-slate-900">
                   변환할 소셜 플랫폼을 선택해주세요
                 </h4>
                 <p className="text-xs md:text-sm text-slate-500 leading-relaxed font-medium">
-                  왼쪽 컨트롤 영역에서 <strong>Instagram, Threads, X</strong> 중 원하는 플랫폼을 체크하면, 최적화된 대형 편집 화면과 실시간 피드 미리보기가 활성화됩니다.
+                  왼쪽 목록에서 <strong>Instagram, Threads, X</strong> 중 원하는 플랫폼을 체크하면, 실제 해당 피드 화면이 열리며 화면 위에서 직접 수정할 수 있습니다.
                 </p>
               </div>
               <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
@@ -402,7 +447,7 @@ export default function FormatConverter() {
                   <button
                     key={p.id}
                     onClick={() => togglePlatform(p.id)}
-                    className="px-4 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                    className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] border border-[#DDD6CB] text-[#23211F] text-xs font-bold rounded-full transition cursor-pointer flex items-center gap-1.5"
                   >
                     <p.icon className="w-3.5 h-3.5" />
                     <span>{p.label} 추가</span>
@@ -411,14 +456,18 @@ export default function FormatConverter() {
               </div>
             </div>
           ) : (
-            /* 플랫폼 선택 후: 대형 워크스페이스 활성화 */
-            <div className="space-y-6">
+            /* 플랫폼 선택 시: 메인 실시간 피드 직접 편집 캔버스 */
+            <div className="space-y-4">
 
-              {/* 복수 플랫폼 선택 시 상단 탭 스위처 */}
+              {/* 1. 상단 다중 플랫폼 전환 탭 (레퍼런스 이미지 스타일 알약 캡슐) */}
               {selectedPlatforms.length > 1 && (
-                <div className="flex items-center gap-2 bg-white/90 p-2 rounded-2xl border border-slate-200/80 shadow-2xs">
-                  <span className="text-xs font-extrabold text-slate-400 px-2">현재 편집 채널:</span>
-                  <div className="flex items-center gap-1.5 flex-wrap flex-1">
+                <div className="flex items-center justify-between bg-white/95 p-2 rounded-full border border-slate-200/80 shadow-2xs">
+                  <div className="flex items-center gap-2 pl-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-black text-slate-900">현재 편집 채널:</span>
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-full border border-[#DDD6CB]">
                     {selectedPlatforms.map((pid) => {
                       const p = platforms.find((item) => item.id === pid);
                       const isCurrent = activePlatformTab === pid;
@@ -426,10 +475,10 @@ export default function FormatConverter() {
                         <button
                           key={pid}
                           onClick={() => setActivePlatformTab(pid)}
-                          className={`px-4 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-2 ${
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
                             isCurrent
-                              ? "bg-slate-950 text-white shadow-xs"
-                              : "bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                              ? "bg-white text-[#23211F] shadow-2xs scale-[1.02]"
+                              : "text-slate-600 hover:text-slate-900"
                           }`}
                         >
                           {p && <p.icon className="w-3.5 h-3.5" />}
@@ -441,412 +490,451 @@ export default function FormatConverter() {
                 </div>
               )}
 
-              {/* 활성 플랫폼의 대형 편집 & 실시간 미리보기 2열 그리드 */}
+              {/* 2. 대형 실시간 플랫폼 피드 카드 (WYSIWYG 직접 편집 - 와이드 데스크톱 뷰) */}
               {currentPlatformInfo && currentData && (
-                <div className="bg-white/95 rounded-3xl border border-slate-200/80 p-5 md:p-8 shadow-xs space-y-8 animate-float-in">
+                <div className="bg-white/95 rounded-3xl border border-slate-200/80 p-4 md:p-5 shadow-xs space-y-4 animate-float-in">
                   
-                  {/* 플랫폼 편집 헤더 */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2.5 rounded-2xl bg-gradient-to-br ${currentPlatformInfo.themeColor} text-white shadow-2xs`}>
-                        <currentPlatformInfo.icon className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-base md:text-lg font-black text-slate-950">
-                          {currentPlatformInfo.label} 전용 콘텐츠 제작
-                        </h3>
-                        <p className="text-xs text-slate-400 font-medium">
-                          {currentPlatformInfo.desc}
-                        </p>
+                  {/* 상단 통합 미디어 컨트롤 바 (피드와 일체형) */}
+                  <div className="bg-[#EFECE6]/70 p-2.5 md:p-3 rounded-2xl border border-[#DDD6CB] flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+                    
+                    {/* 이미지 비율 조절 알약 캡슐 */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-extrabold text-[#23211F] flex items-center gap-1">
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        비율:
+                      </span>
+                      <div className="flex items-center gap-1 bg-white p-0.5 rounded-full border border-[#DDD6CB]">
+                        {["1:1", "4:5", "16:9"].map((ratio) => (
+                          <button
+                            key={ratio}
+                            onClick={() => updatePlatformField(activePlatformTab, "aspectRatio", ratio)}
+                            className={`px-3 py-1 text-xs font-black rounded-full transition cursor-pointer ${
+                              currentData.aspectRatio === ratio
+                                ? "bg-[#23211F] text-[#FAF8F5] shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            {ratio}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
+                    {/* 추천 이미지 교체 & PC 업로드 버튼 */}
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-extrabold px-3 py-1 bg-slate-100 text-slate-700 rounded-full border border-slate-200/80">
-                        포맷 규격: {currentData.aspectRatio}
-                      </span>
+                      {/* 추천 갤러리 미니 썸네일 스트립 */}
+                      <div className="flex items-center gap-1.5 bg-white p-1 rounded-full border border-[#DDD6CB]">
+                        <span className="text-[10px] font-bold text-slate-400 pl-2">갤러리:</span>
+                        {sampleImages.map((imgUrl, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => updatePlatformField(activePlatformTab, "image", imgUrl)}
+                            className={`w-6 h-6 rounded-full overflow-hidden border-2 transition cursor-pointer ${
+                              currentData.image === imgUrl
+                                ? "border-[#23211F] scale-110"
+                                : "border-transparent opacity-70 hover:opacity-100"
+                            }`}
+                            title={`추천 이미지 ${idx + 1}`}
+                          >
+                            <img src={imgUrl} alt="thumb" className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* PC 파일 업로드 */}
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-1 px-3.5 py-1.5 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs font-bold transition cursor-pointer active:scale-95"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>사진 변경</span>
+                      </button>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={(e) => handleImageUpload(e, activePlatformTab)}
+                        accept="image/*"
+                        className="hidden"
+                      />
                     </div>
+
+                    {/* 마우스 줌 & 리셋 컨트롤 */}
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#23211F]">
+                      <div className="flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-[#DDD6CB]">
+                        <Sliders className="w-3.5 h-3.5 text-slate-500" />
+                        <span>크기:</span>
+                        <input
+                          type="range"
+                          min="80"
+                          max="180"
+                          value={currentData.zoom}
+                          onChange={(e) => updatePlatformField(activePlatformTab, "zoom", parseInt(e.target.value))}
+                          className="w-20 accent-[#23211F] cursor-pointer"
+                        />
+                        <span className="text-[11px] font-black w-8">{currentData.zoom}%</span>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          updatePlatformField(activePlatformTab, "zoom", 100);
+                          updatePlatformField(activePlatformTab, "positionX", 50);
+                          updatePlatformField(activePlatformTab, "positionY", 50);
+                        }}
+                        className="p-1.5 bg-white hover:bg-slate-100 text-slate-600 rounded-full border border-[#DDD6CB] transition cursor-pointer"
+                        title="위치 및 크기 초기화"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
                   </div>
 
-                  {/* 2열 레이아웃: [왼쪽 6] 이미지 & 텍스트 대형 편집 / [오른쪽 6] 실시간 소셜 피드 미리보기 */}
-                  <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+                  {/* ──────────────────────────────────────────
+                      실제 소셜 피드 카드 (메인 작업 공간)
+                     ────────────────────────────────────────── */}
+                  <div className="w-full">
                     
-                    {/* [좌측 대형 편집 컨트롤 - 7/12] */}
-                    <div className="xl:col-span-7 space-y-6">
-
-                      {/* 1. 이미지 편집 섹션 */}
-                      <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/80 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs md:text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                            <ImageIcon className="w-4 h-4 text-slate-700" />
-                            <span>1. 기사 이미지 선택 및 실시간 조절</span>
-                          </label>
-
-                          {/* 비율 선택 토글 */}
-                          <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
-                            {["1:1", "4:5", "16:9"].map((ratio) => (
-                              <button
-                                key={ratio}
-                                onClick={() => updatePlatformField(activePlatformTab, "aspectRatio", ratio)}
-                                className={`px-2.5 py-1 text-xs font-extrabold rounded-lg transition cursor-pointer ${
-                                  currentData.aspectRatio === ratio
-                                    ? "bg-slate-900 text-white shadow-xs"
-                                    : "text-slate-500 hover:text-slate-800"
-                                }`}
-                              >
-                                {ratio}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* 추천 갤러리 썸네일 */}
-                        <div>
-                          <span className="text-[11px] font-bold text-slate-400 block mb-2">기사 추천 이미지 선택</span>
-                          <div className="grid grid-cols-4 gap-2.5">
-                            {sampleImages.map((imgUrl, idx) => (
-                              <div
-                                key={idx}
-                                onClick={() => updatePlatformField(activePlatformTab, "image", imgUrl)}
-                                className={`relative aspect-square rounded-xl overflow-hidden border-2 cursor-pointer transition ${
-                                  currentData.image === imgUrl
-                                    ? "border-slate-950 ring-2 ring-slate-900/20 scale-102"
-                                    : "border-transparent opacity-75 hover:opacity-100"
-                                }`}
-                              >
-                                <img src={imgUrl} alt="sample" className="w-full h-full object-cover" />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* 업로드 및 Zoom / Crop 조절 바 */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200/60">
-                          <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-xl text-xs font-extrabold transition shadow-2xs cursor-pointer"
-                          >
-                            <Upload className="w-3.5 h-3.5 text-slate-600" />
-                            <span>내 PC 파일 업로드</span>
-                          </button>
-                          <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={(e) => handleImageUpload(e, activePlatformTab)}
-                            accept="image/*"
-                            className="hidden"
+                    {/* [A] INSTAGRAM 실시간 메인 피드 에디터 */}
+                    {activePlatformTab === "instagram" && (
+                      <div className="bg-white rounded-3xl shadow-md border border-slate-200/90 overflow-hidden w-full grid grid-cols-1 lg:grid-cols-12 min-h-[460px] lg:h-[530px] animate-float-in">
+                        {/* [좌측 7열] 대형 미디어 캔버스 (마우스 드래그 & 휠 줌) */}
+                        <div
+                          onMouseDown={handleMouseDown}
+                          onWheel={handleWheel}
+                          className={`lg:col-span-7 bg-slate-950 relative overflow-hidden flex items-center justify-center min-h-[340px] lg:min-h-0 select-none group ${
+                            isDragging ? "cursor-grabbing" : "cursor-grab"
+                          }`}
+                          title="마우스로 드래그하여 이미지 위치를 조절하고, 휠로 크기를 조절하세요"
+                        >
+                          <img
+                            src={currentData.image}
+                            alt="Instagram Preview"
+                            draggable={false}
+                            style={{
+                              transform: `scale(${currentData.zoom / 100})`,
+                              objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
+                            }}
+                            className="w-full h-full object-cover pointer-events-none transition-transform duration-75"
                           />
 
-                          {/* Zoom 슬라이더 */}
-                          <div className="flex items-center gap-2 text-xs text-slate-600 font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200">
-                            <Sliders className="w-3.5 h-3.5 text-slate-500" />
-                            <span>크기:</span>
-                            <input
-                              type="range"
-                              min="80"
-                              max="150"
-                              value={currentData.zoom}
-                              onChange={(e) => updatePlatformField(activePlatformTab, "zoom", parseInt(e.target.value))}
-                              className="w-20 md:w-24 accent-slate-900 cursor-pointer"
-                            />
-                            <span className="text-[11px] font-black text-slate-900 w-8">{currentData.zoom}%</span>
+                          {/* 드래그 조작 가이드 안내 오버레이 (호버 시 표시) */}
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                            <div className="bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-md border border-white/20">
+                              <Move className="w-3.5 h-3.5" />
+                              <span>마우스로 드래그하여 위치 이동 (휠: 확대/축소)</span>
+                            </div>
+                          </div>
+
+                          {/* 비율 뱃지 */}
+                          <div className="absolute top-3 left-3 bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-[11px] font-bold px-2.5 py-1 rounded-full border border-white/20">
+                            Instagram · {currentData.aspectRatio}
                           </div>
                         </div>
 
-                        {/* 위치 조절 (Crop / Align 슬라이더) */}
-                        <div className="grid grid-cols-2 gap-3 pt-1 text-xs text-slate-600 font-bold">
-                          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
-                            <Move className="w-3.5 h-3.5 text-slate-400" />
-                            <span>수평 위치:</span>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              value={currentData.positionX}
-                              onChange={(e) => updatePlatformField(activePlatformTab, "positionX", parseInt(e.target.value))}
-                              className="w-full accent-slate-900 cursor-pointer"
-                            />
-                          </div>
-                          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
-                            <Move className="w-3.5 h-3.5 text-slate-400" />
-                            <span>수직 위치:</span>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              value={currentData.positionY}
-                              onChange={(e) => updatePlatformField(activePlatformTab, "positionY", parseInt(e.target.value))}
-                              className="w-full accent-slate-900 cursor-pointer"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 2. 텍스트 직접 편집 섹션 */}
-                      <div className="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/80 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs md:text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-slate-700" />
-                            <span>2. 게시 텍스트 및 해시태그 직접 편집</span>
-                          </label>
-                          <span className="text-xs font-extrabold text-slate-400">
-                            {currentData.text.length}자
-                          </span>
-                        </div>
-
-                        {/* 제목 편집 */}
-                        <div>
-                          <span className="text-[11px] font-bold text-slate-400 block mb-1">헤드라인 제목</span>
-                          <input
-                            type="text"
-                            value={currentData.title}
-                            onChange={(e) => updatePlatformField(activePlatformTab, "title", e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs md:text-sm font-extrabold text-slate-900 outline-none focus:border-slate-800 transition"
-                            placeholder="게시물 대표 제목 입력..."
-                          />
-                        </div>
-
-                        {/* 본문 / 캡션 편집 */}
-                        <div>
-                          <span className="text-[11px] font-bold text-slate-400 block mb-1">게시글 본문 / 캡션</span>
-                          <textarea
-                            value={currentData.text}
-                            onChange={(e) => updatePlatformField(activePlatformTab, "text", e.target.value)}
-                            rows={6}
-                            className="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-900 leading-relaxed outline-none focus:border-slate-800 transition font-sans"
-                            placeholder="소셜 채널에 등록될 본문을 직접 수정하세요..."
-                          />
-                        </div>
-
-                        {/* 추천 해시태그 원클릭 추가 */}
-                        <div className="space-y-1.5 pt-1">
-                          <span className="text-[11px] font-bold text-slate-400 block">추천 해시태그 원클릭 추가:</span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {["#AI반도체", "#NPU", "#PIM", "#빅테크", "#IT뉴스", "#디지털인텔리전스"].map((tag) => (
-                              <button
-                                key={tag}
-                                onClick={() => addHashtag(activePlatformTab, tag)}
-                                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition border border-slate-200/80 cursor-pointer flex items-center gap-1 shadow-2xs"
-                              >
-                                <Hash className="w-3 h-3 text-slate-400" />
-                                <span>{tag.replace("#", "")}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-
-                    {/* [우측 실시간 소셜 피드 미리보기 - 5/12] */}
-                    <div className="xl:col-span-5 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs md:text-sm font-extrabold text-slate-800 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                          실시간 피드 형태 미리보기
-                        </span>
-                        <span className="text-[11px] text-slate-400 font-medium">수정 내용이 즉시 반영됩니다</span>
-                      </div>
-
-                      {/* 실시간 피드 목업 컨테이너 */}
-                      <div className="bg-slate-100/70 p-4 md:p-5 rounded-3xl border border-slate-200/90 shadow-inner">
-
-                        {/* 1. INSTAGRAM 피드 목업 */}
-                        {activePlatformTab === "instagram" && (
-                          <div className="bg-white rounded-2xl shadow-md border border-slate-200 overflow-hidden text-xs md:text-sm max-w-sm mx-auto animate-float-in">
-                            {/* 헤더 */}
-                            <div className="p-3 flex items-center justify-between border-b border-slate-100">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 p-[1.5px]">
-                                  <div className="w-full h-full rounded-full bg-white p-[1px]">
-                                    <div className="w-full h-full rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-bold">
-                                      AI
-                                    </div>
+                        {/* [우측 5열] 인라인 텍스트 및 인터랙션 편집 패널 */}
+                        <div className="lg:col-span-5 flex flex-col justify-between bg-white border-t lg:border-t-0 lg:border-l border-slate-100 p-5 md:p-6 overflow-hidden">
+                          
+                          {/* 1. 인스타 헤더 */}
+                          <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-shrink-0">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 p-[1.5px]">
+                                <div className="w-full h-full rounded-full bg-white p-[1px]">
+                                  <div className="w-full h-full rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-bold">
+                                    AI
                                   </div>
                                 </div>
-                                <div>
-                                  <span className="font-extrabold text-slate-900 text-xs">ai_newsroom_official</span>
-                                  <span className="text-[10px] text-slate-400 block">스폰서 기사 · AI Newsroom</span>
-                                </div>
+                              </div>
+                              <div>
+                                <span className="font-extrabold text-slate-900 text-xs">ai_newsroom_official</span>
+                                <span className="text-[10px] text-slate-400 block">스폰서 기사 · AI Newsroom</span>
+                              </div>
+                            </div>
+                            <MoreHorizontal className="w-4 h-4 text-slate-400" />
+                          </div>
+
+                          {/* 2. 본문 직접 편집 영역 & 해시태그 (유동 스크롤 지원) */}
+                          <div className="flex-1 py-3 space-y-3 overflow-y-auto pr-1">
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-extrabold text-[#23211F] flex items-center gap-1">
+                                  ✏️ 캡션 및 본문 직접 편집
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-bold">
+                                  {currentData.text.length}자
+                                </span>
+                              </div>
+                              <textarea
+                                value={currentData.text}
+                                onChange={(e) => updatePlatformField("instagram", "text", e.target.value)}
+                                rows={5}
+                                className="w-full p-3 bg-slate-50 hover:bg-white focus:bg-white rounded-xl border border-slate-200 focus:border-[#23211F] text-xs text-slate-900 leading-relaxed outline-none transition font-sans resize-none shadow-2xs"
+                                placeholder="인스타그램 게시글 내용을 직접 수정하세요..."
+                              />
+                            </div>
+
+                            {/* 추천 해시태그 원클릭 삽입 */}
+                            <div className="space-y-1.5">
+                              <span className="text-[10px] font-bold text-slate-400 block">
+                                + 추천 해시태그 원클릭 삽입:
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {["#AI반도체", "#NPU", "#PIM", "#빅테크", "#IT뉴스", "#디지털인텔리전스"].map((tag) => (
+                                  <button
+                                    key={tag}
+                                    onClick={() => addHashtag("instagram", tag)}
+                                    className="px-2.5 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full text-[11px] font-bold transition border border-[#DDD6CB] cursor-pointer flex items-center gap-1 active:scale-95 shadow-2xs"
+                                  >
+                                    <Hash className="w-3 h-3 text-slate-400" />
+                                    <span>{tag.replace("#", "")}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 3. 소셜 인터랙션 및 액션 바 */}
+                          <div className="pt-3 border-t border-slate-100 space-y-3 flex-shrink-0">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3.5 text-slate-700">
+                                <Heart className="w-5 h-5 text-red-500 fill-red-500" />
+                                <MessageCircle className="w-5 h-5" />
+                                <Share2 className="w-5 h-5" />
+                              </div>
+                              <Bookmark className="w-5 h-5 text-slate-600" />
+                            </div>
+                            <p className="font-bold text-xs text-slate-900">좋아요 1,428개</p>
+
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                onClick={() => handleCopyText("instagram")}
+                                className="flex-1 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] font-bold text-xs rounded-full border border-[#DDD6CB] transition cursor-pointer flex items-center justify-center gap-1.5"
+                              >
+                                {copiedStatus === "instagram" ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="text-emerald-700">복사 완료!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5 text-slate-600" />
+                                    <span>문구 복사</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => handlePublish("Instagram")}
+                                className="px-5 py-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs rounded-full transition cursor-pointer flex items-center gap-1.5 border border-[#23211F] active:scale-95"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                                <span>단독 배포</span>
+                              </button>
+                            </div>
+                          </div>
+
+                        </div>
+                      </div>
+                    )}
+
+                    {/* [B] THREADS 실시간 메인 피드 에디터 */}
+                    {activePlatformTab === "threads" && (
+                      <div className="bg-white rounded-3xl shadow-md border border-slate-200/90 overflow-hidden w-full grid grid-cols-1 lg:grid-cols-12 min-h-[440px] lg:h-[500px] animate-float-in">
+                        {/* [스레드 프로필 헤더] */}
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-full bg-[#23211F] text-white flex items-center justify-center font-extrabold text-sm flex-shrink-0">
+                            @
+                          </div>
+                          <div className="flex-1 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-extrabold text-slate-950 text-xs">ai_newsroom</span>
+                                <span className="text-[10px] text-slate-400">방금 전</span>
                               </div>
                               <MoreHorizontal className="w-4 h-4 text-slate-400" />
                             </div>
 
-                            {/* 이미지 (비율 및 Zoom/Position 실시간 반영) */}
+                            {/* 스레드 인라인 직접 텍스트 편집 */}
+                            <div className="space-y-1">
+                              <textarea
+                                value={currentData.text}
+                                onChange={(e) => updatePlatformField("threads", "text", e.target.value)}
+                                rows={4}
+                                className="w-full p-3 bg-slate-50 hover:bg-white focus:bg-white rounded-xl border border-slate-200 focus:border-[#23211F] text-xs text-slate-900 leading-relaxed outline-none transition font-sans resize-y"
+                                placeholder="스레드 내용을 직접 수정하세요..."
+                              />
+                            </div>
+
+                            {/* 인터랙티브 마우스 드래그 이미지 영역 */}
                             <div
-                              className={`relative overflow-hidden bg-slate-100 ${
+                              onMouseDown={handleMouseDown}
+                              onWheel={handleWheel}
+                              className={`relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 select-none group ${
+                                isDragging ? "cursor-grabbing" : "cursor-grab"
+                              } ${
                                 currentData.aspectRatio === "1:1"
                                   ? "aspect-square"
                                   : currentData.aspectRatio === "4:5"
                                   ? "aspect-[4/5]"
                                   : "aspect-video"
                               }`}
+                              title="마우스로 드래그하여 이미지 위치 조절 (휠: 확대/축소)"
                             >
                               <img
                                 src={currentData.image}
-                                alt="Instagram Preview"
+                                alt="Threads Media"
+                                draggable={false}
                                 style={{
                                   transform: `scale(${currentData.zoom / 100})`,
                                   objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
                                 }}
-                                className="w-full h-full object-cover transition-all duration-200"
+                                className="w-full h-full object-cover pointer-events-none transition-transform duration-75"
                               />
+
+                              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                                <div className="bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-[11px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-md border border-white/20">
+                                  <Move className="w-3.5 h-3.5" />
+                                  <span>드래그로 위치 조절</span>
+                                </div>
+                              </div>
                             </div>
 
-                            {/* 인터랙션 & 텍스트 */}
-                            <div className="p-4 space-y-2.5">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3.5 text-slate-700">
-                                  <Heart className="w-5 h-5 text-red-500 fill-red-500" />
-                                  <MessageCircle className="w-5 h-5" />
-                                  <Share2 className="w-5 h-5" />
-                                </div>
-                                <Bookmark className="w-5 h-5 text-slate-600" />
-                              </div>
-
-                              <p className="font-bold text-xs text-slate-900">좋아요 1,428개</p>
-
-                              <div className="text-xs text-slate-900 leading-relaxed space-y-1">
-                                <span className="font-extrabold mr-1.5 text-slate-950">ai_newsroom_official</span>
-                                <span className="whitespace-pre-line">{currentData.text}</span>
-                              </div>
+                            {/* 스레드 인터랙션 아이콘 */}
+                            <div className="flex items-center gap-4 text-slate-500 pt-1">
+                              <Heart className="w-4 h-4 hover:text-red-500 transition cursor-pointer" />
+                              <MessageCircle className="w-4 h-4" />
+                              <Repeat className="w-4 h-4" />
+                              <Share2 className="w-4 h-4" />
                             </div>
-                          </div>
-                        )}
 
-                        {/* 2. THREADS 피드 목업 */}
-                        {activePlatformTab === "threads" && (
-                          <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-4 md:p-5 text-xs md:text-sm max-w-sm mx-auto space-y-3.5 animate-float-in">
-                            <div className="flex items-start gap-3">
-                              <div className="w-8 h-8 rounded-full bg-slate-950 text-white flex items-center justify-center font-extrabold text-xs flex-shrink-0">
-                                @
-                              </div>
-                              <div className="flex-1 space-y-2.5">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-extrabold text-slate-950 text-xs">ai_newsroom</span>
-                                    <span className="text-[10px] text-slate-400">방금 전</span>
-                                  </div>
-                                  <MoreHorizontal className="w-4 h-4 text-slate-400" />
-                                </div>
-
-                                <p className="text-xs text-slate-900 leading-relaxed whitespace-pre-line">
-                                  {currentData.text}
-                                </p>
-
-                                <div
-                                  className={`rounded-xl overflow-hidden border border-slate-200 ${
-                                    currentData.aspectRatio === "1:1"
-                                      ? "aspect-square"
-                                      : currentData.aspectRatio === "4:5"
-                                      ? "aspect-[4/5]"
-                                      : "aspect-video"
-                                  }`}
+                            {/* 해시태그 추가 바 */}
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {["#ThreadsTech", "#AI반도체", "#기술트렌드"].map((tag) => (
+                                <button
+                                  key={tag}
+                                  onClick={() => addHashtag("threads", tag)}
+                                  className="px-2.5 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full text-[11px] font-bold transition border border-[#DDD6CB] cursor-pointer"
                                 >
-                                  <img
-                                    src={currentData.image}
-                                    alt="Threads Media"
-                                    style={{
-                                      transform: `scale(${currentData.zoom / 100})`,
-                                      objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
-                                    }}
-                                    className="w-full h-full object-cover transition-all duration-200"
-                                  />
-                                </div>
+                                  {tag}
+                                </button>
+                              ))}
+                            </div>
 
-                                <div className="flex items-center gap-4 text-slate-500 pt-1">
-                                  <Heart className="w-4 h-4 hover:text-red-500 transition cursor-pointer" />
-                                  <MessageCircle className="w-4 h-4" />
-                                  <Repeat className="w-4 h-4" />
-                                  <Share2 className="w-4 h-4" />
-                                </div>
-                              </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* [C] X (TWITTER) 실시간 메인 피드 에디터 */}
+                    {activePlatformTab === "twitter" && (
+                      <div className="bg-white rounded-3xl shadow-xl border border-slate-200/90 p-5 md:p-6 w-full max-w-md animate-float-in space-y-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-[#23211F] text-white flex items-center justify-center font-extrabold text-xs">
+                            𝕏
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-extrabold text-slate-950 text-xs">AI Newsroom</span>
+                              <span className="text-[11px] text-slate-400">@ainews</span>
                             </div>
                           </div>
-                        )}
+                        </div>
 
-                        {/* 3. X (TWITTER) 피드 목업 */}
-                        {activePlatformTab === "twitter" && (
-                          <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-4 md:p-5 text-xs md:text-sm max-w-sm mx-auto space-y-3.5 animate-float-in">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-full bg-slate-950 text-white flex items-center justify-center font-extrabold text-xs">
-                                𝕏
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-extrabold text-slate-950 text-xs">AI Newsroom</span>
-                                  <span className="text-[11px] text-slate-400">@ainews</span>
-                                </div>
-                              </div>
+                        {/* 트위터 인라인 텍스트 편집 */}
+                        <div className="space-y-1">
+                          <textarea
+                            value={currentData.text}
+                            onChange={(e) => updatePlatformField("twitter", "text", e.target.value)}
+                            rows={3}
+                            className="w-full p-3 bg-slate-50 hover:bg-white focus:bg-white rounded-xl border border-slate-200 focus:border-[#23211F] text-xs text-slate-900 leading-relaxed outline-none transition font-sans resize-y"
+                            placeholder="트윗 내용을 직접 수정하세요..."
+                          />
+                        </div>
+
+                        {/* 인터랙티브 마우스 드래그 이미지 영역 */}
+                        <div
+                          onMouseDown={handleMouseDown}
+                          onWheel={handleWheel}
+                          className={`relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 select-none group ${
+                            isDragging ? "cursor-grabbing" : "cursor-grab"
+                          } ${
+                            currentData.aspectRatio === "1:1"
+                              ? "aspect-square"
+                              : currentData.aspectRatio === "4:5"
+                              ? "aspect-[4/5]"
+                              : "aspect-video"
+                          }`}
+                          title="마우스로 드래그하여 이미지 위치 조절 (휠: 확대/축소)"
+                        >
+                          <img
+                            src={currentData.image}
+                            alt="Twitter Media"
+                            draggable={false}
+                            style={{
+                              transform: `scale(${currentData.zoom / 100})`,
+                              objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
+                            }}
+                            className="w-full h-full object-cover pointer-events-none transition-transform duration-75"
+                          />
+
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                            <div className="bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-[11px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-md border border-white/20">
+                              <Move className="w-3.5 h-3.5" />
+                              <span>드래그로 위치 조절</span>
                             </div>
+                          </div>
+                        </div>
 
-                            <p className="text-xs text-slate-900 leading-relaxed whitespace-pre-line">
-                              {currentData.text}
-                            </p>
+                        <div className="flex items-center justify-between text-slate-400 text-[11px] pt-1 border-t border-slate-100">
+                          <span>오후 3:20 · 2026년 10월 2일</span>
+                          <div className="flex items-center gap-3.5">
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <Repeat className="w-3.5 h-3.5" />
+                            <Heart className="w-3.5 h-3.5 text-red-500" />
+                          </div>
+                        </div>
 
-                            <div
-                              className={`rounded-xl overflow-hidden border border-slate-200 ${
-                                currentData.aspectRatio === "1:1"
-                                  ? "aspect-square"
-                                  : currentData.aspectRatio === "4:5"
-                                  ? "aspect-[4/5]"
-                                  : "aspect-video"
-                              }`}
+                        {/* 해시태그 추가 */}
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {["#AI반도체", "#NPU", "#IT뉴스"].map((tag) => (
+                            <button
+                              key={tag}
+                              onClick={() => addHashtag("twitter", tag)}
+                              className="px-2.5 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full text-[11px] font-bold transition border border-[#DDD6CB] cursor-pointer"
                             >
-                              <img
-                                src={currentData.image}
-                                alt="Twitter Media"
-                                style={{
-                                  transform: `scale(${currentData.zoom / 100})`,
-                                  objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
-                                }}
-                                className="w-full h-full object-cover transition-all duration-200"
-                              />
-                            </div>
-
-                            <div className="flex items-center justify-between text-slate-400 text-[11px] pt-1 border-t border-slate-100">
-                              <span>오후 3:20 · 2026년 10월 2일</span>
-                              <div className="flex items-center gap-3.5">
-                                <MessageCircle className="w-3.5 h-3.5" />
-                                <Repeat className="w-3.5 h-3.5" />
-                                <Heart className="w-3.5 h-3.5 text-red-500" />
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
                       </div>
+                    )}
 
-                      {/* 미리보기 하단 복사 & 개별 배포 액션 */}
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          onClick={() => handleCopyText(activePlatformTab)}
-                          className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          {copiedStatus === activePlatformTab ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              <span className="text-emerald-700">복사 완료!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-slate-600" />
-                              <span>{currentPlatformInfo.label} 문구 복사</span>
-                            </>
-                          )}
-                        </button>
+                  </div>
 
-                        <button
-                          onClick={() => handlePublish(currentPlatformInfo.label)}
-                          className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-xs"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>{currentPlatformInfo.label} 단독 배포</span>
-                        </button>
-                      </div>
+                  {/* 피드 하단 퀵 액션 바 (문구 복사 & 단독 배포) */}
+                  <div className="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                    <button
+                      onClick={() => handleCopyText(activePlatformTab)}
+                      className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] font-bold text-xs rounded-full border border-[#DDD6CB] transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                    >
+                      {copiedStatus === activePlatformTab ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-700">복사 완료!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-slate-600" />
+                          <span>{currentPlatformInfo.label} 문구 복사</span>
+                        </>
+                      )}
+                    </button>
 
-                    </div>
-
+                    <button
+                      onClick={() => handlePublish(currentPlatformInfo.label)}
+                      className="px-5 py-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs rounded-full transition cursor-pointer flex items-center gap-1.5 border border-[#23211F] active:scale-95 shadow-xs"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>{currentPlatformInfo.label} 단독 배포</span>
+                    </button>
                   </div>
 
                 </div>
@@ -860,7 +948,7 @@ export default function FormatConverter() {
       </div>
 
       {/* ──────────────────────────────────────────
-          8. 최종 결과물 영역 (하단 대시보드)
+          3. 최종 결과물 영역 (하단 멀티 배포 대시보드 - 기존 기능 유지)
          ────────────────────────────────────────── */}
       {selectedPlatforms.length > 0 && (
         <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-5 md:p-7 shadow-xs space-y-5 animate-float-in">
@@ -888,7 +976,7 @@ export default function FormatConverter() {
               return (
                 <div
                   key={pid}
-                  className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-3 flex flex-col justify-between"
+                  className="bg-[#EFECE6]/40 p-4 rounded-2xl border border-[#DDD6CB] space-y-3 flex flex-col justify-between"
                 >
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
@@ -913,13 +1001,13 @@ export default function FormatConverter() {
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       onClick={() => handleCopyText(pid)}
-                      className="flex-1 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg transition cursor-pointer"
+                      className="flex-1 py-1.5 bg-white hover:bg-[#EFECE6] border border-[#DDD6CB] text-[#23211F] text-xs font-bold rounded-full transition cursor-pointer"
                     >
                       문구 복사
                     </button>
                     <button
                       onClick={() => handlePublish(pInfo?.label)}
-                      className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition cursor-pointer"
+                      className="px-3.5 py-1.5 bg-[#23211F] hover:bg-[#38332E] text-white text-xs font-bold rounded-full transition cursor-pointer border border-[#23211F]"
                     >
                       배포
                     </button>
@@ -934,7 +1022,7 @@ export default function FormatConverter() {
             <div className="flex items-center gap-2.5">
               <button
                 onClick={handlePrint}
-                className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-xl text-xs font-extrabold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs font-extrabold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
               >
                 <Printer className="w-3.5 h-3.5 text-slate-600" />
                 <span>결과물 인쇄 (PDF)</span>
@@ -942,7 +1030,7 @@ export default function FormatConverter() {
 
               <button
                 onClick={() => alert("선택된 플랫폼의 가공된 이미지 및 텍스트 데이터가 저장되었습니다.")}
-                className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-xl text-xs font-extrabold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs font-extrabold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
               >
                 <Download className="w-3.5 h-3.5 text-slate-600" />
                 <span>이미지 및 데이터 저장</span>
@@ -952,7 +1040,7 @@ export default function FormatConverter() {
             <button
               onClick={() => handlePublish("선택 플랫폼 전체")}
               disabled={isPublishing}
-              className="px-6 py-2.5 bg-slate-950 hover:bg-slate-800 text-white rounded-xl text-xs md:text-sm font-extrabold transition shadow-sm cursor-pointer flex items-center gap-2"
+              className="px-6 py-2.5 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full text-xs md:text-sm font-extrabold transition shadow-sm cursor-pointer flex items-center gap-2 border border-[#23211F] active:scale-95"
             >
               {isPublishing ? (
                 <>
@@ -983,7 +1071,7 @@ export default function FormatConverter() {
             </p>
             <button
               onClick={() => setIsPublishModalOpen(false)}
-              className="w-full py-2.5 bg-slate-950 text-white font-extrabold text-xs rounded-xl shadow-xs cursor-pointer hover:bg-slate-800 transition"
+              className="w-full py-2.5 bg-[#23211F] hover:bg-[#38332E] text-white font-extrabold text-xs rounded-full shadow-xs cursor-pointer transition border border-[#23211F]"
             >
               확인
             </button>

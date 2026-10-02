@@ -52,7 +52,7 @@ export default function ProcessBar({ activeTab, setActiveTab }) {
             )}
 
             <div
-              className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${active ? "bg-slate-900 text-white" : "text-slate-500"
+              className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${active ? "bg-[#23211F] text-white" : "text-slate-500"
                 }`}
             >
               <Icon className="w-3.5 h-3.5" />

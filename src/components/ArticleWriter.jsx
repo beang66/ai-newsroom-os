@@ -206,7 +206,7 @@ export default function ArticleWriter({
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
             onClick={() => setShowDraftModal(true)}
-            className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-black text-xs md:text-sm transition shadow-xs flex items-center gap-2 cursor-pointer active:scale-95"
+            className="px-4.5 py-2.5 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full font-black text-xs md:text-sm transition shadow-xs flex items-center gap-2 cursor-pointer active:scale-95 border border-[#23211F]"
           >
             <Wand2 className="w-4 h-4 text-amber-300" />
             <span>AI 기사 초안 생성</span>
@@ -214,9 +214,9 @@ export default function ArticleWriter({
           
           <button
             onClick={onOpenSearch}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/80 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2"
+            className="px-4.5 py-2.5 bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95"
           >
-            <Search className="w-4 h-4 text-slate-600" />
+            <Search className="w-4 h-4 text-[#57514A]" />
             <span>취재자료 검색</span>
           </button>
 
@@ -225,12 +225,12 @@ export default function ArticleWriter({
               setIsFactCheckDrawerOpen(true);
               if (onRunFactCheck) onRunFactCheck();
             }}
-            className={`px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 ${
+            className={`px-4.5 py-2.5 rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95 ${
               factCheckActive || isFactCheckDrawerOpen
-                ? "bg-slate-900 text-white shadow-xs"
-                : "bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/80"
+                ? "bg-[#23211F] text-[#FAF8F5] border border-[#23211F] shadow-xs"
+                : "bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB]"
             }`}
-            title="취재파일 업로드 및 원문 근거자료 검증 슬라이더를 엽니다"
+            title="취재파일 업로드 및 원문 근거자료 검증 패널을 엽니다"
           >
             <ShieldCheck className={`w-4 h-4 ${factCheckActive || isFactCheckDrawerOpen ? "text-emerald-400" : "text-emerald-600"}`} />
             <span>기사 팩트체크 & 근거자료</span>
@@ -238,7 +238,7 @@ export default function ArticleWriter({
 
           <button
             onClick={() => setShowPhotoModal(true)}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/80 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2"
+            className="px-4.5 py-2.5 bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95"
           >
             <ImageIcon className="w-4 h-4 text-purple-600" />
             <span>사진·미디어 편집 ({photos.length})</span>
@@ -247,14 +247,14 @@ export default function ArticleWriter({
 
         {/* 우측: 뷰 모드 전환 및 [CMS 최종 발행] 버튼 */}
         <div className="flex items-center gap-3 flex-wrap">
-          {/* 뷰 모드 전환 탭 */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200/70 shadow-inner">
+          {/* 뷰 모드 전환 탭 (레퍼런스 이미지 스타일 알약 캡슐) */}
+          <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-full border border-[#DDD6CB]/80 shadow-inner">
             <button
               onClick={() => setViewMode("editor")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
                 viewMode === "editor"
-                  ? "bg-white text-slate-950 shadow-2xs scale-[1.02]"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-[#23211F] shadow-2xs scale-[1.02]"
+                  : "text-[#6E6861] hover:text-[#23211F]"
               }`}
               title="기사 작성 에디터만 넓게 봅니다"
             >
@@ -264,10 +264,10 @@ export default function ArticleWriter({
 
             <button
               onClick={() => setViewMode("split")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
                 viewMode === "split"
-                  ? "bg-white text-slate-950 shadow-2xs scale-[1.02]"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-[#23211F] shadow-2xs scale-[1.02]"
+                  : "text-[#6E6861] hover:text-[#23211F]"
               }`}
               title="에디터와 실시간 포털 미리보기를 나란히 봅니다"
             >
@@ -277,10 +277,10 @@ export default function ArticleWriter({
 
             <button
               onClick={() => setViewMode("preview")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
                 viewMode === "preview"
-                  ? "bg-white text-slate-950 shadow-2xs scale-[1.02]"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-[#23211F] shadow-2xs scale-[1.02]"
+                  : "text-[#6E6861] hover:text-[#23211F]"
               }`}
               title="실시간 최종 포털/신문 뷰만 집중해서 봅니다"
             >
@@ -293,7 +293,7 @@ export default function ArticleWriter({
           <button
             onClick={handleCmsExport}
             disabled={isCmsExporting}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs md:text-sm rounded-xl transition shadow-sm cursor-pointer flex items-center gap-2 active:scale-95"
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs md:text-sm rounded-full transition shadow-sm cursor-pointer flex items-center gap-2 active:scale-95"
             title="현재 기사를 CMS(신문/포털 송고 시스템)로 최종 발행합니다"
           >
             {isCmsExporting ? (
@@ -351,13 +351,13 @@ export default function ArticleWriter({
           <div className="flex items-center justify-end gap-2 pt-1">
             <button
               onClick={onSkipFactFix}
-              className="px-4 py-1.5 text-xs font-bold bg-slate-200/80 hover:bg-slate-300 text-slate-700 rounded-xl transition cursor-pointer"
+              className="px-4 py-1.5 text-xs font-bold bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full border border-[#DDD6CB] transition cursor-pointer"
             >
               건너뛰기
             </button>
             <button
               onClick={onApplyFactFix}
-              className="px-4 py-1.5 text-xs font-extrabold bg-slate-900 hover:bg-slate-800 text-white rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1"
+              className="px-4 py-1.5 text-xs font-extrabold bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full transition shadow-xs cursor-pointer flex items-center gap-1 border border-[#23211F]"
             >
               <Check className="w-3.5 h-3.5" />
               수정 적용
@@ -412,11 +412,11 @@ export default function ArticleWriter({
                 />
 
                 {(isTitleHovered || !isTitleConfirmed) && (
-                  <div className="absolute right-2 bottom-3 flex items-center gap-1.5 bg-white/95 p-1 rounded-xl shadow-md border border-slate-200 animate-float-in">
+                  <div className="absolute right-2 bottom-3 flex items-center gap-1.5 bg-white/95 p-1 rounded-full shadow-md border border-[#DDD6CB] animate-float-in">
                     {!isTitleConfirmed && (
                       <button
                         onClick={handleTitleConfirm}
-                        className="text-xs px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-900 font-bold rounded-lg border border-slate-200 shadow-2xs transition cursor-pointer flex items-center gap-1"
+                        className="text-xs px-3 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] font-bold rounded-full border border-[#DDD6CB] shadow-2xs transition cursor-pointer flex items-center gap-1"
                       >
                         <Check className="w-3 h-3 text-emerald-600" />
                         확정
@@ -424,9 +424,9 @@ export default function ArticleWriter({
                     )}
                     <button
                       onClick={handleRegenerateTitle}
-                      className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition cursor-pointer flex items-center gap-1"
+                      className="text-xs px-3 py-1 bg-white hover:bg-[#F5F2ED] text-[#23211F] font-bold rounded-full border border-[#DDD6CB] transition cursor-pointer flex items-center gap-1"
                     >
-                      <RotateCcw className="w-3 h-3 text-slate-500" />
+                      <RotateCcw className="w-3 h-3 text-[#6E6861]" />
                       다시 생성
                     </button>
                   </div>
@@ -892,14 +892,14 @@ export default function ArticleWriter({
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
               <button
                 onClick={() => setShowDraftModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
+                className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] text-xs font-bold rounded-full transition cursor-pointer"
               >
                 취소
               </button>
               <button
                 onClick={handleGenerateDraft}
                 disabled={isGenerating}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition shadow-xs cursor-pointer flex items-center gap-2"
+                className="px-5 py-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] text-xs font-bold rounded-full transition shadow-xs cursor-pointer flex items-center gap-2 border border-[#23211F]"
               >
                 {isGenerating ? (
                   <>
@@ -926,7 +926,7 @@ export default function ArticleWriter({
         <div className="fixed right-0 top-1/2 -translate-y-1/2 z-40 animate-float-in">
           <button
             onClick={() => setIsFactCheckDrawerOpen(true)}
-            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs py-3.5 px-3 rounded-l-2xl shadow-xl border-y border-l border-slate-700 transition-all hover:pl-4 group cursor-pointer active:scale-95"
+            className="flex items-center gap-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs py-3.5 px-3 rounded-l-2xl shadow-xl border-y border-l border-[#38332E] transition-all hover:pl-4 group cursor-pointer active:scale-95"
             title="취재파일 업로드 및 원문 근거자료 검증 슬라이더 열기"
           >
             <div className="flex flex-col items-center gap-2">

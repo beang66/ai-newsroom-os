@@ -77,3 +77,34 @@ core/ai/providers/
 전환 스위치(개발 편의):
 - `AI_BACKEND=local`  → 개발 전용(로컬 `.env` 키, gitignore). **배포본에 사용 금지**
 - `AI_BACKEND=remote` → 배포 기본. 로컬 키 없음, 백엔드 프록시만 사용.
+
+## Cloud (Supabase) — Control Plane & 공유/협업 계층
+
+클라우드는 전체 데이터의 **메인 저장소가 아니라 Control Plane + 공유 계층**이다.
+기사 본문·전체 취재자료의 **평문은 클라우드에 두지 않는다**(공유용 암호화본만).
+
+### 클라우드가 받아 저장하는 것 (인증정보 + 메타데이터)
+- **Auth**: 사용자 계정 · 로그인 · 세션 관리
+- **Postgres (메타데이터)**: `users`, `teams`, `team_members`, `projects`,
+  `project_members`, `project_keys`, `devices`, `model_versions`, `collab_sessions`
+- **Storage**: 공유가 필요한 파일만(암호화된 공유 프로젝트 / 첨부)
+- **Realtime**: 협업용(접속자·커서·선택·노드 상태) — 영구 저장 불필요한 일시 상태
+
+### 접근 경계
+| 경로 | 대상 | 조건 |
+|---|---|---|
+| 앱 → Supabase **직접** | 일반 사용자 범위(프로젝트 목록·메타·공유) | 사용자 **JWT** + 엄격한 **RLS** + DB constraint |
+| 앱 → **우리 백엔드** | service_role 작업 · 외부 LLM · 결제 · webhook · 운영키 | 서버가 비밀키 보유 |
+
+### 키 구분 (중요)
+- Supabase **anon / publishable key** → **앱에 포함 가능**(공개 전제, RLS로 보호)
+- Supabase **service_role / secret key** → **앱 금지**(백엔드 서버에만)
+
+### 향후 협업 업로드 공간
+공유 프로젝트는 `Encryption Manager`로 암호화 → `Sync Manager` → Supabase Storage/Postgres.
+수신자는 자신의 키로 복호화(서버는 평문 보유 불가).
+
+### 코드 위치(예정)
+- `core/integrations/supabase.py`          — Auth / Postgres / Storage / Realtime 클라이언트
+- `core/managers/sync_manager.py`          — 로컬 ↔ 공유 상태 동기화
+- `core/managers/collaboration_manager.py` — Realtime 협업

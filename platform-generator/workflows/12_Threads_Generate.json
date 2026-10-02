@@ -1,0 +1,335 @@
+{
+  "name": "12_Threads_Generate",
+  "nodes": [
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "GPT-5"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=당신은 뉴스 콘텐츠 Fact Validator입니다.\n\nThreads Draft와 기사 원문을 비교하여\nDraft에 원문과 일치하지 않는 내용이 있는지 검사하세요.\n\nDraft를 수정하지 마세요.\n검사 결과만 JSON으로 출력하세요.\n\n\n[검사 대상]\n\n1. opening.text\n2. 모든 paragraphs의 text\n3. closing.text\n4. 모든 source_evidence\n\n\n[검사 내용]\n\n- 원문에 없는 주장\n- 숫자 불일치\n- 인물명 불일치\n- 기관명 불일치\n- 인용문 불일치\n- 인과관계 왜곡\n- 의미 과장\n- source_evidence가 실제 원문에 존재하는지\n\n\n[기사 원문]\n\n{{ $('Normalize Threads Input').item.json.content }}\n\n\n[Threads Draft]\n\n{{ JSON.stringify($('Parse Threads Draft').item.json) }}\n\n\n[출력]\n\n반드시 JSON만 출력하세요.\n\n{\n  \"validator\": \"fact_check\",\n\n  \"pass\": true,\n\n  \"unsupported_claims\": [],\n  \"number_mismatches\": [],\n  \"name_mismatches\": [],\n  \"quote_mismatches\": [],\n  \"evidence_mismatches\": [],\n  \"distortion_warnings\": [],\n\n  \"opening_result\": {\n    \"verified\": true,\n    \"warnings\": []\n  },\n\n  \"paragraph_results\": [\n    {\n      \"paragraph_id\": \"P1\",\n      \"verified\": true,\n      \"warnings\": []\n    }\n  ],\n\n  \"closing_result\": {\n    \"verified\": true,\n    \"warnings\": []\n  }\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        1888,
+        0
+      ],
+      "id": "f194d02f-1e28-4b12-ae2d-90fe5168258b",
+      "name": "Validator 1 - Fact Check",
+      "credentials": {
+        "openAiApi": {
+          "id": "TF7BLaco4hChl1xQ",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const raw = item.json.output[0].content[0].text;\n\n  const cleaned = raw\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/```$/i, '')\n    .trim();\n\n  const parsed = JSON.parse(cleaned);\n\n  return {\n    json: parsed\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2176,
+        0
+      ],
+      "id": "7457a0be-6da3-4a91-b533-41b52812ac15",
+      "name": "Parse Validator 1"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "GPT-5"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=당신은 Threads 콘텐츠 요구사항 Validator입니다.\n\nThreads Draft가\n사용자가 선택한 키워드,\n사용자 요구사항,\nThreads 플랫폼 규칙을 지켰는지 검사하세요.\n\nDraft를 수정하지 마세요.\n검사 결과만 JSON으로 출력하세요.\n\n\n[Threads Draft]\n\n{{ JSON.stringify($('Parse Threads Draft').item.json) }}\n\n\n[사용자가 선택한 키워드]\n\n{{ JSON.stringify($('Normalize Threads Input').item.json.selected_keywords) }}\n\n\n[사용자 요구사항]\n\n{{ $('Normalize Threads Input').item.json.requirements }}\n\n\n[Threads 플랫폼 규칙]\n\n{{ JSON.stringify($('Threads Rules').item.json.platform_rules) }}\n\n\n[검사할 내용]\n\n1. opening이 존재하는가\n\n2. paragraphs가 하나 이상 존재하는가\n\n3. closing이 존재하는가\n\n4. 사용자가 선택한 키워드가 반영되었는가\n\n5. 사용자의 요구사항이 반영되었는가\n\n6. 각 paragraph가 하나의 핵심 메시지를 중심으로 작성되었는가\n\n7. 불필요하게 장황하지 않은가\n\n8. Threads에서 읽기 좋은 짧은 문단 구조인가\n\n9. closing이 새로운 사실을 추가하지 않는가\n\n10. 다른 플랫폼의 형식을 그대로 가져오지 않았는가\n\n11. 중요한 기사 내용이 부당하게 누락되지 않았는가\n\n\n[출력]\n\n반드시 JSON만 출력하세요.\n\n{\n  \"validator\": \"requirement_check\",\n\n  \"pass\": true,\n\n  \"missing_keywords\": [],\n  \"requirement_omissions\": [],\n  \"platform_rule_violations\": [],\n  \"important_omissions\": [],\n\n  \"structure_check\": {\n    \"opening_exists\": true,\n    \"paragraphs_exist\": true,\n    \"closing_exists\": true,\n    \"short_paragraph_structure\": true\n  },\n\n  \"paragraph_results\": [\n    {\n      \"paragraph_id\": \"P1\",\n      \"requirement_match\": true,\n      \"warnings\": []\n    }\n  ]\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        2416,
+        0
+      ],
+      "id": "089dacf5-913c-47dd-a889-187d70433ec5",
+      "name": "Validator 2 - Requirement Check",
+      "credentials": {
+        "openAiApi": {
+          "id": "TF7BLaco4hChl1xQ",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const raw = item.json.output[0].content[0].text;\n\n  const cleaned = raw\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/```$/i, '')\n    .trim();\n\n  const parsed = JSON.parse(cleaned);\n\n  return {\n    json: parsed\n  };\n});;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        0
+      ],
+      "id": "a3265408-87d1-453a-92f1-05b7f9b0767f",
+      "name": "Parse Validator 2"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        752,
+        0
+      ],
+      "id": "41d8bf1d-3191-4f17-b747-f3896f6c1d6a",
+      "name": "Receive Threads Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json;\nconst data = raw.body || raw;\n\nif (!data.article_id) {\n  throw new Error(\n    `article_id가 없습니다. 현재 입력값: ${JSON.stringify(data)}`\n  );\n}\n\nif (!data.title) {\n  throw new Error(\n    `기사 title이 없습니다. 현재 입력값: ${JSON.stringify(data)}`\n  );\n}\n\nif (!data.content) {\n  throw new Error(\n    `기사 content가 없습니다. 현재 입력값: ${JSON.stringify(data)}`\n  );\n}\n\nconst selectedKeywords =\n  Array.isArray(data.selected_keywords)\n    ? data.selected_keywords\n    : [];\n\nreturn [\n  {\n    json: {\n      article_id: data.article_id,\n      title: data.title,\n      content: data.content,\n      selected_keywords: selectedKeywords,\n      requirements: data.requirements || '',\n      platform: 'threads'\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        0
+      ],
+      "id": "54c343ae-0b99-4ad9-9f29-30ca5bb9174e",
+      "name": "Normalize Threads Input"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "GPT-5"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=당신은 뉴스 콘텐츠 편집 보조 AI입니다.\n\n기사 원문,\n사용자가 선택한 키워드,\n사용자 요구사항,\nThreads 작성 규칙을 기준으로\nThreads용 Editable Draft를 작성하세요.\n\n다른 플랫폼의 결과를 참고하거나 변환하지 마세요.\n\nThreads 결과는 반드시 기사 원문에서 직접 생성해야 합니다.\n\n\n[절대 규칙]\n\n1. 기사 원문에 없는 사실을 새로 만들지 마세요.\n\n2. 기사 원문에 없는 숫자, 인물, 기관, 인용을 추가하지 마세요.\n\n3. 원문의 의미나 인과관계를 과장하거나 왜곡하지 마세요.\n\n4. 사용자가 선택한 키워드를 반드시 반영하세요.\n\n5. 사용자의 요구사항을 반드시 반영하세요.\n\n6. Instagram 카드뉴스 결과를 참고하지 마세요.\n\n7. Blog 결과를 참고하지 마세요.\n\n8. 결과는 사용자가 이후 직접 수정하는 Draft입니다.\n\n\n[Threads 작성 방식]\n\nThreads에서 읽기 쉬운 짧은 글로 축약하세요.\n\n첫 부분에는 opening을 작성합니다.\n\nopening은 독자가 글의 주제를 바로 이해할 수 있도록\n기사의 핵심 내용을 짧게 제시합니다.\n\n그 다음 본문은 여러 개의 paragraph로 나눕니다.\n\n한 paragraph에는 하나의 핵심 메시지만 담으세요.\n\n불필요하게 긴 문장을 피하세요.\n\n마지막에는 closing을 작성합니다.\n\nclosing에는 새로운 사실을 추가하지 말고,\n앞에서 전달한 핵심 내용을 자연스럽게 정리하세요.\n\n과도하게 자극적인 표현이나\n원문에 없는 클릭 유도 문구를 만들지 마세요.\n\n\n[근거 규칙]\n\nopening,\n각 paragraph,\nclosing에는 source_evidence가 있어야 합니다.\n\nsource_evidence에는 반드시 기사 원문에\n실제로 존재하는 문장 또는 구절만 사용하세요.\n\n근거 문장을 새롭게 바꾸어 쓰면 안 됩니다.\n\n\n[입력 기사]\n\narticle_id:\n{{ $json.article_id }}\n\ntitle:\n{{ $json.title }}\n\ncontent:\n{{ $json.content }}\n\n\n[사용자가 선택한 키워드]\n\n{{ JSON.stringify($json.selected_keywords) }}\n\n\n[사용자 요구사항]\n\n{{ $json.requirements }}\n\n\n[Threads 플랫폼 규칙]\n\n{{ JSON.stringify($json.platform_rules) }}\n\n\n[출력]\n\n설명문이나 Markdown을 출력하지 말고\n반드시 아래 JSON 형식만 출력하세요.\n\n{\n  \"article_id\": \"\",\n  \"platform\": \"threads\",\n\n  \"opening\": {\n    \"text\": \"\",\n    \"source_evidence\": []\n  },\n\n  \"paragraphs\": [\n    {\n      \"paragraph_id\": \"P1\",\n      \"text\": \"\",\n      \"source_evidence\": []\n    }\n  ],\n\n  \"closing\": {\n    \"text\": \"\",\n    \"source_evidence\": []\n  }\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        1344,
+        0
+      ],
+      "id": "9f43f14a-e019-475b-9753-a7d321fcb337",
+      "name": "Threads Content Transformer",
+      "credentials": {
+        "openAiApi": {
+          "id": "TF7BLaco4hChl1xQ",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const data = item.json;\n\n  return {\n    json: {\n      ...data,\n\n      platform_rules: {\n        output_type: 'threads_post',\n\n        concise: true,\n\n        short_paragraphs: true,\n\n        opening_required: true,\n\n        closing_required: true,\n\n        one_core_message_per_paragraph: true,\n\n        preserve_article_context: true,\n\n        evidence_required: true,\n\n        editable_draft: true,\n\n        image_required: false\n      }\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        0
+      ],
+      "id": "83d34a8f-c788-4921-b394-26c822a60bfa",
+      "name": "Threads Rules"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const raw = item.json.output[0].content[0].text;\n\n  const cleaned = raw\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/```$/i, '')\n    .trim();\n\n  const parsed = JSON.parse(cleaned);\n\n  return {\n    json: parsed\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        0
+      ],
+      "id": "c04c0fc7-ed04-4244-85ba-65bdc2b5087f",
+      "name": "Parse Threads Draft"
+    },
+    {
+      "parameters": {
+        "jsCode": "const draft = $('Parse Threads Draft').item.json;\nconst factCheck = $('Parse Validator 1').item.json;\nconst requirementCheck = $('Parse Validator 2').item.json;\n\nconst overallPass =\n  factCheck.pass === true &&\n  requirementCheck.pass === true;\n\nreturn [\n  {\n    json: {\n      article_id: draft.article_id,\n\n      platform: 'threads',\n\n      status: overallPass\n        ? 'ready_for_user_review'\n        : 'needs_review',\n\n      output: {\n        opening: draft.opening || {\n          text: '',\n          source_evidence: []\n        },\n\n        paragraphs: Array.isArray(draft.paragraphs)\n          ? draft.paragraphs\n          : [],\n\n        closing: draft.closing || {\n          text: '',\n          source_evidence: []\n        }\n      },\n\n      validation: {\n        fact_check: factCheck,\n\n        requirement_check: requirementCheck,\n\n        summary: {\n          overall_pass: overallPass,\n\n          unsupported_claims:\n            factCheck.unsupported_claims?.length || 0,\n\n          number_mismatches:\n            factCheck.number_mismatches?.length || 0,\n\n          quote_mismatches:\n            factCheck.quote_mismatches?.length || 0,\n\n          evidence_mismatches:\n            factCheck.evidence_mismatches?.length || 0,\n\n          missing_keywords:\n            requirementCheck.missing_keywords?.length || 0,\n\n          requirement_omissions:\n            requirementCheck.requirement_omissions?.length || 0,\n\n          platform_rule_violations:\n            requirementCheck.platform_rule_violations?.length || 0\n        }\n      },\n\n      ui_state: {\n        editable: true,\n        evidence_visible: true\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2928,
+        0
+      ],
+      "id": "20571196-a507-40e2-8828-7b70764a8121",
+      "name": "Build Threads Result"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Validator 1 - Fact Check": {
+      "main": [
+        [
+          {
+            "node": "Parse Validator 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Validator 1": {
+      "main": [
+        [
+          {
+            "node": "Validator 2 - Requirement Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validator 2 - Requirement Check": {
+      "main": [
+        [
+          {
+            "node": "Parse Validator 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Validator 2": {
+      "main": [
+        [
+          {
+            "node": "Build Threads Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receive Threads Request": {
+      "main": [
+        [
+          {
+            "node": "Normalize Threads Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Threads Input": {
+      "main": [
+        [
+          {
+            "node": "Threads Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Threads Content Transformer": {
+      "main": [
+        [
+          {
+            "node": "Parse Threads Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Threads Rules": {
+      "main": [
+        [
+          {
+            "node": "Threads Content Transformer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Threads Draft": {
+      "main": [
+        [
+          {
+            "node": "Validator 1 - Fact Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f891703c-8393-41cf-803a-2b75865788ee",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c1ceb0cb52463d833247b252381f9c18255416ee43df83b5dd15739bb68f96cb"
+  },
+  "nodeGroups": [
+    {
+      "id": "42fa59d7-1f10-4502-be69-9e21bbeb90ac",
+      "name": "사용자의 요구사항 반영 검수",
+      "nodeIds": [
+        "089dacf5-913c-47dd-a889-187d70433ec5",
+        "a3265408-87d1-453a-92f1-05b7f9b0767f"
+      ]
+    },
+    {
+      "id": "66a7b8dd-25ca-4c39-a385-f39c2e91aca9",
+      "name": "원문 기사의 왜곡 여부 검수",
+      "nodeIds": [
+        "f194d02f-1e28-4b12-ae2d-90fe5168258b",
+        "7457a0be-6da3-4a91-b533-41b52812ac15"
+      ]
+    },
+    {
+      "id": "ef1b8624-4f9f-4159-8ebe-d105c406ea5d",
+      "name": "플랫폼 룰 만들어 가공 하는 단계",
+      "nodeIds": [
+        "83d34a8f-c788-4921-b394-26c822a60bfa",
+        "9f43f14a-e019-475b-9753-a7d321fcb337"
+      ]
+    }
+  ],
+  "id": "lnGL3jbQ8HoBHG2d",
+  "tags": []
+}

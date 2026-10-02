@@ -1,0 +1,132 @@
+{
+  "name": "03_Render_Cards_Local_Test",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -576,
+        -224
+      ],
+      "id": "0c155dda-2ea1-42aa-930d-302e8b90113f",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      article_id: 'article_01',\n\n      platform: 'instagram',\n\n      cards: [\n        {\n          card_id: 'C1',\n          page: 1,\n          template: 'cover',\n\n          content: {\n            keyword: '대치동 현장 취재',\n            headline: '이민진이 직접 찾아간 대치동',\n            body: ''\n          },\n\n          evidence: {\n            source_text: '기사 원문에서 해당 카드의 근거가 되는 문장'\n          },\n\n          image: {\n            type: 'photo',\n            url: 'http://localhost:3000/output/C2_1790856631910.png',\n          }\n        },\n\n        {\n          card_id: 'C2',\n          page: 2,\n          template: 'photo_body',\n\n          content: {\n            keyword: '현장 취재',\n            headline: '수업에 직접 들어가 봤다',\n            body: '작가는 대치동을 여러 차례 찾아 실제 교육 현장을 조사했다.'\n          },\n\n          evidence: {\n            source_text: '기사 원문 근거'\n          },\n\n          image: {\n            type: 'photo',\n            url: 'http://localhost:3000/output/C2_1790856631910.png',\n          }\n        },\n\n        {\n          card_id: 'C3',\n          page: 3,\n          template: 'text_only',\n\n          content: {\n            keyword: '교육 경쟁',\n            headline: '교육은 누구를 위한 경쟁인가',\n            body: '기사에서 제기된 핵심 문제를 짧게 정리합니다.'\n          },\n\n          evidence: {\n            source_text: '기사 원문 근거'\n          },\n\n          image: {\n            type: 'none',\n            url: ''\n          }\n        }\n      ]\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        -224
+      ],
+      "id": "c5cee6ac-5ecf-45fb-862b-daf9014b9a97",
+      "name": "Frontend Render Request Test"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\nconst cards = Array.isArray(data.cards)\n  ? data.cards\n  : [];\n\nreturn cards.map(card => ({\n  json: {\n    article_id: data.article_id,\n    platform: data.platform,\n\n    card_id: card.card_id,\n    page: card.page,\n    template: card.template,\n\n    content: card.content,\n    evidence: card.evidence,\n    image: card.image\n  }\n}));;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        -224
+      ],
+      "id": "e4d4115e-148a-49bb-b823-44f0ac7d144d",
+      "name": "Split Cards for Render"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const card = item.json;\n\n  return {\n    json: {\n      article_id: card.article_id,\n\n      card_id: card.card_id,\n\n      page: card.page,\n\n      template: card.template,\n\n      size: {\n        width: 1080,\n        height: 1350\n      },\n\n      content: {\n        keyword: card.content?.keyword || '',\n        headline: card.content?.headline || '',\n        body: card.content?.body || ''\n      },\n\n      image: {\n        type: card.image?.type || 'none',\n        url: card.image?.url || ''\n      },\n\n      evidence: card.evidence || {}\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        -224
+      ],
+      "id": "562ab405-16db-48b0-a765-65ac0e9b13e4",
+      "name": "Build Render Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/render",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        48,
+        -224
+      ],
+      "id": "c2eba85a-ac0b-4fab-bae6-425cbec48769",
+      "name": "Render Cards"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Frontend Render Request Test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Frontend Render Request Test": {
+      "main": [
+        [
+          {
+            "node": "Split Cards for Render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Cards for Render": {
+      "main": [
+        [
+          {
+            "node": "Build Render Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Render Payload": {
+      "main": [
+        [
+          {
+            "node": "Render Cards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "4d5c4f3e-a886-4e14-ab10-5397c0a9bc3c",
+  "meta": {
+    "instanceId": "c1ceb0cb52463d833247b252381f9c18255416ee43df83b5dd15739bb68f96cb"
+  },
+  "nodeGroups": [],
+  "id": "8pSERs3ZVrNnxTXt",
+  "tags": []
+}

@@ -1,0 +1,338 @@
+{
+  "name": "10_Content_Generate_API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "content-generate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -368,
+        -96
+      ],
+      "id": "c8ed7af0-2f77-4048-8430-244e696a352c",
+      "name": "Receive Content Request",
+      "webhookId": "d0307b25-62ae-4668-adb2-da52dcc5e95c"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body || $json;\n\nconst article = input.article || {};\n\nconst selectedKeywords = Array.isArray(input.selected_keywords)\n  ? input.selected_keywords\n  : [];\n\nconst platforms = Array.isArray(input.platforms)\n  ? input.platforms\n  : [];\n\nreturn [\n  {\n    json: {\n      article_id: article.article_id || '',\n      title: article.title || '',\n      content: article.content || '',\n\n      selected_keywords: selectedKeywords,\n\n      requirements: input.requirements || '',\n\n      platforms: platforms\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -96
+      ],
+      "id": "74e7e1e5-f7ab-4a89-89ea-d0746e5158ff",
+      "name": "Normalize Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\nconst errors = [];\n\nif (!data.article_id) {\n  errors.push('article_id가 없습니다.');\n}\n\nif (!data.title) {\n  errors.push('기사 title이 없습니다.');\n}\n\nif (!data.content) {\n  errors.push('기사 content가 없습니다.');\n}\n\nif (!Array.isArray(data.platforms) || data.platforms.length === 0) {\n  errors.push('선택된 플랫폼이 없습니다.');\n}\n\nconst allowedPlatforms = [\n  'instagram',\n  'threads',\n  'blog'\n];\n\nconst invalidPlatforms = data.platforms.filter(\n  platform => !allowedPlatforms.includes(platform)\n);\n\nif (invalidPlatforms.length > 0) {\n  errors.push(\n    `지원하지 않는 플랫폼: ${invalidPlatforms.join(', ')}`\n  );\n}\n\nif (errors.length > 0) {\n  throw new Error(errors.join(' / '));\n}\n\nreturn [\n  {\n    json: data\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -96
+      ],
+      "id": "0510fe2f-e033-45c2-801b-271eb5ec6403",
+      "name": "Validate Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\nreturn data.platforms.map(platform => ({\n  json: {\n    article_id: data.article_id,\n    title: data.title,\n    content: data.content,\n\n    selected_keywords: data.selected_keywords,\n    requirements: data.requirements,\n\n    platform: platform\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -96
+      ],
+      "id": "233de732-454a-4287-99e1-5be40500dfb2",
+      "name": "Split Selected Platforms"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.platform }}",
+                    "rightValue": "instagram",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "735e115f-3f01-4ded-bbad-1173c9b9342e"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Instagram"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "4be1c010-7d5b-4a2c-976e-9d69c4823491",
+                    "leftValue": "={{ $json.platform }}",
+                    "rightValue": "threads",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Threads"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "284aa6c6-457b-4f4b-b787-052946eec185",
+                    "leftValue": "={{ $json.platform }}",
+                    "rightValue": "Blog",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Blog"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        432,
+        -96
+      ],
+      "id": "5fcdd6ea-4039-4902-850b-536c9db9f3e9",
+      "name": "Route by Platform"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "wcNHT4v636Y5u6y2",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/wcNHT4v636Y5u6y2",
+          "cachedResultName": "11_Instagram_Generate"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        816,
+        -112
+      ],
+      "id": "32a0766e-fc80-4e8e-b6ca-d7bfc993baf5",
+      "name": "Run Instagram Generator"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1024,
+        -112
+      ],
+      "id": "898a8045-7b28-48c7-8e55-c7da649b0c05",
+      "name": "Return API Response"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "lnGL3jbQ8HoBHG2d",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/lnGL3jbQ8HoBHG2d",
+          "cachedResultName": "12_Threads_Generate"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        816,
+        48
+      ],
+      "id": "1ff1f55f-dc42-4b3b-88f7-b514f27033d5",
+      "name": "Run Threads Generator"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        816,
+        240
+      ],
+      "id": "e650396e-fbc1-4fd5-a328-162e88bc7e83",
+      "name": "Execute Workflow"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Receive Content Request": {
+      "main": [
+        [
+          {
+            "node": "Normalize Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Split Selected Platforms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Selected Platforms": {
+      "main": [
+        [
+          {
+            "node": "Route by Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Platform": {
+      "main": [
+        [
+          {
+            "node": "Run Instagram Generator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run Threads Generator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Run Instagram Generator": {
+      "main": [
+        [
+          {
+            "node": "Return API Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "2e4da66f-85cf-4a72-bab2-e7ea0efde081",
+  "meta": {
+    "instanceId": "c1ceb0cb52463d833247b252381f9c18255416ee43df83b5dd15739bb68f96cb"
+  },
+  "nodeGroups": [
+    {
+      "id": "4ad0ab96-3497-470d-9a53-07098f732ea7",
+      "name": "사용자 요청에 따라 플랫폼별로 분할",
+      "nodeIds": [
+        "233de732-454a-4287-99e1-5be40500dfb2",
+        "5fcdd6ea-4039-4902-850b-536c9db9f3e9"
+      ]
+    }
+  ],
+  "id": "ALDmtQhOeEtS2ZhN",
+  "tags": []
+}

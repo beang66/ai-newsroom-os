@@ -4,10 +4,13 @@ from http.server import BaseHTTPRequestHandler
 from . import config
 from .config import PORT, PIPELINE_VERSION, HEADLINE_MODEL, SUBTITLE_MODEL, LIMIT, ROOT, FRONTEND
 from .errors import RequestError
-from .ai.router import assist
 from .ai.local_models import headline_dependencies_ready
-from .storage import save_article
 from .integrations.unsplash import unsplash_get, selected_unsplash
+from .create_core import create_core
+
+# App Core (managers). The handler routes through it instead of calling
+# implementations directly (see APP_CORE_ARCHITECTURE.md §4).
+CORE = create_core()
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_): pass  # Do not log manuscript content or API credentials.
     def send(self, status, payload, mime='application/json; charset=utf-8'):
@@ -61,9 +64,9 @@ class Handler(BaseHTTPRequestHandler):
             if not 0<size<=(80_000_000 if self.path=='/api/articles/save' else 30_000_000):raise RequestError('요청 크기가 너무 큽니다.',413)
             data=json.loads(self.rfile.read(size))
             if not isinstance(data,dict):raise RequestError('잘못된 요청입니다.')
-            if self.path=='/api/articles/save':return self.send(200,save_article(data))
+            if self.path=='/api/articles/save':return self.send(200,CORE.storage.save_article(data))
             if not LIMIT.acquire(blocking=False):raise RequestError('다른 AI 작업이 진행 중이에요. 잠시 후 다시 시도하세요.',429)
-            try:result=assist(data)
+            try:result=CORE.ai.assist(data)
             finally:LIMIT.release()
             self.send(200,result)
         except RequestError as e:self.send(e.status,{'error':e.message})

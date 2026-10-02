@@ -1,14 +1,14 @@
-# spikes/ipc_transport — IPC 전환 실측
+# dev/spikes/ipc_transport — IPC 전환 실측
 
 출시를 IPC(무포트)로 바꿀 때 **무엇이 되고 무엇이 안 되는지**를 재는 스파이크입니다.
 앱 코드는 건드리지 않고, 창을 띄워 아래를 측정합니다.
 
 ```
-python spikes/ipc_transport/spike.py --mode http     # 기준(지금 방식: HTTP + http origin)
-python spikes/ipc_transport/spike.py --mode file     # file:// 로 로컬 파일 직접 로드
-python spikes/ipc_transport/spike.py --mode html     # HTML 문자열로 로드(무파일)
-python spikes/ipc_transport/spike.py --mode bridge   # 브리지 왕복·15MB·UI 멈춤
-python spikes/ipc_transport/spike.py --mode backend  # 외부 백엔드(교차 출처) 연결
+python dev/spikes/ipc_transport/spike.py --mode http     # 기준(지금 방식: HTTP + http origin)
+python dev/spikes/ipc_transport/spike.py --mode file     # file:// 로 로컬 파일 직접 로드
+python dev/spikes/ipc_transport/spike.py --mode html     # HTML 문자열로 로드(무파일)
+python dev/spikes/ipc_transport/spike.py --mode bridge   # 브리지 왕복·15MB·UI 멈춤
+python dev/spikes/ipc_transport/spike.py --mode backend  # 외부 백엔드(교차 출처) 연결
 ```
 
 측정 항목

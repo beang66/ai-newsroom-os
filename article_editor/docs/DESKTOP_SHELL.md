@@ -8,7 +8,7 @@
 | 항목 | 사실 |
 |---|---|
 | App Core | Python 전용 — `core/bootstrap.py`가 표준 라이브러리 `ThreadingHTTPServer`로 127.0.0.1 서빙 |
-| Frontend | JS/Web Component 1,838줄 + `frontend/src/api/client.js`(단 38줄)가 **유일한 HTTP 경계** |
+| Frontend | JS/Web Component 1,838줄 + `app/frontend/src/api/client.js`(단 38줄)가 **유일한 HTTP 경계** |
 | 로컬 AI | `torch>=2.2`, `transformers`, KoBART/KeT5 → 모델 파일 수 GB |
 | 요구 | "Desktop Shell은 React를 유지할 수 있는 구조"(설계문서 §3), **Windows/macOS**, 로컬 우선, 앱에 운영키 금지 |
 
@@ -32,27 +32,27 @@
 
 근거:
 1. 셸이 Python이면 **동봉 런타임이 하나**로 끝난다(패키징 파이프라인 1개).
-2. `launcher.py`에 창 모드 한 갈래만 추가하면 되고, **프론트·코어·HTTP 계약 변경이 0**이다.
+2. `app/launcher.py`에 창 모드 한 갈래만 추가하면 되고, **프론트·코어·HTTP 계약 변경이 0**이다.
 3. `client.js` 주석이 예고한 "IPC bridge 교체"를 `window.pywebview.api`로 그대로 실현할 수 있다(포트/Origin 제약 제거).
 4. 설계문서의 Thin / Local-first / Minimal exposure 원칙과 일치한다.
 
 ## 4. 실기 검증 결과 (2026-10-02, Windows)
 
 - 엔진: WebView2 `154.0.4258.48`, UA `Chrome/154.0.0.0 Edg/154.0.0.0` → **Chromium 계열** 확인
-- `python desktop/smoke.py --mode write` → **7/7 PASS**
-- `python desktop/smoke.py --mode read` → **7/7 PASS**
+- `python app/desktop/smoke.py --mode write` → **7/7 PASS**
+- `python app/desktop/smoke.py --mode read` → **7/7 PASS**
   - 1회차에서 쓴 표식 `2026-10-02T02:12:29.733Z` 를 **별도 프로세스인 2회차**에서 읽어냄 = **IndexedDB 영속 확인**
   - 프로필 폴더 `.article-workspace/webview/EBWebView` 실제 생성 확인
 - 프론트 API 감사: 사용 중인 API 중 Chromium 전용 0건
   (IndexedDB, clipboard(+폴백), `window.print()`, HTML5 DnD, Blob/`<a download>`, FileReader, ResizeObserver)
-- 회귀: `python launcher.py --check` → `STARTUP CHECK PASSED` (기존 브라우저 모드 그대로)
-- 헤드리스 진단: `python launcher.py --window --check` → `pywebview=True, webview2=154.0.4258.48`
+- 회귀: `python app/launcher.py --check` → `STARTUP CHECK PASSED` (기존 브라우저 모드 그대로)
+- 헤드리스 진단: `python app/launcher.py --window --check` → `pywebview=True, webview2=154.0.4258.48`
 
 ## 5. 채택 시 반드시 지킬 규칙
 
 > **`webview.start(private_mode=False, storage_path=...)` 를 반드시 넘긴다.**
 > 기본값 `private_mode=True` 는 저장소를 휘발성으로 만들어, 프론트의 IndexedDB
-> 자동 임시저장이 재시작 때 사라진다. `desktop/shell.py:storage_dir()` 가 이 값을 관리한다.
+> 자동 임시저장이 재시작 때 사라진다. `app/desktop/shell.py:storage_dir()` 가 이 값을 관리한다.
 
 ## 6. 미해결 / 후속 과제
 
@@ -65,8 +65,8 @@
 
 ## 7. 되돌리기 / 영향 범위
 
-- 개발 실행의 기본은 **브라우저 모드 그대로**다(`python launcher.py`). 창 모드는 `--window` 를 준 경우에만 동작한다. 배포 exe 는 인자가 없으면 창 모드가 기본이고 `--browser` 로 브라우저를 쓸 수 있다.
-- 코어 서버는 별도 프로세스가 아니라 **같은 프로세스의 데몬 스레드**에서 돈다(§9). `python server.py` 는 직접 실행용으로 그대로 남아 있다.
+- 개발 실행의 기본은 **브라우저 모드 그대로**다(`start_windows.bat` = `python app/launcher.py`). 창 모드는 `--window` 를 준 경우에만 동작한다. 배포 exe 는 인자가 없으면 창 모드가 기본이고 `--browser` 로 브라우저를 쓸 수 있다.
+- 코어 서버는 별도 프로세스가 아니라 **같은 프로세스의 데몬 스레드**에서 돈다(§9). `python app/server.py` 는 직접 실행용으로 그대로 남아 있다.
 - 셸 제거 시 `desktop/` 삭제 + `launcher.py`의 `--window` 갈래 제거로 끝난다(프론트/코어 무변경).
 - `start_windows.bat` 은 인자를 그대로 전달하도록 `%*` 만 추가했다(기존 동작 동일).
 
@@ -80,9 +80,9 @@
 | 결정 | 이유 |
 |---|---|
 | 진입점은 `launcher.py` 하나 | 개발 실행(CLI)과 배포 exe 가 같은 코드 경로를 쓴다. 갈라지면 조용히 어긋난다 |
-| 코어 서버를 **스레드로** 서빙 (`desktop/runtime.py`) | 배포 exe 에서 `sys.executable` 이 자기 자신이라 `subprocess` 재실행이 루프가 된다. 창과 같은 프로세스면 포트·수명이 한 곳에서 관리된다 |
-| Host/Origin 검사는 **실제 바인딩 포트**로 (`core/api.py:port()`) | 런처가 빈 포트(8877~8899)를 고르므로 `config.PORT`(8765)와 비교하면 모든 요청이 403 이 된다 |
-| 포트는 **배타 바인딩** (`core/bootstrap.py:LoopbackServer`) | Windows 는 `SO_REUSEADDR`(HTTPServer 기본값) 때문에 **남이 쓰는 포트에도 바인딩이 '성공'**하고, 그 경우 요청은 먼저 잡은 쪽으로 가서 우리 앱이 조용히 죽은 서버가 된다(실측: 8888 점유 중 바인딩 성공, 응답은 `FOREIGN`). `allow_reuse_address=False` + Windows `SO_EXCLUSIVEADDRUSE` 로 10048 실패 → 런처는 **다음 포트로 이동**, `server.py` 는 안내 후 종료. 남의 포트를 밀어내지도, 빼앗기지도 않는다 |
+| 코어 서버를 **스레드로** 서빙 (`app/desktop/runtime.py`) | 배포 exe 에서 `sys.executable` 이 자기 자신이라 `subprocess` 재실행이 루프가 된다. 창과 같은 프로세스면 포트·수명이 한 곳에서 관리된다 |
+| Host/Origin 검사는 **실제 바인딩 포트**로 (`app/core/api.py:port()`) | 런처가 빈 포트(8877~8899)를 고르므로 `config.PORT`(8765)와 비교하면 모든 요청이 403 이 된다 |
+| 포트는 **배타 바인딩** (`app/core/bootstrap.py:LoopbackServer`) | Windows 는 `SO_REUSEADDR`(HTTPServer 기본값) 때문에 **남이 쓰는 포트에도 바인딩이 '성공'**하고, 그 경우 요청은 먼저 잡은 쪽으로 가서 우리 앱이 조용히 죽은 서버가 된다(실측: 8888 점유 중 바인딩 성공, 응답은 `FOREIGN`). `allow_reuse_address=False` + Windows `SO_EXCLUSIVEADDRUSE` 로 10048 실패 → 런처는 **다음 포트로 이동**, `app/server.py` 는 안내 후 종료. 남의 포트를 밀어내지도, 빼앗기지도 않는다 |
 | 경로는 `app_paths.py` 한 곳 | `BUNDLE`(번들 내부의 읽기 전용 `frontend/`)과 `APP_ROOT`(exe 폴더 = `.env`·`.article-workspace`)를 분리 → **포터블** |
 | 창 모드 exe 는 콘솔 없음 | `sys.stdout` 이 None 이 되므로 `launcher.py` 가 `.article-workspace/logs/app.log` 로 tee 한다. 치명 오류는 OS 메시지 상자로도 알린다 |
 | `AINewsroom.exe` + `AINewsroom-debug.exe` | 사용자용은 깔끔하게, 지원·검증용은 콘솔로(같은 `_internal/` 공유) |
@@ -100,4 +100,4 @@
 - 포트 충돌 실측(2026-10-02, 외부 `python -m http.server` 로 점유)
   - 점유 전(SO_REUSEADDR): 8888 이 점유된 상태에서 우리 서버가 **바인딩 성공**, 응답은 상대(`FOREIGN`) → 우리 앱은 조용히 죽은 서버
   - 점유 후(배타 바인딩): 8888 바인딩이 **10048 로 실패** → 8878(또는 8889)로 자동 이동·정상 서빙, 상대 서버는 계속 정상 응답, 종료 시 포트 반납
-  - `python server.py`(고정 8765) 점유 시: 안내 출력 후 **exit 1**, 상대 프로그램은 계속 200 응답(가로채지 않음)
+  - `python app/server.py`(고정 8765) 점유 시: 안내 출력 후 **exit 1**, 상대 프로그램은 계속 200 응답(가로채지 않음)

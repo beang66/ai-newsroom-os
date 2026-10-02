@@ -10,12 +10,11 @@ import { fileURLToPath } from "node:url";
 //
 //   node scripts/check-api-boundary.mjs
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SCAN = ["frontend"];
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const SCAN = ["app/frontend"];
 const SKIP = [
-  /^frontend[\\/]src[\\/]api[\\/]/, // 경계 자체(계약·전송)
+  /^app[\\/]frontend[\\/]src[\\/]api[\\/]/, // 경계 자체(계약·전송)
   /[\\/]node_modules[\\/]/,
-  /^tests[\\/]/,
 ];
 const EXT = new Set([".js", ".mjs", ".ts", ".tsx"]);
 const PATTERNS = [

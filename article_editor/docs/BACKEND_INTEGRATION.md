@@ -67,10 +67,10 @@
 
 ## 7. 코어(App Core) 관점 메모
 
-- 위 API 계약은 현재 `article_editor/core` 의 엔드포인트(`core/api.py`, `core/ai/router.py`, `core/integrations/unsplash.py`, `core/storage.py`)와 **일치**한다 → 프론트·백엔드 변경 없이 그대로 연결 가능.
+- 위 API 계약은 현재 `app/core` 의 엔드포인트(`app/core/api.py`, `app/core/ai/router.py`, `app/core/integrations/unsplash.py`, `app/core/storage.py`)와 **일치**한다 → 프론트·백엔드 변경 없이 그대로 연결 가능.
 - 남은 갭(팀 작업에 해당):
   - **기사 목록/조회 API** (미구현)
   - **인증/권한** (미구현)
-  - **팀 DB/Storage 저장** (현재는 로컬 JSON: `core/storage.py`)
+  - **팀 DB/Storage 저장** (현재는 로컬 JSON: `app/core/storage.py`)
   - 서버 자동 로그/요청 추적
-- 키 소유권: Unsplash Access Key·OpenAI Key는 현재 서버(`core/ai/client.py`, `core/integrations/unsplash.py`)에 위치 → 추후 백엔드 프록시로 교체 예정.
+- 키 소유권: Unsplash Access Key·OpenAI Key는 현재 서버(`app/core/ai/client.py`, `app/core/integrations/unsplash.py`)에 위치 → 추후 백엔드 프록시로 교체 예정.

@@ -4,13 +4,13 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 const require = createRequire(import.meta.url),
   { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
-const server = spawn("python", ["server.py"], {
-  cwd: new URL("..", import.meta.url),
+const server = spawn("python", ["app/server.py"], {
+  cwd: new URL("../..", import.meta.url),
   env: { ...process.env, PORT: "8776", USE_LOCAL_MODELS: "false" },
 });
 let browser, savedFile;
 const errors = [],
-  out = new URL("../screenshots/", import.meta.url);
+  out = new URL("../../docs/screenshots/", import.meta.url);
 fs.mkdirSync(out, { recursive: true });
 const calls = { headline: 0, subheadline: 0 };
 try {
@@ -802,7 +802,7 @@ try {
     () => document.querySelector("article-workspace").value.articleId,
   );
   const automaticPath = new URL(
-    "../.article-workspace/articles/" + automaticId + ".json",
+    "../../.article-workspace/articles/" + automaticId + ".json",
     import.meta.url,
   ).pathname;
   assert.ok(fs.existsSync(automaticPath));
@@ -819,7 +819,7 @@ try {
   );
   assert.equal(id, automaticId);
   savedFile = new URL(
-    "../.article-workspace/articles/" + id + ".json",
+    "../../.article-workspace/articles/" + id + ".json",
     import.meta.url,
   );
   assert.ok(fs.existsSync(savedFile));

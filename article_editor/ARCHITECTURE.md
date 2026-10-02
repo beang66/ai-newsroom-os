@@ -4,49 +4,56 @@ This folder is split into two layers. The split is enforced by directories and b
 a single network boundary.
 
 ```
-article_editor/
-├─ frontend/                  ← runs in the browser. UI only.
-│   ├─ index.html
-│   ├─ assets/                UI bundle (<article-workspace> web component, styles, image editor)
-│   │   ├─ article-workspace.js   entry web component (Shadow DOM)
-│   │   ├─ image-editor.js
-│   │   ├─ theme.css / donga-preview.css / donga-fonts.css
-│   └─ src/
-│       └─ api/                ★ the ONLY place the UI talks to the core
-│           ├─ index.js        connection switch — HTTP now, IPC at release
-│           ├─ core-api.js     contract: routes + named methods (api.assist…)
+article_editor/                ← 프로젝트 루트 (데이터·설정·문서·도구)
+├─ app/                        ★ 실행에 필요한 코드 전부 (이 폴더만 복사해도 실행됨)
+│   ├─ launcher.py             실행기 (브라우저 / 창 / 진단 --check / 검증 --smoke)
+│   ├─ server.py               옛 진입점 (core.bootstrap.main, 8765 고정 — 비권장)
+│   ├─ app_paths.py            실행 위치 해석 (BUNDLE=app/, APP_ROOT=루트)
+│   ├─ core/                   ← 브라우저 밖(Python). No UI, no DOM.
+│   │   ├─ config.py           env/keys/models/versions/limits (+ FRONTEND path)
+│   │   ├─ errors.py           shared RequestError
+│   │   ├─ api.py              HTTP handler + routing + static serving
+│   │   ├─ storage.py          article repository (local JSON files)
+│   │   ├─ ai/                 AI Module Manager (client/local_models/headline/router)
+│   │   ├─ integrations/unsplash.py
+│   │   └─ bootstrap.py        startup wiring
+│   ├─ desktop/                pywebview 셸 (runtime / shell / smoke)
+│   └─ frontend/               ← 브라우저·웹뷰에서 실행. UI only.
+│       ├─ index.html
+│       ├─ assets/             웹컴포넌트(<article-workspace>)·테마·이미지 편집기
+│       └─ src/api/            ★ UI가 코어와 대화하는 유일한 지점
+│           ├─ index.js        연결 스위치 — HTTP now, IPC at release
+│           ├─ core-api.js     계약: routes + named methods (api.assist…)
 │           ├─ http.js         HTTP transport (delegates to client.js)
 │           ├─ ipc.js          IPC transport (pywebview bridge; not wired yet)
-│           └─ client.js       fetch implementation (error / cancel / blob)
-├─ core/                      ← runs outside the browser (local runtime). No UI, no DOM.
-│   ├─ config.py              env/keys/models/versions/limits (+ FRONTEND path)
-│   ├─ errors.py              shared RequestError
-│   ├─ api.py                 HTTP handler + routing + static serving
-│   ├─ storage.py             article repository (local JSON files)
-│   ├─ ai/                    AI Module Manager
-│   │   ├─ client.py              external LLM adapter (OpenAI Responses API)
-│   │   ├─ local_models.py        local models (KeT5 headline / KoBART subtitle)
-│   │   ├─ headline.py            headline/subtitle task
-│   │   └─ router.py              kind → task dispatch
-│   ├─ integrations/unsplash.py   Unsplash adapter
-│   └─ bootstrap.py           startup wiring
-└─ server.py                  thin entry point (launcher target → core.bootstrap.main)
+│           └─ client.js       fetch 구현 (error / cancel / blob)
+├─ dev/                        ← 개발용 (앱 실행에는 불필요)
+│   ├─ tests/                  회귀 테스트 (test_server.py · geometry · component · browser · fixtures)
+│   ├─ checks/check-api-boundary.mjs
+│   └─ spikes/ipc_transport/   일회성 측정 도구 (IPC/무포트 전환)
+├─ packaging/                  exe 빌드 (AINewsroom.spec · build_windows.bat · README)
+├─ docs/                       DESKTOP_SHELL · IPC_MIGRATION · SECURITY_MODEL · BACKEND_INTEGRATION (+ screenshots/)
+├─ temp/                       임시 스크립트 전용 (gitignore, 커밋 금지)
+├─ integration/                Supabase 참고자료 (아직 미연결)
+└─ start_windows.bat           개발 실행 정문 (더블클릭 → app\launcher.py)
 ```
 
 ## Rules
 
+- **실행 코드는 `app/` 안에만 둔다.** 데이터·설정(`.env`, `.article-workspace/`)·문서·도구는 루트에 둔다.
 - The **frontend never imports core code**. It only calls the core over HTTP,
-  through `frontend/src/api/` — `createAppApi()` (see `frontend/src/api/README.md`).
+  through `app/frontend/src/api/` — `createAppApi()` (see `app/frontend/src/api/README.md`).
 - UI code must not bypass that boundary: no `fetch(`, no `"/api/…"` literals,
   no `<img src="/api/…">`. Enforced by `npm run check:api-boundary`.
-- The **core never imports frontend code**. It only serves `frontend/` read-only.
+- The **core never imports frontend code**. It only serves `app/frontend/` read-only.
 - The stable interface is the HTTP surface:
   `GET /api/status`, `POST /api/assist`, `POST /api/articles/save`,
   `GET /api/unsplash/search`, `GET /api/unsplash/photo/:id[/track]`.
   Internal module layout can change freely; these contracts stay.
 - **Local transport is a detail.** Development uses HTTP (works in a browser too);
   the release build switches the same contract to the pywebview IPC bridge by changing
-  `frontend/src/api/index.js` only. Plan and risks: `docs/IPC_MIGRATION.md`.
+  `app/frontend/src/api/index.js` only. Plan and risks: `docs/IPC_MIGRATION.md`.
+- 임시 스크립트는 `temp/` 안에만 만들고, 되풀이 쓸 도구는 `dev/`(tests·checks·spikes)로 승격한다.
 
 ## Sensitive configuration (keys) — backend-managed (hard rule)
 
@@ -77,12 +84,12 @@ External LLM / Unsplash / ...
 
 ### 코드상 위치 (교체 지점)
 현재 키를 읽는 곳을 **딱 두 곳으로 격리**해 두었고, 이 두 곳이 **백엔드 프록시 어댑터**로 교체된다:
-- `core/ai/client.py`            — 현재 `OPENAI_API_KEY` 읽음
-- `core/integrations/unsplash.py` — 현재 `UNSPLASH_ACCESS_KEY` 읽음
+- `app/core/ai/client.py`            — 현재 `OPENAI_API_KEY` 읽음
+- `app/core/integrations/unsplash.py` — 현재 `UNSPLASH_ACCESS_KEY` 읽음
 
 목표 구조:
 ```
-core/ai/providers/
+app/core/ai/providers/
   ├─ local.py     (기기 실행, 키 불필요)
   └─ backend.py   (우리 백엔드 프록시 호출; JWT만 사용)
 ```
@@ -117,6 +124,6 @@ core/ai/providers/
 수신자는 자신의 키로 복호화(서버는 평문 보유 불가).
 
 ### 코드 위치(예정)
-- `core/integrations/supabase.py`          — Auth / Postgres / Storage / Realtime 클라이언트
-- `core/managers/sync_manager.py`          — 로컬 ↔ 공유 상태 동기화
-- `core/managers/collaboration_manager.py` — Realtime 협업
+- `app/core/integrations/supabase.py`          — Auth / Postgres / Storage / Realtime 클라이언트
+- `app/core/managers/sync_manager.py`          — 로컬 ↔ 공유 상태 동기화
+- `app/core/managers/collaboration_manager.py` — Realtime 협업

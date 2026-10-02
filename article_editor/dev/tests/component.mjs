@@ -24,7 +24,7 @@ w.fetch = async () => {
 };
 let source = fs
   .readFileSync(
-    new URL("../frontend/assets/article-workspace.js", import.meta.url),
+    new URL("../../app/frontend/assets/article-workspace.js", import.meta.url),
     "utf8",
   )
   .replace(/^import[\s\S]*?from ["'][^"']+["'];?\r?\n/gm, "")

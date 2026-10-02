@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 const require = createRequire(import.meta.url),
   { chromium } = require(process.env.PLAYWRIGHT_MODULE);
-const server = spawn("python", ["server.py"], {
-  cwd: new URL("..", import.meta.url),
+const server = spawn("python", ["app/server.py"], {
+  cwd: new URL("../..", import.meta.url),
   env: { ...process.env, PORT: "8778" },
 });
 let browser;
@@ -188,7 +188,7 @@ try {
     if ([1366, 1100, 390].includes(width))
       await page.screenshot({
         path: new URL(
-          `../screenshots/14-responsive-${width}.png`,
+          `../../docs/screenshots/14-responsive-${width}.png`,
           import.meta.url,
         ).pathname,
         fullPage: true,

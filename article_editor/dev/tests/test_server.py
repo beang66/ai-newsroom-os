@@ -2,11 +2,19 @@
 
 Rewritten to target the modularized core package (frontend/core separation).
 Behaviour and assertions are preserved from the original single-file suite.
+
+실행 코드는 app/ 아래에 있으므로 여기서 sys.path 를 채운다 (dev/tests → ../../app).
 """
+import sys
+from pathlib import Path
+
+_APP = Path(__file__).resolve().parents[2] / 'app'
+if str(_APP) not in sys.path:
+    sys.path.insert(0, str(_APP))
+
 import unittest, threading, urllib.request, urllib.error, json, os, tempfile
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
-from pathlib import Path
 
 import core.api as api
 import core.ai.client as ai_client

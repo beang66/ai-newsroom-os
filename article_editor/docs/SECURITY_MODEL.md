@@ -50,7 +50,7 @@
 
 | # | 경로 | 지금 상태 |
 |---|---|---|
-| 1 | **AI 호출 자체가 원고 전송** (저장 ≠ 전송) | `store:False`(`core/ai/client.py:21`, `router.py:72`), `시작하기.md` 고지, 백엔드 프록시는 무저장 정책 |
+| 1 | **AI 호출 자체가 원고 전송** (저장 ≠ 전송) | `store:False`(`app/core/ai/client.py:21`, `router.py:72`), `시작하기.md` 고지, 백엔드 프록시는 무저장 정책 |
 | 2 | **웹뷰는 원고를 반드시 안다** (화면에 그려야 함) | JWT는 감췄지만 원고는 브리지로 반환됨 → CSP·원격 콘텐츠 금지가 곧 원고 보호 |
 | 3 | **동기화 폴더·백업** (OS/서드파티가 업로드) | 없음 → **P1 경고 기능** |
 | 4 | **폴더 복사·수리·중고** (평문 저장) | 없음 → **P1 로컬 암호화** |
@@ -61,9 +61,9 @@
 
 | 저장물 | 위치 | 상태 |
 |---|---|---|
-| 원고 | `.article-workspace/articles/<id>.json` | **평문 JSON**(`core/storage.py:20` `json.dumps`, 사람이 그대로 읽음) |
+| 원고 | `.article-workspace/articles/<id>.json` | **평문 JSON**(`app/core/storage.py:20` `json.dumps`, 사람이 그대로 읽음) |
 | 자동 임시저장 | `.article-workspace/webview/EBWebView/Default/IndexedDB/` | **평문 LevelDB**(Chromium 미암호화) |
-| 로그 | `.article-workspace/logs/app.log` | 원고·키 미기록(원칙, `core/api.py:15` "Do not log manuscript content or API credentials") |
+| 로그 | `.article-workspace/logs/app.log` | 원고·키 미기록(원칙, `app/core/api.py:15` "Do not log manuscript content or API credentials") |
 | 프로필 캐시 | 같은 `webview/` | 앱 JS·히스토리 잔존 → 폴더 전체를 민감정보로 취급 |
 
 검증 예시(실제 저장 파일):

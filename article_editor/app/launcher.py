@@ -1,10 +1,11 @@
 """기사 작업실 실행기 — 로컬 코어를 띄우고 창(또는 브라우저)을 연다.
 
-개발 실행
-    python launcher.py                  브라우저 모드(기본, 기존과 동일)
-    python launcher.py --window         데스크톱 창(pywebview)
-    python launcher.py --check          창을 띄우지 않고 진단
-    python launcher.py --smoke write    창 검증 하네스(데스크톱 셸)
+개발 실행 (프로젝트 루트에서)
+    start_windows.bat                   브라우저 모드(Windows, 더블클릭/명령)
+    python app/launcher.py              브라우저 모드(기본, 기존과 동일)
+    python app/launcher.py --window     데스크톱 창(pywebview)
+    python app/launcher.py --check      창을 띄우지 않고 진단
+    python app/launcher.py --smoke write 창 검증 하네스(데스크톱 셸)
 
 배포본(exe)도 **같은 CLI**를 쓴다. 다만 인자가 없으면 창 모드가 기본이고,
 진단 로그는 `.article-workspace/logs/app.log` 에 남는다(packaging/README.md).

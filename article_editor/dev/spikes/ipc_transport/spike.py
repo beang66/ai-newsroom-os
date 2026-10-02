@@ -5,13 +5,14 @@ import base64, json, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-APP_DIR = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(APP_DIR))
+APP_DIR = Path(__file__).resolve().parents[3]  # article_editor/ (dev/spikes/ipc_transport → 3단계 위)
+SRC = APP_DIR / "app"  # 실행 코드
+sys.path.insert(0, str(SRC))
 
 import webview
 from desktop import runtime, shell
 
-INDEX = APP_DIR / "frontend" / "index.html"
+INDEX = SRC / "frontend" / "index.html"
 BACKEND_PORT = 8931
 
 

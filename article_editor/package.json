@@ -5,10 +5,11 @@
   "type": "module",
   "description": "Portable article editor with Donga preview and Unsplash photo editing",
   "scripts": {
-    "test": "node scripts/check-api-boundary.mjs && node tests/geometry.mjs && node tests/component.mjs",
-    "test:browser": "node tests/browser.mjs",
-    "test:drag-responsive": "node tests/drag-responsive.mjs",
-    "check:api-boundary": "node scripts/check-api-boundary.mjs"
+    "test": "node dev/checks/check-api-boundary.mjs && node dev/tests/geometry.mjs && node dev/tests/component.mjs",
+    "test:python": "python -m unittest discover -s dev/tests -p 'test_*.py'",
+    "test:browser": "node dev/tests/browser.mjs",
+    "test:drag-responsive": "node dev/tests/drag-responsive.mjs",
+    "check:api-boundary": "node dev/checks/check-api-boundary.mjs"
   },
   "devDependencies": {
     "jsdom": "^30.1.1",

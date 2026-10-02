@@ -17,7 +17,7 @@ import os
 import sys
 from pathlib import Path
 
-_APP_DIR = Path(__file__).resolve().parent.parent  # article_editor/
+_APP_DIR = Path(__file__).resolve().parent.parent  # app/ (실행 코드 루트)
 if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))
 

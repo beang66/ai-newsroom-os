@@ -1,4 +1,4 @@
-# frontend/src/api/ — 코어 연결 지점 (한 곳)
+# app/frontend/src/api/ — 코어 연결 지점 (한 곳)
 
 UI가 코어(App Core)와 대화하는 방법은 **여기 하나뿐**입니다.
 
@@ -13,7 +13,7 @@ index.js        ← 연결 지점(스위치). HTTP ↔ IPC 를 여기서만 고�
         ▼
 core-api.js     ← 계약: 라우트와 인자 모양 (UI가 아는 코어의 전부)
         ▼
-        코어 (core/api.py)
+        코어 (app/core/api.py)
 ```
 
 | 파일 | 역할 | 고칠 수 있나 |
@@ -42,5 +42,5 @@ core-api.js     ← 계약: 라우트와 인자 모양 (UI가 아는 코어의 �
 return createAppApi({ mode: "ipc" });   // 또는 { mode: "auto" }
 ```
 그때 해야 할 일은 `ipc.js`가 요구하는 브리지를 파이썬 쪽에 노출하는 것뿐입니다
-(`bridge.core(path, payload)`, `bridge.coreBytes(path)` → `core/api.py` 라우팅 재사용).
+(`bridge.core(path, payload)`, `bridge.coreBytes(path)` → `app/core/api.py` 라우팅 재사용).
 UI·계약·컴포넌트는 손대지 않습니다. 자세한 위험 목록은 `docs/IPC_MIGRATION.md`.

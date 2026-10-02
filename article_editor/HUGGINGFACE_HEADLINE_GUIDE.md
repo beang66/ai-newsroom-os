@@ -48,7 +48,7 @@ OpenAI API 설정 외에 `requirements-headline.txt`의 로컬 제목 모델 패
 
 ## 관련 파일
 
-- 서비스 서버: `server.py`
+- 서비스 서버: `app/server.py`
 - 기사 작성 화면: `index.html`
 - 로컬 모델 패키지: `requirements-headline.txt`
 - 독립 테스트 기록: `model_tests/ket5_test_report.md`

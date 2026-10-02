@@ -21,13 +21,14 @@
 import os
 from pathlib import Path
 
-APP_DIR = Path(SPECPATH).parent  # article_editor/
+APP_DIR = Path(SPECPATH).parent  # article_editor/ (프로젝트 루트)
+SRC = APP_DIR / 'app'  # 실행 코드(진입점·core·desktop·frontend)
 NAME = os.environ.get('AINEWSROOM_NAME') or 'AINewsroom'
 ONEFILE = os.environ.get('AINEWSROOM_ONEFILE', '').lower() not in ('', '0', 'false')
 ICON = APP_DIR / 'packaging' / 'app.ico'
 
 # 앱이 직접 읽는 정적 리소스(코어는 표준 라이브러리만 쓴다).
-datas = [(str(APP_DIR / 'frontend'), 'frontend')]
+datas = [(str(SRC / 'frontend'), 'frontend')]
 
 # pywebview 는 네이티브 백엔드를 런타임에 고르므로 직접 지목한다.
 hiddenimports = [
@@ -72,8 +73,8 @@ exe_options = dict(
 )
 
 a = Analysis(
-    [str(APP_DIR / 'launcher.py')],
-    pathex=[str(APP_DIR)],
+    [str(SRC / 'launcher.py')],
+    pathex=[str(SRC)],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,

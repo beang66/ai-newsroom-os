@@ -2,12 +2,13 @@
 
 뿌리를 두 개로 나눈다.
 
-- ``BUNDLE``   읽기 전용 리소스(``frontend/``). 개발에서는 ``article_editor/``,
+- ``BUNDLE``   읽기 전용 리소스(``frontend/``). 개발에서는 실행 코드 폴더(``app/``),
                PyInstaller 배포본에서는 번들 내부(``_internal/``)다.
 - ``APP_ROOT`` 쓰기 가능한 앱 폴더. ``.env``와 ``.article-workspace/``가 여기 산다.
-               개발에서는 ``article_editor/``, 배포본에서는 **exe가 놓인 폴더**다.
+               개발에서는 프로젝트 루트(``article_editor/``), 배포본에서는 **exe가 놓인 폴더**다.
 
-그래서 배포본은 포터블하다. 폴더를 통째로 옮겨도 ``.env``·임시저장·로그가 따라온다.
+즉 개발 중에도 **코드(app/)와 데이터(프로젝트 루트)가 섞이지 않는다.**
+배포본은 포터블하다. 폴더를 통째로 옮겨도 ``.env``·임시저장·로그가 따라온다.
 """
 from __future__ import annotations
 
@@ -20,8 +21,8 @@ if FROZEN:
     BUNDLE = Path(getattr(sys, '_MEIPASS', Path(sys.executable).resolve().parent))
     APP_ROOT = Path(sys.executable).resolve().parent
 else:
-    BUNDLE = Path(__file__).resolve().parent
-    APP_ROOT = BUNDLE
+    BUNDLE = Path(__file__).resolve().parent  # app/ (실행 코드)
+    APP_ROOT = BUNDLE.parent  # 프로젝트 루트 (데이터·설정)
 
 FRONTEND = BUNDLE / 'frontend'
 WORKSPACE = APP_ROOT / '.article-workspace'

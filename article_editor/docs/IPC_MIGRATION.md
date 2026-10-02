@@ -1,27 +1,28 @@
 # 코어 호출 경계 통일 — IPC 전환 준비
 
 - 상태: **적용(2026-10-02)** · 결정: **개발 단계는 HTTP, 출시는 IPC**, 연결 지점은 지금부터 하나로 통일
-- 관련: `../frontend/src/api/README.md`, `DESKTOP_SHELL.md`, `../ARCHITECTURE.md`(frontend/core 경계)
+- 관련: `../app/frontend/src/api/README.md`, `DESKTOP_SHELL.md`, `../ARCHITECTURE.md`(frontend/core 경계)
 
 ## 1. 결정
 
 | 항목 | 내용 |
 |---|---|
-| 지금(개발) | HTTP. `python launcher.py`(브라우저)와 창 모드 모두 동작 → 브라우저 개발 편의 유지 |
+| 지금(개발) | HTTP. `python app/launcher.py`(브라우저)와 창 모드 모두 동작 → 브라우저 개발 편의 유지 |
 | 출시(IPC) | pywebview 브리지. **포트 점유 없음** |
-| 전환 지점 | `frontend/src/api/index.js` 의 `createAppApi({ mode })` **한 곳** |
-| 절대 규칙 | UI는 `frontend/src/api/` 밖에서 코어와 직접 대화하지 않는다 (`npm run check:api-boundary`) |
+| 전환 지점 | `app/frontend/src/api/index.js` 의 `createAppApi({ mode })` **한 곳** |
+| 절대 규칙 | UI는 `app/frontend/src/api/` 밖에서 코어와 직접 대화하지 않는다 (`npm run check:api-boundary`) |
 
 ```
-UI ──(api.이름(...))──▶ index.js ──▶ http.js ─▶ client.js ─▶ core/api.py
-                              └─────▶ ipc.js  ─▶ pywebview 브리지 ─▶ core/api.py
+UI ──(api.이름(...))──▶ index.js ──▶ http.js ─▶ client.js ─▶ app/core/api.py
+                              └─────▶ ipc.js  ─▶ pywebview 브리지 ─▶ app/core/api.py
 ```
 
 ## 2. 지금까지 정리한 것
 
 - 코어 호출 7곳(웹컴포넌트) → `core-api.js` 계약 6개 메서드로 흡수. 컴포넌트에 `/api/` 문자열 0건.
 - `client.js`(전송 구현)는 **유일**하게 유지. IPC 추가 시에도 HTTP 구현을 복사하지 않는다.
-- 위반 검사 스크립트: `scripts/check-api-boundary.mjs` (fetch/XHR/EventSource/WebSocket/`"/api/"` 스캔, `npm test` 에 포함).
+- 실행 코드는 `app/` 아래로 격리(`app/core`, `app/desktop`, `app/frontend`), 개발 도구는 `dev/`.
+- 위반 검사 스크립트: `dev/checks/check-api-boundary.mjs` (fetch/XHR/EventSource/WebSocket/`"/api/"` 스캔, `npm test` 에 포함).
 - 사진은 경로 참조(`<img src="/api/...">`) 금지 → `photoBytes()`로 Blob. HTTP에서도 이미 그렇게 되어 있고, IPC에서도 그대로 통한다.
 
 ## 3. IPC로 바꾸면 문제될 수 있는 지점 (미리 정리)
@@ -38,12 +39,12 @@ UI ──(api.이름(...))──▶ index.js ──▶ http.js ─▶ client.js 
 | 8 | **인쇄/다운로드/드래그** | 브라우저 기능 | 영향 없음(클라이언트 기능). `window.print()`, Blob 다운로드는 그대로 |
 | 9 | **보안 표면** | IPC는 창 내부만 호출 가능(개선) | 대신 웹뷰에 원격 콘텐츠를 로드하지 않는다(브리지 노출 방지). 개발자 도구는 `--debug`로만 |
 | 10 | **진단/로그** | 포트·HTTP 로그가 사라짐 | `--check`/`--smoke`는 계약 메서드 기준으로 유지. `app.log` 그대로 |
-| 11 | **셸 준비 확인 마커** | `desktop/runtime.py:wait_ready()`가 응답에 `<article-workspace` 문자열이 있는지로 "우리 서버가 맞는지"를 판별한다 | UI 엔트리를 React 등으로 교체하면 **마커도 함께 갱신**한다(또는 `/api/status` 계약 기반 확인으로 대체). 안 바꾸면 실행이 "시작 화면 확인 실패"로 죽는다 |
+| 11 | **셸 준비 확인 마커** | `app/desktop/runtime.py:wait_ready()`가 응답에 `<article-workspace` 문자열이 있는지로 "우리 서버가 맞는지"를 판별한다 | UI 엔트리를 React 등으로 교체하면 **마커도 함께 갱신**한다(또는 `/api/status` 계약 기반 확인으로 대체). 안 바꾸면 실행이 "시작 화면 확인 실패"로 죽는다 |
 
-## 4. 스파이크 실행 (`spikes/ipc_transport/spike.py`)
+## 4. 스파이크 실행 (`dev/spikes/ipc_transport/spike.py`)
 
 ```
-python spikes/ipc_transport/spike.py --mode http|file|html|bridge
+python dev/spikes/ipc_transport/spike.py --mode http|file|html|bridge
 ```
 
 ## 5. 측정 결과 (2026-10-02, Windows · WebView2 154.0.4258.48 · pywebview 6.2.1)
@@ -82,8 +83,8 @@ python spikes/ipc_transport/spike.py --mode http|file|html|bridge
 
 ## 7. 남은 전환 작업
 
-1. 파이썬 브리지 노출: `bridge.core(path, payload)` / `bridge.coreBytes(path)` — `core/api.py` 라우팅 재사용
+1. 파이썬 브리지 노출: `bridge.core(path, payload)` / `bridge.coreBytes(path)` — `app/core/api.py` 라우팅 재사용
 2. `ipc.js` 실제 구현 검증(현 스텁 그대로 동작 예상) → `createAppApi({ mode: "ipc" })`
-3. 셸: 창을 `file://`(frontend/index.html)로 열고 `js_api=CoreBridge()` 전달. `wait_ready` 마커는 `file://` 로드에서는 HTTP 확인이 불가하므로 계약 기반 확인으로 교체
+3. 셸: 창을 `file://`(app/frontend/index.html)로 열고 `js_api=CoreBridge()` 전달. `wait_ready` 마커는 `file://` 로드에서는 HTTP 확인이 불가하므로 계약 기반 확인으로 교체
 4. 외부 백엔드 프록시 계약 추가(`ARCHITECTURE.md`의 백엔드 프록시 교체 지점)
 5. 창 스모크 7항목을 IPC 기준으로 확장 + macOS 스파이크

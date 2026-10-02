@@ -5,7 +5,7 @@
 따르며, **React/JS 프론트는 한 줄도 바뀌지 않습니다.**
 
 ```
-desktop/
+app/desktop/
 ├─ runtime.py  코어 서버 런타임(빈 포트 선택 · 스레드 서빙 · 준비 확인)
 ├─ shell.py    창 생성 + WebView2 사용자 데이터 폴더(IndexedDB 영속)
 ├─ smoke.py    창을 실제로 띄우는 자동 검증 하네스
@@ -16,24 +16,24 @@ desktop/
 
 ```
 pip install pywebview
-python launcher.py --window        # Windows: start_windows.bat --window
-python desktop/shell.py            # 같은 동작(단독 실행)
-python launcher.py                 # 기존 브라우저 모드(기본값, 변경 없음)
+python app/launcher.py --window     # Windows: start_windows.bat --window
+python app/desktop/shell.py         # 같은 동작(단독 실행)
+python app/launcher.py              # 기존 브라우저 모드(기본값, 변경 없음)
 ```
 
-- 코어 서버는 **같은 프로세스의 스레드**에서 돕니다(`desktop/runtime.py`). 예전처럼 `server.py`를
+- 코어 서버는 **같은 프로세스의 스레드**에서 돕니다(`app/desktop/runtime.py`). 예전처럼 `app/server.py`를
   별도 프로세스로 띄우지 않는 이유는, 배포 exe에서 `sys.executable`이 자기 자신이라 재실행 루프가
   되기 때문입니다. 창을 닫으면 서버도 함께 끝납니다.
 - 창의 임시 저장(IndexedDB)은 `<앱 폴더>/.article-workspace/webview`에 남습니다(포터블).
-- `python launcher.py --window --check` — **창을 띄우지 않고** pywebview/WebView2/저장 경로만 진단합니다.
+- `python app/launcher.py --window --check` — **창을 띄우지 않고** pywebview/WebView2/저장 경로만 진단합니다.
 - 배포 exe 도 같은 CLI를 씁니다: `AINewsroom-debug.exe --check`, `AINewsroom-debug.exe --smoke write`.
 - `DESKTOP_STORAGE_DIR` 환경변수로 사용자 데이터 폴더를 바꿀 수 있습니다(기본 `article_editor/.article-workspace/webview`).
 
 ## 자동 검증
 
 ```
-python desktop/smoke.py --mode write   # 표식을 IndexedDB 에 기록
-python desktop/smoke.py --mode read    # 재시작 후에도 남아 있는지 확인
+python app/desktop/smoke.py --mode write   # 표식을 IndexedDB 에 기록
+python app/desktop/smoke.py --mode read    # 재시작 후에도 남아 있는지 확인
 ```
 
 결과는 `article_editor/.article-workspace/desktop-shell-smoke.json`에 남습니다.

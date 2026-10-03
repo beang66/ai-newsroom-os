@@ -78,6 +78,9 @@ def main():
     ap.add_argument('--maxlen', type=int, default=512)
     ap.add_argument('--sealed', action='store_true')
     args = ap.parse_args()
+    if not (Path(args.adapter) / 'adapter_config.json').is_file():
+        raise SystemExit(f'어댑터가 없습니다: {Path(args.adapter).resolve()}\n'
+                         f'먼저 train.py 로 학습하세요(끝나면 runs/<name>/adapter 가 생깁니다).')
     tok, model = load_model(args.base, args.adapter, args.qlora)
     report = {}
 

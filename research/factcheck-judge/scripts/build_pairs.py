@@ -10,7 +10,7 @@
     REVIEW_LOCAL / REVIEW_EXTERNAL → data/legacy_review.jsonl (옛 v14 세트에서 뽑은 것)
 
     python research/factcheck-judge/scripts/build_pairs.py            # data/train.jsonl, data/dev.jsonl
-    python research/factcheck-judge/scripts/build_pairs.py --sealed   # data/sealed/test.jsonl 도
+    python research/factcheck-judge/scripts/build_pairs.py --sealed   # data/sealed/test.jsonl 만(train/dev 는 그대로)
 """
 import argparse
 import json
@@ -178,6 +178,8 @@ def main():
         by_split.setdefault(seed['split'], []).extend(pairs_for(seed, claims, rng, args.max_negs, written.get(seed['sid'], [])))
 
     for split, rows in by_split.items():
+        if args.sealed and split != 'test':
+            continue  # --sealed 는 test 만 쓴다(난수 흐름이 달라 train/dev 를 덮어쓰면 학습 데이터가 바뀐다)
         sup = sum(r['label'] == 'SUPPORTED_LOCAL' for r in rows)
         def cap(match, ratio):  # 조건에 맞는 행을 SUPPORTED 수 × ratio 개까지만 남긴다
             hit = [r for r in rows if match(r)]

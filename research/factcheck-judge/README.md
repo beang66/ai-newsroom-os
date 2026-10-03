@@ -76,6 +76,8 @@ python train.py --base Qwen/Qwen3-4B --qlora --name q4b-v1
 python evaluate.py --base Qwen/Qwen3-4B --qlora --adapter ../runs/q4b-v1/adapter
 ```
 
+- 중간에 멈추면(GPU 오류·전원) 같은 명령에 `--resume` 을 붙이면 마지막 에포크 체크포인트부터 이어서 학습한다.
+  체크포인트 폴더(`runs/<name>/checkpoints/checkpoint-N`)에도 어댑터가 있어 `evaluate.py --adapter` 로 바로 평가할 수 있다.
 - 메모리가 모자라면(`CUDA out of memory`) `--batch 2 --accum 8`, 그래도 모자라면 `--maxlen 384`.
 - 결과: `runs/<name>/metrics.json`(dev), `runs/<name>/eval.json`(주장 단위 29·18건). `runs/` 는 커밋되지 않으니
   어댑터 폴더(`runs/<name>/adapter`, 수십 MB)와 두 json 을 이 PC 로 옮겨 오면 봉인 test 평가와 앱 연결을 한다.

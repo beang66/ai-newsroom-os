@@ -44,6 +44,7 @@ def main():
     ap.add_argument('--batch', type=int, default=4)
     ap.add_argument('--accum', type=int, default=4)
     ap.add_argument('--lora-r', type=int, default=16)
+    ap.add_argument('--resume', action='store_true', help='중단된 학습을 runs/<name>/checkpoints 의 마지막 체크포인트부터 이어서')
     args = ap.parse_args()
     out = HERE / 'runs' / args.name
     assert torch.cuda.is_available(), 'CUDA GPU 가 필요합니다(README 의 torch 설치 참고).'
@@ -92,7 +93,7 @@ def main():
         train_dataset=train_ds, eval_dataset=dev_ds, data_collator=DataCollatorWithPadding(tok),
         compute_metrics=metrics)
     t0 = time.time()
-    trainer.train()
+    trainer.train(resume_from_checkpoint=True if args.resume else None)
     result = trainer.evaluate()
     model.save_pretrained(out / 'adapter')
     tok.save_pretrained(out / 'adapter')

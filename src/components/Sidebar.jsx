@@ -6,7 +6,6 @@ import {
   FileCheck2, 
   ChevronLeft, 
   Minus,
-  FolderOpen
 } from "lucide-react";
 
 /**

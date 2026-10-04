@@ -3,7 +3,6 @@ import FactCheckDrawer from "./FactCheckDrawer";
 import { 
   Sparkles, 
   Search, 
-  CheckCircle2, 
   Check, 
   RotateCcw, 
   Bold, 
@@ -17,14 +16,8 @@ import {
   Image as ImageIcon,
   Upload,
   Send,
-  Download,
-  Info,
-  ExternalLink,
-  ChevronRight,
   Share2,
   Bookmark,
-  Heart,
-  MessageSquare,
   ShieldCheck
 } from "lucide-react";
 

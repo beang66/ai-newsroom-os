@@ -1,5 +1,5 @@
 import React from "react";
-import { PenTool, Send, Sparkles, FileCheck2 } from "lucide-react";
+import { PenTool, Sparkles, FileCheck2 } from "lucide-react";
 
 /**
  * 인덱스 바인더 탭(Binder Tab) 네비게이션 컴포넌트

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Newspaper, Bell, User, Clock, CheckCircle2, FileEdit } from "lucide-react";
+import { Newspaper, Bell, Clock, CheckCircle2, FileEdit } from "lucide-react";
 
 export default function Header({ currentArticleTitle = "AI 반도체 개척자들...", status = "작성 중" }) {
   const [isLoggedIn, setIsLoggedIn] = useState(true);

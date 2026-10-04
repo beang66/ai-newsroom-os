@@ -5,7 +5,6 @@ import Sidebar from "./components/Sidebar";
 import ArticleWriter from "./components/ArticleWriter";
 import SourceSearch from "./components/SourceSearch";
 import InterviewStudio from "./components/interview/InterviewStudio";
-import PublishPrep from "./components/PublishPrep";
 import FormatConverter from "./components/FormatConverter";
 import ArchiveView from "./components/ArchiveView";
 
@@ -20,7 +19,7 @@ export default function App() {
 
   // Fact check sequential state
   const [factCheckActive, setFactCheckActive] = useState(false);
-  const [factCheckIssues, setFactCheckIssues] = useState(mockFactCheckIssues);
+  const [factCheckIssues] = useState(mockFactCheckIssues);
   const [activeFactIndex, setActiveFactIndex] = useState(0);
 
   // Quick Source Search Modal inside Article Writer

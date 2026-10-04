@@ -1,164 +1,185 @@
-# AI-Newsroom OS — Technical Contract Alignment v0.8
+# AI-Newsroom OS — 팀 공통 개발 규칙 v0.8
 
-Status: Architecture Alignment / pre-freeze  
-Date: 2026-10-04  
-Product/Contract owner: 안정빈
+상태: **팀 검토용 초안 / v1.0 확정 전**  
+작성일: 2026-10-04  
+통합 설계 담당: 안정빈
 
-## 1. Decision
+> 이 문서의 목적은 복잡한 아키텍처를 만드는 것이 아닙니다. **각자 만든 기능을 나중에 합칠 때 깨지지 않도록, 데이터 이름·ID·API 연결 방식만 먼저 맞추는 것**입니다.
 
-Adopt **Code-informed, Document-driven Development**.
+## 1. 앞으로 개발하는 순서
 
-Existing branches are evidence of current implementation decisions, not the target architecture's source of truth. We will complete a Reality Audit, align the domain model and contracts, validate one vertical slice, and only then freeze Contract v1.0.
-
-Sequence:
-
-`Phase -1 Reality Audit → Contract v0.8 → Vertical Slice → Contract v1.0 Freeze → parallel implementation/improvement`
-
-## 2. Ownership boundaries
-
-| Domain | DRI | Responsibility |
-|---|---|---|
-| Article / Autosave | 강창희 | persistence, revision, conflict handling |
-| Source ingest / RAG / Search | 강창희 | chunking, indexing, retrieval, source trace |
-| Verification Engine | 강창희 | verification runs, issues, evidence retrieval |
-| STT / Transcript | 박소현 | audio, transcription, segment trace |
-| Structure / Preview / Media | 고서연 | structure analysis, preview, media |
-| Platform Formatter | 이정민 | platform conversion/rendering |
-| Knowledge Archive / Data Map | 안정빈 | domain relations, archive UX, Data Map |
-| System Contract / ERD / Integration | 안정빈 | shared contracts, integration, E2E acceptance |
-| E2E Integration | All | vertical slice and regression |
-
-Data Map is **not** a second RAG implementation. Retrieval remains owned by the Retrieval/Verification domain. Data Map consumes shared Knowledge/Evidence contracts.
-
-## 3. Phase -1: Current Implementation Reality Audit
-
-Audit at minimum:
-
-- `main`
-- `feature/app-core`
-- `feature/su4228-article-workspace`
-- `feature/platform-generator`
-
-Create a Current Implementation Matrix with:
-
-`feature | branch | input | output | state | persistence | async model | current API | target contract | conflict | migration action`
-
-Rules:
-
-1. Preserve useful implemented behavior where compatible.
-2. Do not promote accidental branch-local schemas into the global contract without review.
-3. Identify duplicate ownership and duplicate persistence before integration.
-4. Any contract mismatch must be resolved in docs/contract first, then code.
-
-## 4. Knowledge/Evidence Layer
-
-The current article-centric model is extended to a Workspace Knowledge Model.
-
-Core entities for v0.8:
-
-- Workspace
-- Article
-- ArticleRevision
-- ArticleSnapshot
-- Source
-- SourceChunk
-- Transcript
-- TranscriptSegment
-- Claim
-- EvidenceLink
-- KnowledgeEntity
-- KnowledgeEdge
-- VerificationRun
-- VerificationIssue
-- MediaAsset
-- PlatformOutput
-- ProcessingJob
-
-Key rules:
-
-- Sources may be reusable workspace assets rather than belonging exclusively to one article.
-- Article ↔ Source is represented through a relation such as `article_sources`.
-- Evidence should resolve to `source_chunk_id` and/or `transcript_segment_id` where possible.
-- Claim/Evidence is a shared domain used by RAG, Verify, Data Map and Archive.
-- Data Map is a projection/consumer of shared relation data, not an independent data silo.
-- PostgreSQL relations are sufficient for MVP; a graph database is explicitly deferred.
-
-Conceptual relationship:
+기존 코드를 모두 버리고 다시 만들지 않습니다. 현재 구현을 확인한 뒤 공통 규칙에 연결합니다.
 
 ```text
-Workspace
- ├─ Article ─ ArticleSnapshot ─ Verification / PlatformOutput
- ├─ Source ─ SourceChunk ─┐
- ├─ Transcript ─ Segment ├─ EvidenceLink ─ Claim
- └─ KnowledgeEntity ─ KnowledgeEdge ───────┘
+① 현재 기능 확인
+→ ② 공통 DB/API 초안에 맞추기
+→ ③ 실제 기사 1건으로 전체 연결 테스트
+→ ④ 문제 수정
+→ ⑤ v1.0 규칙 확정
+→ ⑥ 각 기능 개발 계속
 ```
 
-## 5. Contract v0.8 scope
+개발 용어로는 다음과 같습니다.
 
-Freeze now:
+`Reality Audit → Contract v0.8 → Vertical Slice → Contract v1.0 Freeze`
 
-- entity names and ownership
-- ID/FK/nullability/cardinality
-- revision vs immutable snapshot semantics
-- Claim/Evidence/Entity relationships
-- upload → complete → processing job lifecycle
-- common Job states
-- common error envelope
-- minimum request/response shapes for each feature
+- **Reality Audit** = 지금 실제로 만들어진 기능과 저장 방식을 확인하는 작업
+- **Contract** = 기능끼리 데이터를 주고받을 때 지켜야 하는 공통 약속
+- **Vertical Slice** = 실제 데이터 1건을 처음부터 마지막 기능까지 통과시키는 전체 연결 테스트
+- **Freeze** = 팀이 합의한 뒤 이 규칙을 함부로 바꾸지 않기로 확정하는 것
 
-Do **not** freeze advanced implementation details before the vertical slice.
+## 2. 담당 영역
 
-## 6. Required Vertical Slice before v1.0
+| 영역 | 담당 | 실무 책임 |
+|---|---|---|
+| 기사 작성/자동저장 | 강창희 | 기사 저장, 수정 이력, 저장 충돌 처리 |
+| 자료 등록/RAG/검색 | 강창희 | 자료 분할, 검색, 원문 위치 추적 |
+| 기사 검증 | 강창희 | 주장 검증, 문제 표시, 근거 연결 |
+| STT/녹취 | 박소현 | 음성 변환, 시간/화자별 문장 구간 |
+| 구조/미리보기/미디어 | 고서연 | 기사 구조, 미리보기, 사진·영상 |
+| 플랫폼 변환 | 이정민 | Instagram 등 플랫폼별 변환/렌더링 |
+| 자료 아카이브/Data Map | 안정빈 | 자료 관계, 보관/조회, Data Map |
+| 공통 DB/API/기능 연결 | 안정빈 | ERD, API 규칙, 전체 통합 점검 |
+| 전체 연결 테스트 | 전원 | 실제 기사 1건 E2E 테스트 |
 
-Use one real article and execute end-to-end:
+**중요:** Data Map 담당자가 별도의 RAG 검색 기능을 또 만들 필요는 없습니다. RAG/검증에서 만든 출처·근거·관계 데이터를 Data Map이 읽어서 보여줍니다.
 
-`Source upload → ingest/chunk → RAG → Article edit/autosave → immutable snapshot → Claim/Evidence → Verify → Data Map query → Platform conversion → Archive/Export`
+## 3. 팀 공통 데이터 구조
 
-Record every contract mismatch discovered by the slice.
+### 기사 관련
+- `Article` = 기사 자체
+- `ArticleRevision` = 작성 중 자동저장된 버전
+- `ArticleSnapshot` = 검증/플랫폼 변환을 시작하는 순간 고정한 기사본
 
-## 7. Contract v1.0 Freeze gate
+### 자료/RAG 관련
+- `Source` = PDF, URL, 메모 등 원본 자료
+- `SourceChunk` = RAG 검색을 위해 원본을 나눈 작은 문단/구간
 
-Freeze only after the vertical slice succeeds:
+### STT 관련
+- `Transcript` = 전체 녹취
+- `TranscriptSegment` = 시간·화자별 녹취 구간
 
-- ERD v1.0
-- OpenAPI v1.0
-- Job/Event Contract v1.0
-- Storage Contract v1.0
-- Error Contract v1.0
-- representative fixtures
-- contract tests
+### 검증 관련
+- `Claim` = 사실 확인이 필요한 기사 속 주장
+- `EvidenceLink` = 그 주장과 실제 근거 문장/구간의 연결
+- `VerificationRun` = 검증 한 번의 실행 기록
+- `VerificationIssue` = 검증에서 발견한 개별 문제
 
-After freeze, breaking changes require an explicit Contract Change plus migration/fixture/test updates.
+### 미디어/플랫폼 관련
+- `MediaAsset` = 사진·영상·생성 이미지 정보
+- `PlatformOutput` = Instagram 카드뉴스 등 플랫폼 변환 결과
 
-## 8. Deferred improvements after v1.0
+### Data Map 관련
+- `KnowledgeEntity` = 사람·기관·장소 등 주요 대상
+- `KnowledgeEdge` = 대상끼리의 관계
 
-- advanced Data Map visualization
-- automatic entity/relation extraction improvements
-- cross-article discovery/recommendation
-- source credibility scoring
-- graph database adoption
-- advanced RAG reranking
-- bidirectional CMS integration
+### 공통 작업 상태
+- `ProcessingJob` = STT, AI 검증, 렌더링 등 시간이 걸리는 작업 기록
 
-Principle: **freeze the data foundation before v1.0; evolve advanced experiences after v1.0.**
+## 4. 왜 `Revision`과 `Snapshot`을 나누나
 
-## 9. Team implementation rules
+예를 들어 기자가 기사를 쓰면서 자동저장이 계속 되고 있다고 가정합니다.
 
-1. Check contract fixtures before FE/BE implementation.
-2. Do not independently change API/DB shapes inside a feature branch.
-3. Existing code is Reality Audit evidence, not the final contract by itself.
-4. Do not duplicate Source/Claim/Evidence persistence across features.
-5. Every feature must propagate stable shared IDs required by the vertical slice.
-6. Integration is complete only when contract tests and Critical E2E pass.
+검증 버튼을 누른 순간 기사가 A였는데, 검증이 진행되는 동안 기자가 내용을 B로 수정하면 검증 결과가 어느 문장을 기준으로 한 것인지 헷갈릴 수 있습니다.
 
-## 10. Immediate next actions
+그래서:
 
-- [ ] Build Current Implementation Matrix from the four active code lines.
-- [ ] Update ERD v0.8 with Workspace Knowledge + Claim/Evidence/Entity relationships.
-- [ ] Draft OpenAPI v0.8.
-- [ ] Define representative fixtures and common error codes.
-- [ ] Execute one real-article vertical slice.
-- [ ] Resolve mismatches and freeze Contract v1.0.
-- [ ] Resume parallel feature development and post-v1 improvements.
+```text
+ArticleRevision = 계속 수정 가능
+ArticleSnapshot = 실행 순간 복사해 둔 수정 불가능한 버전
+```
 
-Related working note: Notion `Technical Contract Alignment v0.8 — Knowledge/Evidence Layer & Phase -1`.
+검증과 플랫폼 변환은 Snapshot ID를 받아 실행합니다.
+
+## 5. 주장과 근거는 한 번 만들고 같이 사용
+
+기사에 이런 문장이 있다고 가정합니다.
+
+> “A사의 매출은 지난해보다 20% 증가했다.”
+
+이 문장이 `Claim`입니다.
+
+그리고 보고서 3쪽 표가 이 내용을 뒷받침한다면:
+
+```text
+Claim
+  ↓ EvidenceLink
+보고서(Source)의 3쪽 특정 문단(SourceChunk)
+```
+
+이 연결을 RAG, 기사 검증, Data Map, Archive가 같이 사용합니다. 기능별로 같은 출처 정보를 따로 저장하지 않습니다.
+
+## 6. 시간이 걸리는 작업의 상태 통일
+
+AI 검증, STT, 이미지 렌더링, n8n 작업은 실행 시간이 다릅니다. 화면과 백엔드가 같은 상태를 이해하도록 아래 5개로 통일합니다.
+
+| 코드 | 화면에서 보여줄 뜻 |
+|---|---|
+| `queued` | 대기 중 |
+| `running` | 처리 중 |
+| `succeeded` | 완료 |
+| `failed` | 실패 |
+| `cancelled` | 취소 |
+
+이 공통 실행 기록을 `ProcessingJob`이라고 부릅니다.
+
+## 7. 실제 기사 1건으로 반드시 해볼 전체 테스트
+
+v1.0을 확정하기 전에 실제 기사 하나를 아래 순서로 통과시킵니다.
+
+```text
+자료 업로드
+→ 자료를 검색용으로 분할
+→ RAG 검색
+→ 기사 작성/자동저장
+→ 기사 Snapshot 생성
+→ 주장과 근거 연결
+→ 기사 검증
+→ Data Map 조회
+→ 플랫폼별 변환
+→ 저장/내보내기
+```
+
+중간에서 ID가 사라지거나, 필요한 값이 없거나, 다음 기능이 데이터를 읽지 못하면 그 지점이 우리가 수정할 부분입니다.
+
+## 8. 개발할 때 지킬 팀 규칙
+
+1. 자기 브랜치에서 DB/API 형식을 혼자 새로 정하지 않습니다.
+2. 기존 코드가 잘 작동하면 가능한 한 유지하고, 공통 형식으로 바꿔주는 **adapter(연결부)** 를 붙입니다.
+3. 기사·출처·사진 등 다른 기능과 공유하는 데이터에는 공통 ID를 사용합니다.
+4. 같은 Source/Claim/Evidence를 기능마다 별도 DB에 중복 저장하지 않습니다.
+5. API나 DB 구조 변경이 필요하면 코드보다 먼저 PR에서 팀에 공유합니다.
+6. “내 기능에서 된다”가 완료 기준이 아닙니다. **앞 기능의 데이터를 받고, 결과를 다음 기능으로 넘길 수 있어야 완료**입니다.
+
+## 9. 지금 완료된 것
+
+- [x] `main` 및 주요 기능 브랜치의 저장/API 방식 점검
+- [x] 현재 구현 상태 점검표 작성
+- [x] ERD v0.8 초안 작성
+- [x] OpenAPI v0.8 초안 작성
+- [x] 전체 연결 테스트용 예시 데이터 작성
+
+## 10. 지금부터 팀원이 할 일
+
+각자 자기 기능에서 아래 5개만 확인합니다.
+
+1. **ID:** 공통 ID를 입력받고 결과에도 넘길 수 있는가?
+2. **DB:** 내 기능에 꼭 필요한 저장 항목이 ERD에서 빠졌는가?
+3. **API:** 현재 API를 공통 API 형식에 연결할 수 있는가?
+4. **작업 상태:** 오래 걸리는 작업을 대기/처리/완료/실패/취소로 표현할 수 있는가?
+5. **연결:** 실제 기사 하나를 받아 처리하고 다음 기능으로 결과를 넘길 수 있는가?
+
+문제가 있으면 PR에 **“현재 방식 / 문제가 되는 이유 / 필요한 변경”** 세 가지만 적습니다.
+
+## 11. 지금은 하지 않는 것
+
+아래는 전체 연결 테스트가 성공한 뒤 진행합니다.
+
+- 공용 Supabase DB를 바로 변경하기
+- Contract v1.0 확정
+- 복잡한 Data Map 시각화 고도화
+- 그래프 DB 도입
+- 고급 RAG 재정렬/추천 기능
+- CMS 고급 연동
+
+지금의 목표는 기능을 늘리는 것이 아니라 **팀원들의 기능이 하나의 서비스처럼 연결되는 최소 공통 기반을 만드는 것**입니다.

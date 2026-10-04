@@ -60,3 +60,5 @@ Prefer adapters over rewriting feature branches at once:
 6. Data Map → read projection over Claim/Evidence/Entity.
 
 Do not run a production/shared Supabase migration until the fixture and one real article pass the Vertical Slice.
+
+> Audit scope note: this is a contract-level Reality Audit of the four active code lines and their representative persistence/API boundaries. It is not a line-by-line review of every source file.

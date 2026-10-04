@@ -1,14 +1,14 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import {
-  Sparkles,
   Upload,
+  Sparkles,
   Image as ImageIcon,
   Copy,
   Printer,
+  Download,
   Send,
   Check,
   Sliders,
-  Download,
   FileText,
   Hash,
   Share2,
@@ -17,15 +17,7 @@ import {
   Repeat,
   Bookmark,
   MoreHorizontal,
-  ChevronRight,
   Move,
-  Maximize2,
-  Layers,
-  ArrowRight,
-  CheckSquare,
-  Square,
-  ZoomIn,
-  ZoomOut,
   RotateCcw
 } from "lucide-react";
 import { initialArticles } from "../data/mockData";
@@ -110,7 +102,6 @@ export default function FormatConverter() {
   // 마우스 커서 기반 드래그 이동 상태
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, posX: 50, posY: 50 });
-  const [showGalleryPopover, setShowGalleryPopover] = useState(false);
 
   const fileInputRef = useRef(null);
   const [copiedStatus, setCopiedStatus] = useState("");

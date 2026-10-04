@@ -7,13 +7,11 @@ import {
   RotateCw,
   Copy,
   Check,
-  Download,
   Search,
-  Volume2,
+  Download,
   FileText,
   Users,
   Clock,
-  Sparkles,
   AlignLeft,
   MessageSquare,
   FileAudio,
@@ -136,10 +134,10 @@ const DEFAULT_1HOUR_DIALOGUES = [
 
 export default function InterviewStudio({ onReturnToArticle }) {
   // 1. 녹음 파일 및 인터뷰 상태
-  const [audioFile, setAudioFile] = useState(null);
+  const [, setAudioFile] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
   const [fileName, setFileName] = useState("2026_AI반도체_심층인터뷰_현장녹취.m4a");
-  const [dialogues, setDialogues] = useState(DEFAULT_1HOUR_DIALOGUES);
+  const [dialogues] = useState(DEFAULT_1HOUR_DIALOGUES);
 
   // 2. 뷰 모드 토글: 'speaker' (화자별 대화형) vs 'fullText' (전체 통 텍스트)
   const [viewMode, setViewMode] = useState("speaker");
@@ -161,7 +159,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
   // 가상 오디오 타이머 및 실제 Audio element ref
   const audioRef = useRef(null);
   const fileInputRef = useRef(null);
-  const timelineRef = useRef(null);
 
   // 오디오 객체 재생/시간 제어
   useEffect(() => {

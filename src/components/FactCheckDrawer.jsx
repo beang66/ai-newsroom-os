@@ -4,14 +4,10 @@ import {
   UploadCloud, 
   FileText, 
   CheckCircle2, 
-  AlertTriangle, 
-  ExternalLink, 
   Sparkles, 
   Trash2, 
   FileCheck, 
-  Search, 
   Plus, 
-  ArrowRight,
   ShieldCheck,
   RefreshCw
 } from "lucide-react";
@@ -20,9 +16,7 @@ import {
  * 팩트체크 및 근거자료 검증 우측 슬라이더(Drawer) 컴포넌트
  */
 export default function FactCheckDrawer({
-  isOpen,
   onClose,
-  article,
   setArticle
 }) {
   // 업로드된 근거/취재 파일 목록 상태

@@ -8,8 +8,8 @@
 ## 한눈에 보는 결론
 
 1. 팀원별 기능이 서로 다른 방식으로 만들어져 있습니다. 화면은 React/Vite, 핵심 기능은 Python, 사진 저장은 Supabase, 플랫폼 변환은 Node/n8n 등으로 나뉘어 있습니다.
-2. `feature/app-core`의 **화면과 핵심 기능을 API로 분리한 구조**는 계속 활용하기 좋습니다.
-3. 기사 저장 방식과 사진 저장 방식이 서로 달라서, 팀 전체가 함께 쓰는 DB 구조로 맞추는 작업이 필요합니다.
+2. `feature/app-core`는 단순 참고안이 아니라 **Browser + EXE 공통 App Core 기준선**으로 사용합니다. React UI는 `web/src/api/`만 통해 Python Core를 호출하고, 개발은 HTTP, 출시 EXE는 pywebview IPC로 같은 기능 계약을 사용하도록 이미 설계되어 있습니다.
+3. 저장 구조는 하나의 클라우드 DB로 몰지 않습니다. 기사·취재자료는 Local-first, Supabase는 인증·메타데이터·공유/협업 계층이라는 Core 원칙을 유지하면서 사진·플랫폼 결과 등 다른 브랜치의 저장 방식을 연결해야 합니다.
 4. 기사 검증에서 사용하는 주장·근거·출처 위치 정보는 좋은 기반이 있습니다. 다만 기능마다 다른 이름/ID를 쓰지 않도록 공통 ID가 필요합니다.
 5. 검증이나 플랫폼 변환을 시작할 때는 계속 수정되는 편집 화면을 직접 읽지 않고, **그 시점의 기사 내용을 복사해 고정한 버전(Snapshot)** 을 사용합니다.
 6. Data Map은 별도 검색 DB를 새로 만들지 않고, RAG와 검증에서 이미 만든 출처·근거·인물/기관 관계 데이터를 같이 사용합니다.
@@ -20,9 +20,9 @@
 |---|---|---|---|
 | 전체 화면 | `main`의 React/Vite, 일부 임시 데이터 | 공통 API를 사용하는 화면 | 현재 UI는 참고해서 유지 |
 | 기사 저장 | 로컬 JSON 자동저장 | `Article` + `ArticleRevision` | 기존 저장 기능에 변환 연결부(adapter) 추가 |
-| 화면 ↔ 핵심 기능 | app-core의 단일 API 연결 | 버전이 있는 공통 API | 현재 구조 유지 |
+| Browser/EXE ↔ Core | `web/src/api/` 단일 경계, 개발 HTTP / 출시 IPC | 같은 named method·데이터 계약 | **통합 기준선으로 유지** |
 | AI 호출 | 기능별 라우터/프록시 | 공통 작업 상태 `ProcessingJob` | 진행/실패 상태 표현 통일 |
-| 로그인/보안 | JWT, 백엔드에서 비밀키 관리 | Workspace 단위 권한 | 현재 원칙 유지 |
+| 로그인/클라우드 | JWT + Supabase Control Plane + Backend proxy | Local-first + 공유/협업만 Cloud | Core 원칙 유지 |
 | 사진/영상 | Supabase `photo_assets` | `MediaAsset` | 기사와 사진의 연결 방식 통일 |
 | STT | 음성→텍스트 API | `Transcript` + `TranscriptSegment` | 문장/구간별 고정 ID 부여 |
 | 기사 검증 | factcheck 기능 | `Claim` + `VerificationRun/Issue` | 주장 ID를 다른 기능에서도 재사용 |
@@ -87,7 +87,7 @@ AI 검증, STT, 이미지 생성/렌더링, n8n처럼 바로 끝나지 않는 �
 
 ## 아직 하지 말 것
 
-**공용 Supabase DB 구조 변경, main 병합, Contract v1.0 확정은 아직 하지 않습니다.**
+**Supabase를 메인 DB로 가정한 구조 변경, main 병합, Contract v1.0 확정은 아직 하지 않습니다.** Browser/HTTP와 EXE/IPC 양쪽에서 같은 Core 계약으로 전체 흐름을 통과한 뒤 확정합니다.
 
 먼저 실제 기사 1건이 아래 흐름을 끝까지 통과하는지 확인합니다.
 

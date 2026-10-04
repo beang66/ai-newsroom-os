@@ -1,0 +1,266 @@
+openapi: 3.1.0
+info:
+  title: AI-Newsroom OS Contract
+  version: 0.8.0
+  description: Pre-freeze API contract for the Vertical Slice. Provider and workflow internals are intentionally hidden.
+servers:
+  - url: /v1
+paths:
+  /workspaces/{workspace_id}/articles/{article_id}:
+    get:
+      operationId: getArticle
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ArticleId'
+      responses:
+        '200': {description: Article, content: {application/json: {schema: {$ref: '#/components/schemas/Article'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateArticle
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ArticleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ArticleRevisionInput'}
+      responses:
+        '200': {description: Saved revision, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleRevision'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/articles/{article_id}/snapshots:
+    post:
+      operationId: createArticleSnapshot
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ArticleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revision_id]
+              properties:
+                revision_id: {$ref: '#/components/schemas/Uuid'}
+      responses:
+        '201': {description: Immutable snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleSnapshot'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/sources:
+    post:
+      operationId: createSource
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SourceInput'}
+      responses:
+        '202': {description: Source accepted for ingest, content: {application/json: {schema: {$ref: '#/components/schemas/JobAccepted'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/retrieval/search:
+    post:
+      operationId: searchEvidence
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: {type: string, minLength: 1}
+                article_id: {$ref: '#/components/schemas/Uuid'}
+                limit: {type: integer, minimum: 1, maximum: 50, default: 8}
+      responses:
+        '200':
+          description: Ranked source chunks
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/EvidenceCandidate'}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/snapshots/{snapshot_id}/verify:
+    post:
+      operationId: startVerification
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/SnapshotId'
+      responses:
+        '202': {description: Verification queued, content: {application/json: {schema: {$ref: '#/components/schemas/JobAccepted'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/verification-runs/{run_id}:
+    get:
+      operationId: getVerificationRun
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - {name: run_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+      responses:
+        '200': {description: Verification run, content: {application/json: {schema: {$ref: '#/components/schemas/VerificationRun'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/knowledge/map:
+    get:
+      operationId: getKnowledgeMap
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - {name: article_id, in: query, required: false, schema: {$ref: '#/components/schemas/Uuid'}}
+      responses:
+        '200': {description: Knowledge projection, content: {application/json: {schema: {$ref: '#/components/schemas/KnowledgeMap'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/snapshots/{snapshot_id}/platform-outputs:
+    post:
+      operationId: createPlatformOutput
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/SnapshotId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [platform, format]
+              properties:
+                platform: {type: string, examples: [instagram]}
+                format: {type: string, examples: [card_news]}
+                template_version: {type: string}
+      responses:
+        '202': {description: Conversion queued, content: {application/json: {schema: {$ref: '#/components/schemas/JobAccepted'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/jobs/{job_id}:
+    get:
+      operationId: getJob
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - {name: job_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+      responses:
+        '200': {description: Job state, content: {application/json: {schema: {$ref: '#/components/schemas/ProcessingJob'}}}}
+        default: {$ref: '#/components/responses/Error'}
+components:
+  parameters:
+    WorkspaceId: {name: workspace_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    ArticleId: {name: article_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    SnapshotId: {name: snapshot_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+  responses:
+    Error:
+      description: Common error envelope
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  schemas:
+    Uuid: {type: string, format: uuid}
+    Article:
+      type: object
+      required: [id, workspace_id, title, status]
+      properties:
+        id: {$ref: '#/components/schemas/Uuid'}
+        workspace_id: {$ref: '#/components/schemas/Uuid'}
+        title: {type: string}
+        status: {type: string}
+        current_revision_id: {oneOf: [{$ref: '#/components/schemas/Uuid'}, {type: 'null'}]}
+    ArticleRevisionInput:
+      type: object
+      required: [title, body_html]
+      properties:
+        title: {type: string}
+        body_html: {type: string}
+        body_text: {type: string}
+        editor_state: {type: object, additionalProperties: true}
+        expected_revision_no: {type: integer, minimum: 0, description: Optimistic concurrency guard}
+    ArticleRevision:
+      allOf:
+        - {$ref: '#/components/schemas/ArticleRevisionInput'}
+        - type: object
+          required: [id, article_id, revision_no, created_at]
+          properties:
+            id: {$ref: '#/components/schemas/Uuid'}
+            article_id: {$ref: '#/components/schemas/Uuid'}
+            revision_no: {type: integer}
+            created_at: {type: string, format: date-time}
+    ArticleSnapshot:
+      type: object
+      required: [id, article_id, revision_id, content_hash, title, body_html, created_at]
+      properties:
+        id: {$ref: '#/components/schemas/Uuid'}
+        article_id: {$ref: '#/components/schemas/Uuid'}
+        revision_id: {$ref: '#/components/schemas/Uuid'}
+        content_hash: {type: string}
+        title: {type: string}
+        body_html: {type: string}
+        body_text: {type: string}
+        created_at: {type: string, format: date-time}
+    SourceInput:
+      type: object
+      required: [kind, title]
+      properties:
+        kind: {type: string, enum: [upload, url, note, external]}
+        title: {type: string}
+        origin_uri: {type: string}
+        storage_ref: {type: string}
+        metadata: {type: object, additionalProperties: true}
+    EvidenceCandidate:
+      type: object
+      required: [source_id, chunk_id, excerpt, locator, retrieval_score]
+      properties:
+        source_id: {$ref: '#/components/schemas/Uuid'}
+        chunk_id: {$ref: '#/components/schemas/Uuid'}
+        source_version: {type: string}
+        excerpt: {type: string}
+        locator: {type: object, additionalProperties: true}
+        start_offset: {type: integer}
+        end_offset: {type: integer}
+        retrieval_score: {type: number, description: Ranking relevance only; never probability of truth}
+    JobAccepted:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id: {$ref: '#/components/schemas/Uuid'}
+        status: {type: string, enum: [queued, running]}
+    ProcessingJob:
+      type: object
+      required: [id, workspace_id, type, status, created_at]
+      properties:
+        id: {$ref: '#/components/schemas/Uuid'}
+        workspace_id: {$ref: '#/components/schemas/Uuid'}
+        type: {type: string}
+        status: {type: string, enum: [queued, running, succeeded, failed, cancelled]}
+        progress: {type: number, minimum: 0, maximum: 1}
+        input_ref: {type: object, additionalProperties: true}
+        output_ref: {type: object, additionalProperties: true}
+        error: {$ref: '#/components/schemas/ErrorBody'}
+        created_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+    VerificationRun:
+      type: object
+      required: [id, snapshot_id, status, claims, issues]
+      properties:
+        id: {$ref: '#/components/schemas/Uuid'}
+        snapshot_id: {$ref: '#/components/schemas/Uuid'}
+        status: {type: string}
+        claims: {type: array, items: {type: object, additionalProperties: true}}
+        issues: {type: array, items: {type: object, additionalProperties: true}}
+    KnowledgeMap:
+      type: object
+      required: [entities, edges]
+      properties:
+        entities: {type: array, items: {type: object, additionalProperties: true}}
+        edges: {type: array, items: {type: object, additionalProperties: true}}
+    ErrorBody:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        retryable: {type: boolean}
+        details: {type: object, additionalProperties: true}
+        request_id: {type: string}
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error: {$ref: '#/components/schemas/ErrorBody'}

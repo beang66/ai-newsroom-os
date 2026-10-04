@@ -62,3 +62,7 @@ Prefer adapters over rewriting feature branches at once:
 Do not run a production/shared Supabase migration until the fixture and one real article pass the Vertical Slice.
 
 > Audit scope note: this is a contract-level Reality Audit of the four active code lines and their representative persistence/API boundaries. It is not a line-by-line review of every source file.
+
+## Handoff
+
+Review the draft PR as an architecture contract, not as a merge of feature implementations. Once the team accepts the entity ownership, ID policy, snapshot semantics and job lifecycle, implementation adapters can be assigned to each DRI.

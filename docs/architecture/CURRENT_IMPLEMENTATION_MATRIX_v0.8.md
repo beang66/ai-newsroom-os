@@ -63,6 +63,16 @@ Do not run a production/shared Supabase migration until the fixture and one real
 
 > Audit scope note: this is a contract-level Reality Audit of the four active code lines and their representative persistence/API boundaries. It is not a line-by-line review of every source file.
 
+## Team review checklist
+
+Before marking Contract v0.8 accepted, each DRI should answer only these questions:
+
+- Can my feature accept/return the canonical IDs without losing required information?
+- Does my feature need a field/cardinality missing from `ERD_v0.8.md`?
+- Can my current endpoint be adapted to `OPENAPI_v0.8.yaml` without exposing provider/workflow internals?
+- For async work, can my feature map its state to `ProcessingJob`?
+- Can one real article pass through my feature using `vertical-slice-v0.8.json` semantics?
+
 ## Handoff
 
-Review the draft PR as an architecture contract, not as a merge of feature implementations. Once the team accepts the entity ownership, ID policy, snapshot semantics and job lifecycle, implementation adapters can be assigned to each DRI.
+Review the draft PR as an architecture contract, not as a merge of feature implementations. Once the team accepts entity ownership, ID policy, snapshot semantics and job lifecycle, implementation adapters can be assigned to each DRI.

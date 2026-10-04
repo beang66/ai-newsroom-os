@@ -1,0 +1,40 @@
+{
+  "contract_version": "0.8",
+  "workspace": {"id": "10000000-0000-4000-8000-000000000001", "name": "AI Newsroom Vertical Slice"},
+  "article": {"id": "20000000-0000-4000-8000-000000000001", "workspace_id": "10000000-0000-4000-8000-000000000001", "title": "도심 공공자전거 이용량 증가", "status": "draft"},
+  "revision": {"id": "21000000-0000-4000-8000-000000000001", "article_id": "20000000-0000-4000-8000-000000000001", "revision_no": 7, "body_text": "서울시 공공자전거 이용량이 전년 대비 증가했다. 시는 신규 대여소 확대가 주요 요인이라고 설명했다. 일부 지역에서는 출퇴근 시간대 이용 증가가 두드러졌다."},
+  "snapshot": {"id": "22000000-0000-4000-8000-000000000001", "article_id": "20000000-0000-4000-8000-000000000001", "revision_id": "21000000-0000-4000-8000-000000000001", "content_hash": "fixture-sha256-v0.8"},
+  "sources": [
+    {"id": "30000000-0000-4000-8000-000000000001", "workspace_id": "10000000-0000-4000-8000-000000000001", "kind": "upload", "title": "서울시 공공자전거 월별 이용 통계", "version": "2026-09"},
+    {"id": "30000000-0000-4000-8000-000000000002", "workspace_id": "10000000-0000-4000-8000-000000000001", "kind": "external", "title": "교통정책 담당자 인터뷰", "version": "2026-10-03"}
+  ],
+  "source_chunks": [
+    {"id": "31000000-0000-4000-8000-000000000001", "source_id": "30000000-0000-4000-8000-000000000001", "ordinal": 1, "text": "2026년 9월 누적 이용 건수는 전년 동기 대비 12.4% 증가했다.", "locator": {"sheet": "monthly", "row": 14}},
+    {"id": "31000000-0000-4000-8000-000000000002", "source_id": "30000000-0000-4000-8000-000000000001", "ordinal": 2, "text": "신규 대여소 수는 같은 기간 8.1% 증가했다.", "locator": {"sheet": "stations", "row": 9}}
+  ],
+  "transcript": {"id": "32000000-0000-4000-8000-000000000001", "workspace_id": "10000000-0000-4000-8000-000000000001"},
+  "transcript_segments": [
+    {"id": "32100000-0000-4000-8000-000000000001", "transcript_id": "32000000-0000-4000-8000-000000000001", "ordinal": 1, "speaker": "담당자", "text": "신규 대여소 확대가 이용 증가에 영향을 준 것으로 보고 있습니다.", "start_ms": 12000, "end_ms": 18800}
+  ],
+  "claims": [
+    {"id": "40000000-0000-4000-8000-000000000001", "snapshot_id": "22000000-0000-4000-8000-000000000001", "ordinal": 1, "text": "공공자전거 이용량이 전년 대비 증가했다."},
+    {"id": "40000000-0000-4000-8000-000000000002", "snapshot_id": "22000000-0000-4000-8000-000000000001", "ordinal": 2, "text": "신규 대여소 확대가 주요 요인이다."},
+    {"id": "40000000-0000-4000-8000-000000000003", "snapshot_id": "22000000-0000-4000-8000-000000000001", "ordinal": 3, "text": "일부 지역에서 출퇴근 시간대 이용 증가가 두드러졌다."}
+  ],
+  "evidence_links": [
+    {"id": "41000000-0000-4000-8000-000000000001", "claim_id": "40000000-0000-4000-8000-000000000001", "source_chunk_id": "31000000-0000-4000-8000-000000000001", "relation": "support", "retrieval_score": 0.93},
+    {"id": "41000000-0000-4000-8000-000000000002", "claim_id": "40000000-0000-4000-8000-000000000002", "transcript_segment_id": "32100000-0000-4000-8000-000000000001", "relation": "context", "retrieval_score": 0.87},
+    {"id": "41000000-0000-4000-8000-000000000003", "claim_id": "40000000-0000-4000-8000-000000000003", "source_chunk_id": "31000000-0000-4000-8000-000000000002", "relation": "unresolved", "retrieval_score": 0.31}
+  ],
+  "verification_run": {"id": "50000000-0000-4000-8000-000000000001", "snapshot_id": "22000000-0000-4000-8000-000000000001", "status": "succeeded"},
+  "verification_issues": [{"id": "51000000-0000-4000-8000-000000000001", "verification_run_id": "50000000-0000-4000-8000-000000000001", "claim_id": "40000000-0000-4000-8000-000000000003", "category": "evidence_gap", "severity": "warning", "message": "출퇴근 시간대 증가를 직접 뒷받침하는 근거가 현재 corpus에서 확인되지 않음"}],
+  "media_asset": {"id": "60000000-0000-4000-8000-000000000001", "workspace_id": "10000000-0000-4000-8000-000000000001", "kind": "image", "object_ref": "fixture://media/bicycle-cover.jpg", "mime_type": "image/jpeg", "generated": false},
+  "platform_output": {"id": "70000000-0000-4000-8000-000000000001", "snapshot_id": "22000000-0000-4000-8000-000000000001", "platform": "instagram", "format": "card_news", "template_version": "fixture-v1", "artifact_media_asset_id": "60000000-0000-4000-8000-000000000001", "status": "succeeded"},
+  "acceptance": [
+    "Every cross-domain reference uses a stable canonical ID.",
+    "Verification and platform output reference the immutable snapshot, not mutable editor state.",
+    "Evidence resolves to a source chunk or transcript segment.",
+    "An unresolved claim becomes a verification issue rather than fabricated evidence.",
+    "Data Map can be projected from the same claim/evidence/entity relations without a second RAG store."
+  ]
+}

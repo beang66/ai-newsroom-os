@@ -211,7 +211,7 @@ def main():
     ap.add_argument('--gap-ratio', type=float, default=1.2, help='GAP 수 ≤ SUPPORTED 수 × 이 값')
     ap.add_argument('--number-ratio', type=float, default=0.5, help='숫자만 바꾼 충돌 ≤ SUPPORTED 수 × 이 값')
     ap.add_argument('--policy-repeat', type=int, default=3, help='정책브리핑 학습분을 train 에서 몇 번 반복할지(실무 문장이 적어서)')
-    ap.add_argument('--klue', type=int, default=3000, help='KLUE-NLI 학습 세트에서 뽑을 쌍 수(train 90%·dev 10%, 0 이면 안 씀)')
+    ap.add_argument('--klue', type=int, default=6000, help='KLUE-NLI 학습 세트에서 뽑을 쌍 수(train 90%·dev 10%, 0 이면 안 씀)')
     ap.add_argument('--review-ratio', type=float, default=0.25, help='REVIEW 두 클래스 합 ≤ SUPPORTED 수 × 이 값')
     args = ap.parse_args()
     rng = random.Random(20261003)

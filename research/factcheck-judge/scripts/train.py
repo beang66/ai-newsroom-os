@@ -45,6 +45,7 @@ def main():
     ap.add_argument('--accum', type=int, default=4)
     ap.add_argument('--lora-r', type=int, default=16)
     ap.add_argument('--fp32', action='store_true', help='bf16 이 없는 옛 GPU(예: GTX 10xx)용 — 계산을 float32 로')
+    ap.add_argument('--fp16', action='store_true', help='bf16 이 없는 T4(Colab) 등 — 가중치 float32 + fp16 혼합정밀')
     ap.add_argument('--max-steps', type=int, default=-1, help='속도 시험용(몇 스텝만)')
     ap.add_argument('--resume', action='store_true', help='중단된 학습을 runs/<name>/checkpoints 의 마지막 체크포인트부터 이어서')
     args = ap.parse_args()
@@ -66,7 +67,7 @@ def main():
     train_ds, dev_ds = encode(train), encode(dev)
     print(f'train {len(train)}  dev {len(dev)}  base {args.base}  qlora {args.qlora}', flush=True)
 
-    dtype = torch.float32 if args.fp32 else torch.bfloat16
+    dtype = torch.float32 if args.fp32 or args.fp16 else torch.bfloat16
     quant = None
     if args.qlora:
         from transformers import BitsAndBytesConfig
@@ -93,7 +94,7 @@ def main():
             output_dir=str(out / 'checkpoints'), num_train_epochs=args.epochs, learning_rate=args.lr,
             per_device_train_batch_size=args.batch, per_device_eval_batch_size=args.batch * 2,
             gradient_accumulation_steps=args.accum, warmup_steps=0.05, weight_decay=0.01, lr_scheduler_type='cosine',
-            bf16=not args.fp32, max_steps=args.max_steps, eval_strategy='epoch', save_strategy='epoch', save_total_limit=1, load_best_model_at_end=True,
+            bf16=not (args.fp32 or args.fp16), fp16=args.fp16, max_steps=args.max_steps, eval_strategy='epoch', save_strategy='epoch', save_total_limit=1, load_best_model_at_end=True,
             metric_for_best_model='macro_recall', logging_steps=20, report_to=[], dataloader_num_workers=0,
             gradient_checkpointing=True, gradient_checkpointing_kwargs={'use_reentrant': False}),
         train_dataset=train_ds, eval_dataset=dev_ds, data_collator=DataCollatorWithPadding(tok),

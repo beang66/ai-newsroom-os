@@ -32,9 +32,10 @@ def load_model(base, adapter, qlora):
         from transformers import BitsAndBytesConfig
         quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type='nf4', bnb_4bit_compute_dtype=torch.bfloat16)
     cuda = torch.cuda.is_available()
+    half = torch.bfloat16 if cuda and torch.cuda.get_device_capability()[0] >= 8 else torch.float16  # T4 등은 bf16 없음
     model = AutoModelForSequenceClassification.from_pretrained(
         base, num_labels=len(LABELS), id2label=dict(enumerate(LABELS)), label2id=L2I,
-        dtype=torch.bfloat16 if cuda else torch.float32, quantization_config=quant,
+        dtype=half if cuda else torch.float32, quantization_config=quant,
         device_map={'': 0} if cuda else None)
     model.config.pad_token_id = tok.pad_token_id
     model = PeftModel.from_pretrained(model, adapter).eval()

@@ -208,6 +208,24 @@ KLUE-NLI 학습 세트 일부(뉴스·정책·위키 3,000쌍, CC BY-SA 4.0)를 
 - 학습 PC dev(1525, KLUE·정책 포함)는 v2 dev 와 구성이 달라 비교하지 않는다(88.5%).
 - 정책 512 전체(학습분 포함)는 392/512 — 학습분이 섞여 있어 참고만.
 
+## v4 데이터 (2026-10-06) — v3 의 KLUE '일치' 오판 보강, Colab T4 학습
+
+v3 KLUE '일치' 오판(기준 0.9, 97건) 표본은 대부분 근거 문장을 거의 그대로 두고 한 곳만 바꾼 문장이었다:
+부정·반의어, 주체/대상 맞바꿈, 범위(모든→일부, 전면→일부), 계획↔완료, 근거에 없는 장소·정도·결과 덧붙임.
+
+| 추가 | 라벨 | 수 | 출처 |
+|---|---|---|---|
+| 한 곳만 바꾼 충돌(`data/conflicts/train_07·08`, `dev_03`) | CONFLICT_LOCAL | 152 + dev 34 | Claude 작성(우리 보도자료 문장) |
+| 근거 문장 + 근거 없는 세부 하나(`data/gaps/train_03·04`, `dev_02`) | GAP_LOCAL | 149 + dev 26 | Claude 작성 |
+| KLUE-NLI 학습분 3,000 → 6,000쌍 | 함의/중립/모순 | 5,400 + dev 600 | KLUE(CC BY-SA 4.0, 별도 파일) |
+
+train 6720 + KLUE 5400 / dev 1285 + KLUE 600. KLUE 를 늘린 만큼 KLUE 검증 점수는 부풀 수 있다 —
+판단은 정책브리핑 평가 절반(`policy_heldout`)과 봉인 test 를 함께 본다.
+
+학습: 학습 PC 대신 Colab T4 — `colab_train.ipynb`(T4 는 bf16 이 없어 `train.py --fp16`). 코드·데이터는
+`scripts/` + `data/{train,dev,klue_train,klue_dev,eval_long29,eval_short18}.jsonl` 만 묶은 zip 을 드라이브에 올려 쓴다
+(저장소가 비공개라 clone 대신). 체크포인트는 드라이브 `factcheck-judge-runs/` 에 저장돼 끊겨도 `--resume`.
+
 ## 앱에 넣을 때(통과 후, 이 PC)
 
 봉인 test 평가 → 어댑터를 `article_editor/models/` 로 → 모델 매니페스트 항목 추가 →

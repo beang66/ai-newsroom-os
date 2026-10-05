@@ -173,6 +173,22 @@ python evaluate.py --base Qwen/Qwen3-4B --qlora --adapter ../runs/q4b-v1/adapter
   같은 주제 + 추가 정보를 배운 적이 없고, 작성 충돌이 "다르면 충돌" 버릇을 키운 것으로 본다.
 → v3: 같은 주제 중립 문장(GAP), 일반화·요약형 지지, 해명형 반박, (라이선스 허용 시) 정책브리핑 절반을 학습에.
 
+## v3 데이터 (2026-10-05) — 외부 평가에서 드러난 약점 보강
+
+| 추가 | 라벨 | 수(train) | 출처 |
+|---|---|---|---|
+| 같은 주제에 근거 없는 정보만 덧붙인 문장(`data/gaps/*.tsv`) | GAP_LOCAL | 173 | Claude 작성 — KLUE 의 '중립→충돌' 헛경보 대응 |
+| 근거를 묶어 말한 일반화·요약 문장(`data/general/*.tsv`) | SUPPORTED_LOCAL | 295 (+충돌·오답 변형) | Claude 작성 — '바꿔 말한 지지' 대응 |
+| 정책브리핑 학습분(해명자료 절반 중 train·dev) | 지지/충돌/GAP | 206 × 3회 반복 | 아래 출처 — 돌려 말하는 반박 대응 |
+
+train 6416 / dev 1225. 정책브리핑은 해명자료 단위로 나눠(`common.policy_side`) **절반은 학습에 쓰지 않고**
+`eval_external.py` 의 `policy_heldout`(248주장)으로 평가한다. v2 기준선(조기 종료, '일치' 기준 0.9):
+policy_heldout 88/248 · '일치' 오판 3, KLUE 826/1800 · 38.
+
+**출처 표시** — 정책브리핑 학습분: 대한민국 정책브리핑 「사실은 이렇습니다」(공공누리 제1유형, 출처표시) 원문을
+chelsseeey/korean-factcheck-dataset(주석 CC BY 4.0)이 정리한 데이터에서 가져왔다. 원본은 `data/external/`(git 제외)에
+받아 두고 `build_pairs.py` 가 읽는다(없으면 건너뜀). KLUE-NLI 는 평가에만 쓴다(학습 미사용).
+
 ## 앱에 넣을 때(통과 후, 이 PC)
 
 봉인 test 평가 → 어댑터를 `article_editor/models/` 로 → 모델 매니페스트 항목 추가 →

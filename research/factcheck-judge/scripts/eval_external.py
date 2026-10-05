@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-from common import DATA, HERE
+from common import DATA, HERE, policy_side
 from evaluate import aggregate
 from safety_check import status
 
@@ -25,13 +25,15 @@ KLUE = {0: 'SUPPORTED', 1: 'NOT_ENOUGH_INFO', 2: 'CONFLICT'}
 K = 5
 
 
-def policy_rows():
+def policy_rows(heldout_only=False):
     """해명자료마다 정부 입장 근거 문장 묶음 → 앱 검색(rank_chunks) 순서의 후보 목록."""
     sys.path.insert(0, str(HERE.parents[1] / 'article_editor' / 'app'))
     from core.ai.factcheck.retrieval import rank_chunks
     rows = []
     for line in open(EXT / 'korean-factcheck-dataset' / 'data' / 'dataset.jsonl', encoding='utf-8'):
         b = json.loads(line)
+        if heldout_only and policy_side(b['briefing_id']) != 'heldout':
+            continue  # v3 부터 나머지 절반은 학습에 쓴다(build_pairs.policy_pairs)
         pool = list(dict.fromkeys(c['evidence_sentence'].strip() for c in b['claims'] if c['evidence_sentence'].strip()))
         for c in b['claims']:
             ranked = [x['text'] for x in rank_chunks(c['claim_sentence'], [{'text': t} for t in pool], limit=K)] if pool else []
@@ -84,7 +86,7 @@ def main():
         j = Judge(Path(args.onnx) / 'model.onnx', AutoTokenizer.from_pretrained(args.onnx), 512)
         judge = lambda c, e: j(c, [e])[0]  # noqa: E731
 
-    sets = {'policy': policy_rows(), 'klue': klue_rows()}
+    sets = {'policy': policy_rows(), 'policy_heldout': policy_rows(heldout_only=True), 'klue': klue_rows()}
     store = HERE / 'runs' / f'external_{args.name}.json'
     cache = {}
     if store.exists():

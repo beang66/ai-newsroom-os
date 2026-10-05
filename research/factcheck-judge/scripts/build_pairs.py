@@ -136,6 +136,44 @@ def pairs_for(seed, claims, rng, max_negs, written=()):
     return out
 
 
+def tsv_dir(folder, known):
+    out = {}
+    for path in sorted(folder.glob('*.tsv')):
+        for line in open(path, encoding='utf-8'):
+            sid, _, text = line.rstrip('\n').partition('\t')
+            if sid in known and text.strip():
+                out.setdefault(sid, []).append(text.strip())
+    return out
+
+
+POLICY = DATA / 'external' / 'korean-factcheck-dataset' / 'data' / 'dataset.jsonl'
+POLICY_LABEL = {'SUPPORTED': 'SUPPORTED_LOCAL', 'REFUTED': 'CONFLICT_LOCAL'}
+
+
+def policy_pairs(split):
+    """정책브리핑 「사실은 이렇습니다」(공공누리 1유형·CC BY 4.0, chelsseeey/korean-factcheck-dataset) 의 학습 몫.
+    지지·반박 주장 ↔ 그 근거 문장, 정보 부족 주장 ↔ 같은 해명자료의 다른 근거 문장(→ GAP).
+    해명자료 절반(common.policy_side == 'heldout')은 쓰지 않고 실무 평가에 남긴다. 원본이 없으면 건너뛴다."""
+    from common import policy_side
+    if not POLICY.exists():
+        return []
+    out = []
+    for line in open(POLICY, encoding='utf-8'):
+        b = json.loads(line)
+        if policy_side(b['briefing_id']) != split:
+            continue
+        pool = list(dict.fromkeys(c['evidence_sentence'].strip() for c in b['claims'] if c['evidence_sentence'].strip()))
+        for c in b['claims']:
+            base = {'sid': c['claim_id'], 'doc_id': b['briefing_id'], 'split': split, 'claim_kind': 'policy',
+                    'claim': c['claim_sentence']}
+            if c['label'] in POLICY_LABEL and c['evidence_sentence'].strip():
+                out.append({**base, 'evidence': c['evidence_sentence'].strip(), 'label': POLICY_LABEL[c['label']],
+                            'origin': f"policy/{c['label'].lower()}"})
+            elif c['label'] == 'NEI':
+                out += [{**base, 'evidence': e, 'label': 'GAP_LOCAL', 'origin': 'policy/nei'} for e in pool[:2]]
+    return out
+
+
 def load(path):
     return [json.loads(line) for line in open(path, encoding='utf-8') if line.strip()] if path.exists() else []
 
@@ -146,6 +184,7 @@ def main():
     ap.add_argument('--max-negs', type=int, default=2)
     ap.add_argument('--gap-ratio', type=float, default=1.2, help='GAP 수 ≤ SUPPORTED 수 × 이 값')
     ap.add_argument('--number-ratio', type=float, default=0.5, help='숫자만 바꾼 충돌 ≤ SUPPORTED 수 × 이 값')
+    ap.add_argument('--policy-repeat', type=int, default=3, help='정책브리핑 학습분을 train 에서 몇 번 반복할지(실무 문장이 적어서)')
     ap.add_argument('--review-ratio', type=float, default=0.25, help='REVIEW 두 클래스 합 ≤ SUPPORTED 수 × 이 값')
     args = ap.parse_args()
     rng = random.Random(20261003)
@@ -167,6 +206,9 @@ def main():
             if sid in known and text.strip():
                 written.setdefault(sid, []).append(text.strip())
     print('written conflicts', sum(map(len, written.values())))
+    # v3: 같은 주제에 근거 없는 정보만 덧붙인 문장(→ GAP), 근거를 묶어 말한 일반화 문장(→ SUPPORTED) — Claude 작성
+    gaps, general = tsv_dir(DATA / 'gaps', known), tsv_dir(DATA / 'general', known)
+    print('written gaps', sum(map(len, gaps.values())), 'general', sum(map(len, general.values())))
     legacy = load(DATA / 'legacy_review.jsonl')
 
     by_split = {}
@@ -174,8 +216,13 @@ def main():
         # 바꿔 쓴 문장도 없고 바꿀 값도 없으면(제목·빈 항목 등) 사실 문장이 아니라고 보고 뺀다
         if seed['sid'] not in para and seed['sid'] not in written and not conflicts(seed['sentence'], seed, random.Random(0), set()):
             continue
-        claims = [(seed['sentence'], 'verbatim')] + [(p, 'paraphrase') for p in para.get(seed['sid'], [])]
-        by_split.setdefault(seed['split'], []).extend(pairs_for(seed, claims, rng, args.max_negs, written.get(seed['sid'], [])))
+        claims = ([(seed['sentence'], 'verbatim')] + [(p, 'paraphrase') for p in para.get(seed['sid'], [])]
+                  + [(g, 'general') for g in general.get(seed['sid'], [])])
+        rows = by_split.setdefault(seed['split'], [])
+        rows.extend(pairs_for(seed, claims, rng, args.max_negs, written.get(seed['sid'], [])))
+        rows.extend({'sid': seed['sid'], 'doc_id': seed['doc_id'], 'split': seed['split'], 'claim_kind': 'gap',
+                     'claim': g, 'evidence': seed['pos'], 'label': 'GAP_LOCAL', 'origin': 'written/gap'}
+                    for g in gaps.get(seed['sid'], []))
 
     for split, rows in by_split.items():
         if args.sealed and split != 'test':
@@ -185,13 +232,14 @@ def main():
             hit = [r for r in rows if match(r)]
             rng.shuffle(hit)
             return [r for r in rows if not match(r)] + hit[:int(sup * ratio)]
-        rows = cap(lambda r: r['label'] == 'GAP_LOCAL', args.gap_ratio)
+        rows = cap(lambda r: r['label'] == 'GAP_LOCAL' and r['origin'] != 'written/gap', args.gap_ratio)
         # 숫자만 바꾼 충돌이 의미 충돌보다 압도적으로 많으면 '숫자가 다르면 충돌'만 배운다(v1 실패 원인)
         rows = cap(lambda r: r['label'] == 'CONFLICT_LOCAL' and r['origin'].endswith('/number'), args.number_ratio)
         if split != 'test':
             pool = [r for r in legacy if r['split'] == split]
             rng.shuffle(pool)
             rows += pool[:int(sup * args.review_ratio)]
+            rows += policy_pairs(split) * (args.policy_repeat if split == 'train' else 1)
         rng.shuffle(rows)
         path = DATA / 'sealed' / 'test.jsonl' if split == 'test' else DATA / f'{split}.jsonl'
         with open(path, 'w', encoding='utf-8') as f:

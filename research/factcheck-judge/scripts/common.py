@@ -15,5 +15,12 @@ def render(claim, evidence):
     return f'fact_relation\nCLAIM: {claim}\nEVIDENCE:\nE1: {evidence[:500]}'
 
 
+def policy_side(briefing_id):
+    """정책브리핑 해명자료 분할 — 'train' / 'dev' / 'heldout'(학습 안 씀, 실무 평가용). 해명자료 단위로 고정."""
+    import hashlib
+    h = int(hashlib.sha1(str(briefing_id).encode()).hexdigest(), 16) % 20
+    return 'heldout' if h < 10 else 'dev' if h < 12 else 'train'
+
+
 def load_jsonl(path):
     return [json.loads(line) for line in open(path, encoding='utf-8') if line.strip()]

@@ -63,7 +63,9 @@
 #18 Platform
 #19 Data Map
         ↓
-#20 One-Article Vertical Slice
+#20 HTTP One-Article Vertical Slice
+        ↓
+#24 IPC 연결·EXE 패키징
         ↓
 #21 Contract v1.0 Freeze
         ↓

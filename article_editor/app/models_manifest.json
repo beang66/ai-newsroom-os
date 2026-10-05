@@ -3,16 +3,16 @@
   "note": "dev/checks/make_model_manifest.py 로 생성. base 를 호스팅 주소로 채우면 앱이 자동 다운로드한다.",
   "models": [
     {
-      "id": "factcheck-judge-0.6b-v2",
-      "label": "팩트체크 판정기 (Qwen3-0.6B v2, ONNX)",
+      "id": "factcheck-judge-0.6b-v3",
+      "label": "팩트체크 판정기 (Qwen3-0.6B v3, ONNX)",
       "kind": "factcheck",
-      "dir": "factcheck-judge-0.6b-v2",
+      "dir": "factcheck-judge-0.6b-v3",
       "base": "",
       "files": [
         {
           "path": "judge.json",
-          "size": 307,
-          "sha256": "d9af127ab86a19d873a3df53257db01b6f153103e071fac6e123c7cf04216d3c"
+          "size": 302,
+          "sha256": "65c8a0c5e284f11ae77d678f0f259803ae8515047ee312f24583262d1cce378d"
         },
         {
           "path": "model.onnx",
@@ -22,7 +22,7 @@
         {
           "path": "model.onnx.data",
           "size": 2384191488,
-          "sha256": "be7cd358b8185586ac8cc638752f589607b5e1aec82bc4535de07f62fff3bed6"
+          "sha256": "d41a1d1ac5f553da46d5d0a9a3dd48d33843fb1b6250085ec54ebd9edd74b5bc"
         },
         {
           "path": "tokenizer.json",

@@ -5,6 +5,7 @@
 - **2026-10-05 변경:** 팩트체크 판정기를 `Qwen3-0.6B + v10 LoRA(torch·peft)`에서 **`factcheck-judge-0.6b-v2`(ONNX, LoRA 병합본 2.4 GB)**로 교체.
   런타임은 onnxruntime + tokenizers(torch·transformers 는 임베딩용으로만 남음, peft 불필요). 학습·평가·패키징은
   `../../research/factcheck-judge`(README). 아래 §1·§3 의 v10 수치는 교체 전 기록이다.
+- **2026-10-06:** `factcheck-judge-0.6b-v3` 로 교체(같은 형식·크기). 실무형 평가(정책브리핑·KLUE) 정답 크게 증가, research README 'v3 결과'.
 
 ## 1. 실측 (이 PC 기준)
 
@@ -116,7 +117,7 @@
 python app/launcher.py --models install
 
 # 사내망/오프라인(공유 폴더·USB 에서)
-python app/launcher.py --models install --from "\\서버\배포\models\factcheck-judge-0.6b-v2"
+python app/launcher.py --models install --from "\\서버\배포\models\factcheck-judge-0.6b-v3"
 
 # 상태만
 python app/launcher.py --models

@@ -166,7 +166,7 @@ class ServerTests(ApiTestCase):
 
     def test_models_install_without_source_is_rejected(self):
         # 매니페스트에 base 가 아직 없으므로 동기 검증에서 503
-        status, raw, _ = self.request('/api/models/install', {'modelId': 'factcheck-judge-0.6b-v2'})
+        status, raw, _ = self.request('/api/models/install', {'modelId': 'factcheck-judge-0.6b-v3'})
         self.assertEqual(status, 503)
         self.assertIn('원본 주소', json.loads(raw)['error'])
 

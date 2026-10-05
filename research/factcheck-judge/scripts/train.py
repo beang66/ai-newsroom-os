@@ -60,6 +60,9 @@ def main():
         return [{**e, 'labels': L2I[r['label']]} for e, r in zip(enc, rows)]
 
     train, dev = load_jsonl(DATA / 'train.jsonl'), load_jsonl(DATA / 'dev.jsonl')
+    for name, rows in (('train', train), ('dev', dev)):  # KLUE-NLI 일부(CC BY-SA 4.0, 별도 파일 — LICENSES.md)
+        if (DATA / f'klue_{name}.jsonl').exists():
+            rows += load_jsonl(DATA / f'klue_{name}.jsonl')
     train_ds, dev_ds = encode(train), encode(dev)
     print(f'train {len(train)}  dev {len(dev)}  base {args.base}  qlora {args.qlora}', flush=True)
 

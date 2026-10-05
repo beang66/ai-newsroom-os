@@ -187,7 +187,9 @@ policy_heldout 88/248 · '일치' 오판 3, KLUE 826/1800 · 38.
 
 **출처 표시** — 정책브리핑 학습분: 대한민국 정책브리핑 「사실은 이렇습니다」(공공누리 제1유형, 출처표시) 원문을
 chelsseeey/korean-factcheck-dataset(주석 CC BY 4.0)이 정리한 데이터에서 가져왔다. 원본은 `data/external/`(git 제외)에
-받아 두고 `build_pairs.py` 가 읽는다(없으면 건너뜀). KLUE-NLI 는 평가에만 쓴다(학습 미사용).
+받아 두고 `build_pairs.py` 가 읽는다(없으면 건너뜀).
+
+KLUE-NLI 학습 세트 일부(뉴스·정책·위키 3,000쌍, CC BY-SA 4.0)를 **별도 파일** `data/klue_train.jsonl`·`klue_dev.jsonl` 로 넣는다(train.py 가 있으면 함께 읽음). 평가는 KLUE 검증 세트로 따로 — 전제 문장이 겹치는 쌍은 뺐다. 라이선스·출처 표기는 [LICENSES.md](LICENSES.md).
 
 ## 앱에 넣을 때(통과 후, 이 PC)
 

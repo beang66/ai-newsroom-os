@@ -174,6 +174,32 @@ def policy_pairs(split):
     return out
 
 
+KLUE_DIR = DATA / 'external' / 'klue-nli'
+KLUE_LABEL = {0: 'SUPPORTED_LOCAL', 1: 'GAP_LOCAL', 2: 'CONFLICT_LOCAL'}  # 함의 / 중립 / 모순
+
+
+def write_klue(n_train, n_dev, rng):
+    """KLUE-NLI 학습 세트(CC BY-SA 4.0) 일부 → data/klue_{train,dev}.jsonl — **별도 파일**로 둔다.
+    우리 데이터(train.jsonl)와 섞지 않아야 그 파일만 CC BY-SA 를 따르고 나머지는 영향이 없다(LICENSES.md).
+    뉴스·정책·위키 출처만, 라벨 균형, 평가용 KLUE 검증 세트와 전제 문장이 겹치면 뺀다."""
+    if not (KLUE_DIR / 'train.jsonl').exists():
+        return
+    held = {json.loads(line)['premise'] for line in open(KLUE_DIR / 'validation.jsonl', encoding='utf-8')}
+    rows = [json.loads(line) for line in open(KLUE_DIR / 'train.jsonl', encoding='utf-8')]
+    rows = [x for x in rows if x['source'] in ('wikinews', 'policy', 'wikitree', 'wikipedia') and x['premise'] not in held]
+    rng.shuffle(rows)
+    per = (n_train + n_dev) // 3
+    picked = [x for lab in (0, 1, 2) for x in [r for r in rows if r['label'] == lab][:per]]
+    rng.shuffle(picked)
+    for name, part in (('train', picked[n_dev:]), ('dev', picked[:n_dev])):
+        with open(DATA / f'klue_{name}.jsonl', 'w', encoding='utf-8') as f:
+            for x in part:
+                f.write(json.dumps({'sid': x['guid'], 'split': name, 'claim_kind': 'klue', 'claim': x['hypothesis'],
+                                    'evidence': x['premise'], 'label': KLUE_LABEL[x['label']],
+                                    'origin': f"klue/{x['source']}"}, ensure_ascii=False) + '\n')
+        print(f'klue_{name}', len(part))
+
+
 def load(path):
     return [json.loads(line) for line in open(path, encoding='utf-8') if line.strip()] if path.exists() else []
 
@@ -185,6 +211,7 @@ def main():
     ap.add_argument('--gap-ratio', type=float, default=1.2, help='GAP 수 ≤ SUPPORTED 수 × 이 값')
     ap.add_argument('--number-ratio', type=float, default=0.5, help='숫자만 바꾼 충돌 ≤ SUPPORTED 수 × 이 값')
     ap.add_argument('--policy-repeat', type=int, default=3, help='정책브리핑 학습분을 train 에서 몇 번 반복할지(실무 문장이 적어서)')
+    ap.add_argument('--klue', type=int, default=3000, help='KLUE-NLI 학습 세트에서 뽑을 쌍 수(train 90%·dev 10%, 0 이면 안 씀)')
     ap.add_argument('--review-ratio', type=float, default=0.25, help='REVIEW 두 클래스 합 ≤ SUPPORTED 수 × 이 값')
     args = ap.parse_args()
     rng = random.Random(20261003)
@@ -246,6 +273,8 @@ def main():
             for r in rows:
                 f.write(json.dumps(r, ensure_ascii=False) + '\n')
         print(split, len(rows), dict(Counter(r['label'] for r in rows)), dict(Counter(r.get('claim_kind', 'legacy') for r in rows)))
+    if args.klue and not args.sealed:
+        write_klue(args.klue * 9 // 10, args.klue // 10, random.Random(20261005))
 
 
 if __name__ == '__main__':

@@ -6,3 +6,5 @@ data/sealed/
 models/
 .cache/
 __pycache__/
+# 외부 공개 데이터(평가 전용, 원본 라이선스 따름 — 저장소에 올리지 않는다)
+data/external/

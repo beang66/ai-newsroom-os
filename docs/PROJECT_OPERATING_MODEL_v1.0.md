@@ -12,7 +12,7 @@
 |---|---|---|
 | Product Scope / Priority / User Flow | 안정빈 | 무엇을 만들고 무엇을 하지 않을지, MVP 범위, 사용자 흐름, 우선순위 |
 | Domain Contract / ERD / Integration | 안정빈 | 공통 ID·Entity·기능 간 데이터 계약, Vertical Slice 연결 기준 |
-| App Core / API / Runtime / Storage implementation | 강창희 | Core 내부 구현, API 경계, HTTP/IPC, 저장·처리 방식 |
+| App Core / API / Runtime / Storage implementation | 강창희 | Core 내부 구현, 최종 IPC 런타임, HTTP 통합 테스트 경계, 저장·처리 방식 |
 | Workflow UI / STT | 박소현 | 녹취 사용 경험, Transcript 흐름, 공통 UI 상태 |
 | Authoring / Preview / Media | 고서연 | 기사 작성, 미리보기, 헤드라인·요약, Media UX |
 | Distribution / Automation | 이정민 | 플랫폼 변환, n8n, Renderer, PlatformOutput |
@@ -72,7 +72,25 @@
 #23 Portfolio / Final Deliverables
 ```
 
-기능별 작업은 가능한 범위에서 병렬 진행하되, #20 이전까지 공통 계약에 연결되어야 합니다.
+기능별 작업은 가능한 범위에서 병렬 진행하되, #20 이전까지 공통 데이터 계약에 연결되어야 합니다.
+
+### Runtime 정정 — 2026-10-05
+- 최종 제품은 **EXE/IPC 단일 런타임**입니다.
+- 현재 HTTP/local server는 팀원 기능을 보존하면서 연결하기 위한 **통합 테스트용 transport**입니다.
+- 저장소의 IPC 코드는 사전 테스트본이며 Python 실제 연결은 아직 구현 전입니다.
+- 개발 순서는 **각자 기능 개발 → 요청 코드를 api.js에 집중 → HTTP 통합 Vertical Slice → Python↔IPC 연결 → EXE 테스트/패키징**입니다.
+- 각 담당자는 자기 기능 구현 방식을 자유롭게 유지합니다. Core 통합을 위해 미리 IPC로 다시 만들 필요가 없습니다.
+
+### Frontend Request Boundary
+프론트엔드의 `fetch`, `axios` 등 서버/Core 요청은 화면/버튼에 직접 두지 않고 **기능별 함수로 `api.js` 한 곳에 모읍니다.**
+
+```text
+UI / Button → api.js → 현재 HTTP 테스트
+                      ↓ 이후 강창희가 교체
+                 최종 IPC → Python Core
+```
+
+이 규칙의 목적은 HTTP와 IPC를 둘 다 운영하는 것이 아니라, 최종 IPC 전환 시 화면 코드를 다시 고치지 않게 하는 것입니다.
 
 ## 4. Change Management
 
@@ -137,7 +155,7 @@ Slack에서 결정된 중요한 내용은 최종적으로 GitHub 또는 Notion�
 
 ## 7. 10/9~10/16 운영 원칙
 
-- 10/9까지: **새 기능보다 Vertical Slice**
+- 10/9까지: **새 기능보다 HTTP 통합 Vertical Slice와 api.js 호출 경계 정리**
 - 10/10~10/14: **P0 → P1 → P2 → P3 순서 안정화**
 - 10/15~10/16: **증거 수집, 화면 캡처, 문제→판단→실행→결과 문서화**
 - Contract v1.0 Freeze 이후 breaking change는 반드시 Change Management 절차를 거칩니다.

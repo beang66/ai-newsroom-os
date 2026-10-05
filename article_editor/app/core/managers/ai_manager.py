@@ -34,9 +34,9 @@ class AIManager:
         """팩트체크에 필요한 모델·런타임 준비 상태."""
         from ..ai.factcheck import paths
         deps = {name: importlib.util.find_spec(name) is not None
-                for name in ('torch', 'transformers', 'peft', 'onnxruntime', 'tokenizers', 'numpy')}
+                for name in ('torch', 'transformers', 'onnxruntime', 'tokenizers', 'numpy')}
         models = {
-            'judge': (paths.settings.base_model_path / 'config.json').is_file() and paths.settings.adapter_path.is_dir(),
+            'judge': (paths.JUDGE_DIR / 'model.onnx').is_file() and (paths.JUDGE_DIR / 'judge.json').is_file(),
             'embedding': (paths.EMBEDDING_DIR / 'model.safetensors').is_file(),
             'boundary': (paths.BOUNDARY_DIR / 'model.onnx').is_file(),  # 없으면 규칙만으로 청킹
         }

@@ -1,9 +1,15 @@
+"""팩트체크 판정기 — 주장 하나와 근거 청크 하나의 관계를 5클래스로 분류한다(ONNX, CPU).
+
+모델 폴더(paths.JUDGE_DIR): model.onnx(+.data), tokenizer.json, judge.json(라벨·입력 길이·확신도 기준).
+학습·평가·패키징은 research/factcheck-judge (README 의 q06b-v2-full). 입력 모양은 학습과 같아야 한다(_render).
+"""
 from __future__ import annotations
 
-import os
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
+CACHE_MAX = 4096  # (주장, 근거) 판정 결과 — 기사를 고쳐 다시 검증할 때 바뀐 문장만 다시 판정
 
 
 @dataclass(frozen=True)
@@ -15,151 +21,84 @@ class SemanticJudgement:
     metadata: dict | None = None
 
 
-class LocalClassifierProvider:
-    """Qwen3-0.6B sequence classifier with conservative calibration.
+REASON = {
+    "SUPPORTED_LOCAL": "판정기가 직접 지지 근거로 판정했습니다.",
+    "CONFLICT_LOCAL": "판정기가 근거와 어긋난다고 판정했습니다.",
+    "GAP_LOCAL": "판정기가 현재 근거로는 직접 뒷받침되지 않는다고 판정했습니다.",
+    "REVIEW_LOCAL": "판정기가 사람의 검토가 필요한 사례로 판정했습니다.",
+    "REVIEW_EXTERNAL": "판정기가 더 강한 의미판정이 필요한 사례로 판정했습니다.",
+}
+STATUS = {"SUPPORTED_LOCAL": "SUPPORTED", "CONFLICT_LOCAL": "CONFLICT", "GAP_LOCAL": "EVIDENCE_GAP",
+          "REVIEW_LOCAL": "REVIEW"}
 
-    This provider is fully local and lazy-loads the model on first use.
-    It combines the classifier with the deterministic assertion guard so
-    apparent conflicts on a different subject are not accepted as conflicts.
-    """
 
-    name = "qwen06-local-classifier"
+class OnnxJudgeProvider:
+    name = "onnx-judge"
 
-    LABELS = [
-        "SUPPORTED_LOCAL",
-        "CONFLICT_LOCAL",
-        "GAP_LOCAL",
-        "REVIEW_LOCAL",
-        "REVIEW_EXTERNAL",
-    ]
-
-    def __init__(self, adapter: str | None = None, base: str | None = None):
-        from .paths import FACTCHECK_DIR
-        model_root = Path(os.getenv("FACTCHECK_MODEL_ROOT") or FACTCHECK_DIR)
-        self.base = Path(base or os.getenv("FACTCHECK_BASE_MODEL_PATH") or model_root / "base" / "Qwen3-0.6B")
-        self.adapter = Path(
-            adapter
-            or os.getenv("FACTCHECK_ADAPTER_PATH")
-            or os.getenv("LOCAL_CLASSIFIER_ADAPTER")
-            or model_root / "adapters" / "current"
-        )
-        self.threshold = float(os.getenv("LOCAL_CLASSIFIER_MIN_CONFIDENCE", "0.50"))
+    def __init__(self, folder: Path):
+        self.folder = Path(folder)
+        self.config = json.loads((self.folder / "judge.json").read_text(encoding="utf-8")) if self.available() else {}
+        self._session = None
         self._tok = None
-        self._model = None
+        self._cache: dict[tuple[str, str], tuple[str, float]] = {}
 
     def available(self) -> bool:
-        return self.base.exists() and self.adapter.exists()
+        return all((self.folder / f).is_file() for f in ("judge.json", "model.onnx", "tokenizer.json"))
 
     @staticmethod
-    def _render(claim: str, evidence: list[dict]) -> str:
-        lines = []
-        for i, ev in enumerate(evidence[:4], 1):
-            text = ev.get("sentence") or ev.get("text") or ""
-            lines.append(f"E{i}: {text[:500]}")
-        return f"fact_relation\nCLAIM: {claim}\nEVIDENCE:\n" + "\n".join(lines)
+    def _render(claim: str, evidence: str) -> str:
+        """research/factcheck-judge/scripts/common.py: render 와 같아야 한다."""
+        return f"fact_relation\nCLAIM: {claim}\nEVIDENCE:\nE1: {evidence[:500]}"
 
     def _load(self):
-        if self._model is not None:
+        if self._session is not None:
             return
-        import torch
-        from peft import PeftModel
-        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+        import onnxruntime as ort
+        from tokenizers import Tokenizer
 
-        l2i = {x: i for i, x in enumerate(self.LABELS)}
-        i2l = {i: x for x, i in l2i.items()}
-        tok = AutoTokenizer.from_pretrained(self.base)
-        if tok.pad_token_id is None:
-            tok.pad_token = tok.eos_token
-        model = AutoModelForSequenceClassification.from_pretrained(
-            self.base,
-            num_labels=len(self.LABELS),
-            id2label=i2l,
-            label2id=l2i,
-            dtype=torch.float32,
-        )
-        model.config.pad_token_id = tok.pad_token_id
-        model = PeftModel.from_pretrained(model, self.adapter)
-        model.eval()
+        tok = Tokenizer.from_file(str(self.folder / "tokenizer.json"))
+        tok.no_padding()
+        tok.enable_truncation(self.config["max_length"])
+        opts = ort.SessionOptions()
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        self._session = ort.InferenceSession(str(self.folder / "model.onnx"), opts, providers=["CPUExecutionProvider"])
         self._tok = tok
-        self._model = model
+
+    def _classify(self, claim: str, evidence: str) -> tuple[str, float]:
+        key = (claim, evidence)
+        if key in self._cache:
+            return self._cache[key]
+        import numpy as np
+
+        self._load()
+        ids = self._tok.encode(self._render(claim, evidence)).ids
+        feed = {"input_ids": np.array([ids], dtype=np.int64), "attention_mask": np.ones((1, len(ids)), dtype=np.int64)}
+        logits = self._session.run(None, feed)[0][0]
+        probs = np.exp(logits - logits.max())
+        probs /= probs.sum()
+        idx = int(probs.argmax())
+        out = (self.config["labels"][idx], float(probs[idx]))
+        if len(self._cache) >= CACHE_MAX:
+            self._cache.pop(next(iter(self._cache)))
+        self._cache[key] = out
+        return out
 
     def judge(self, claim: str, evidence: list[dict]) -> SemanticJudgement:
         if not self.available():
-            return SemanticJudgement(
-                status="UNAVAILABLE",
-                reason="로컬 0.6B classifier 모델을 찾지 못했습니다.",
-                provider=self.name,
-            )
+            return SemanticJudgement(status="UNAVAILABLE", reason="팩트체크 판정 모델을 찾지 못했습니다.", provider=self.name)
         try:
-            import torch
-            from .assertion import (
-                analyze_assertion_relation,
-                has_explicit_value_mismatch,
-                DIRECT_CONFLICT,
-            )
-
-            self._load()
-            x = self._tok(
-                self._render(claim, evidence),
-                truncation=True,
-                max_length=192,
-                return_tensors="pt",
-            )
-            with torch.no_grad():
-                probs = torch.softmax(self._model(**x).logits[0], dim=-1)
-            idx = int(torch.argmax(probs))
-            pred = self.LABELS[idx]
-            confidence = float(probs[idx])
-
-            raw_pred = pred
-            guard = None
-            if pred == "CONFLICT_LOCAL":
-                ev_text = " ".join(
-                    (e.get("sentence") or e.get("text") or "") for e in evidence[:2]
-                )
-                relation = analyze_assertion_relation(claim, ev_text, 1.0)
-                if relation.relation != DIRECT_CONFLICT:
-                    if confidence >= 0.85 and has_explicit_value_mismatch(claim, ev_text):
-                        guard = "semantic_conflict_with_explicit_value_mismatch"
-                    else:
-                        pred = "GAP_LOCAL"
-                        guard = "conflict_requires_same_subject_direct_opposition"
-
-            if raw_pred == "REVIEW_EXTERNAL" or confidence < self.threshold:
-                status = "EXTERNAL_REQUIRED"
-            else:
-                status = {
-                    "SUPPORTED_LOCAL": "SUPPORTED",
-                    "CONFLICT_LOCAL": "CONFLICT",
-                    "GAP_LOCAL": "EVIDENCE_GAP",
-                    "REVIEW_LOCAL": "REVIEW",
-                }.get(pred, "EXTERNAL_REQUIRED")
-
-            reason = {
-                "SUPPORTED_LOCAL": "0.6B 분류기가 직접 지지 근거로 판정했습니다.",
-                "CONFLICT_LOCAL": "0.6B 분류기가 직접 충돌로 판정했고 assertion guard를 통과했습니다.",
-                "GAP_LOCAL": "0.6B 분류기가 현재 근거로는 직접 뒷받침되지 않는다고 판정했습니다.",
-                "REVIEW_LOCAL": "0.6B 분류기가 로컬 검토가 필요한 사례로 판정했습니다.",
-                "REVIEW_EXTERNAL": "0.6B 분류기가 더 강한 의미판정이 필요한 사례로 판정했습니다.",
-            }.get(pred, "로컬 분류기 판정입니다.")
-            if confidence < self.threshold:
-                reason += f" (신뢰도 {confidence:.2f} < 기준 {self.threshold:.2f})"
-
-            return SemanticJudgement(
-                status=status,
-                reason=reason,
-                confidence=confidence,
-                provider=self.name,
-                metadata={
-                    "raw_class": raw_pred,
-                    "post_guard_class": pred,
-                    "guard": guard,
-                    "threshold": self.threshold,
-                },
-            )
+            text = (evidence[0].get("sentence") or evidence[0].get("text") or "") if evidence else ""
+            label, confidence = self._classify(claim, text)
         except Exception as exc:
-            return SemanticJudgement(
-                status="UNAVAILABLE",
-                reason=f"로컬 classifier 호출 실패: {type(exc).__name__}",
-                provider=self.name,
-            )
+            return SemanticJudgement(status="UNAVAILABLE", reason=f"판정기 호출 실패: {type(exc).__name__}",
+                                     provider=self.name)
+        reason = REASON[label]
+        if label == "REVIEW_EXTERNAL" or confidence < self.config["min_confidence"]:
+            status = "EXTERNAL_REQUIRED"
+        elif label == "SUPPORTED_LOCAL" and confidence < self.config["supported_min_confidence"]:
+            status = "REVIEW"  # 확신이 낮은 '일치'는 확정하지 않는다(틀린 '일치'가 가장 위험)
+            reason += f" (확신도 {confidence:.2f} — 사람 확인 필요)"
+        else:
+            status = STATUS[label]
+        return SemanticJudgement(status=status, reason=reason, confidence=confidence, provider=self.name,
+                                 metadata={"raw_class": label, "model_id": self.config.get("model_id")})

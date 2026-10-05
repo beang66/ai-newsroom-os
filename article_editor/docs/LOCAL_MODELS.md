@@ -2,6 +2,9 @@
 
 - 상태: **확정(2026-10-02) — B안 구현 완료** (§3·§7). 남은 결정은 §6
 - 관련: `../packaging/README.md`, `docs/IPC_MIGRATION.md`, `../ARCHITECTURE.md`(model_versions·Update Manager)
+- **2026-10-05 변경:** 팩트체크 판정기를 `Qwen3-0.6B + v10 LoRA(torch·peft)`에서 **`factcheck-judge-0.6b-v2`(ONNX, LoRA 병합본 2.4 GB)**로 교체.
+  런타임은 onnxruntime + tokenizers(torch·transformers 는 임베딩용으로만 남음, peft 불필요). 학습·평가·패키징은
+  `../../research/factcheck-judge`(README). 아래 §1·§3 의 v10 수치는 교체 전 기록이다.
 
 ## 1. 실측 (이 PC 기준)
 
@@ -113,7 +116,7 @@
 python app/launcher.py --models install
 
 # 사내망/오프라인(공유 폴더·USB 에서)
-python app/launcher.py --models install --from "\\서버\배포\models\factcheck-qwen3-0.6b-v10"
+python app/launcher.py --models install --from "\\서버\배포\models\factcheck-judge-0.6b-v2"
 
 # 상태만
 python app/launcher.py --models

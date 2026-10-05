@@ -3,91 +3,36 @@
   "note": "dev/checks/make_model_manifest.py 로 생성. base 를 호스팅 주소로 채우면 앱이 자동 다운로드한다.",
   "models": [
     {
-      "id": "factcheck-qwen3-0.6b-v10",
-      "label": "팩트체크 (Qwen3-0.6B + v10-paraphrase)",
+      "id": "factcheck-judge-0.6b-v2",
+      "label": "팩트체크 판정기 (Qwen3-0.6B v2, ONNX)",
       "kind": "factcheck",
-      "dir": "factcheck-qwen3-0.6b-v10",
+      "dir": "factcheck-judge-0.6b-v2",
       "base": "",
       "files": [
         {
-          "path": "active_model.json",
-          "size": 331,
-          "sha256": "f074091afbd954588986ff6a978ab516d29c9345a86e5d816d9607e9a3d3b675"
+          "path": "judge.json",
+          "size": 307,
+          "sha256": "d9af127ab86a19d873a3df53257db01b6f153103e071fac6e123c7cf04216d3c"
         },
         {
-          "path": "adapters/v10-paraphrase/adapter_config.json",
-          "size": 1327,
-          "sha256": "ec3d11756c70a17ca7848a27e0ef9f6c71a6644012431d8bb9a0f8147e56c9dc"
+          "path": "model.onnx",
+          "size": 1481060,
+          "sha256": "40dde7c25bddb25df4e1ef5a981bae4152db6cf05a5400f98fa3367f5361e3db"
         },
         {
-          "path": "adapters/v10-paraphrase/adapter_model.safetensors",
-          "size": 18400584,
-          "sha256": "6f47cffac6367006e263151dba110aa94d1aadd7fa0b1d1e113bfec602447db0"
+          "path": "model.onnx.data",
+          "size": 2384191488,
+          "sha256": "be7cd358b8185586ac8cc638752f589607b5e1aec82bc4535de07f62fff3bed6"
         },
         {
-          "path": "adapters/v10-paraphrase/chat_template.jinja",
-          "size": 4256,
-          "sha256": "51fa65c79bb57f058dc7ef8734884bd325fe9d45bb03a61bfef59785d3bc2da9"
+          "path": "tokenizer.json",
+          "size": 11422650,
+          "sha256": "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
         },
         {
-          "path": "adapters/v10-paraphrase/README.md",
-          "size": 5174,
-          "sha256": "501ab70119b0fab3812487bb4453284179f404acd2baea4e216bcbdca3368c3f"
-        },
-        {
-          "path": "adapters/v10-paraphrase/semantic_train_summary.json",
-          "size": 223,
-          "sha256": "807e59c43b4b7cf07791c4e800e98c414d269ad702e9f5699f33324e26c79da8"
-        },
-        {
-          "path": "adapters/v10-paraphrase/tokenizer.json",
-          "size": 11422928,
-          "sha256": "be616ad145c711d92f86e635f0f7f7b528c2692d1ff0ff56a9eedc3bb6031094"
-        },
-        {
-          "path": "adapters/v10-paraphrase/tokenizer_config.json",
-          "size": 723,
-          "sha256": "1f18fb516a5b9ec1286b09ef8df6cbe736ad8298c77d99953d85f182572b273e"
-        },
-        {
-          "path": "adapters/v10-paraphrase/train_summary.json",
-          "size": 255,
-          "sha256": "716d178dd9648dbc066440cd46c61392e93948ad3aa043874561e6c72ca473dd"
-        },
-        {
-          "path": "base/Qwen3-0.6B/config.json",
-          "size": 726,
-          "sha256": "660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd"
-        },
-        {
-          "path": "base/Qwen3-0.6B/generation_config.json",
-          "size": 239,
-          "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
-        },
-        {
-          "path": "base/Qwen3-0.6B/model.safetensors",
-          "size": 1503300328,
-          "sha256": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b"
-        },
-        {
-          "path": "base/Qwen3-0.6B/Qwen3-0.6B-Q8_0.gguf",
-          "size": 639446688,
-          "sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
-        },
-        {
-          "path": "base/Qwen3-0.6B/tokenizer.json",
-          "size": 11422654,
-          "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
-        },
-        {
-          "path": "base/Qwen3-0.6B/tokenizer_config.json",
-          "size": 9732,
-          "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
-        },
-        {
-          "path": "README.md",
-          "size": 565,
-          "sha256": "3a30eaf2de1a23af152848d0af92d1182ef709117fa00bd49f5316ac115552f0"
+          "path": "tokenizer_config.json",
+          "size": 835,
+          "sha256": "75480b08d3715c7d92a81e6a6030277eef4ffc2797c7f36ef5164c0bbb4638c7"
         }
       ]
     },

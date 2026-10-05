@@ -2,7 +2,7 @@ import re
 import uuid
 from collections import Counter
 
-from .paths import settings
+from .paths import JUDGE_DIR, settings
 from .semantic_chunker_v3 import clean as _clean
 from .assertion import (
     DIRECT_CONFLICT,
@@ -13,7 +13,7 @@ from .assertion import (
     find_near_copy_differences,
 )
 from .chunker import chunk_document
-from .semantic_provider import LocalClassifierProvider
+from .semantic_provider import OnnxJudgeProvider
 from .observability import record_factcheck_event
 from .retrieval import DEFAULT_K, rank_chunks
 
@@ -23,10 +23,7 @@ _provider = None
 def _get_provider():
     global _provider
     if _provider is None:
-        _provider = LocalClassifierProvider(
-            adapter=str(settings.adapter_path),
-            base=str(settings.base_model_path),
-        )
+        _provider = OnnxJudgeProvider(JUDGE_DIR)
     return _provider
 
 
@@ -210,6 +207,9 @@ def _judge_qwen_candidates(provider, claim, node, candidates):
     The local classifier was trained for short evidence contexts, so Top-K is
     not concatenated into one long prompt. Conflicting decisive judgements are
     escalated rather than silently choosing one source.
+
+    조기 종료: 검색 순위대로 판정하다 확신 있는 지지/충돌이 나오면 나머지는 판정하지 않는다
+    (research/factcheck-judge — 봉인 386주장에서 '일치' 오판 그대로, 정답↑, 판정 횟수 절반).
     """
     linked_ids = set(node.get("linkedSourceIds") or [])
     judged = []
@@ -261,6 +261,8 @@ def _judge_qwen_candidates(provider, claim, node, candidates):
             "provider": judgement.provider,
             "model_metadata": judgement.metadata,
         })
+        if status in ("SUPPORTED", "CONFLICT"):
+            break
 
     supported = [x for x in judged if x["status"] == "SUPPORTED"]
     conflicts = [x for x in judged if x["status"] == "CONFLICT"]

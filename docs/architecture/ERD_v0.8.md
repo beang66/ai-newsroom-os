@@ -4,6 +4,8 @@
 
 > ERD는 어렵게 생각할 필요가 없습니다. **“어떤 데이터를 저장하고, 서로 어떻게 연결할 것인가”를 정한 DB 설계도**입니다.
 
+> **현재 저장소와의 차이 (2026-10-07):** `feature/app-core`의 로컬 SQLCipher에는 `articles`, `article_revisions`, `sources`, `media`, 검증/임베딩 캐시가 구현되어 있다. 기사 ID는 32hex, Source ID는 16hex, 수정 이력 키는 `(article_id, revision_no)`다. 아래 UUID v5 alias, Snapshot, ReportingProject, SourceChunk, Claim/EvidenceLink 등은 **현재 DB 스키마가 아니라 목표 설계**다. 실제 스키마와 미정의 전환 규칙은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md)을 참조한다.
+
 ## 1. 먼저 알아둘 핵심 용어
 
 | 개발 용어 | 쉬운 뜻 | 우리 프로젝트 예시 |

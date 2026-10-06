@@ -96,6 +96,8 @@ def main():
     }
     for path in sorted(DATA.glob('eval_*.jsonl')):
         rows = load_jsonl(path)
+        if 'evidence' not in rows[0]:
+            continue  # eval_termswap60 은 형식이 달라 eval_termswap.py 가 따로 평가
         flat = [(r['claim'], e) for r in rows for e in r['evidence']]
         it = iter(predict(tok, model, flat, args.maxlen))
         verdicts = {r['id']: aggregate([to_status(*next(it)) for _ in r['evidence']]) for r in rows}

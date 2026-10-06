@@ -18,6 +18,7 @@ export default function ResourceReader({
   saved,
   onNote,
   onSavePage,
+  canEditSource = true,
   onSave,
   onVisit,
   onClose,
@@ -147,7 +148,7 @@ export default function ResourceReader({
                 {record.note}
               </blockquote>
             )}
-            {sourceEditing ? (
+            {canEditSource && sourceEditing ? (
               <section className="source-edit-form" aria-label="자료 수정">
                 <label>
                   페이지 제목
@@ -188,7 +189,7 @@ export default function ResourceReader({
                   </button>
                 </div>
               </section>
-            ) : (
+            ) : canEditSource ? (
               <button
                 className="edit-source-button"
                 onClick={() => {
@@ -200,7 +201,7 @@ export default function ResourceReader({
               >
                 자료 기록 수정
               </button>
-            )}
+            ) : null}
             <section className="personal-note">
               <div>
                 <h3>내 페이지 메모</h3>

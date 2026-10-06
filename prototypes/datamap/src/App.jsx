@@ -41,7 +41,7 @@ import {
   MapViews,
 } from "./components/NewsroomChrome.jsx";
 
-export default function App({ api = dataMapApi, workspaceId }) {
+export default function App({ api = dataMapApi, workspaceId, articleId }) {
   const searchInput = useRef(null);
   useEffect(() => {
     const shortcut = (event) => {
@@ -89,8 +89,10 @@ export default function App({ api = dataMapApi, workspaceId }) {
   const deferredQuery = useDeferredValue(query);
   useEffect(() => {
     const controller = new AbortController();
+    setGraph(null);
+    setError("");
     api
-      .getKnowledgeMap({ workspaceId, signal: controller.signal })
+      .getKnowledgeMap({ workspaceId, articleId, signal: controller.signal })
       .then((data) => {
         if (!controller.signal.aborted) setGraph(data);
       })
@@ -98,7 +100,7 @@ export default function App({ api = dataMapApi, workspaceId }) {
         if (!controller.signal.aborted) setError(e.message);
       });
     return () => controller.abort();
-  }, [api, workspaceId, attempt]);
+  }, [api, workspaceId, articleId, attempt]);
   const index = useMemo(() => (graph ? indexGraph(graph) : null), [graph]);
   const selected = index?.byId.get(selectedId);
   const context = useMemo(
@@ -537,6 +539,7 @@ export default function App({ api = dataMapApi, workspaceId }) {
                 : current,
             );
           }}
+          canEditSource={api.canSaveSourceRevision === true}
           onClose={() => setReader(null)}
         />
       )}

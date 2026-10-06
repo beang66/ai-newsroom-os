@@ -1,5 +1,7 @@
 # AI-Newsroom OS — 팀 공통 개발 규칙 v0.8
 
+> 구현 현황 정정 (2026-10-06): 이 문서의 ERD/OpenAPI는 **목표 계약 초안**이다. 실제 `feature/app-core@ef03e337`의 API·저장 방식은 [CORE_REALITY_AUDIT_2026-10-06.md](./CORE_REALITY_AUDIT_2026-10-06.md)를 따른다. 구현되지 않은 Snapshot, KnowledgeMap, 프로젝트 목록, SourceChunk/EvidenceLink 조회를 현재 Core 기능으로 간주하지 않는다. 후속 통합은 현재 Core 메서드를 재사용하고, 새 계약은 팀 합의 뒤 Core에 추가한다.
+
 상태: **팀 검토용 초안 / v1.0 확정 전**  
 작성일: 2026-10-04  
 통합 설계 담당: 안정빈

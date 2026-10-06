@@ -12,6 +12,12 @@ import { addSessionFiles, removeSessionFile } from "../src/domain/files.js";
 import { MAP_CENTER, MAP_RADIUS } from "../src/domain/layout.js";
 const graph = createFixture(),
   index = indexGraph(graph);
+const id = (legacy) => graph.nodes.find((node) => node.legacy_id === legacy)?.id;
+const projectId = (legacy) => graph.projects.find((item) => item.legacy_id === legacy)?.id;
+globalThis.localStorage = {
+  getItem: () => null,
+  setItem: () => {},
+};
 test("deterministic radial graph has unique finite nodes, valid deduplicated edges", () => {
   assert.equal(graph.nodes.length, 520);
   assert.deepEqual(createFixture(), graph);
@@ -36,8 +42,8 @@ test("file add/remove changes only the session graph and its incident links", ()
       { name: "취재녹음.wav", size: 2048, type: "audio/wav" },
       { name: "현장자료.pdf", size: 5120, type: "application/pdf" },
     ],
-    "a0",
-    { idFactory: () => String(++nextId), date: new Date("2026-10-05") },
+    id("a0"),
+    { idFactory: () => `upload-${++nextId}`, date: new Date("2026-10-05") },
   );
   assert.equal(graph.nodes.length, 520);
   assert.equal(added.nodes.length, 522);
@@ -54,11 +60,11 @@ test("file add/remove changes only the session graph and its incident links", ()
       (edge) => edge.source === "upload-1" || edge.target === "upload-1",
     ),
   );
-  assert.equal(removeSessionFile(graph, "a0"), graph);
+  assert.equal(removeSessionFile(graph, id("a0")), graph);
 });
 test("article highlights every derived material and keeps indirect context disjoint", () => {
-  const { direct, indirect } = getContext("a0", index);
-  for (const n of graph.nodes.filter((n) => n.articleId === "a0"))
+  const { direct, indirect } = getContext(id("a0"), index);
+  for (const n of graph.nodes.filter((n) => n.articleId === id("a0")))
     assert.ok(direct.has(n.id));
   for (const id of direct) assert.ok(!indirect.has(id));
   assert.ok(indirect.size > 0);
@@ -100,14 +106,14 @@ test("cross-project bridges connect only meaningfully related nodes", () => {
   assert.ok(projects.some((project) => project.id === linked.projectId));
 });
 test("direct files rank above indirect files and owning project comes first", () => {
-  const { files, projects } = rankRelated(index.byId.get("a0"), graph, index);
-  assert.equal(projects[0].id, "p-ai");
+  const { files, projects } = rankRelated(index.byId.get(id("a0")), graph, index);
+  assert.equal(projects[0].id, projectId("p-ai"));
   assert.ok(files.some((f) => f.priority === "related"));
   assert.ok(files[0].priority === "direct");
   assert.ok(files.every((f) => !f.placeholder));
   for (let i = 1; i < files.length; i++)
     assert.ok(files[i - 1].score >= files[i].score);
-  assert.deepEqual(rankRelated(index.byId.get("a0-n50"), graph, index), {
+  assert.deepEqual(rankRelated(index.byId.get(id("a0-n50")), graph, index), {
     projects: [],
     files: [],
   });
@@ -115,21 +121,21 @@ test("direct files rank above indirect files and owning project comes first", ()
 test("search, project, kind and meaningful-only filtering compose", () => {
   const result = filterNodes(graph, {
     query: "김서윤",
-    project: "p-ai",
+    project: projectId("p-ai"),
     kind: "audio",
     showPlaceholders: false,
   });
   assert.equal(result.length, 2);
-  assert.ok(result.every((n) => n.projectId === "p-ai" && n.kind === "audio"));
+  assert.ok(result.every((n) => n.projectId === projectId("p-ai") && n.kind === "audio"));
   assert.equal(filterNodes(graph, { query: "존재하지않는검색어" }).length, 0);
   assert.equal(filterNodes(graph, { showPlaceholders: false }).length, 104);
 });
 test("page and timestamp records have stable unique IDs", () => {
   const pages = graph.nodes.flatMap((n) => n.pages || []);
   assert.equal(new Set(pages.map((p) => p.id)).size, pages.length);
-  assert.equal(index.byId.get("a0-n0").pages[0].locator, "00:00–02:14");
-  assert.equal(index.byId.get("a0-n1").pages[0].locator, "p. 1");
-  assert.equal(index.byId.get("a0-n50").pages.length, 0);
+  assert.equal(index.byId.get(id("a0-n0")).pages[0].locator, "00:00–02:14");
+  assert.equal(index.byId.get(id("a0-n1")).pages[0].locator, "p. 1");
+  assert.equal(index.byId.get(id("a0-n50")).pages.length, 0);
 });
 test("demo uses no server; real adapter requires explicit route and never falls back", async () => {
   assert.equal((await createDataMapApi().getKnowledgeMap()).meta.mode, "demo");
@@ -143,16 +149,16 @@ test("demo uses no server; real adapter requires explicit route and never falls 
     routes: { knowledgeMap: (id) => `/map/${id}` },
     request: async (route, options) => {
       received = { route, options };
-      return graph;
+      return { entities: [], edges: [] };
     },
   });
   const controller = new AbortController();
-  assert.equal(
-    await api.getKnowledgeMap({
+  assert.deepEqual(
+    (await api.getKnowledgeMap({
       workspaceId: "workspace",
       signal: controller.signal,
-    }),
-    graph,
+    })).nodes,
+    [],
   );
   assert.equal(received.route, "/map/workspace");
   assert.equal(received.options.signal, controller.signal);

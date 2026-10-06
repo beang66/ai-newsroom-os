@@ -1,161 +1,45 @@
-# Data Map integration — implementation proposal
+# Data Map ↔ App Core integration
 
-Status: frontend Implemented; Core integration and real-article E2E pending.
-Basis: main `0e7a66d`, feature/app-core `ed3d47b`, Notion Data Map MVP v0.1.
+Status (2026-10-06): prototype projection implemented; current Core latest-article partial read available by injection; full KnowledgeMap endpoint and end-to-end integration pending. See [Core reality audit](./CORE_REALITY_AUDIT_2026-10-06.md).
 
-## Boundaries
+## Three explicit modes
 
-```text
-App: article + workspace session + navigation
-  → DataMap / MapGraph / NodeDetail (view + local selection)
-  → useDataMap (loading, retry, cancellation, stale response protection)
-  → api.js.getDataMap({ workspaceId, articleId, signal })
-  → HTTP today / injected Core transport later
-  → normalizeDataMap (projection validation; no inferred relationships)
+| Mode | Input | Behavior |
+|---|---|---|
+| `demo` (default) | deterministic fixture | 520 synthetic nodes; session-only file metadata; local browser page revisions |
+| `core-latest` | `coreApi.latestArticle(signal)` from App Core's `createAppApi()` | one latest draft and its explicit `draft.sources[]` references. No Claim, EvidenceLink, SourceChunk or project is inferred |
+| `api` | future `coreApi.getKnowledgeMap({workspaceId,articleId,signal})` or injected `request/routes.knowledgeMap` | v0.8 `{entities,edges}` plus optional agreed article/source/claim/project collections, projected into UI graph |
+
+Usage inside the Core host:
+
+```js
+import { createAppApi } from "./api/index.js";
+import { createDataMapApi } from "./datamap/api.js";
+
+const coreApi = createAppApi({ mode: "auto" });
+const dataMapApi = createDataMapApi({ mode: "core-latest", coreApi });
+// <App api={dataMapApi} workspaceId={authorizedWorkspaceId} />
 ```
 
-All new server requests and routes are in `src/api.js`. There is no DB access,
-RAG processing, new verification, or graph persistence in the feature.
-Existing component props stay independent of transport. App owns article navigation.
-Final product remains Windows EXE + IPC; HTTP is the integration test transport.
+This is a partial read, not a live KnowledgeMap feature. The host must provide the authorized workspace context. `feature/app-core@ef03e337` has no `getKnowledgeMap` named method, map route, list of articles, SourceChunk API or project listing. Its actual paths are `/api/articles/latest`, `/api/articles/save`, `/api/sources/open` and `/api/sources/{16hex}/file`; v0.8's `/v1/workspaces/{workspace_id}/knowledge/map` is a proposed contract. The host and Core must agree on an HTTP route and an equivalent IPC method before using `api` mode.
 
-## Core hookup
+## Projection rules
 
-The existing v0.8 route is used unchanged:
-`GET /v1/workspaces/{workspace_id}/knowledge/map?article_id={article_id}`.
-This route is **not implemented in inspected feature/app-core**. Its current
-`createCoreApi` also has no knowledge-map named method. Do not claim runtime
-integration until Core provides it. `/v1` is forwarded to localhost:3001 in Vite;
-adjust target to the actual test Core or set `VITE_CORE_BASE_URL`.
+- `coreProjection.js` preserves Core IDs exactly. The current Core's article is 32hex and source is 16hex; these are legacy IDs until Core owns an explicit UUID mapping. The demo's UUID-shaped IDs do not substitute for persisted IDs.
+- Only explicit `draft.sources[]`, `article_sources[]`, `claims[].article_id`, `evidence_links[]` and `KnowledgeEdge.from_entity_id/to_entity_id` produce links. Unknown or dangling references are omitted. There is no AI similarity or invented verification.
+- The strict v0.8 KnowledgeMap has only KnowledgeEntity/KnowledgeEdge. Article, file library, page reader and project navigation require additional agreed data or separate named Core methods. Optional enriched collections are accepted, not yet frozen as v1.0.
+- SourceChunk `id` is the page record ID when supplied; no source bytes or frozen chunks are edited. A live `saveSourceRevision` route has no v0.8 contract. Demo saves remain local; agree ownership, revision ID and validation before enabling live saves.
+- Current Core's `openSource`/`sourceBytes` can expose stored original bytes for a source ID. The prototype's page reader does not yet call them. The host should bind original-source navigation after resolving authorization and URL/IPC behavior.
+- `src/api.js` owns all requests. A host can inject the same named methods over HTTP or IPC. The feature never calls Core, Supabase, another prototype server or a DB from its components.
 
-1. Supply the persisted Article and authorized workspace from App Core session.
-   Current main uses `art-1` mock IDs; these are not real workspace UUIDs.
-2. Set `VITE_DATA_MAP_MODE=api`. Development defaults to explicitly labelled demo;
-   production defaults to API. Server failures never switch to demo.
-3. Implement/agree the projection payload below within existing KnowledgeMap.
-4. For IPC, inject `createDataMapApi({ transport: coreTransport }).getDataMap` as
-   DataMap's `load` prop. Transport is `json(path, null, signal)`, matching Core's
-   current method shape. Core must authorize workspace and article server-side.
-   No token or provider key is stored in this feature.
+## Missing and duplicate responsibilities
 
-## Data Map edits
+| Type | Resolution |
+|---|---|
+| Missing: workspace-scoped article/source list, projects, Claim/Evidence, source chunks | Core owners define and expose a named read contract, with matching HTTP/IPC semantics |
+| Missing: UUID alias/migration for legacy 32hex/16hex IDs | Core owns mapping; UI preserves originals until it exists |
+| Undefined: Source revision, upload/delete, original viewer, graph pagination | Keep demo controls isolated; agree contract before live writes |
+| Duplicate: Data Map's synthetic ranking and cross-project links | Demo only; do not store or treat as Core KnowledgeEdge |
+| Duplicate: separate archive/verification/RAG persistence | Read shared Source/Claim/Evidence records from Core, with no second official DB |
 
-The Data Map reader can save page edits as an additional local prototype revision.
-`Source` and `SourceChunk` remain the canonical source records; the prototype does
-not overwrite original source bytes or mutate a frozen chunk. Contract v0.8 has no
-source-edit/revision operation, so live persistence must wait for an agreed Core
-method and revision entity/ownership rules. The UI calls `api.js.saveSourceRevision`
-with workspace, source, and source-chunk IDs; the host injects its route or IPC
-method once that contract is approved. Do not infer or hard-code an endpoint.
-
-Prototype fixture identifiers are stable UUID-shaped IDs; legacy fixture keys are
-kept separately as `legacy_id`. Live API adapters pass through canonical shared
-UUIDs for Workspace, Article, Source, SourceChunk, KnowledgeEntity, and
-KnowledgeEdge. UI code must not create a parallel identifier for an existing
-Core record. 5. Wire original-source navigation to Core's source viewer when storage-backed
-resources become available. HTTP(S) URLs open directly; absent content or URL
-explicitly shows unavailable, never a fake success.
-
-## Projection fields to agree (not a frozen new contract)
-
-v0.8 specifies `entities[]` and `edges[]` with open object fields. This UI consumes:
-
-```json
-{
-  "snapshot_id": "snapshot-uuid",
-  "revision_id": "revision-uuid",
-  "entities": [
-    {
-      "id": "article-uuid",
-      "kind": "article",
-      "label": "기사명",
-      "status": "draft"
-    },
-    {
-      "id": "claim-uuid",
-      "kind": "claim",
-      "article_id": "article-uuid",
-      "label": "주장 문장",
-      "claim_text": "주장 문장",
-      "verification_status": "needs_review",
-      "article_location": { "paragraph": 2 }
-    },
-    {
-      "id": "source-uuid",
-      "kind": "source",
-      "label": "자료명",
-      "source_type": "pdf",
-      "source_url": "https://example.com/report.pdf#page=3",
-      "source_location": { "page": 3 }
-    },
-    {
-      "id": "entity-uuid",
-      "kind": "entity",
-      "label": "인물명",
-      "entity_type": "person"
-    }
-  ],
-  "edges": [
-    { "source_id": "article-uuid", "target_id": "claim-uuid" },
-    { "source_id": "claim-uuid", "target_id": "source-uuid" },
-    { "source_id": "claim-uuid", "target_id": "entity-uuid" }
-  ],
-  "evidence_links": [
-    {
-      "id": "evidence-uuid",
-      "claim_id": "claim-uuid",
-      "source_id": "source-uuid",
-      "evidence_text": "원문 발췌",
-      "source_location": { "page": 3 },
-      "relation": "supports"
-    }
-  ]
-}
-```
-
-`evidence_links`, snapshot/revision fields are proposed optional enrichment. They
-must be agreed with the domain/Core owners; this change does not freeze v1.0.
-Stable IDs are retained. KnowledgeEntity `type` can alias `kind`; actual Core
-DTO changes belong in `model.js`, not components. Evidence is detail-only.
-Statuses: verified / needs_review / unverified; unknown defaults to unverified.
-Locations: page, start_ms, paragraph, or label. Retrieval score is never truth.
-Null/missing source is tolerated, duplicate IDs/dangling edges produce warnings.
-No invented Source node is created for an unlinked Claim.
-
-Article jump locates one exact matching sentence in current textarea and selects
-it. Missing/duplicate sentence gives a notice; snapshot-specific editor anchors
-remain a Core/editor integration follow-up. It does not rewrite the claim or
-change verification results. Demo fixtures retain the current article's “70%”.
-
-## Interaction and reference
-
-Sidebar Data Map is directly below Platform conversion; binder navigation includes
-the same destination. Existing glass header, pill controls, rounded white workspace
-and neutral active colors remain. Search keeps immediate relationship context.
-Filters remove nodes and their incident edges together. Focus is one-hop only;
-back restores prior selection, reset clears search/filter/focus. Graph has pan,
-zoom and fit; list view is keyboard-friendly and defaults on narrow windows.
-
-Genspark sources consulted 2026-10-05:
-
-- https://www.genspark.ai/helpcenter/secondbrain
-- https://www.genspark.ai/business/products/secondbrain
-- https://www.gensparkcommunity.com/seoul/post/genspark-secondbrain-note-tea-meetup-recap-D1Ng1QnvQY1qR7a
-
-Reference influence: connected information exploration and traceable original
-context. Search, one-hop focus, history and list view are newsroom design decisions,
-not assertions that those exact controls exist in Genspark. No AI auto-relations,
-note editing, multi-article graph or extra graph DB added.
-
-## Validation
-
-`npm run check` checks lint and production build.
-`node --test tests/data-map.test.js` covers partial/dangling data, scope filtering,
-node/edge filters, search context, unsafe source links, HTTP error envelopes,
-request scope, invalid responses, timeout and injected transport cancellation.
-Browser verification (2026-10-05): menu position, claim→evidence→source-content
-dialog, graph/list switching, empty-search/reset, missing-source filter,
-focus/linked-node/back/reset and exact article sentence selection passed.
-Narrow (390px) and desktop (1440px) layouts were visually inspected.
-Automated validation: lint/build and all six Node tests passed.
-Real Core round-trip requires the provider endpoint and persisted article context.
+Validation: `npm run check` runs lint, domain/API tests and build. A real Core round trip and IPC handoff remain integration gates.

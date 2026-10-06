@@ -42,8 +42,8 @@ export function rankRelated(selected, graph, index) {
       const common = n.tags.filter((t) => selected.tags.includes(t));
       const linked = direct.has(n.id),
         bridge = bridgeIds.has(n.id),
-        sameArticle = n.articleId === selected.articleId,
-        sameProject = n.projectId === selected.projectId;
+        sameArticle = Boolean(n.articleId && selected.articleId && n.articleId === selected.articleId),
+        sameProject = Boolean(n.projectId && selected.projectId && n.projectId === selected.projectId);
       const score = Math.min(
         99,
         (bridge ? 72 : linked ? 65 : sameArticle ? 48 : sameProject ? 28 : 0) +

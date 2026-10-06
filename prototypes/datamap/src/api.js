@@ -1,12 +1,21 @@
 import { createFixture } from "./data/fixture.js";
+import { projectKnowledgeMap, projectLatestArticle } from "./domain/coreProjection.js";
 // UI receives an adapter; no component owns a server route, fetch or DB client.
 // HTTP paths must be supplied by the integrating application, not invented here.
-export function createDataMapApi({ mode = "demo", request, routes } = {}) {
+export function createDataMapApi({ mode = "demo", request, routes, coreApi } = {}) {
   const revisionStorageKey = (workspaceId, sourceId) =>
     `newsroom:source-revisions:${workspaceId}:${sourceId}`;
   return {
-    async getKnowledgeMap({ workspaceId, signal } = {}) {
+    canSaveSourceRevision: mode === "demo" || Boolean(request && routes?.saveSourceRevision),
+    async getKnowledgeMap({ workspaceId, articleId, signal } = {}) {
       signal?.throwIfAborted();
+      if (mode === "core-latest") {
+        if (typeof coreApi?.latestArticle !== "function")
+          throw new Error("Core latestArticle 메서드를 연결해 주세요.");
+        const latest = await coreApi.latestArticle(signal);
+        signal?.throwIfAborted();
+        return projectLatestArticle(latest, { workspaceId });
+      }
       if (mode === "demo") {
         const graph = createFixture();
         const nodes = graph.nodes.map((node) => {
@@ -30,19 +39,16 @@ export function createDataMapApi({ mode = "demo", request, routes } = {}) {
         });
         return { ...graph, nodes };
       }
-      if (!workspaceId || !request || !routes?.knowledgeMap)
+      if (!workspaceId || (!coreApi?.getKnowledgeMap && (!request || !routes?.knowledgeMap)))
         throw new Error("작업공간과 데이터맵 API 어댑터를 연결해 주세요.");
-      const result = await request(routes.knowledgeMap(workspaceId), {
-        method: "GET",
-        signal,
-      });
-      if (
-        !Array.isArray(result?.nodes) ||
-        !Array.isArray(result?.edges) ||
-        !Array.isArray(result?.projects)
-      )
-        throw new Error("데이터맵 응답 형식이 올바르지 않습니다.");
-      return result;
+      const result = coreApi?.getKnowledgeMap
+        ? await coreApi.getKnowledgeMap({ workspaceId, articleId, signal })
+        : await request(routes.knowledgeMap(workspaceId, articleId), {
+            method: "GET",
+            signal,
+          });
+      signal?.throwIfAborted();
+      return projectKnowledgeMap(result, { workspaceId });
     },
     async saveSourceRevision({
       workspaceId = "demo-workspace",

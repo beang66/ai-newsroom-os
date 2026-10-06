@@ -1,3 +1,5 @@
+import {transportFetch} from "./api.js";
+import {prepareStorageDraft, uploadImage, replaceImageData} from "./storage-assets.js";
 import {
   cropForRatio,
   clampCrop,
@@ -93,8 +95,11 @@ export class ArticleWorkspace extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
+    const newArticleId = crypto.randomUUID();
     this.state = {
       schemaVersion: 12,
+      articleId: newArticleId.replaceAll("-", ""),
+      core_context: { article_id: newArticleId },
       title: "",
       subtitle: "",
       bodyHtml: "",
@@ -114,6 +119,7 @@ export class ArticleWorkspace extends HTMLElement {
     return this.shadowRoot.querySelector(s);
   }
   async connectedCallback() {
+    if (this.controller.signal.aborted) this.controller = new AbortController();
     if (!document.querySelector("link[data-article-fonts]")) {
       const l = document.createElement("link");
       l.rel = "stylesheet";
@@ -125,11 +131,20 @@ export class ArticleWorkspace extends HTMLElement {
     try {
       const s = await stored(null, this.getAttribute("draft-key") || "current");
       if (s && !this.externalValue) {
-        this.state = s;
+        this.state = {...s, articleId:s.articleId || crypto.randomUUID().replaceAll("-", "")};
+        this.historyApplied=s.__versionReturn ? {articleId:s.articleId,...s.__versionReturn} : null;
         this.saveStatus = s.articleId ? "자동 저장됨" : "원고 복원됨";
         this.render();
       }
     } catch {}
+    this.versionTimer = setInterval(() => this.automaticVersion(), 180000);
+    this.versionWake = () => {
+      if (document.visibilityState === "visible" && Date.now() - (this.versionTick || 0) >= 180000) {
+        this.versionTick=Date.now(); this.automaticVersion();
+      }
+    };
+    this.versionTick=Date.now();
+    document.addEventListener("visibilitychange",this.versionWake);
     this.resize = new ResizeObserver(() => this.fitPreview());
     this.resize.observe(this);
     this.selectionHandler = () => this.selectionTools();
@@ -145,6 +160,7 @@ export class ArticleWorkspace extends HTMLElement {
     };
     this.menuEscapeHandler = (e) => {
       if (e.key === "Escape") {
+        if (!this.restoring) this.closeHistory();
         this.closePhotoMenu();
         this.shadowRoot
           .querySelectorAll(".photo-actions,[data-replace-menu]")
@@ -156,6 +172,9 @@ export class ArticleWorkspace extends HTMLElement {
   }
   disconnectedCallback() {
     this.closeModal();
+    clearInterval(this.versionTimer);
+    clearTimeout(this.versionRetryTimer);
+    document.removeEventListener("visibilitychange",this.versionWake);
     clearTimeout(this.closeSuggestionTimer);
     cancelAnimationFrame(this.scrollFrame);
     clearTimeout(this.timer);
@@ -177,22 +196,72 @@ export class ArticleWorkspace extends HTMLElement {
   set value(v) {
     this.externalValue = true;
     this.state = { ...this.state, ...v };
+    if (v.articleId && !v.core_context) delete this.state.core_context;
+    this.state.articleId ||= crypto.randomUUID().replaceAll("-", "");
+    this.historyApplied=this.state.__versionReturn ? {articleId:this.state.articleId,...this.state.__versionReturn} : null;
     this.cache = {};
     if (this.isConnected) this.render();
   }
   async api(path, payload) {
-    const r = await fetch((this.getAttribute("api-base") || "") + path, {
+    if (this.coreAdapter) return this.coreAdapter.request(path,payload,this.state);
+    let storage=null;
+    if (payload?.draft && (path === '/api/articles/save' || path.includes('/versions'))) {
+      this.assetUploadCache ||= new Map();
+      storage=await prepareStorageDraft(payload.draft,data=>uploadImage(data,this.getAttribute('api-base')||'',this.controller.signal),this.assetUploadCache);
+      payload={...payload,draft:storage.draft};
+    }
+    const body=payload ? JSON.stringify(payload) : undefined;
+    const bytes=body ? new TextEncoder().encode(body).byteLength : 0;
+    if ((path === "/api/articles/save" || path.includes("/versions")) && bytes>80000000)
+      throw Error(`원고 데이터가 ${(bytes/1000000).toFixed(1)}MB로 저장 한도 80MB를 넘었습니다. 원고는 유지됩니다. 사진 원본을 포함한 저장 용량을 확인해야 합니다.`);
+    let r;
+    try { r = await transportFetch((this.getAttribute("api-base") || "") + path, {
       method: payload ? "POST" : "GET",
       headers: payload ? { "Content-Type": "application/json" } : {},
-      body: payload ? JSON.stringify(payload) : undefined,
+      body,
       signal: this.controller.signal,
-    });
-    const d = await r.json();
-    if (!r.ok) throw Error(d.error || "요청을 완료하지 못했어요.");
+    }); } catch (e) {
+      if (e.name === "AbortError") throw Error("연결 요청이 취소됐어요. 앱을 새로고침한 뒤 다시 시도해 주세요.");
+      const operation = path === "/api/articles/save" ? "원고 저장" : path.includes("/restore") ? "버전 복원" : path.includes("/versions") ? "버전 기록" : "서버 요청";
+      if (path === "/api/articles/save" || path.includes("/versions")) {
+        const reason=await this.checkStorageConnection(bytes);
+        throw Error(`${operation}: ${reason}`);
+      }
+      throw Error(`${operation}: 서버 응답을 받지 못했어요. (${location.origin})`);
+    }
+    let d;
+    try { d = await r.json(); }
+    catch { throw Error("서버 응답을 읽지 못했어요. 실행 창을 닫고 최신 폴더의 start_windows.bat으로 다시 실행해 주세요."); }
+    if (!r.ok) {
+      if (r.status === 404 && path.includes("/versions"))
+        throw Error("버전 저장 기능이 없는 서버에 연결됐어요. 이전 실행 창을 닫고 최신 폴더의 start_windows.bat으로 다시 실행해 주세요.");
+      throw Error(d.error || "요청을 완료하지 못했어요.");
+    }
+    if (storage) { d.storageDraft=storage.draft; d.assetUrls=storage.urls; }
     return d;
   }
+  async checkStorageConnection(bytes) {
+    const base=this.getAttribute('api-base')||'';
+    const request=async(path,options={})=>{
+      const controller=new AbortController();
+      const timer=setTimeout(()=>controller.abort(),4000);
+      try { return await transportFetch(base+path,{...options,signal:controller.signal}); }
+      finally {clearTimeout(timer);}
+    };
+    try {
+      const health=await request('/api/status');
+      if (!health.ok) return `서버 상태 조회 실패(HTTP ${health.status}). 현재 원고는 유지됩니다.`;
+      const status=await health.json();
+      if (!status.version_history_ready) return '이전 버전 서버가 실행 중입니다. 최신 폴더에서 다시 실행해 주세요.';
+      const ping=await request('/api/connection-check',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"check":true}'});
+      if (!ping.ok) return `서버는 실행 중이지만 저장 요청 확인이 실패했습니다(HTTP ${ping.status}, 앱 v${status.workspace_version}).`;
+      return `서버 연결과 작은 데이터 전송 검사는 정상입니다. 실제 원고 전송(${(bytes/1000000).toFixed(2)}MB) 중 연결이 끊겼습니다. 원고는 유지됩니다.`;
+    } catch {
+      return '상태 조회 또는 저장 요청 연결이 끊겼습니다. 현재 실행 창의 오류 내용을 확인해야 합니다. 원고는 유지됩니다.';
+    }
+  }
   capture() {
-    if (this.mode !== "edit") return;
+    if (this.historyPreview || this.mode !== "edit") return;
     const t = this.q("[data-title]"),
       s = this.q("[data-subtitle]"),
       b = this.q("[data-body]");
@@ -207,9 +276,11 @@ export class ArticleWorkspace extends HTMLElement {
     }
   }
   changed() {
+    if (this.restoring || this.historyPreview) return;
     this.capture();
     this.state.updatedAt = new Date().toISOString();
     this.editRevision++;
+    this.updateFlowStatus();
     this.saveStatus = "자동 저장 중…";
     this.updateStatus();
     clearTimeout(this.saveTimer);
@@ -249,14 +320,17 @@ export class ArticleWorkspace extends HTMLElement {
     n.textContent = s;
   }
   render() {
+    if (this.historyPreview) { this.returnHistoryDraft(); this.historySelected=null; }
     this.closeModal();
     this.state.confirmed ||= { headline: false, subheadline: false };
-    this.shadowRoot.innerHTML = `<link rel="stylesheet" href="${esc(this.getAttribute("theme-url") || new URL("theme.css", ASSETS))}"><header class="toolbar"><span class="brand">기사 작성</span><div class="actions"><button data-export>저장하기</button><button class="primary" data-preview>${this.mode === "preview" ? "작성으로 돌아가기" : "미리보기"}</button></div></header><div class="notice" data-notice hidden role="status"></div><main data-main></main><footer class="footer-status" aria-label="원고 상태"><span data-save role="status"></span><span data-count title="본문 기준 · 공백 포함 · 줄바꿈 제외"></span></footer><div class="format-tools" data-format hidden><button data-command="bold"><b>B</b></button><button data-command="italic"><i>I</i></button><button data-command="underline"><u>U</u></button><button data-command="strikeThrough"><s>S</s></button><button data-bullet>● 소제목</button></div><section data-overlay></section><section data-flow></section>`;
+    this.shadowRoot.innerHTML = `<link rel="stylesheet" href="${esc(this.getAttribute("theme-url") || new URL("theme.css", ASSETS))}"><header class="toolbar"><span class="brand">기사 작성</span><div class="actions"><button data-history title="버전 기록" aria-label="버전 기록">버전 기록</button><button data-export>저장하기</button><button class="primary" data-preview>${this.mode === "preview" ? "작성으로 돌아가기" : "미리보기"}</button></div></header><div class="notice" data-notice hidden role="status"></div><main data-main></main><footer class="footer-status" aria-label="원고 상태"><span data-save role="status"></span><span data-count title="본문 기준 · 공백 포함 · 줄바꿈 제외"></span></footer><div class="format-tools" data-format hidden><button data-command="bold"><b>B</b></button><button data-command="italic"><i>I</i></button><button data-command="underline"><u>U</u></button><button data-command="strikeThrough"><s>S</s></button><button data-bullet>● 소제목</button></div><section data-overlay></section><section data-flow></section><section data-history-host hidden></section>`;
     this.q("[data-preview]").onclick = () => {
       this.capture();
       this.mode = this.mode === "preview" ? "edit" : "preview";
       this.render();
     };
+    this.q("[data-history]").onclick = () => this.openHistory();
+    this.renderHistory();
     this.q("[data-export]").onclick = () => this.saveArticle();
     this.shadowRoot.onclick = (e) => {
       if (!e.target.closest(".photo-actions,figure img"))
@@ -853,11 +927,11 @@ export class ArticleWorkspace extends HTMLElement {
         ?.addEventListener("click", () => this.suggest(type, true));
     } finally {
       delete this.pending[type];
-      if (regenerate) regenerate.disabled = !!this.state.confirmed?.[type];
+      if (regenerate) regenerate.disabled = !!this.state.confirmed?.[type] || !!this.historyPreview;
     }
   }
   updateStatus() {
-    const text = plain(this.state.bodyHtml).replace(/\n/g, "");
+    const text = plain(this.historyPreview ? this.historySelected.draft.bodyHtml : this.state.bodyHtml).replace(/\n/g, "");
     const count =
       typeof Intl.Segmenter === "function"
         ? [
@@ -870,7 +944,7 @@ export class ArticleWorkspace extends HTMLElement {
       this.q("[data-count]").textContent =
         `본문 ${count.toLocaleString("ko-KR")}자`;
     if (this.q("[data-save]"))
-      this.q("[data-save]").textContent = this.saveStatus;
+      this.q("[data-save]").textContent = this.historyPreview ? `버전 ${this.historySelected.versionNumber} 확인 중 · 아직 적용하지 않음` : this.saveStatus;
   }
   async persistArticle() {
     // One worker owns all writes; edits during a request trigger another pass.
@@ -880,8 +954,27 @@ export class ArticleWorkspace extends HTMLElement {
         const revision = this.editRevision;
         const d = await this.api("/api/articles/save", { draft: this.value });
         this.state.articleId = d.articleId;
+        // Even if typing continued, the next save must use the revision just committed.
+        if (d.storageDraft?.core_context) this.state.core_context = structuredClone(d.storageDraft.core_context);
+        if (revision===this.editRevision && d.storageDraft) {
+          Object.assign(this.state,d.storageDraft,{articleId:d.articleId});
+          const images=[...this.shadowRoot.querySelectorAll('img[src]'),...(this.historyLiveNodes||[]).flatMap(node=>[...(node.querySelectorAll?.('img[src]')||[])])];
+          for(const image of images) {
+            const url=d.assetUrls?.get(image.getAttribute('src'));
+            if(url)image.setAttribute('src',url);
+          }
+          this.assetUploadCache?.clear();
+        }
+        this.lastSavedArticle=d;
+        if(d.assetUrls) for(const field of this.historyFieldBackup||[]) field.html=replaceImageData(field.html,d.assetUrls);
         this.savedRevision = revision;
-        await stored(this.state, this.getAttribute("draft-key") || "current");
+        // A browser quota failure must not cancel a successful disk write/version save.
+        try {
+          await stored(this.state, this.getAttribute("draft-key") || "current");
+          this.browserSaveWarning = false;
+        } catch {
+          this.browserSaveWarning = true;
+        }
         this.dispatchEvent(
           new CustomEvent("article-saved", {
             detail: d,
@@ -898,6 +991,11 @@ export class ArticleWorkspace extends HTMLElement {
     }
   }
   async saveArticle(automatic = false) {
+    if (this.restoring || this.historyPreview || (!automatic && this.manualSaving)) return;
+    if (!automatic) {
+      this.manualSaving = true;
+      this.manualSaveId ||= globalThis.crypto?.randomUUID?.().replaceAll("-", "");
+    }
     this.capture();
     clearTimeout(this.diskTimer);
     const button = this.q("[data-export]");
@@ -907,16 +1005,28 @@ export class ArticleWorkspace extends HTMLElement {
     }
     this.saveStatus = "자동 저장 중…";
     this.updateStatus();
+    let draftSaved = false;
     try {
       await this.persistArticle();
-      this.saveStatus = "자동 저장됨";
-      if (!automatic) this.notice("원고를 저장했어요.");
+      draftSaved = true;
+      this.saveStatus = this.browserSaveWarning ? "원고 저장됨 · 브라우저 임시 저장 실패" : "자동 저장됨";
+      if (!automatic) {
+        if (this.manualSaveHash && this.manualSaveHash !== this.lastSavedArticle?.contentHash) this.manualSaveId = globalThis.crypto?.randomUUID?.().replaceAll("-", "");
+        this.manualSaveHash = this.lastSavedArticle?.contentHash;
+        const result = await this.saveVersion("manual", this.manualSaveId);
+        if (!result?.version) throw Error("새 버전 기록을 확인하지 못했어요. 다시 시도합니다.");
+        this.manualSaveId = null;
+        this.manualSaveHash = null;
+        this.saveStatus = `v${result.version.versionNumber} 저장됨`;
+        this.notice(`v${result.version.versionNumber}로 원고와 버전을 저장했어요.`);
+      }
     } catch (e) {
       if (!this.isConnected) return;
-      this.saveStatus = "파일 저장 실패 · 다시 시도 중";
+      this.saveStatus = draftSaved && !automatic ? "원고 저장됨 · 버전 기록 실패 · 다시 시도 중" : "원고 저장 실패 · 다시 시도 중";
       if (!automatic) this.notice(e.message);
-      this.diskTimer = setTimeout(() => this.saveArticle(true), 5000);
+      this.diskTimer = setTimeout(() => this.saveArticle(automatic), 5000);
     } finally {
+      if (!automatic) this.manualSaving = false;
       this.updateStatus();
       if (!automatic && button?.isConnected) {
         button.disabled = false;
@@ -924,7 +1034,198 @@ export class ArticleWorkspace extends HTMLElement {
       }
     }
   }
+  async saveVersion(kind = "automatic", requestId = null) {
+    if (this.restoring && kind === "automatic") return;
+    if (this.versionSavePromise) {
+      await this.versionSavePromise;
+      if (kind === "automatic") return;
+    }
+    const owner = this.state;
+    this.versionSavePromise = (async () => {
+      await this.persistArticle();
+      if (owner !== this.state) return;
+      const draft = this.value;
+      requestId ||= kind === "manual" ? globalThis.crypto?.randomUUID?.().replaceAll("-", "") : null;
+      const result = await this.api(`/api/articles/${draft.articleId}/versions`, {draft, kind, ...(requestId ? {requestId} : {})});
+      this.historyError = "";
+      clearTimeout(this.versionRetryTimer);
+      this.notice("");
+      if (this.historyOpen) await this.loadHistory();
+      return result;
+    })();
+    try { return await this.versionSavePromise; }
+    finally { this.versionSavePromise = null; }
+  }
+  async automaticVersion() {
+    this.versionTick=Date.now();
+    if (!this.isConnected || this.restoring || this.historyPreview) return;
+    try { await this.saveVersion(); }
+    catch (e) {
+      this.historyError = "버전 저장 실패: " + (e.message || "서버 연결을 확인해 주세요.");
+      clearTimeout(this.versionRetryTimer);
+      this.versionRetryTimer = setTimeout(() => this.automaticVersion(), 15000);
+      if (this.historyOpen) this.renderHistory();
+      this.notice(this.historyError);
+    }
+  }
+  async openHistory() {
+    if (this.historyOpen) { this.closeHistory(); return; }
+    this.capture();
+    this.historyOpen = true;
+    this.historySelected = null;
+    this.renderHistory();
+    await this.loadHistory();
+  }
+  async loadHistory() {
+    const owner = this.state;
+    const id = owner.articleId;
+    if (!id) { this.historyVersions = []; this.renderHistory(); return; }
+    this.historyLoading = true; this.renderHistory();
+    try {
+      const result = await this.api(`/api/articles/${id}/versions`);
+      if (owner !== this.state) return;
+      this.historyVersions = result.versions;
+      this.historyError = "";
+    } catch (e) { this.historyError = e.message; }
+    finally { this.historyLoading = false; this.renderHistory(); }
+  }
+  renderHistory() {
+    const host = this.q("[data-history-host]");
+    if (!host) return;
+    this.toggleAttribute("history-open",!!this.historyOpen);
+    host.hidden = !this.historyOpen;
+    if (!this.historyOpen) { host.innerHTML = ""; return; }
+    const kinds = {automatic:"자동 저장",manual:"직접 저장",before_restore:"복원 전 원고",restored:"복원한 원고"};
+    const versions = this.historyVersions || [];
+    const selected = this.historySelected;
+    host.innerHTML = `<aside class="version-panel" aria-label="버전 기록"><div class="version-head"><strong>버전 기록</strong><button data-history-close aria-label="버전 기록 닫기">×</button></div><p class="version-hint">변경된 원고를 3분마다 보관합니다.</p><p role="status">${esc(this.historyError || (this.historyLoading ? "기록을 불러오는 중…" : ""))}</p><div class="version-list">${versions.map(v=>{
+      const selectedCard=selected?.versionId===v.versionId;
+      const appliedCard=this.historyApplied?.articleId===this.state.articleId && this.historyApplied?.versionId===v.versionId;
+      return `<div class="version-card ${selectedCard?'selected':''} ${appliedCard?'applied':''}"><button data-version="${esc(v.versionId)}"><div class="version-card-name"><b>v${esc(v.versionNumber)}</b></div><time>${esc(new Date(v.createdAt).toLocaleString('ko-KR'))}</time><span>${esc(kinds[v.kind]||v.kind)}${appliedCard?' · 적용됨':''}</span><strong>${esc(plain(v.title)||'제목 없는 원고')}</strong></button>${selectedCard||appliedCard?`<div class="version-card-actions"><button class="primary" data-history-apply ${!selectedCard||!this.historyPreview?'disabled':''}>이 버전 적용하기</button><button data-history-return ${!appliedCard||!this.historyApplied?.backupVersionId?'disabled':''}>현재 원고로 돌아가기</button></div>`:''}</div>`;
+    }).join('') || (this.historyError ? '<p>버전 기록을 불러오지 못했습니다.</p>' : this.historyLoading ? '<p>기록을 확인하는 중입니다.</p>' : '<p>아직 저장된 버전이 없습니다.</p>')}</div>${selected ? '<p>선택한 버전을 작성란에서 확인하고 적용하세요.</p>' : '<p>버전을 선택하면 작성란에서 확인할 수 있습니다.</p>'}</aside>`;
+    host.querySelector('[data-history-close]').onclick = () => { if (!this.restoring) this.closeHistory(); };
+    host.querySelectorAll('[data-version]').forEach(button=>button.onclick=async()=>{
+      const owner=this.state, id=owner.articleId, request=(this.historyRequest||0)+1;
+      this.historyRequest=request;
+      try {
+        const record=await this.api(`/api/articles/${id}/versions/${button.dataset.version}`);
+        if (this.state!==owner || this.historyRequest!==request || !this.historyOpen) return;
+        this.historySelected=record; this.historyError=''; this.showHistoryDraft(); this.renderHistory();
+      } catch(e) { this.historyError=e.message; this.renderHistory(); }
+    });
+    host.querySelectorAll('[data-history-apply]').forEach(button=>button.onclick=()=>this.restoreVersion());
+    host.querySelectorAll('[data-history-return]').forEach(button=>button.onclick=()=>this.returnToAppliedBackup());
+    host.querySelectorAll('button').forEach(button=>{
+      if (this.restoring) button.disabled=true;
+    });
+  }
+  closeHistory() {
+    if (this.historyPreview) this.returnHistoryDraft();
+    this.historyOpen=false; this.historySelected=null; this.renderHistory();
+  }
+  returnHistoryDraft() {
+    for(const field of this.historyFieldBackup||[]) {
+      field.node.innerHTML=field.html;
+      if(field.editable===null)field.node.removeAttribute('contenteditable');
+      else field.node.setAttribute('contenteditable',field.editable);
+      field.node.inert=field.inert;
+    }
+    if(this.historyCategoryBackup) {
+      this.historyCategoryBackup.node.value=this.historyCategoryBackup.value;
+    }
+    for(const control of this.historyControlBackup||[]) {
+      const type=control.node.dataset?.regenerate;
+      control.node.disabled=type ? !!this.pending[type] || !!this.state.confirmed?.[type] : control.disabled;
+    }
+    this.q('.page')?.classList.remove('version-comparing');
+    this.q('[data-inline-version]')?.remove();
+    this.historyFieldBackup=null;this.historyControlBackup=null;this.historyCategoryBackup=null;
+    this.historyPreview=false;
+    this.q('[data-preview]').disabled=false;this.q('[data-export]').disabled=false;
+    this.q('[data-body]')?.querySelectorAll('figure').forEach(f=>this.decorate(f));
+    this.updateStatus();
+  }
+  showHistoryDraft() {
+    const selected=this.historySelected;
+    if (!selected) return;
+    if (this.mode==='preview') {this.mode='edit';this.render();}
+    if (!this.historyPreview) {
+      this.capture();
+      this.historyFieldBackup=['title','subtitle','body'].map(key=>{
+        const node=this.q(`[data-${key}]`);
+        return {node,html:node.innerHTML,editable:node.getAttribute('contenteditable'),inert:node.inert};
+      });
+      const category=this.q('[data-category]');
+      this.historyCategoryBackup={node:category,value:category.value};
+      this.historyControlBackup=[...this.q('.page').querySelectorAll('button,select')].map(node=>({node,disabled:node.disabled}));
+      clearTimeout(this.timer);
+    }
+    this.historyPreview=true;
+    for(const [key,selector] of [['title','[data-title]'],['subtitle','[data-subtitle]'],['bodyHtml','[data-body]']]) {
+      const template=document.createElement('template');template.innerHTML=selected.draft[key]||'';
+      template.content.querySelectorAll('script,style,iframe,object,embed,form,input,button,link,meta,.photo-actions,.drop-guide').forEach(n=>n.remove());
+      template.content.querySelectorAll('*').forEach(n=>{
+        for(const attr of [...n.attributes])if(/^on/i.test(attr.name)||['contenteditable','draggable','tabindex','autofocus'].includes(attr.name)||(/^(href|src)$/i.test(attr.name)&&/^\s*(javascript|vbscript):/i.test(attr.value)))n.removeAttribute(attr.name);
+        if(n.tagName==='A')n.removeAttribute('href');
+      });
+      const target=this.q(selector);target.innerHTML=template.innerHTML;
+      target.setAttribute('contenteditable','false');target.inert=true;
+    }
+    this.q('[data-category]').value=selected.draft.category||'사회';
+    for(const control of this.historyControlBackup)control.node.disabled=true;
+    this.q('.page').classList.add('version-comparing');
+    this.shadowRoot.querySelectorAll('[data-suggestions]').forEach(box=>box.hidden=true);
+    let label=this.q('[data-inline-version]');
+    if(!label){label=document.createElement('div');label.dataset.inlineVersion='';label.className='history-inline-version';this.q('.page').append(label);}
+    label.textContent=`v${selected.versionNumber} · 적용 전`;
+    this.q('[data-preview]').disabled=true;this.q('[data-export]').disabled=true;
+    this.q('[data-format]').hidden=true;
+    this.updateStatus();
+  }
+  async returnToAppliedBackup() {
+    if (!this.historyApplied?.backupVersionId || this.restoring) return;
+    await this.restoreVersion({versionId:this.historyApplied.backupVersionId},true);
+  }
+  async restoreVersion(override=null, returning=false) {
+    const selected=override || this.historySelected;
+    if (!selected || this.restoring) return;
+    if (Object.keys(this.pending).length || this.flowRequestPending) {
+      this.historyError='AI 작업이 끝난 뒤 다시 불러와 주세요.'; this.renderHistory(); return;
+    }
+    this.capture();
+    this.restoring=true;
+    clearTimeout(this.versionRetryTimer);
+    this.q('[data-main]').inert=true;
+    this.q('.toolbar').inert=true;
+    clearTimeout(this.saveTimer); clearTimeout(this.diskTimer); clearTimeout(this.timer);
+    this.renderHistory();
+    let applied=false;
+    try {
+      await this.persistArticle();
+      const saved=this.lastSavedArticle;
+      if (!saved?.contentHash) throw Error('현재 원고를 보관하지 못했어요. 최신 서버로 다시 실행해 주세요.');
+      const draft=this.value;
+      const result=await this.api(`/api/articles/${draft.articleId}/versions/${selected.versionId}/restore`, {draft,expectedHash:saved.contentHash});
+      if (this.historyPreview) this.returnHistoryDraft();
+      this.state=result.draft;
+      this.historyApplied=returning ? null : {articleId:this.state.articleId,versionId:selected.versionId,backupVersionId:result.backupVersionId};
+      this.cache={}; this.editRevision++; this.savedRevision=this.editRevision;
+      this.historySelected=null; this.saveStatus='선택한 버전 적용됨';
+      applied=true;
+      this.render();
+      try { await stored(this.state,this.getAttribute('draft-key')||'current'); }
+      catch { this.notice('원고는 복원됐지만 브라우저 임시 저장에 실패했어요.'); }
+      this.dispatchEvent(new CustomEvent('article-change',{detail:this.value,bubbles:true,composed:true}));
+      this.notice(returning ? '버전 적용 직전 원고로 돌아왔어요.' : '선택한 버전을 적용했어요. 적용 전 원고도 보관했습니다.');
+    } catch(e) { this.historyError=e.message; }
+    finally {
+      this.restoring=false; this.q('[data-main]').inert=false; this.q('.toolbar').inert=false;
+      if (applied) await this.loadHistory(); else this.renderHistory();
+    }
+  }
+
   showCandidates(type) {
+    if (this.historyPreview) return;
     const box = this.q(`[data-suggestions="${type}"]`);
     if (!box) return;
     const values = this.cache[type]?.values || [];
@@ -1021,6 +1322,7 @@ export class ArticleWorkspace extends HTMLElement {
     return this.shadowRoot.getSelection?.() || window.getSelection();
   }
   selectionTools() {
+    if (this.historyPreview) { this.q("[data-format]").hidden=true; return; }
     if (this.mode !== "edit") return;
     const s = this.getSelection(),
       bar = this.q("[data-format]");
@@ -1180,7 +1482,7 @@ export class ArticleWorkspace extends HTMLElement {
     }
   }
   async importPhoto(p, action = "edit") {
-    const r = await fetch(
+    const r = this.coreAdapter ? await this.coreAdapter.fetchPhoto(p.id) : await transportFetch(
       (this.getAttribute("api-base") || "") +
         "/api/unsplash/photo/" +
         encodeURIComponent(p.id),
@@ -1812,36 +2114,79 @@ export class ArticleWorkspace extends HTMLElement {
       this.changed();
     };
   }
+  updateFlowStatus() {
+    const notice = this.q("[data-flow-stale]");
+    if (!notice) return;
+    const result = this.state.summary;
+    const stale = result && plain(this.state.bodyHtml) !== result.inputText;
+    notice.hidden = !stale;
+    notice.textContent = stale ? "이후 수정됨 · 본문이 바뀌었어요. 현재 내용으로 다시 요약해 주세요." : "";
+  }
+  renderFlowResult() {
+    const area = this.q("[data-flow-result]");
+    const result = this.state.summary;
+    if (!area || !result) return;
+    area.innerHTML = "<ol>" + result.paragraphs
+      .map(v => "<li>" + esc(v.replace(/^\s*\d+[.)]\s*/, "")) + "</li>")
+      .join("") + "</ol>";
+    const models = result.metadata?.models || [];
+    this.q("[data-flow-model]").textContent = models.length
+      ? "사용 모델: " + models.map(v => v.model).join(" → ") : "사용 모델 기록 없음";
+    this.updateFlowStatus();
+  }
   async flow() {
     this.capture();
-    this.modal(
-      "[data-flow]",
-      "요약 보기",
-      '<div class="row"><button data-flow-refresh>새로고침</button></div><div data-flow-result role="status"></div>',
-      "summary-modal flow-panel",
-    );
+    this.modal("[data-flow]", "요약 보기",
+      '<div class="row"><button data-flow-refresh>새로고침</button></div>' +
+      '<p data-flow-stale class="flow-stale" role="status" hidden></p>' +
+      '<p data-flow-message role="status" aria-live="polite"></p>' +
+      '<div data-flow-result></div>' +
+      '<details class="flow-model"><summary>생성 정보</summary><p data-flow-model></p></details>',
+      "summary-modal flow-panel");
     this.q("[data-flow-refresh]").onclick = () => this.refreshFlow();
-    this.refreshFlow();
+    if (this.state.summary) this.renderFlowResult();
+    else this.refreshFlow();
   }
   async refreshFlow() {
     this.capture();
-    const a = this.q("[data-flow-result]");
-    a.textContent = "요약을 준비 중입니다.";
+    const area = this.q("[data-flow-result]");
+    const message = this.q("[data-flow-message]");
+    const button = this.q("[data-flow-refresh]");
+    if (!area || button.disabled) return;
+    const inputText = plain(this.state.bodyHtml);
+    const requestState = this.state;
+    const requestId = (this.flowRequestId || 0) + 1;
+    this.flowRequestId = requestId;
+    button.disabled = true;
+    message.textContent = "요약을 준비 중입니다. 창을 닫고 원고를 계속 작성할 수 있어요.";
     try {
-      const d = await this.api("/api/assist", {
-        kind: "flow",
-        body: plain(this.state.bodyHtml),
-      });
-      if (a.isConnected)
-        a.innerHTML =
-          "<ol>" +
-          d.paragraphs
-            .map((v) => "<li>" + esc(v.replace(/^\s*\d+[.)]\s*/, "")) + "</li>")
-            .join("") +
-          "</ol>";
+      const d = await this.api("/api/assist", { kind: "flow", body: inputText });
+      if (requestId !== this.flowRequestId || this.state !== requestState) return;
+      if (!Array.isArray(d.paragraphs) || d.paragraphs.length < 3 ||
+          d.paragraphs.length > 5 || !d.paragraphs.every(v => typeof v === "string" && v.trim()))
+        throw Error("요약 결과를 확인하지 못했어요. 다시 시도해 주세요.");
+      this.state.summary = { paragraphs: d.paragraphs, inputText, metadata: d.metadata || null };
+      this.renderFlowResult();
+      message.textContent = "";
+      button.textContent = "새로고침";
+      try { await stored(this.state, this.getAttribute("draft-key") || "current"); }
+      catch { this.saveStatus = "브라우저 저장 실패"; this.updateStatus(); }
+      this.editRevision++;
+      this.saveArticle(true);
+      this.dispatchEvent(new CustomEvent("article-change", {
+        detail: this.value, bubbles: true, composed: true,
+      }));
     } catch (e) {
-      if (a.isConnected) a.textContent = e.message;
+      if (area.isConnected && requestId === this.flowRequestId) {
+        message.textContent = (e.message || "요약을 완료하지 못했어요.") +
+          " 원고는 그대로 유지됩니다. 다시 시도하거나 창을 닫고 작성할 수 있어요.";
+        button.textContent = "다시 시도";
+        this.updateFlowStatus();
+      }
+    } finally {
+      if (button.isConnected && requestId === this.flowRequestId) button.disabled = false;
     }
   }
+
 }
 customElements.define("article-workspace", ArticleWorkspace);

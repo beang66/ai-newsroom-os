@@ -1214,3 +1214,67 @@ small,
 .preview-frame {
   transform: none;
 }
+
+.flow-stale { color: #555; font-size: 13px; margin: 8px 0; }
+.flow-model { color: #666; font-size: 12px; margin-top: 12px; }
+.flow-model summary { cursor: pointer; }
+.flow-model p { overflow-wrap: anywhere; }
+[data-flow-message]:empty { display: none; }
+
+/* Version history is isolated from the writing area and external page CSS. */
+.version-panel { position:fixed; right:0; left:auto; top:0; bottom:0; width:min(380px,88vw); z-index:1100; background:#fff; color:#111; border-left:1px solid #ddd; box-shadow:-8px 0 24px #0002; padding:20px; box-sizing:border-box; overflow:auto; }
+.version-head,.version-controls { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.version-head strong { font-size:18px; }
+.version-head button { font-size:24px; }
+.version-hint,.version-panel p { font-size:13px; color:#666; }
+.version-list { display:grid; gap:8px; max-height:36vh; overflow:auto; margin:16px 0; }
+.version-list button { display:grid; gap:5px; text-align:left; padding:12px; background:#fff; border:1px solid #ddd; white-space:normal; }
+.version-list button.selected { border-color:#008689; background:#eff8f8; }
+.version-list time,.version-list span { font-size:12px; color:#666; }
+.version-list strong { font-size:14px; font-weight:500; }
+.version-reading { border-top:1px solid #ddd; padding-top:12px; }
+.version-reading h3 { font-size:16px; }
+.version-text { white-space:pre-wrap; font-size:14px; line-height:1.8; max-height:30vh; overflow:auto; }
+.version-reading [data-history-restore] { width:100%; margin-top:12px; }
+@media print { [data-history-host] { display:none!important; } }
+
+/* A selected version is a read-only comparison, never the active draft. */
+.history-draft { max-width:1000px; margin:28px auto; border:2px solid #008689; background:#f0faf6; box-sizing:border-box; padding:20px; }
+.history-draft-head { display:flex; gap:16px; justify-content:space-between; align-items:flex-start; padding-bottom:18px; border-bottom:1px solid #00868944; }
+.history-draft-head strong,.history-draft-head span { display:block; }
+.history-draft-head strong { color:#008689; font-size:16px; }
+.history-draft-head span { font-size:12px; color:#555; margin-top:6px; }
+.history-draft-head>div:last-child { display:flex; gap:8px; flex-wrap:wrap; }
+.history-draft-content { padding:20px 0; }
+.history-draft-content .body-editor { background:transparent; min-height:100px; padding:0; border:0; }
+.history-draft-content figure img { max-width:100%; height:auto; }
+.history-draft-content .subtitle-input { margin:20px 0; }
+:host([history-open]) [data-main] { margin-right:380px; }
+@media(max-width:900px) { :host([history-open]) [data-main] { margin-right:0; } .history-draft-head { flex-direction:column; } }
+@media print { .history-draft-head { display:none; } }
+
+/* Version actions stay with the selected item. */
+.version-list { max-height:none; overflow:visible; }
+.version-card { border:1px solid #ddd; background:#fff; }
+.version-card.selected,.version-card.applied { border-color:#008689; }
+.version-list .version-card>button { width:100%; border:0; margin:0; background:transparent; }
+.version-card-name { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; }
+.version-card-name span { color:#111; font-size:14px; }
+.version-card-name b { font-size:14px; color:#008689; }
+.version-card.selected { background:#eff8f8; }
+.version-card-actions { padding:0 12px 12px; display:grid; gap:8px; }
+.version-list .version-card-actions button { display:block; text-align:center; padding:10px; font-size:13px; }
+.version-list .version-card-actions button.primary { background:#008689; color:#fff; border-color:#008689; }
+.version-card-actions button:disabled { opacity:.4; cursor:default; }
+.history-draft.page { position:relative; border:0; box-shadow:inset 0 0 0 2px #008689; background:#edf8f4; padding:26px; }
+.history-version-label { display:flex; justify-content:flex-end; align-items:center; gap:10px; padding-bottom:16px; color:#008689; font-size:12px; }
+.history-version-label strong { font-size:15px; }
+.history-draft-content { padding:0; }
+.history-draft .editable { background:transparent; }
+.history-draft-content .subtitle-input { margin:0; }
+
+/* Tint the existing editor; keep its dimensions and controls in place. */
+.page.version-comparing { position:relative; background:#edf8f4; box-shadow:inset 0 0 0 2px #008689; }
+.version-comparing .editable,.version-comparing .body-editor { background:#edf8f4; }
+.history-inline-version { position:absolute; top:12px; right:20px; color:#008689; font-size:12px; pointer-events:none; }
+.version-card-name { justify-content:flex-start; }

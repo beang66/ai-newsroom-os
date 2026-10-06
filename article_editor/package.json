@@ -1,6 +1,6 @@
 {
   "name": "article-workspace",
-  "version": "14.0.0",
+  "version": "30.0.0",
   "private": true,
   "type": "module",
   "description": "Portable article editor with Donga preview and Unsplash photo editing",

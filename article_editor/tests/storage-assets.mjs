@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {prepareStorageDraft,collectImageData} from '../assets/storage-assets.js';
+const data='data:image/png;base64,'+Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.alloc(128000)]).toString('base64');
+const repeated=Math.ceil(148300000/(data.length+12));
+const draft={title:'사진 기사',bodyHtml:`<img src="${data}">`.repeat(repeated),photos:[{original:data,data,caption:'설명'}]};
+let uploads=0;const cache=new Map();const result=await prepareStorageDraft(draft,async()=>{uploads++;return '/api/article-assets/'+'a'.repeat(64)},cache);
+assert.equal(uploads,1);assert.equal(collectImageData(result.draft).size,0);assert.equal(draft.photos[0].original,data);assert.equal(result.draft.photos[0].caption,'설명');
+const before=new TextEncoder().encode(JSON.stringify(draft)).length,after=new TextEncoder().encode(JSON.stringify(result.draft)).length;
+assert.ok(before>=148300000);assert.ok(after<100000);await prepareStorageDraft(draft,async()=>{throw Error('중복 업로드')},cache);
+let tries=0;const failedCache=new Map();for(let i=0;i<2;i++)await assert.rejects(prepareStorageDraft({original:data},async()=>{tries++;throw Error('failed')},failedCache));assert.equal(tries,2);
+console.log(`Large draft ${ (before/1000000).toFixed(1)}MB -> ${(after/1000).toFixed(1)}KB, one image upload, original unchanged`);

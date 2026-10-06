@@ -8,3 +8,24 @@ node_modules/
 local_data/
 
 .article-workspace/
+
+# Generated model weights are shared as a separate bundle, not in GitHub.
+models/onnx/
+*.exporting/
+
+.onnx-env/
+
+# Separate portfolio/change archive and generated captures
+WORK_LOG*.md
+TEST_REPORT*.md
+VALIDATION*.md
+V[0-9]*_*.md
+SUBTITLE_UPDATE*.md
+SUMMARY_UPDATE*.md
+VERSION_HISTORY*.md
+PROMPT_PORTFOLIO_RECORD.md
+docs/history/
+docs/validation_v30/
+screenshots/
+change-records/
+*.log

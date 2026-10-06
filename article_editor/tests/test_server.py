@@ -18,6 +18,15 @@ class ServerTests(unittest.TestCase):
         try:
             with urllib.request.urlopen(req) as r:return r.status,r.read(),r.headers
         except urllib.error.HTTPError as e:return e.code,e.read(),e.headers
+    def test_connection_probe_no_manuscript_write(self):
+        status,raw,_=self.request('/api/connection-check',{'check':True})
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw)['postReady'],True)
+    def test_same_origin_referer_without_origin(self):
+        request=urllib.request.Request(self.base+'/api/connection-check',data=b'{"check":true}',headers={'Content-Type':'application/json','Referer':self.base+'/index.html'})
+        with urllib.request.urlopen(request) as response:self.assertEqual(response.status,200)
+    def test_null_origin_remains_rejected(self):
+        self.assertEqual(self.request('/api/connection-check',{'check':True},'null')[0],403)
     def test_static_assets(self):
         for path,mime in [('/','text/html'),('/assets/article-workspace.js','javascript'),('/assets/donga-fonts.css','text/css')]:
             status,raw,h=self.request(path);self.assertEqual(status,200);self.assertIn(mime,h['Content-Type']);self.assertGreater(len(raw),100)
@@ -31,7 +40,7 @@ class ServerTests(unittest.TestCase):
     def test_structured_schemas(self):
         def call(path,payload):
             schema=payload['text']['format']['schema'];self.assertEqual(schema['type'],'object');self.assertFalse(schema['additionalProperties']);field=schema['required'][0];self.assertIn(field,schema['properties'])
-            return {'output':[{'content':[{'type':'output_text','text':json.dumps({field:['후보1','후보2','후보3']})}]}]}
+            return {'output':[{'content':[{'type':'output_text','text':json.dumps({key:('부제 문구' if spec['type']=='string' else ['후보가','후보나','후보다']) for key,spec in schema['properties'].items()})}]}]}
         with patch.dict(os.environ,{'USE_LOCAL_MODELS':'false'}),patch.object(server,'openai_call',side_effect=call):
             for kind,requested in [('metadata','headline'),('metadata','subheadline'),('photo_keywords','')]:
                 status,raw,_=self.request('/api/assist',{'kind':kind,'requested':requested,'body':'가'*100});self.assertEqual(status,200);self.assertTrue(json.loads(raw))
@@ -48,13 +57,13 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(self.request('/api/unsplash/search?q=forest&page='+page)[0],400)
     def test_local_file_save_and_update(self):
         from pathlib import Path
-        with tempfile.TemporaryDirectory() as temp,patch.object(server,'ROOT',Path(temp)):
+        with tempfile.TemporaryDirectory() as temp,patch.object(server,'ROOT',Path(temp)),patch.object(server,'VERSION_STORE',server.SQLiteVersionStore(Path(temp)/'.article-workspace')):
             draft={'schemaVersion':3,'title':'원고','bodyHtml':'<p>내용</p>','confirmed':{'headline':True,'subheadline':False}}
             status,raw,_=self.request('/api/articles/save',{'draft':draft});self.assertEqual(status,200)
-            result=json.loads(raw);identifier=result['articleId'];target=Path(temp)/'.article-workspace'/'articles'/result['fileName']
-            self.assertTrue(target.exists());self.assertEqual(json.loads(target.read_text())['title'],'원고')
+            result=json.loads(raw);identifier=result['articleId'];target=Path(temp)/'.article-workspace'/result['fileName']
+            self.assertTrue(target.exists());self.assertEqual(server.VERSION_STORE.current(identifier)['title'],'원고')
             draft.update(articleId=identifier,title='수정 원고');self.assertEqual(self.request('/api/articles/save',{'draft':draft})[0],200)
-            self.assertEqual(len(list(target.parent.glob('*.json'))),1);self.assertEqual(json.loads(target.read_text())['title'],'수정 원고')
+            self.assertEqual(len(list(target.parent.glob('*.db'))),1);self.assertEqual(server.VERSION_STORE.current(identifier)['title'],'수정 원고')
             draft['articleId']='../../outside';self.assertEqual(self.request('/api/articles/save',{'draft':draft})[0],400)
     def test_summary_model_schema(self):
         def summarize(name,prompt,schema,text):

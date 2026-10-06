@@ -41,7 +41,7 @@ def main():
                 time.sleep(.1)
         if not ready:
             raise RuntimeError('서버를 여는 데 시간이 오래 걸립니다. 다시 실행해 주세요.')
-        print(f'새 기사 편집기 v14: {url}\n실행 폴더: {ROOT}\n이 창을 열어 둔 채 사용하세요. 종료하려면 Ctrl+C를 누르세요.', flush=True)
+        print(f'새 기사 편집기 v30: {url}\n실행 폴더: {ROOT}\n이 창을 열어 둔 채 사용하세요. 종료하려면 Ctrl+C를 누르세요.', flush=True)
         if '--check' in sys.argv:
             print('STARTUP CHECK PASSED', flush=True)
             return

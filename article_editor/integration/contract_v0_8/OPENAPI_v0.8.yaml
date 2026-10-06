@@ -1,0 +1,299 @@
+openapi: 3.1.0
+info:
+  title: AI-Newsroom OS Core Contract
+  version: 0.8.1
+  description: |
+    operationId가 canonical Core named method다. 최종 EXE는 pywebview IPC로 호출한다.
+    HTTP 경로는 브라우저 통합 테스트용 adapter이며 별도의 제품 계약이 아니다.
+servers:
+  - url: /api/core/v0.8
+security:
+  - bearerAuth: []
+paths:
+  /workspaces/{workspace_id}/articles/{article_id}:
+    get:
+      operationId: getArticle
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/ArticleId'}]
+      responses:
+        '200': {description: Article, content: {application/json: {schema: {$ref: '#/components/schemas/Article'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/articles/{article_id}/revisions:
+    post:
+      operationId: saveArticle
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/ArticleId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleRevisionInput'}}}}
+      responses:
+        '201': {description: Created revision, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleRevision'}}}}
+        '409': {$ref: '#/components/responses/RevisionConflict'}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/articles/{article_id}/snapshots:
+    post:
+      operationId: createSnapshot
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/ArticleId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [revision_id], properties: {revision_id: {$ref: '#/components/schemas/Uuid'}}}}}
+      responses:
+        '201': {description: Immutable snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleSnapshot'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/sources:
+    post:
+      operationId: createSource
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SourceInput'}}}}
+      responses:
+        '202': {description: Source created and ingest queued, content: {application/json: {schema: {$ref: '#/components/schemas/SourceAccepted'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/retrieval/search:
+    post:
+      operationId: searchEvidence
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: {type: string, minLength: 1}
+                article_id: {$ref: '#/components/schemas/Uuid'}
+                source_ids: {type: array, items: {$ref: '#/components/schemas/Uuid'}}
+                limit: {type: integer, minimum: 1, maximum: 50, default: 8}
+      responses:
+        '200': {description: Ranked chunks, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/EvidenceCandidate'}}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/snapshots/{snapshot_id}/verification-runs:
+    post:
+      operationId: verifySnapshot
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/SnapshotId'}]
+      requestBody:
+        content: {application/json: {schema: {type: object, properties: {source_ids: {type: array, items: {$ref: '#/components/schemas/Uuid'}}, options: {type: object, additionalProperties: true}}}}}
+      responses:
+        '202': {description: Verification queued, content: {application/json: {schema: {$ref: '#/components/schemas/VerificationAccepted'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/verification-runs/{run_id}:
+    get:
+      operationId: getVerificationRun
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/RunId'}]
+      responses:
+        '200': {description: Verification run, content: {application/json: {schema: {$ref: '#/components/schemas/VerificationRun'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/knowledge/map:
+    get:
+      operationId: getKnowledgeMap
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - {name: article_id, in: query, required: false, schema: {$ref: '#/components/schemas/Uuid'}}
+      responses:
+        '200': {description: Knowledge projection, content: {application/json: {schema: {$ref: '#/components/schemas/KnowledgeMap'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/snapshots/{snapshot_id}/platform-outputs:
+    post:
+      operationId: createPlatformOutput
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/SnapshotId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlatformOutputInput'}}}}
+      responses:
+        '202': {description: Conversion queued, content: {application/json: {schema: {$ref: '#/components/schemas/PlatformOutputAccepted'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    get:
+      operationId: listPlatformOutputs
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/SnapshotId'}]
+      responses:
+        '200': {description: Platform outputs, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/PlatformOutput'}}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/platform-outputs/{platform_output_id}:
+    get:
+      operationId: getPlatformOutput
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/PlatformOutputId'}]
+      responses:
+        '200': {description: Platform output, content: {application/json: {schema: {$ref: '#/components/schemas/PlatformOutput'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/transcripts:
+    post:
+      operationId: transcribeMedia
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [media_asset_id], properties: {media_asset_id: {$ref: '#/components/schemas/Uuid'}, language: {type: string}}}}}
+      responses:
+        '202': {description: Transcription queued, content: {application/json: {schema: {$ref: '#/components/schemas/TranscriptAccepted'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/transcripts/{transcript_id}:
+    get:
+      operationId: getTranscript
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/TranscriptId'}]
+      responses:
+        '200': {description: Transcript, content: {application/json: {schema: {$ref: '#/components/schemas/Transcript'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/media-assets:
+    post:
+      operationId: registerMediaAsset
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MediaAssetInput'}}}}
+      responses:
+        '201': {description: Registered media asset, content: {application/json: {schema: {$ref: '#/components/schemas/MediaAsset'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/media-assets/{media_asset_id}:
+    get:
+      operationId: getMediaAsset
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/MediaAssetId'}]
+      responses:
+        '200': {description: Media asset, content: {application/json: {schema: {$ref: '#/components/schemas/MediaAsset'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/jobs/{job_id}:
+    get:
+      operationId: getJob
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/JobId'}]
+      responses:
+        '200': {description: Job state, content: {application/json: {schema: {$ref: '#/components/schemas/ProcessingJob'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /workspaces/{workspace_id}/jobs/{job_id}/cancel:
+    post:
+      operationId: cancelJob
+      parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/JobId'}]
+      responses:
+        '200': {description: Cancelled job, content: {application/json: {schema: {$ref: '#/components/schemas/ProcessingJob'}}}}
+        '409': {description: Job already terminal, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+        default: {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    WorkspaceId: {name: workspace_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    ArticleId: {name: article_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    SnapshotId: {name: snapshot_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    RunId: {name: run_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    JobId: {name: job_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    TranscriptId: {name: transcript_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    MediaAssetId: {name: media_asset_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+    PlatformOutputId: {name: platform_output_id, in: path, required: true, schema: {$ref: '#/components/schemas/Uuid'}}
+  responses:
+    Error: {description: Common error, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+    RevisionConflict: {description: Revision conflict, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}}
+  schemas:
+    Uuid: {type: string, format: uuid}
+    LifecycleStatus: {type: string, enum: [queued, running, succeeded, failed, cancelled]}
+    ArticleStatus: {type: string, enum: [draft, review, published, archived]}
+    JobType: {type: string, enum: [source_ingest, verification, transcription, platform_generation, media_render]}
+    Article:
+      type: object
+      required: [id, workspace_id, title, status]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, workspace_id: {$ref: '#/components/schemas/Uuid'}, title: {type: string}, status: {$ref: '#/components/schemas/ArticleStatus'}, current_revision_id: {$ref: '#/components/schemas/Uuid'}, legacy_id: {type: string}}
+    ArticleRevisionInput:
+      type: object
+      required: [title, body_html]
+      properties: {title: {type: string}, body_html: {type: string}, body_text: {type: string}, editor_state: {type: object, additionalProperties: true}, expected_revision_no: {type: integer, minimum: 0, description: Mismatch returns HTTP 409 in the HTTP adapter}}
+    ArticleRevision:
+      allOf:
+        - {$ref: '#/components/schemas/ArticleRevisionInput'}
+        - {type: object, required: [id, article_id, revision_no, created_at], properties: {id: {$ref: '#/components/schemas/Uuid'}, article_id: {$ref: '#/components/schemas/Uuid'}, revision_no: {type: integer, minimum: 1}, created_at: {type: string, format: date-time}}}
+    ArticleSnapshot:
+      type: object
+      required: [id, article_id, revision_id, content_hash, title, body_html, created_at]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, article_id: {$ref: '#/components/schemas/Uuid'}, revision_id: {$ref: '#/components/schemas/Uuid'}, content_hash: {type: string}, title: {type: string}, body_html: {type: string}, body_text: {type: string}, created_at: {type: string, format: date-time}}
+    ReportingProject:
+      type: object
+      required: [id, workspace_id, name]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, workspace_id: {$ref: '#/components/schemas/Uuid'}, name: {type: string}}
+    ArticleSource:
+      type: object
+      required: [article_id, source_id, role]
+      properties: {article_id: {$ref: '#/components/schemas/Uuid'}, source_id: {$ref: '#/components/schemas/Uuid'}, role: {type: string, enum: [primary, supporting, background]}}
+    SourceInput:
+      type: object
+      required: [kind, title]
+      properties: {kind: {type: string, enum: [upload, url, note, external]}, title: {type: string}, origin_uri: {type: string}, storage_ref: {type: string}, metadata: {type: object, additionalProperties: true}}
+    SourceAccepted:
+      type: object
+      required: [source_id, job_id, status]
+      properties: {source_id: {$ref: '#/components/schemas/Uuid'}, job_id: {$ref: '#/components/schemas/Uuid'}, status: {type: string, enum: [queued, running]}}
+    EvidenceCandidate:
+      type: object
+      required: [source_id, chunk_id, excerpt, locator, retrieval_score]
+      properties: {source_id: {$ref: '#/components/schemas/Uuid'}, chunk_id: {$ref: '#/components/schemas/Uuid'}, source_version: {type: string}, excerpt: {type: string}, locator: {type: object, additionalProperties: true}, start_offset: {type: integer, minimum: 0}, end_offset: {type: integer, minimum: 0}, retrieval_score: {type: number, description: Ranking relevance only; never probability of truth}}
+    Claim:
+      type: object
+      required: [id, snapshot_id, ordinal, text, start_offset, end_offset]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, snapshot_id: {$ref: '#/components/schemas/Uuid'}, ordinal: {type: integer, minimum: 1}, text: {type: string}, start_offset: {type: integer, minimum: 0}, end_offset: {type: integer, minimum: 0}}
+    EvidenceLink:
+      type: object
+      required: [id, claim_id, relation]
+      description: source_chunk_id와 transcript_segment_id 중 하나만 사용하며 unresolved는 둘 다 생략할 수 있다.
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, claim_id: {$ref: '#/components/schemas/Uuid'}, source_chunk_id: {$ref: '#/components/schemas/Uuid'}, transcript_segment_id: {$ref: '#/components/schemas/Uuid'}, relation: {type: string, enum: [support, contradict, context, unresolved]}, retrieval_score: {type: number}}
+    VerificationIssue:
+      type: object
+      required: [id, verification_run_id, category, severity, message]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, verification_run_id: {$ref: '#/components/schemas/Uuid'}, claim_id: {$ref: '#/components/schemas/Uuid'}, category: {type: string, enum: [evidence_gap, factual_conflict, attribution_error, numeric_error, legal_risk, style]}, severity: {type: string, enum: [info, warning, error]}, message: {type: string}}
+    VerificationRun:
+      type: object
+      required: [id, snapshot_id, status, claims, evidence_links, issues]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, snapshot_id: {$ref: '#/components/schemas/Uuid'}, status: {$ref: '#/components/schemas/LifecycleStatus'}, claims: {type: array, items: {$ref: '#/components/schemas/Uuid'}}, evidence_links: {type: array, items: {$ref: '#/components/schemas/Uuid'}}, issues: {type: array, items: {$ref: '#/components/schemas/Uuid'}}}
+    VerificationAccepted:
+      type: object
+      required: [run_id, job_id, status]
+      properties: {run_id: {$ref: '#/components/schemas/Uuid'}, job_id: {$ref: '#/components/schemas/Uuid'}, status: {type: string, enum: [queued, running]}}
+    VerificationSource:
+      type: object
+      required: [verification_run_id, source_id]
+      properties: {verification_run_id: {$ref: '#/components/schemas/Uuid'}, source_id: {$ref: '#/components/schemas/Uuid'}}
+    PlatformOutputInput:
+      type: object
+      required: [platform, format]
+      properties: {platform: {type: string, enum: [instagram, threads, blog]}, format: {type: string}, template_version: {type: string}, selected_keywords: {type: array, items: {type: string}}, requirements: {type: array, items: {type: string}}}
+    PlatformOutput:
+      type: object
+      required: [id, snapshot_id, platform, format, status, created_at]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, snapshot_id: {$ref: '#/components/schemas/Uuid'}, platform: {type: string, enum: [instagram, threads, blog]}, format: {type: string}, template_version: {type: string}, content: {type: object, additionalProperties: true}, artifact_media_asset_ids: {type: array, items: {$ref: '#/components/schemas/Uuid'}}, status: {$ref: '#/components/schemas/LifecycleStatus'}, created_at: {type: string, format: date-time}}
+    PlatformOutputAccepted:
+      type: object
+      required: [platform_output_id, job_id, status]
+      properties: {platform_output_id: {$ref: '#/components/schemas/Uuid'}, job_id: {$ref: '#/components/schemas/Uuid'}, status: {type: string, enum: [queued, running]}}
+    MediaAssetInput:
+      type: object
+      required: [kind, object_ref, mime_type]
+      properties: {kind: {type: string, enum: [image, video, audio, document]}, object_ref: {type: string}, mime_type: {type: string}, filename: {type: string}, byte_size: {type: integer, minimum: 0}, caption: {type: string}, generated: {type: boolean, default: false}}
+    MediaAsset:
+      allOf:
+        - {$ref: '#/components/schemas/MediaAssetInput'}
+        - {type: object, required: [id, workspace_id, created_at], properties: {id: {$ref: '#/components/schemas/Uuid'}, workspace_id: {$ref: '#/components/schemas/Uuid'}, local_uri: {type: string}, shared_object_ref: {type: string}, created_at: {type: string, format: date-time}}}
+    TranscriptSegment:
+      type: object
+      required: [id, transcript_id, ordinal, text, start_ms, end_ms]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, transcript_id: {$ref: '#/components/schemas/Uuid'}, ordinal: {type: integer, minimum: 1}, speaker: {type: string}, text: {type: string}, start_ms: {type: integer, minimum: 0}, end_ms: {type: integer, minimum: 0}}
+    Transcript:
+      type: object
+      required: [id, workspace_id, media_asset_id, status, segments, created_at]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, workspace_id: {$ref: '#/components/schemas/Uuid'}, media_asset_id: {$ref: '#/components/schemas/Uuid'}, status: {$ref: '#/components/schemas/LifecycleStatus'}, language: {type: string}, text: {type: string}, segments: {type: array, items: {$ref: '#/components/schemas/TranscriptSegment'}}, created_at: {type: string, format: date-time}}
+    TranscriptAccepted:
+      type: object
+      required: [transcript_id, job_id, status]
+      properties: {transcript_id: {$ref: '#/components/schemas/Uuid'}, job_id: {$ref: '#/components/schemas/Uuid'}, status: {type: string, enum: [queued, running]}}
+    KnowledgeEntity:
+      type: object
+      required: [id, workspace_id, type, name]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, workspace_id: {$ref: '#/components/schemas/Uuid'}, type: {type: string, enum: [person, organization, place, event, topic, other]}, name: {type: string}}
+    KnowledgeEdge:
+      type: object
+      required: [id, from_entity_id, to_entity_id, relation]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, from_entity_id: {$ref: '#/components/schemas/Uuid'}, to_entity_id: {$ref: '#/components/schemas/Uuid'}, relation: {type: string}, evidence_link_ids: {type: array, items: {$ref: '#/components/schemas/Uuid'}}}
+    KnowledgeMap:
+      type: object
+      required: [entities, edges]
+      properties: {entities: {type: array, items: {$ref: '#/components/schemas/KnowledgeEntity'}}, edges: {type: array, items: {$ref: '#/components/schemas/KnowledgeEdge'}}}
+    JobReference:
+      type: object
+      required: [resource_type, resource_id]
+      properties: {resource_type: {type: string, enum: [source, snapshot, verification_run, transcript, platform_output, media_asset]}, resource_id: {$ref: '#/components/schemas/Uuid'}}
+    ProcessingJob:
+      type: object
+      required: [id, workspace_id, type, status, input_ref, output_ref, created_at]
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, workspace_id: {$ref: '#/components/schemas/Uuid'}, type: {$ref: '#/components/schemas/JobType'}, status: {$ref: '#/components/schemas/LifecycleStatus'}, progress: {type: number, minimum: 0, maximum: 1}, input_ref: {$ref: '#/components/schemas/JobReference'}, output_ref: {$ref: '#/components/schemas/JobReference'}, error: {$ref: '#/components/schemas/ErrorBody'}, created_at: {type: string, format: date-time}, started_at: {type: string, format: date-time}, completed_at: {type: string, format: date-time}}
+    ErrorBody:
+      type: object
+      required: [code, message, retryable]
+      properties: {code: {type: string}, message: {type: string}, retryable: {type: boolean}, details: {type: object, additionalProperties: true}, request_id: {type: string}}
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties: {error: {$ref: '#/components/schemas/ErrorBody'}}

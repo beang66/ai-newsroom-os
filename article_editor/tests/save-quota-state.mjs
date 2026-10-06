@@ -1,0 +1,18 @@
+import {prepareStorageDraft} from "../assets/storage-assets.js";
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+const src=fs.readFileSync(new URL('../assets/article-workspace.js',import.meta.url),'utf8');
+const methods=src.slice(src.indexOf('  async persistArticle()'),src.indexOf('  showCandidates(type)'));
+const C=vm.runInNewContext('class W { '+methods+' }; W',{clearTimeout,setTimeout,Date,stored:async()=>{throw Error('QuotaExceededError')},CustomEvent:class{}});
+const c=new C();c.state={bodyHtml:'원고'};c.editRevision=1;c.getAttribute=()=>'';c.capture=()=>{};c.dispatchEvent=()=>{};c.notice=()=>{};
+Object.defineProperty(c,'value',{get(){return structuredClone(c.state)}});
+let versionWritten=false;c.api=async(path)=>{if(path==='/api/articles/save')return{articleId:'a'.repeat(32)};versionWritten=true;return{created:true,version:{contentHash:'hash'}}};
+await c.saveVersion('manual');assert.equal(c.browserSaveWarning,true);assert.equal(versionWritten,true);assert.equal(c.savedRevision,1);assert.equal(c.diskSavePromise,null);
+const E=vm.runInNewContext('class W { '+src.slice(src.indexOf('  async api('),src.indexOf('  capture()'))+' }; W',{prepareStorageDraft,TextEncoder,AbortController,setTimeout,clearTimeout,transportFetch:async()=>({ok:false,status:404,json:async()=>({error:'지원하지 않는 경로입니다.'})})});
+const e=new E();e.getAttribute=()=>'';e.controller={signal:undefined};await assert.rejects(e.api('/api/articles/a/versions',{}),/이전 실행 창을 닫고/);
+console.log('Quota independence and old server error checks passed');
+const N=vm.runInNewContext('class W { '+src.slice(src.indexOf('  async api('),src.indexOf('  capture()'))+' }; W',{prepareStorageDraft,TextEncoder,AbortController,setTimeout,clearTimeout,transportFetch:async()=>{throw TypeError('Failed to fetch')},location:{origin:'http://127.0.0.1:8877'}});
+const n=new N();n.getAttribute=()=>'';n.controller={signal:undefined};await assert.rejects(n.api('/api/articles/save',{}),/원고 저장: 상태 조회 또는 저장 요청 연결이 끊겼습니다/);
+console.log('Network failure message checks passed');
+const P=vm.runInNewContext('class W { '+src.slice(src.indexOf('  async api('),src.indexOf('  capture()'))+' }; W',{prepareStorageDraft,TextEncoder,AbortController,setTimeout,clearTimeout,transportFetch:async(path)=>path.endsWith('/api/status')?{ok:true,json:async()=>({version_history_ready:true,workspace_version:'22'})}:path.endsWith('/api/connection-check')?{ok:true}:Promise.reject(TypeError('Failed to fetch'))});
+const p=new P();p.getAttribute=()=>'';p.controller={signal:undefined};await assert.rejects(p.api('/api/articles/save',{draft:{bodyHtml:'원고'}}),/실제 원고 전송/);
+console.log('Healthy GET and small POST versus failed manuscript checks passed');

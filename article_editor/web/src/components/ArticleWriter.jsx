@@ -1007,7 +1007,8 @@ function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, r
   let cursor = 0;
   ranges.forEach((x, i) => {
     parts.push(value.slice(cursor, x.start));
-    parts.push(<mark key={i} data-key={x.key} className={`${MARK[x.verdict]} text-transparent rounded-sm`} title={MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
+    parts.push(<mark key={i} data-key={x.key} className={`${MARK[x.verdict]} text-transparent rounded-sm`}
+      style={x.key && hover?.key === x.key ? { outline: "2px solid rgb(15 23 42 / 0.75)", outlineOffset: 1 } : undefined} title={MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
     cursor = x.end;
   });
   parts.push(value.slice(cursor) + "\n"); // 마지막 줄바꿈도 높이를 맞춘다

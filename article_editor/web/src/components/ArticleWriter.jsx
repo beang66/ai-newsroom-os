@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
 // 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
-import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useFactCheck } from "./EditorialAssist";
+import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useFactCheck, useBodyChunks } from "./EditorialAssist";
 import { 
   Sparkles, 
   Search, 
@@ -50,6 +50,8 @@ export default function ArticleWriter({
   // 팩트체크 — 글쓰기가 멈추면 자동 실행. 서랍을 닫아도 본문 하이라이트가 남도록 여기에 둔다
   const factCheck = useFactCheck(article);
   const factIssues = factCheck.results.filter((r) => r.verdict !== "SUPPORTED").length;
+  // 본문 청크 밑줄(개발 실행에서만 버튼이 보인다) — 청킹 모델이 본문을 어떻게 나누는지 확인용
+  const bodyChunks = useBodyChunks(article.content);
 
   // 2. 미리보기 플랫폼 탭: 'donga' (동아일보 공식 웹) | 'naver' (네이버 뉴스 포털)
   const [previewPlatform, setPreviewPlatform] = useState("donga");
@@ -232,6 +234,15 @@ export default function ArticleWriter({
             <span className={`text-[11px] font-bold ${factIssues ? "text-rose-600" : "text-emerald-600"}`} data-testid="factcheck-status">
               {factCheck.busy ? "팩트체크 중…" : factIssues ? `확인 필요 ${factIssues}문장` : "팩트체크 통과"}
             </span>
+          )}
+          {bodyChunks.dev && (
+            <button
+              onClick={() => bodyChunks.setShow(!bodyChunks.show)}
+              title={bodyChunks.error || "청킹 모델이 본문을 나눈 단위를 청크마다 다른 색 밑줄로 표시(개발 모드)"}
+              className={`text-[11px] font-bold px-2.5 py-1 rounded-full border cursor-pointer ${bodyChunks.show ? "bg-blue-600 text-white border-blue-600" : "text-slate-500 border-slate-300"}`}
+            >
+              청크 밑줄{bodyChunks.show && bodyChunks.chunks ? ` ${bodyChunks.chunks.length}개` : ""}
+            </button>
           )}
           {/* 뷰 모드 전환 탭 (레퍼런스 이미지 스타일 알약 캡슐) */}
           <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-full border border-[#DDD6CB]/80 shadow-inner">
@@ -527,6 +538,7 @@ export default function ArticleWriter({
                 value={article.content}
                 onChange={(content) => setArticle({ ...article, content })}
                 results={factCheck.results}
+                chunks={bodyChunks.chunks}
               />
             </div>
 
@@ -973,7 +985,10 @@ const MARK = {
 };
 const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요", EXTERNAL_REQUIRED: "검토 필요" };
 
-function HighlightedBody({ value, onChange, results }) {
+// 청크 밑줄(개발 모드) — 이웃 청크끼리 색이 겹치지 않게 돌려 쓴다
+const CHUNK_COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2"];
+
+function HighlightedBody({ value, onChange, results, chunks = null }) {
   const ranges = useMemo(() => {
     const out = results
       .filter((r) => MARK[r.verdict] && r.start >= 0 && value.slice(r.start, r.start + r.claimText.length) === r.claimText)
@@ -999,6 +1014,21 @@ function HighlightedBody({ value, onChange, results }) {
       <div aria-hidden="true" data-testid="fact-highlight" className={`${box} text-transparent border-transparent pointer-events-none`}>
         {parts}
       </div>
+      {chunks && (
+        <div aria-hidden="true" data-testid="chunk-underline" className={`${box} absolute inset-0 text-transparent border-transparent pointer-events-none`}>
+          {chunks.filter((c) => c.end <= value.length).reduce((acc, c, i, list) => {
+            const prev = i ? list[i - 1].end : 0;
+            acc.push(value.slice(prev, c.start));
+            acc.push(
+              <span key={i} style={{ textDecoration: `underline 2px ${CHUNK_COLORS[i % CHUNK_COLORS.length]}`, textUnderlineOffset: "5px" }}>
+                {value.slice(c.start, c.end)}
+              </span>
+            );
+            if (i === list.length - 1) acc.push(value.slice(c.end));
+            return acc;
+          }, [])}
+        </div>
+      )}
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}

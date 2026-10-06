@@ -100,10 +100,32 @@ export async function sourceChunks(text) {
   return (await core.semanticParse((text || "").replace(/\s+/g, " ").trim())).units || [];
 }
 
+/** 기사 본문을 같은 청킹 모델로 나눠 원문 위치로 → [{start, end, kind, field}] (개발 모드 밑줄용).
+ *  청크 글자는 공백 정리본 기준이라, 정리본 → 원문 위치 표로 되돌린다. 원문에서 못 찾은 청크는 건너뛴다 */
+export async function bodyChunks(content) {
+  let clean = "";
+  const map = [];
+  for (let i = 0; i < (content || "").length; i += 1) {
+    if (/\s/.test(content[i])) {
+      if (!clean || clean.endsWith(" ")) continue;
+      clean += " ";
+    } else clean += content[i];
+    map.push(i);
+  }
+  const units = await sourceChunks(content);
+  const out = [];
+  let cursor = 0;
+  for (const u of units) {
+    const at = clean.indexOf(u.text, cursor);
+    if (at < 0 || !u.text) continue;
+    out.push({ start: map[at], end: map[at + u.text.length - 1] + 1, kind: u.kind, field: u.field });
+    cursor = at + u.text.length;
+  }
+  return out;
+}
+
 const VERDICT = { SUPPORTED: "verified", CONFLICT: "conflict" };
 
-/** 기사 문장을 등록 자료(텍스트)에 비춰 팩트체크 → 팩트체크 서랍 카드 목록
- *  files: [{ id, name, text }] */
 /** 본문 → 문장 [{raw, start, end, text(공백 정리), map(정리된 글자 → 원문 위치)}].
  *  마침표·물음표·느낌표에서 나눈다. PDF 에서 붙여 넣은 글은 문장 중간에 줄바꿈이 있으므로 줄바꿈은 공백으로 보고,
  *  빈 줄은 제목줄(줄바꿈 없는 40자 미만 한 줄) 뒤에서만 문장을 끊는다. 10자 미만 조각은 검증하지 않는다. */
@@ -140,15 +162,22 @@ export function splitSentences(content) {
   return out;
 }
 
-export async function factcheckArticle(content, files) {
-  // 문장마다 본문 위치를 기억해 두면 결과를 원고에 하이라이트할 수 있다
+/** 기사 문장을 등록 자료(텍스트)에 비춰 팩트체크 → 팩트체크 서랍 카드 목록. files: [{ id, name, text }]
+ *  cache(Map: 공백 정리된 문장 → 코어 결과)를 주면 **이미 검증한 문장은 다시 보내지 않는다** — 새로 쓰거나 고친 문장만.
+ *  자료가 바뀌면 cache 를 비워야 한다(useFactCheck). */
+export async function factcheckArticle(content, files, cache = new Map()) {
+  // 문장마다 본문 위치를 기억해 두면 결과를 원고에 하이라이트할 수 있다(위치는 매번 새로 — 앞 문장이 바뀌면 밀린다)
   const nodes = splitSentences(content).slice(0, 200).map((s, i) => ({ ...s, id: `s${i + 1}` }));
   if (!nodes.length) throw Error("검증할 본문 문장이 없어요. 본문을 먼저 작성해 주세요.");
-  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
-  const materials = files.map((f) => ({ id: f.id, title: f.name, content: f.text }));
-  const d = await core.factcheckRun(nodes.map((n) => ({ id: n.id, type: "TEXT", text: n.text })), materials);
-  return (d.results || []).map((r) => {
-    const node = byId[r.node_id] || {};
+  const todo = [...new Map(nodes.filter((n) => !cache.has(n.text)).map((n) => [n.text, n])).values()];
+  if (todo.length) {
+    const materials = files.map((f) => ({ id: f.id, title: f.name, content: f.text }));
+    const d = await core.factcheckRun(todo.map((n) => ({ id: n.id, type: "TEXT", text: n.text })), materials);
+    const byId = Object.fromEntries(todo.map((n) => [n.id, n]));
+    for (const r of d.results || []) if (byId[r.node_id]) cache.set(byId[r.node_id].text, r);
+  }
+  return nodes.filter((n) => cache.has(n.text)).map((node) => {
+    const r = cache.get(node.text);
     // 틀린 값 위치(코어 conflict_spans/focus_spans, 공백 정리된 문장 기준) → 원문 위치로 되돌린다
     const spans = node.text === r.claim
       ? (r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || [])
@@ -156,9 +185,9 @@ export async function factcheckArticle(content, files) {
         .map((x) => ({ start: node.map[x.claim_start], end: node.map[x.claim_end - 1] + 1 }))
       : [];
     return {
-      id: r.node_id,
-      claimText: node.raw ?? r.claim,
-      start: node.start ?? -1,
+      id: node.id,
+      claimText: node.raw,
+      start: node.start,
       spans,
       verdict: r.status, // SUPPORTED | CONFLICT | EVIDENCE_GAP | REVIEW …
       status: VERDICT[r.status] || "unverified",

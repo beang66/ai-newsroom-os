@@ -12,26 +12,31 @@ import {
   saveDraft,
   factcheckArticle,
   splitSentences,
+  isDevMode,
+  bodyChunks,
 } from "../api/editorial";
 
 /** 팩트체크 — 본문·취재자료가 바뀌고 1.5초 멈추면 자동으로 돈다(옛 UI 의 '작성 멈춤 감지').
- *  실행 중에 또 바뀌면 끝난 뒤 한 번 더 — 요청이 겹치지 않는다. 바뀌지 않은 문장은 코어 캐시로 빠르다.
- *  → { results, busy, error, run } (run = 지금 바로 다시 검증) */
+ *  실행 중에 또 바뀌면 끝난 뒤 한 번 더 — 요청이 겹치지 않는다.
+ *  이미 검증한 문장은 결과를 기억해 두고 **새로 쓰거나 고친 문장만** 코어에 보낸다. 취재자료가 바뀌면 기억을 비운다.
+ *  → { results, busy, error, run } (run(true) = 기억을 비우고 전체 다시 검증 — 서랍의 새로고침 버튼) */
 export function useFactCheck(article) {
   const [results, setResults] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const latest = useRef(article);
   latest.current = article;
-  const state = useRef({ running: false, again: false });
+  const state = useRef({ running: false, again: false, cacheKey: "", cache: new Map() });
 
-  const run = useCallback(async () => {
+  const run = useCallback(async (fresh = false) => {
     if (state.current.running) {
       state.current.again = true;
       return;
     }
     const { content, sources = [] } = latest.current;
     const materials = sources.filter((s) => s.text != null);
+    const key = materials.map((s) => s.id).join();
+    if (fresh === true || key !== state.current.cacheKey) state.current = { ...state.current, cacheKey: key, cache: new Map() };
     if (!materials.length) return setError("검증에 쓸 자료(PDF·HWP·HWPX·DOCX·TXT)를 올려 주세요.");
     if (!splitSentences(content).length) {
       setResults([]);
@@ -41,7 +46,7 @@ export function useFactCheck(article) {
     setBusy(true);
     setError("");
     try {
-      setResults(await factcheckArticle(content, materials));
+      setResults(await factcheckArticle(content, materials, state.current.cache));
     } catch (e) {
       setError(e?.message || String(e));
     } finally {
@@ -62,6 +67,32 @@ export function useFactCheck(article) {
   }, [article.content, sourceKey, run]);
 
   return { results, busy, error, run };
+}
+
+/** 본문 청크 밑줄(개발 실행에서만) — 켜 두면 본문이 바뀌고 0.8초 뒤 청킹 모델로 다시 나눈다.
+ *  → { dev, show, setShow, chunks([{start,end,kind,field}] | null), error } */
+export function useBodyChunks(content) {
+  const [dev, setDev] = useState(false);
+  const [show, setShow] = useState(false);
+  const [chunks, setChunks] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    isDevMode().then(setDev).catch(() => setDev(false));
+  }, []);
+  useEffect(() => {
+    if (!show) return setChunks(null);
+    let alive = true;
+    const timer = setTimeout(() => {
+      bodyChunks(content)
+        .then((c) => alive && (setChunks(c), setError("")))
+        .catch((e) => alive && setError(e?.message || String(e)));
+    }, 800);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [show, content]);
+  return { dev, show, setShow, chunks, error };
 }
 
 const MIN_BODY = 20; // 코어 assist 하한(본문 20자)

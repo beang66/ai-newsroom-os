@@ -156,6 +156,16 @@ try {
   // 판정 결과(일치/불일치/검토 필요)는 엔진 몫 — 화면은 문장별 카드가 나오는지만 본다
   if (factcheckReady) await page.getByText(/전체 [1-9][0-9]*개 문장 검증/).waitFor({ timeout: 180_000 });
   else await page.getByTestId("factcheck-error").getByText("설치").waitFor();
+  // 이미 검증한 문장은 다시 보내지 않는다 — 문장 하나를 덧붙이면 그 문장만 코어로
+  if (factcheckReady) {
+    const next = page.waitForRequest((r) => r.url().endsWith("/api/factcheck/run"), { timeout: 15_000 });
+    await body.fill((await body.inputValue()) + " 고친 문장을 하나 더 씁니다.");
+    assert.deepEqual(JSON.parse((await next).postData()).nodes.map((n) => n.text), ["고친 문장을 하나 더 씁니다."]);
+  }
+  // 개발 실행이면 본문 청크 밑줄을 켤 수 있다
+  await page.getByRole("button", { name: /청크 밑줄/ }).click();
+  await page.getByTestId("chunk-underline").locator("span").first().waitFor({ state: "attached" });
+  await page.getByRole("button", { name: /청크 밑줄/ }).click();
   // 등록한 자료 이름을 누르면 추출 본문을 볼 수 있다
   await page.getByRole("button", { name: "자료.txt" }).click();
   await page.getByRole("dialog", { name: "취재자료 보기" }).getByText("스모크 테스트 본문입니다.").waitFor();

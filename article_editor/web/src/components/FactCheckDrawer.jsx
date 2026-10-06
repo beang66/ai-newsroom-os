@@ -261,9 +261,9 @@ export default function FactCheckDrawer({
                 {checkError && <p className="text-[11px] text-rose-600 mt-1" data-testid="factcheck-error">{checkError}</p>}
               </div>
               <button
-                onClick={() => runCheck()}
+                onClick={() => runCheck(true)}
                 disabled={isAnalyzing}
-                title="본문을 고친 뒤 다시 검증"
+                title="전체 문장 다시 검증(평소에는 고친 문장만 자동으로 검증)"
                 className="p-1.5 text-slate-500 hover:text-slate-900 rounded-full cursor-pointer disabled:opacity-40"
               >
                 <RefreshCw className={`w-4 h-4 ${isAnalyzing ? "animate-spin" : ""}`} />

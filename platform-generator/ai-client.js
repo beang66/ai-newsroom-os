@@ -1,5 +1,6 @@
+// Gemini/OpenAI 공통 어댑터 연결. OpenAI 변수 이름은 기존 코드와의 호환을 위해 유지합니다.
 const path = require("path");
-const OpenAI = require("openai");
+const OpenAI = require("./ai-provider");
 
 require("dotenv").config({
   path: path.join(__dirname, ".env"),
@@ -32,18 +33,18 @@ const keywordSchema = {
 };
 
 async function suggestKeywords(article) {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!OpenAI.apiKey) {
     throw new Error("OPENAI_API_KEY가 설정되지 않았습니다.");
   }
 
   const client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY.trim(),
+    apiKey: OpenAI.apiKey.trim(),
     timeout: 120000,
     maxRetries: 0,
   });
 
   const response = await client.responses.create({
-    model: process.env.OPENAI_MODEL || "gpt-5",
+    model: OpenAI.model || "gpt-5",
     store: false,
     max_output_tokens: 5000,
 

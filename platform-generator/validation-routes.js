@@ -79,9 +79,9 @@ module.exports = function registerValidationRoutes(app) {
 
       const status = Number(error.status);
 
-      const message =
+      const message = error.provider === "gemini" ? error.message :
         status === 401
-          ? "OpenAI API 키를 확인해주세요."
+          ? "AI API 키를 확인해주세요."
           : status === 429
           ? "API 사용 한도 또는 요청 제한을 확인해주세요."
           : status === 403 || status === 404

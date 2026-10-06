@@ -1,24 +1,27 @@
+// 일괄 생성은 선택한 Threads·Blog와 추가 카드뉴스를 처리합니다.
+// 카드뉴스 체크가 없으면 기존 카드를 보존합니다. 체크하면 새 초안으로 교체합니다.
 (() => {
   const get = (id) => document.getElementById(id);
 
   if (
     !window.NewsInput ||
     !window.CardEditor ||
-    !window.TextEditor
+    !window.TextEditor ||
+    !window.NewsApi
   ) {
     console.error("일괄 생성 연결: script 순서를 확인해주세요.");
     return;
   }
 
-  const instagramButton = get("generate-instagram");
+  const cardButton = get("generate-instagram");
 
-  if (!instagramButton) {
-    console.error("Instagram 생성 버튼을 찾지 못했습니다.");
+  if (!cardButton) {
+    console.error("카드뉴스 생성 버튼을 찾지 못했습니다.");
     return;
   }
 
   const names = {
-    instagram: "Instagram",
+    card_news: "카드뉴스",
     threads: "Threads",
     blog: "Blog",
   };
@@ -30,13 +33,13 @@
   const button = document.createElement("button");
   button.id = "generate-selected";
   button.className = "dark";
-  button.textContent = "선택한 플랫폼 생성";
+  button.textContent = "선택한 항목 생성";
   button.style.width = "100%";
 
   const notice = document.createElement("p");
   notice.className = "notice";
   notice.textContent =
-    "체크한 플랫폼을 모두 생성합니다. 해당 플랫폼의 기존 초안이 교체되므로 보관할 내용은 먼저 저장해주세요.";
+    "선택한 Threads·Blog 원고와 추가 카드뉴스를 생성합니다. 체크한 결과물은 새 초안으로 교체됩니다. 보관할 내용은 먼저 저장해주세요.";
 
   const status = document.createElement("p");
   status.className = "notice";
@@ -47,15 +50,13 @@
   box.append(button, notice, status);
 
   // 기존 개별 생성 버튼 위에 배치
-  instagramButton.parentElement.before(box);
+  get("card-news-options").after(box);
 
-  const platformNotice = document.querySelector(
-    ".left .panel > .notice"
-  );
+  const platformNotice = document.getElementById("platform-notice");
 
   if (platformNotice) {
     platformNotice.textContent =
-      "체크박스로 생성할 플랫폼을 선택하고, 가운데 위의 버튼으로 결과를 전환합니다.";
+      "플랫폼 원고와 추가 카드뉴스를 선택하세요. Instagram용 카드는 카드뉴스도 생성을 체크해 제작합니다.";
   }
 
   let busy = false;
@@ -64,7 +65,7 @@
     if (busy) return;
 
     const otherGenerationButtons = [
-      instagramButton,
+      cardButton,
       ...document.querySelectorAll(".text-generate-tools button"),
     ];
 
@@ -77,15 +78,17 @@
       return;
     }
 
-    // 세 플랫폼에 사용할 입력을 시작 시점에 고정
+    // 텍스트 플랫폼에 사용할 입력을 시작 시점에 고정
     const request = structuredClone(window.NewsInput.getRequest());
 
     const platforms = request.platforms.filter(
-      (platform) => Object.hasOwn(names, platform)
+      (platform) => ["threads", "blog"].includes(platform)
     );
 
+    if (request.include_card_news) platforms.unshift("card_news");
+
     if (!platforms.length) {
-      status.textContent = "플랫폼을 하나 이상 체크해주세요.";
+      status.textContent = "Threads·Blog 또는 카드뉴스도 생성을 선택해주세요. Instagram 원고·첨부 연결은 다음 단계입니다.";
       return;
     }
 
@@ -108,7 +111,7 @@
 
     const fields = [
       ...document.querySelectorAll(
-        "#article-title, #article-content, #custom-keywords, " +
+        "#article-url, #import-article, #include-card-news, #article-title, #article-content, #custom-keywords, " +
         "#article-requirements, #suggest-keywords, " +
         "#keyword-candidates input, .platform input, #save, #load"
       ),
@@ -119,8 +122,8 @@
     const previousDisabled = fields.map((field) => field.disabled);
 
     const surfaces = [
-      get("stage").closest(".panel"),
-      get("cards").closest(".panel"),
+      get("stage")?.closest(".panel"),
+      get("cards")?.closest(".panel"),
       document.querySelector(".photo-tools"),
     ].filter(Boolean);
 
@@ -143,7 +146,7 @@
     const successfulPlatforms = [];
 
     busy = true;
-    button.textContent = "선택한 플랫폼 생성 중…";
+    button.textContent = "선택한 항목 생성 중…";
 
     fields.forEach((field) => {
       field.disabled = true;
@@ -168,63 +171,22 @@
         updateProgress();
 
         try {
-          const response = await fetch(
-            `/api/generate/${platform}`,
-            {
-              method: "POST",
-
-              headers: {
-                "Content-Type": "application/json",
-              },
-
-              body: JSON.stringify(generationInput),
-            }
-          );
-
-          let result;
-
-          try {
-            result = await response.json();
-          } catch {
-            throw new Error(
-              "서버 응답을 읽지 못했습니다. 서버 실행을 확인해주세요."
-            );
-          }
-
-          if (!response.ok || !result.success) {
-            throw new Error(
-              result.error || "원고 생성에 실패했습니다."
-            );
-          }
-
-          if (platform === "instagram") {
-            window.CardEditor.applyInstagramDraft(
-              result.draft,
-              expectedRevision
-            );
-
-            // Instagram도 검수에 사용할 원문과 조건 보관
-            state.instagram_generation_input =
-              structuredClone(generationInput);
+          // 카드뉴스 선택과 플랫폼 원고 선택을 구분합니다.
+          if (platform === "card_news") {
+            const result = await window.NewsApi.generateCardNews(generationInput);
+            window.CardEditor.applyCardNewsDraft(result.draft, expectedRevision, generationInput);
           } else {
-            window.TextEditor.applyDraft(
-              platform,
-              result.draft,
-              generationInput,
-              expectedRevision
-            );
+            const result = await window.NewsApi.generateDraft(platform, generationInput);
+            window.TextEditor.applyDraft(platform, result.draft, generationInput, expectedRevision);
           }
 
           expectedRevision = window.CardEditor.getRevision();
 
-          state.platforms = platforms;
+          state.platforms = [...request.platforms];
 
           successfulPlatforms.push(platform);
 
-          progress[platform] =
-            platform === "instagram"
-              ? `${names[platform]}: ${result.draft.cards.length}장 생성 완료`
-              : `${names[platform]}: 원고 생성 완료`;
+          progress[platform] = `${names[platform]}: 원고 생성 완료`;
         } catch (error) {
           progress[platform] =
             `${names[platform]}: 실패 — ${error.message}`;
@@ -250,11 +212,9 @@
       updateProgress();
 
       if (successfulPlatforms.length) {
-        const firstView = successfulPlatforms.includes("instagram")
-          ? "instagram"
-          : successfulPlatforms[0];
+        const firstView = successfulPlatforms[0];
 
-        window.TextEditor.showPlatform(firstView);
+        window.TextEditor.showPlatform(firstView === "card_news" ? "instagram" : firstView);
       }
 
       status.textContent +=
@@ -275,7 +235,7 @@
       });
 
       busy = false;
-      button.textContent = "선택한 플랫폼 생성";
+      button.textContent = "선택한 항목 생성";
     }
   });
 })();

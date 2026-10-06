@@ -5,9 +5,29 @@ const path = require("path");
 const { suggestKeywords } = require("./ai-client");
 const app = express();
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
+// 내 문서 저장 기능과 JPG 보관 연결은 기존 생성 경로보다 먼저 등록합니다.
+require("./local-storage-routes")(app);
+
+// 공개 기사 URL에서 제목과 본문을 가져오는 입력 경로
+const { importArticle } = require("./article-source");
+app.post("/api/article/import", async (req, res) => {
+  try {
+    const article = await importArticle(req.body?.url);
+    res.json({ success: true, article });
+  } catch (error) {
+    const status = [400, 422, 502, 504].includes(error.status) ? error.status : 502;
+    res.status(status).json({
+      success: false,
+      error: error.status ? error.message : "기사 본문을 추출하지 못했습니다. 원문을 직접 붙여넣어주세요.",
+    });
+  }
+});
+
+// 팀원 Python 사진 API의 기능·응답 형식을 Node 경로로 연결합니다.
+require("./photo-routes")(app);
 require("./editor-routes")(app);
 require("./generate-routes")(app);
 require("./validation-routes")(app);
@@ -540,17 +560,17 @@ app.post("/api/article/keywords", async (req, res) => {
   } catch (error) {
     const status = Number(error.status);
 
-    const message =
+    const message = error.provider === "gemini" ? error.message :
       status === 401
-        ? "OpenAI API 키를 확인해주세요."
+        ? "AI API 키를 확인해주세요."
         : status === 429
-          ? "OpenAI API 잔액·사용 한도·요청 빈도를 확인해주세요."
+          ? "AI API 잔액·사용 한도·요청 빈도를 확인해주세요."
           : status === 403 || status === 404
             ? "모델 이름과 API 프로젝트의 사용 권한을 확인해주세요."
             : status === 400
-              ? "OpenAI 요청 설정을 확인해주세요."
+              ? "AI 요청 설정을 확인해주세요."
               : error.status
-                ? "OpenAI 요청에 실패했습니다. 잠시 후 다시 시도해주세요."
+                ? "AI 요청에 실패했습니다. 잠시 후 다시 시도해주세요."
                 : error.message;
 
     console.error("키워드 요청 실패:", {

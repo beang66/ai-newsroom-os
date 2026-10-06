@@ -96,7 +96,10 @@ export function useFactCheck(article) {
     }
   }, [run]);
 
-  return { results, busy, error, run, recheck, recheckBusy, recheckCount: results.filter((r) => r.needsRecheck).length };
+  // 서랍의 '팩트 일치' 카드에 마우스를 올리는 동안 본문의 그 문장을 초록으로(focus = 결과 id)
+  const [focus, setFocus] = useState(null);
+
+  return { results, busy, error, run, recheck, recheckBusy, recheckCount: results.filter((r) => r.needsRecheck).length, focus, setFocus };
 }
 
 /** 본문 청크 밑줄(개발 실행에서만) — 켜 두면 본문이 바뀌고 0.8초 뒤 청킹 모델로 다시 나눈다.

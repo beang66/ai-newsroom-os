@@ -42,6 +42,8 @@ export default function FactCheckDrawer({
   // 등록된 취재자료는 기사(article.sources)에 둔다 — 서랍을 닫아도, 보관함에서도 보인다. 실패한 파일만 여기
   const [failedFiles, setFailedFiles] = useState([]);
   const sources = article.sources || [];
+  const { setFocus } = factCheck;
+  useEffect(() => () => setFocus(null), [setFocus]); // 카드에 마우스를 둔 채 서랍을 닫아도 본문 초록 표시가 남지 않게
 
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -284,6 +286,8 @@ export default function FactCheckDrawer({
               {evidenceList.map((item) => (
                 <div
                   key={item.id}
+                  onMouseEnter={() => item.verdict === "SUPPORTED" && factCheck.setFocus(item.id)}
+                  onMouseLeave={() => factCheck.setFocus(null)}
                   className="p-4 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 shadow-2xs space-y-3 transition"
                 >
                   {/* 카드 헤더: 상태 및 일치율 */}
@@ -307,7 +311,7 @@ export default function FactCheckDrawer({
                       기사 본문 대상 문장
                     </span>
                     <p className="font-bold text-slate-800 leading-snug">
-                      "<Marked text={item.claimText} spans={item.spans.map((s) => ({ start: s.start - item.start, end: s.end - item.start }))} />"
+                      "<Marked text={item.claimText} spans={item.spans.map((s) => ({ start: s.start - item.start, end: s.end - item.start }))} ok={item.verdict === "SUPPORTED"} />"
                     </p>
                   </div>
 
@@ -318,7 +322,7 @@ export default function FactCheckDrawer({
                       원문 문서 발췌 근거
                     </span>
                     <p className="text-slate-800 italic leading-relaxed" data-testid="evidence-quote">
-                      "<Marked text={item.quote} spans={item.quoteSpans} sentence />"
+                      "<Marked text={item.quote} spans={item.quoteSpans} sentence ok={item.verdict === "SUPPORTED"} />"
                     </p>
                   </div>}
 
@@ -362,8 +366,8 @@ export default function FactCheckDrawer({
   );
 }
 
-/** 글에서 spans 구간을 빨갛게. sentence 면 그 구간이 든 문장(마침표 기준)도 옅게 칠해 어디서 왔는지 보이게 한다 */
-function Marked({ text, spans = [], sentence = false }) {
+/** 글에서 spans 구간을 빨갛게(ok = 맞는 내용이면 초록). sentence 면 그 구간이 든 문장(마침표 기준)도 옅게 칠해 어디서 왔는지 보이게 한다 */
+function Marked({ text, spans = [], sentence = false, ok = false }) {
   const marks = spans.filter((s) => s.start >= 0 && s.end <= text.length && s.end > s.start).sort((a, b) => a.start - b.start);
   if (!marks.length) return text;
   let from = 0;
@@ -379,14 +383,14 @@ function Marked({ text, spans = [], sentence = false }) {
   marks.forEach((s, i) => {
     if (s.start < cursor) return;
     inner.push(text.slice(cursor, s.start));
-    inner.push(<mark key={i} className="bg-rose-200 text-rose-900 not-italic font-bold rounded-sm px-0.5">{text.slice(s.start, s.end)}</mark>);
+    inner.push(<mark key={i} className={`${ok ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900"} not-italic font-bold rounded-sm px-0.5`}>{text.slice(s.start, s.end)}</mark>);
     cursor = s.end;
   });
   inner.push(text.slice(cursor, to));
   return (
     <>
       {text.slice(0, from)}
-      {sentence ? <span className="bg-amber-100 rounded-sm">{inner}</span> : inner}
+      {sentence ? <span className={`${ok ? "bg-emerald-50" : "bg-amber-100"} rounded-sm`}>{inner}</span> : inner}
       {text.slice(to)}
     </>
   );

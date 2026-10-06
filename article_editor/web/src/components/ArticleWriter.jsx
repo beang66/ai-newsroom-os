@@ -540,6 +540,7 @@ export default function ArticleWriter({
                 results={factCheck.results}
                 chunks={bodyChunks.chunks}
                 onRecheck={factCheck.recheck}
+                focus={factCheck.focus}
                 recheckBusy={factCheck.recheckBusy}
               />
             </div>
@@ -984,6 +985,7 @@ const MARK = {
   EVIDENCE_GAP: "bg-amber-200/80",
   REVIEW: "bg-violet-200/70",
   EXTERNAL_REQUIRED: "bg-violet-200/70",
+  FOCUS: "bg-emerald-200/80", // 서랍의 '팩트 일치' 카드에 마우스를 올린 동안
 };
 const OUTLINE = { CONFLICT: "#9f1239", EVIDENCE_GAP: "#b45309", REVIEW: "#6d28d9", EXTERNAL_REQUIRED: "#6d28d9" }; // 하이라이트색의 진한 판(마우스 올린 문장)
 const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요", EXTERNAL_REQUIRED: "검토 필요" };
@@ -991,18 +993,19 @@ const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부�
 // 청크 밑줄(개발 모드) — 이웃 청크끼리 색이 겹치지 않게 돌려 쓴다
 const CHUNK_COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2"];
 
-function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, recheckBusy }) {
+function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, recheckBusy, focus = null }) {
   const layer = useRef(null);
   const [hover, setHover] = useState(null); // { key, x, y } — 하이라이트 위 마우스(textarea 가 위를 덮어 마크가 이벤트를 못 받으니 좌표로 찾는다)
 
   const ranges = useMemo(() => {
     const out = results
+      .map((r) => (r.verdict === "SUPPORTED" && r.id === focus ? { ...r, verdict: "FOCUS", spans: [] } : r))
       .filter((r) => MARK[r.verdict] && r.start >= 0 && value.slice(r.start, r.start + r.claimText.length) === r.claimText)
       .flatMap((r) => (r.spans.length ? r.spans : [{ start: r.start, end: r.start + r.claimText.length }])
         .map((x) => ({ ...x, verdict: r.verdict, key: r.judgedBy === "external" ? "" : r.key })))
       .sort((a, b) => a.start - b.start);
     return out.filter((x, i) => i === 0 || x.start >= out[i - 1].end); // 겹치면 앞의 것만
-  }, [results, value]);
+  }, [results, value, focus]);
 
   const parts = [];
   let cursor = 0;
@@ -1055,7 +1058,10 @@ function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, r
         onMouseLeave={() => setHover(null)}
         onClick={(e) => {
           const hit = findMark(e);
-          if (hit && !recheckBusy && e.target.selectionEnd === e.target.selectionStart) onRecheck(hit.key);
+          if (hit && !recheckBusy && e.target.selectionEnd === e.target.selectionStart) {
+            setHover(null);
+            onRecheck(hit.key);
+          }
         }}
         placeholder="기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다..."
         className={`${box} absolute inset-0 h-full overflow-hidden text-slate-900 bg-transparent border-slate-200 focus:border-slate-800 outline-none resize-none shadow-2xs ${hover ? "cursor-pointer" : ""}`}

@@ -6,6 +6,8 @@
 
 > 이 문서는 **강창희가 만든 App Core를 공통 실행 기반으로 두고, 각 담당 기능을 HTTP 통합 단계와 최종 IPC 전환에서 같은 규칙으로 연결하기 위한 문서**입니다.
 
+> **구현 상태 확인 (2026-10-07):** 아래의 Snapshot, 공통 UUID, SourceChunk, Claim/EvidenceLink, ProcessingJob 및 KnowledgeMap은 **v0.8 목표**이며 현재 Core의 구현 사실이 아니다. 현행 Core는 `core-api.js` named method → `/api/*` HTTP → Python managers, SQLCipher `articles/article_revisions/sources/media` 저장을 제공한다. 현재 `/api/articles/latest`는 가장 최근 기사 한 건만 조회하고, IPC 브리지는 미구현이다. 실제 메서드·저장 스키마 및 누락·미정의·중복 항목은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md)을 따른다. 아래 실행 구조의 IPC/Supabase/Backend 연결 설명은 제품 설계와 구현 확인 범위를 구별해 읽는다.
+
 ## 0. 이미 구현된 실행 구조
 
 `feature/app-core`를 확인한 결과, 아래 구조는 이미 구현·검증되어 있으므로 통합의 기준선으로 사용합니다.

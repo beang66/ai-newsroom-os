@@ -2,6 +2,8 @@
  * Crash-Safe Transcription & Audio Processing Utilities for Journalist Studio
  */
 
+import { requestCloudTranscription } from '../api.js';
+
 export function formatTime(totalSeconds) {
   if (isNaN(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
   const mins = Math.floor(totalSeconds / 60);
@@ -264,32 +266,10 @@ export async function transcribeWithTransformersLocal(file, onProgress) {
 export async function transcribeWithCloudApi(file, provider, apiKey, onProgress, signal) {
   if (onProgress) onProgress('클라우드 고속 Whisper AI로 전송 중...', 40);
 
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('model', provider === 'groq' ? 'whisper-large-v3' : 'whisper-1');
-  formData.append('language', 'ko');
-  formData.append('response_format', 'verbose_json');
-
-  const endpoint = provider === 'groq'
-    ? 'https://api.groq.com/openai/v1/audio/transcriptions'
-    : 'https://api.openai.com/v1/audio/transcriptions';
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: formData,
-    signal
-  });
-
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `HTTP ${response.status}`);
-  }
+  const data = await requestCloudTranscription({ file, provider, apiKey, signal });
 
   if (onProgress) onProgress('응답 데이터 화자 색인 중...', 85);
 
-  const data = await response.json();
   if (data.segments && data.segments.length > 0) {
     return data.segments.map((s) => ({
       start: s.start,

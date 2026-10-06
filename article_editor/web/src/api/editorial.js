@@ -179,22 +179,26 @@ export async function factcheckArticle(content, files, cache = new Map()) {
   return nodes.filter((n) => cache.has(n.text)).map((node) => {
     const r = cache.get(node.text);
     // 틀린 값 위치(코어 conflict_spans/focus_spans, 공백 정리된 문장 기준) → 원문 위치로 되돌린다
-    const spans = node.text === r.claim
-      ? (r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || [])
-        .filter((x) => x.claim_end > x.claim_start && x.claim_end <= node.map.length)
-        .map((x) => ({ start: node.map[x.claim_start], end: node.map[x.claim_end - 1] + 1 }))
-      : [];
+    const pairs = (node.text === r.claim ? (r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || []) : [])
+      .filter((x) => x.claim_end > x.claim_start && x.claim_end <= node.map.length);
+    const spans = pairs.map((x) => ({ start: node.map[x.claim_start], end: node.map[x.claim_end - 1] + 1 }));
+    // 같은 짝의 근거 쪽 위치(근거 발췌 quote 기준) — 서랍 카드에서 본문 하이라이트와 짝을 맞춰 표시
+    const quote = r.evidence?.text || "";
+    const quoteSpans = pairs
+      .filter((x) => x.evidence_end > x.evidence_start && x.evidence_end <= quote.length)
+      .map((x) => ({ start: x.evidence_start, end: x.evidence_end }));
     return {
       id: node.id,
       claimText: node.raw,
       start: node.start,
       spans,
+      quoteSpans,
       verdict: r.status, // SUPPORTED | CONFLICT | EVIDENCE_GAP | REVIEW …
       status: VERDICT[r.status] || "unverified",
       matchRate: r.confidence == null ? null : Math.round(r.confidence * 100),
       sourceDoc: r.evidence?.material_title || "",
       page: "",
-      quote: r.evidence?.text || "",
+      quote,
       comment: r.reason || "",
       suggestedFix: null,
     };

@@ -295,18 +295,18 @@ export default function FactCheckDrawer({
                       기사 본문 대상 문장
                     </span>
                     <p className="font-bold text-slate-800 leading-snug">
-                      "{item.claimText}"
+                      "<Marked text={item.claimText} spans={item.spans.map((s) => ({ start: s.start - item.start, end: s.end - item.start }))} />"
                     </p>
                   </div>
 
-                  {/* 2. 업로드 파일 원문 근거 발췌 */}
+                  {/* 2. 업로드 파일 원문 근거 발췌 — 본문 하이라이트와 짝인 근거 값(빨강)과 그 문장(노랑) */}
                   {item.quote && <div className="bg-blue-50/60 p-2.5 rounded-xl border border-blue-100 text-xs space-y-1">
                     <span className="text-[10px] font-black text-blue-600 block uppercase tracking-wide flex items-center gap-1">
                       <Sparkles className="w-3 h-3" />
                       원문 문서 발췌 근거
                     </span>
-                    <p className="text-slate-800 italic leading-relaxed">
-                      "{item.quote}"
+                    <p className="text-slate-800 italic leading-relaxed" data-testid="evidence-quote">
+                      "<Marked text={item.quote} spans={item.quoteSpans} sentence />"
                     </p>
                   </div>}
 
@@ -347,6 +347,36 @@ export default function FactCheckDrawer({
         {/* 서랍(aside)은 애니메이션 transform 때문에 fixed 가 서랍 안에 갇힌다 → body 로 portal */}
         {viewing && createPortal(<SourceViewer source={viewing} onClose={() => setViewing(null)} />, document.body)}
       </aside>
+  );
+}
+
+/** 글에서 spans 구간을 빨갛게. sentence 면 그 구간이 든 문장(마침표 기준)도 옅게 칠해 어디서 왔는지 보이게 한다 */
+function Marked({ text, spans = [], sentence = false }) {
+  const marks = spans.filter((s) => s.start >= 0 && s.end <= text.length && s.end > s.start).sort((a, b) => a.start - b.start);
+  if (!marks.length) return text;
+  let from = 0;
+  let to = text.length;
+  if (sentence) {
+    const head = text.slice(0, marks[0].start).search(/[^.?!]*$/);
+    const tail = text.slice(marks[marks.length - 1].end).search(/[.?!](\s|$)/);
+    from = head;
+    to = tail < 0 ? text.length : marks[marks.length - 1].end + tail + 1;
+  }
+  const inner = [];
+  let cursor = from;
+  marks.forEach((s, i) => {
+    if (s.start < cursor) return;
+    inner.push(text.slice(cursor, s.start));
+    inner.push(<mark key={i} className="bg-rose-200 text-rose-900 not-italic font-bold rounded-sm px-0.5">{text.slice(s.start, s.end)}</mark>);
+    cursor = s.end;
+  });
+  inner.push(text.slice(cursor, to));
+  return (
+    <>
+      {text.slice(0, from)}
+      {sentence ? <span className="bg-amber-100 rounded-sm">{inner}</span> : inner}
+      {text.slice(to)}
+    </>
   );
 }
 

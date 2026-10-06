@@ -52,6 +52,7 @@ article_editor/                ← 프로젝트 루트 (데이터·설정·문�
   `GET /api/factcheck/status`, `POST /api/factcheck/run`, `POST /api/semantic/parse`
   (factcheck.status / factcheck.run / semantic.parse — 구현: `app/core/ai/factcheck/`, 의존성: `requirements-factcheck.txt`).
   `POST /api/interview/transcribe` (interview.transcribe — 녹음 → 화자별 대화. 구현: `app/core/ai/transcribe.py`, 외부 호출은 providers 경로 = 백엔드 `/ai/audio/transcriptions`).
+  `POST /api/materials/extract` (materials.extract — 자료 파일 PDF·DOCX·HWP·HWPX·TXT → 텍스트. 구현: `app/core/documents.py`, 로컬 처리·외부 호출 없음).
   Internal module layout can change freely; these contracts stay.
 - **Local transport is a detail.** Development uses HTTP (works in a browser too);
   the release build switches the same contract to the pywebview IPC bridge by changing

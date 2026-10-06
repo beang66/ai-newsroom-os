@@ -19,6 +19,7 @@ export const ROUTES = Object.freeze({
   factcheckRun: "/api/factcheck/run",
   semanticParse: "/api/semantic/parse",
   transcribe: "/api/interview/transcribe",
+  materialsExtract: "/api/materials/extract",
   unsplashSearch: "/api/unsplash/search",
   photo: (id) => "/api/unsplash/photo/" + encodeURIComponent(id),
   photoTrack: (id) => "/api/unsplash/photo/" + encodeURIComponent(id) + "/track",
@@ -64,6 +65,9 @@ export function createCoreApi(transport) {
     /** 인터뷰 녹음 전사(Whisper) → { dialogues:[{id,speaker,speakerName,timestamp,text}], text, duration } */
     transcribe: (filename, data, signal) =>
       transport.json(ROUTES.transcribe, { filename, data }, signal),
+    /** 자료 파일(PDF·DOCX·HWP·HWPX·TXT) 텍스트 추출 → { text, chars, format } */
+    extractText: (filename, data, signal) =>
+      transport.json(ROUTES.materialsExtract, { filename, data }, signal),
     /** 원고 디스크 저장 (파일: .article-workspace/articles) */
     saveArticle: (draft, signal) =>
       transport.json(ROUTES.articlesSave, { draft }, signal),

@@ -46,15 +46,21 @@ export async function importPhoto(photo) {
   };
 }
 
+const readDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+
 /** 인터뷰 녹음 파일 전사 — 파일을 data URL 로 읽어 코어로 보낸다(25MB 이하) */
 export async function transcribeAudio(file) {
-  const data = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-  return core.transcribe(file.name, data);
+  return core.transcribe(file.name, await readDataUrl(file));
+}
+
+/** 자료 파일(PDF·DOCX·HWP·HWPX) → 텍스트. 코어가 형식별로 추출한다(30MB 이하) */
+export async function extractMaterialText(file) {
+  return (await core.extractText(file.name, await readDataUrl(file))).text;
 }
 
 const VERDICT = { SUPPORTED: "verified", CONFLICT: "conflict" };

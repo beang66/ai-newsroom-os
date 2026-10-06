@@ -156,6 +156,12 @@ class ServerTests(ApiTestCase):
     def test_short_body(self):
         self.assertEqual(self.request('/api/assist', {'kind': 'metadata', 'body': '짧음'})[0], 400)
 
+    def test_materials_extract(self):
+        import base64
+        status, raw, _ = self.request('/api/materials/extract', {'filename': '자료.txt', 'data': base64.b64encode('보도자료 본문'.encode()).decode()})
+        self.assertEqual((status, json.loads(raw)['text']), (200, '보도자료 본문'))
+        self.assertEqual(self.request('/api/materials/extract', {'filename': 'x.exe', 'data': 'eA=='})[0], 415)
+
     def test_models_status_endpoint(self):
         status, raw, _ = self.request('/api/models')
         self.assertEqual(status, 200)

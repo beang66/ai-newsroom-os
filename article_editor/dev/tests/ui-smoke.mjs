@@ -93,10 +93,10 @@ try {
       : { channel: process.env.PW_CHANNEL || "msedge" },
   );
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  page.on("console", (m) => m.type() === "error" && !m.text().includes("status of 503") && problems.push("console: " + m.text()));
+  page.on("console", (m) => m.type() === "error" && !/status of (503|422)/.test(m.text()) && problems.push("console: " + m.text()));
   page.on("pageerror", (e) => problems.push("pageerror: " + e.message));
   page.on("response", async (r) => {
-    // 503 = 모델·런타임 미설치(정상 상태) — 화면이 안내를 띄우는지는 단계에서 따로 본다
+    // 503 = 모델·런타임 미설치(정상 상태) — 화면이 안내를 띄우는지는 단계에서 따로 본다; 422 = 깨진 자료 파일(4단계에서 일부러 올림)
     if (r.url().includes("/api/") && r.status() >= 500 && r.status() !== 503) problems.push(`${r.status()} ${r.url()}`);
     if (r.url().endsWith("/api/articles/save") && r.ok()) savedIds.add((await r.json()).articleId);
   });
@@ -138,6 +138,11 @@ try {
   await see("팩트체크 & 근거자료 검증");
   // 텍스트 자료 → 코어 factcheckRun. 모델·런타임이 없는 PC 에서는 설치 안내가 나와야 한다
   const factcheckReady = (await (await fetch(`${BASE}/api/factcheck/status`)).json()).ready;
+  // PDF·HWP·DOCX 는 코어가 추출한다 — 깨진 파일이면 파일 목록에 사유가 보여야 한다
+  await page.locator('input[type="file"][accept*=".hwp"]').setInputFiles({
+    name: "깨진.hwp", mimeType: "application/octet-stream", buffer: Buffer.from("not an hwp"),
+  });
+  await page.getByText(/깨진\.hwp 을\(를\) 읽지 못했습니다/).waitFor();
   await page.locator('input[type="file"][accept*=".txt"]').setInputFiles({
     name: "자료.txt",
     mimeType: "text/plain",

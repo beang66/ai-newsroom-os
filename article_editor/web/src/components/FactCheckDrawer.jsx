@@ -15,9 +15,9 @@ import {
   ShieldCheck,
   RefreshCw
 } from "lucide-react";
-import { factcheckArticle } from "../api/editorial";
+import { extractMaterialText, factcheckArticle } from "../api/editorial";
 
-// ponytail: 브라우저에서 바로 읽히는 텍스트 자료만 — PDF·HWP·DOCX 추출은 코어 경로가 생기면 연결
+// 텍스트 파일은 브라우저에서 바로 읽고, PDF·HWP·HWPX·DOCX 는 코어(/api/materials/extract)가 추출한다
 const TEXT_FILE = /\.(txt|md|csv|json|html?)$/i;
 const VERDICT_BADGE = {
   SUPPORTED: ["팩트 일치", "bg-emerald-50 text-emerald-700 border-emerald-200"],
@@ -51,13 +51,19 @@ export default function FactCheckDrawer({
     if (!files || files.length === 0) return;
 
     const newFiles = await Promise.all(Array.from(files).map(async (f, idx) => {
-      const text = TEXT_FILE.test(f.name) ? await f.text() : null;
+      let text = null;
+      let status = "등록됨";
+      try {
+        text = TEXT_FILE.test(f.name) ? await f.text() : await extractMaterialText(f);
+      } catch (e) {
+        status = e?.message || "텍스트 추출 실패";
+      }
       return {
         id: `uploaded-${Date.now()}-${idx}`,
         name: f.name,
         size: `${(f.size / (1024 * 1024)).toFixed(1)} MB`,
         uploadTime: "방금 전",
-        status: text != null ? "등록됨" : "텍스트 추출 미지원",
+        status,
         type: f.name.split(".").pop() || "doc",
         text
       };
@@ -71,7 +77,7 @@ export default function FactCheckDrawer({
   // 코어 팩트체크(core.factcheckRun): 본문 문장 ↔ 등록된 텍스트 자료
   const runCheck = (files = uploadedFiles) => {
     const materials = files.filter((f) => f.text != null);
-    if (!materials.length) return setCheckError("검증에 쓸 텍스트 자료(TXT·MD·CSV·HTML)를 올려 주세요.");
+    if (!materials.length) return setCheckError("검증에 쓸 자료(PDF·HWP·HWPX·DOCX·TXT)를 올려 주세요.");
     setCheckError("");
     setIsAnalyzing(true);
     factcheckArticle(article.content, materials)
@@ -179,7 +185,7 @@ export default function FactCheckDrawer({
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".txt,.md,.csv,.json,.html,.htm,.pdf,.hwp,.docx"
+                accept=".pdf,.hwp,.hwpx,.docx,.txt,.md,.csv,.json,.html,.htm"
                 className="hidden"
                 onChange={(e) => handleFileUpload(e.target.files)}
               />
@@ -197,7 +203,7 @@ export default function FactCheckDrawer({
                   {isAnalyzing ? "문서를 읽고 기사와 팩트 대조 중..." : "검증할 문서나 보도자료를 이곳에 끌어다 놓으세요"}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  TXT · MD · CSV · HTML 지원 (PDF · HWP · DOCX 추출은 준비 중)
+                  PDF · HWP · HWPX · DOCX · TXT 지원 (스캔 PDF 제외)
                 </p>
               </div>
             </div>
@@ -223,10 +229,10 @@ export default function FactCheckDrawer({
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                        <span title={file.status} className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md max-w-[160px] truncate ${
                           file.text != null
                             ? "bg-emerald-100 text-emerald-800"
-                            : "bg-blue-100 text-blue-800 animate-pulse"
+                            : "bg-red-100 text-red-800"
                         }`}>
                           {file.status}
                         </span>

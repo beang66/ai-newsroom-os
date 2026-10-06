@@ -2,7 +2,10 @@
 import datetime
 import hashlib
 import json
+import os
 import re
+import subprocess
+import sys
 import threading
 import uuid
 
@@ -43,3 +46,19 @@ def save_source(filename, raw, text):
         original.write_bytes(raw)
     (folder / 'text.txt').write_text(text, encoding='utf-8')
     return source_id, str(original)
+
+
+def open_source(data):
+    """보관한 취재자료 원본을 이 PC 의 기본 프로그램(PDF 뷰어·한글 등)으로 연다. payload: {sourceId}"""
+    source_id = data.get('sourceId')
+    if not isinstance(source_id, str) or not re.fullmatch(r'[a-f0-9]{16}', source_id):
+        raise RequestError('잘못된 자료 ID입니다.')
+    folder = SOURCES_DIR / source_id
+    originals = [p for p in folder.glob('*') if p.is_file() and p.name != 'text.txt'] if folder.is_dir() else []
+    if not originals:
+        raise RequestError('보관된 원본 파일을 찾지 못했습니다.', 404)
+    if os.name == 'nt':
+        os.startfile(originals[0])  # noqa: S606 — 우리가 저장한 파일만(ID 검증)
+    else:
+        subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(originals[0])])
+    return {'opened': True, 'path': str(originals[0])}

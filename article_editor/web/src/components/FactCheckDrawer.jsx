@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { 
   X, 
   UploadCloud, 
@@ -15,7 +16,7 @@ import {
   ShieldCheck,
   RefreshCw
 } from "lucide-react";
-import { registerSource, factcheckArticle } from "../api/editorial";
+import { registerSource, factcheckArticle, openSourceFile } from "../api/editorial";
 
 // 모든 자료는 코어(/api/materials/extract)가 텍스트를 뽑고 원본을 내 문서에 보관한다 → 기사 sources 에 등록
 const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -46,6 +47,8 @@ export default function FactCheckDrawer({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [checkError, setCheckError] = useState("");
+  const [viewing, setViewing] = useState(null); // 본문을 보고 있는 자료
+  const [openError, setOpenError] = useState("");
   const fileInputRef = useRef(null);
 
   // 파일 업로드 처리 핸들러
@@ -216,7 +219,17 @@ export default function FactCheckDrawer({
                       <div className="flex items-center gap-2 min-w-0">
                         <FileCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                         <div className="truncate">
-                          <p className="font-bold text-slate-900 truncate">{file.name}</p>
+                          {file.failed ? (
+                            <p className="font-bold text-slate-900 truncate">{file.name}</p>
+                          ) : (
+                            <button
+                              onClick={() => { setOpenError(""); setViewing(file); }}
+                              title="눌러서 자료 보기"
+                              className="block max-w-full font-bold text-slate-900 truncate text-left hover:text-blue-700 hover:underline cursor-pointer"
+                            >
+                              {file.name}
+                            </button>
+                          )}
                           <p className="text-[10px] text-slate-400" title={file.path || ""}>
                             {mb(file.size)}{file.addedAt ? ` · ${file.addedAt}` : ""}{file.text == null && !file.failed ? " · 본문 다시 불러오기 필요" : ""}
                           </p>
@@ -347,6 +360,43 @@ export default function FactCheckDrawer({
             확인 및 닫기
           </button>
         </div>
+        {/* 서랍(aside)은 애니메이션 transform 때문에 fixed 가 서랍 안에 갇힌다 → body 로 portal */}
+        {viewing && createPortal(
+          <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={() => setViewing(null)}>
+            <div
+              role="dialog"
+              aria-label="취재자료 보기"
+              className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-slate-200 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-extrabold text-slate-900 text-sm break-all">{viewing.name}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5 break-all">
+                    {(viewing.format || "").toUpperCase()} · 추출 {viewing.chars?.toLocaleString()}자 · {viewing.path}
+                  </p>
+                </div>
+                <button onClick={() => setViewing(null)} title="닫기" className="p-1.5 rounded-full text-slate-400 hover:text-slate-900 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <pre className="flex-1 overflow-auto p-4 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap font-sans">
+                {viewing.text ?? "추출된 본문을 불러오지 못했어요. 원본을 열어 확인해 주세요."}
+              </pre>
+              <div className="p-3 border-t border-slate-200 flex items-center justify-between gap-2 text-xs">
+                <span className="text-slate-400">팩트체크는 위 추출 본문으로 대조합니다{openError && <span className="text-rose-600"> · {openError}</span>}</span>
+                <button
+                  onClick={() => openSourceFile(viewing.id).catch((e) => setOpenError(e?.message || String(e)))}
+                  className="px-4 py-1.5 bg-[#23211F] text-white font-bold rounded-full cursor-pointer flex items-center gap-1"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  원본 열기
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       </aside>
   );
 }

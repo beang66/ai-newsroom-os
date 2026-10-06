@@ -166,6 +166,17 @@ class ServerTests(ApiTestCase):
             self.assertTrue((Path(temp) / out['sourceId'] / 'text.txt').is_file())
         self.assertEqual(self.request('/api/materials/extract', {'filename': 'x.exe', 'data': 'eA=='})[0], 415)
 
+    def test_sources_open(self):
+        import base64
+        opened = []
+        with tempfile.TemporaryDirectory() as temp, patch.object(storage, 'SOURCES_DIR', Path(temp)),                 patch.object(storage.os, 'startfile', opened.append, create=True), patch.object(storage.os, 'name', 'nt'):
+            raw = self.request('/api/materials/extract', {'filename': '원본.txt', 'data': base64.b64encode('본문'.encode()).decode()})[1]
+            source_id = json.loads(raw)['sourceId']
+            self.assertEqual(self.request('/api/sources/open', {'sourceId': source_id})[0], 200)
+            self.assertEqual([Path(p).name for p in opened], ['원본.txt'])
+            self.assertEqual(self.request('/api/sources/open', {'sourceId': '../etc'})[0], 400)
+            self.assertEqual(self.request('/api/sources/open', {'sourceId': '0' * 16})[0], 404)
+
     def test_models_status_endpoint(self):
         status, raw, _ = self.request('/api/models')
         self.assertEqual(status, 200)

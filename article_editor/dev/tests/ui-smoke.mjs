@@ -156,6 +156,10 @@ try {
   // 판정 결과(일치/불일치/검토 필요)는 엔진 몫 — 화면은 문장별 카드가 나오는지만 본다
   if (factcheckReady) await page.getByText(/전체 [1-9][0-9]*개 문장 검증/).waitFor({ timeout: 180_000 });
   else await page.getByTestId("factcheck-error").getByText("설치").waitFor();
+  // 등록한 자료 이름을 누르면 추출 본문을 볼 수 있다
+  await page.getByRole("button", { name: "자료.txt" }).click();
+  await page.getByRole("dialog", { name: "취재자료 보기" }).getByText("스모크 테스트 본문입니다.").waitFor();
+  await page.getByRole("dialog", { name: "취재자료 보기" }).getByTitle("닫기").click();
   // 5. 취재자료 검색 창
   await page.getByText("취재자료 검색").first().click();
   await page.getByPlaceholder("자료 제목, 키워드, 내용 검색").waitFor();

@@ -20,6 +20,7 @@ export const ROUTES = Object.freeze({
   semanticParse: "/api/semantic/parse",
   transcribe: "/api/interview/transcribe",
   materialsExtract: "/api/materials/extract",
+  sourcesOpen: "/api/sources/open",
   unsplashSearch: "/api/unsplash/search",
   photo: (id) => "/api/unsplash/photo/" + encodeURIComponent(id),
   photoTrack: (id) => "/api/unsplash/photo/" + encodeURIComponent(id) + "/track",
@@ -68,6 +69,9 @@ export function createCoreApi(transport) {
     /** 자료 파일(PDF·DOCX·HWP·HWPX·TXT) 텍스트 추출 → { text, chars, format } */
     extractText: (filename, data, signal) =>
       transport.json(ROUTES.materialsExtract, { filename, data }, signal),
+    /** 보관한 취재자료 원본을 이 PC 의 기본 프로그램으로 열기 */
+    openSource: (sourceId, signal) =>
+      transport.json(ROUTES.sourcesOpen, { sourceId }, signal),
     /** 원고 디스크 저장 (파일: .article-workspace/articles) */
     saveArticle: (draft, signal) =>
       transport.json(ROUTES.articlesSave, { draft }, signal),

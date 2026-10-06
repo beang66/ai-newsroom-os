@@ -74,6 +74,9 @@ export async function registerSource(file) {
   };
 }
 
+/** 취재자료 원본을 기본 프로그램(PDF 뷰어·한글 등)으로 연다 */
+export const openSourceFile = (sourceId) => core.openSource(sourceId);
+
 const VERDICT = { SUPPORTED: "verified", CONFLICT: "conflict" };
 
 /** 기사 문장을 등록 자료(텍스트)에 비춰 팩트체크 → 팩트체크 서랍 카드 목록

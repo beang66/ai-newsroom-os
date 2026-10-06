@@ -23,6 +23,7 @@ import core.config as core_config
 import core.ai.router as ai_router
 import core.integrations.unsplash as unsplash
 import core.storage as storage
+from vault_fixture import use_temp_vault
 
 
 class ApiTestCase(unittest.TestCase):
@@ -117,33 +118,29 @@ class ServerTests(ApiTestCase):
             self.assertEqual(self.request('/api/unsplash/search?q=forest&page=' + page)[0], 400)
 
     def test_local_file_save_and_update(self):
-        with tempfile.TemporaryDirectory() as temp, patch.object(storage, 'ARTICLES_DIR', Path(temp) / 'articles'):
-            draft = {'schemaVersion': 3, 'title': '원고', 'bodyHtml': '<p>내용</p>', 'confirmed': {'headline': True, 'subheadline': False}}
-            status, raw, _ = self.request('/api/articles/save', {'draft': draft})
-            self.assertEqual(status, 200)
-            result = json.loads(raw)
-            identifier = result['articleId']
-            target = Path(temp) / 'articles' / result['fileName']
-            self.assertTrue(target.exists())
-            self.assertEqual(json.loads(target.read_text(encoding='utf-8'))['title'], '원고')
-            draft.update(articleId=identifier, title='수정 원고')
-            self.assertEqual(self.request('/api/articles/save', {'draft': draft})[0], 200)
-            self.assertEqual(len(list(target.parent.glob('*.json'))), 1)
-            self.assertEqual(json.loads(target.read_text(encoding='utf-8'))['title'], '수정 원고')
-            draft['articleId'] = '../../outside'
-            self.assertEqual(self.request('/api/articles/save', {'draft': draft})[0], 400)
+        use_temp_vault(self)
+        draft = {'schemaVersion': 3, 'title': '원고', 'bodyHtml': '<p>내용</p>', 'confirmed': {'headline': True, 'subheadline': False}}
+        status, raw, _ = self.request('/api/articles/save', {'draft': draft})
+        self.assertEqual(status, 200)
+        result = json.loads(raw)
+        identifier = result['articleId']
+        self.assertEqual(result['revisionNo'], 1)
+        draft.update(articleId=identifier, title='수정 원고')
+        self.assertEqual(json.loads(self.request('/api/articles/save', {'draft': draft})[1])['revisionNo'], 2)
+        self.assertEqual(json.loads(self.request('/api/articles/save', {'draft': draft})[1])['revisionNo'], 2)  # 같은 내용은 이력 유지
+        self.assertEqual(json.loads(self.request('/api/articles/latest')[1])['draft']['title'], '수정 원고')
+        draft['articleId'] = '../../outside'
+        self.assertEqual(self.request('/api/articles/save', {'draft': draft})[0], 400)
 
     def test_latest_article_reopens_newest_with_source_text(self):
-        import os as _os
-        with tempfile.TemporaryDirectory() as temp, patch.object(storage, "ARTICLES_DIR", Path(temp) / "articles"),                 patch.object(storage, "SOURCES_DIR", Path(temp) / "sources"):
-            self.assertEqual(json.loads(self.request("/api/articles/latest")[1]), {"draft": None})
-            source_id, _ = storage.save_source("자료.txt", "원문".encode(), "원문")
-            old = json.loads(self.request("/api/articles/save", {"draft": {"bodyHtml": "<p>옛</p>", "title": "옛 원고"}})[1])
-            _os.utime(Path(temp) / "articles" / old["fileName"], (1, 1))  # 확실히 더 오래된 파일로
-            self.request("/api/articles/save", {"draft": {"bodyHtml": "<p>새</p>", "content": "새", "title": "새 원고",
-                                                          "sources": [{"id": source_id, "name": "자료.txt"}]}})
-            draft = json.loads(self.request("/api/articles/latest")[1])["draft"]
-            self.assertEqual((draft["title"], draft["content"], draft["sources"][0]["text"]), ("새 원고", "새", "원문"))
+        use_temp_vault(self)
+        self.assertEqual(json.loads(self.request("/api/articles/latest")[1]), {"draft": None})
+        source_id, _ = storage.save_source("자료.txt", "원문".encode(), "원문")
+        self.request("/api/articles/save", {"draft": {"bodyHtml": "<p>옛</p>", "title": "옛 원고"}})
+        self.request("/api/articles/save", {"draft": {"bodyHtml": "<p>새</p>", "content": "새", "title": "새 원고",
+                                                      "sources": [{"id": source_id, "name": "자료.txt"}]}})
+        draft = json.loads(self.request("/api/articles/latest")[1])["draft"]
+        self.assertEqual((draft["title"], draft["content"], draft["sources"][0]["text"]), ("새 원고", "새", "원문"))
 
     def test_summary_model_schema(self):
         def summarize(name, prompt, schema, text):
@@ -170,18 +167,18 @@ class ServerTests(ApiTestCase):
 
     def test_materials_extract(self):
         import base64
-        with tempfile.TemporaryDirectory() as temp, patch.object(storage, 'SOURCES_DIR', Path(temp)):
-            status, raw, _ = self.request('/api/materials/extract', {'filename': '자료.txt', 'data': base64.b64encode('보도자료 본문'.encode()).decode()})
-            out = json.loads(raw)
-            self.assertEqual((status, out['text']), (200, '보도자료 본문'))
-            self.assertEqual(Path(out['path']).read_text(encoding='utf-8'), '보도자료 본문')  # 원본 보관
-            self.assertTrue((Path(temp) / out['sourceId'] / 'text.txt').is_file())
+        use_temp_vault(self)
+        status, raw, _ = self.request('/api/materials/extract', {'filename': '자료.txt', 'data': base64.b64encode('보도자료 본문'.encode()).decode()})
+        out = json.loads(raw)
+        self.assertEqual((status, out['text']), (200, '보도자료 본문'))
+        self.assertEqual(storage.source_file(out['sourceId'])[0].decode(), '보도자료 본문')  # 원본 보관
         self.assertEqual(self.request('/api/materials/extract', {'filename': 'x.exe', 'data': 'eA=='})[0], 415)
 
     def test_sources_open(self):
         import base64
         opened = []
-        with tempfile.TemporaryDirectory() as temp, patch.object(storage, 'SOURCES_DIR', Path(temp)),                 patch.object(storage.os, 'startfile', opened.append, create=True), patch.object(storage.os, 'name', 'nt'):
+        use_temp_vault(self)
+        with patch.object(storage.os, 'startfile', opened.append, create=True), patch.object(storage.os, 'name', 'nt'):
             raw = self.request('/api/materials/extract', {'filename': '원본.txt', 'data': base64.b64encode('본문'.encode()).decode()})[1]
             source_id = json.loads(raw)['sourceId']
             self.assertEqual(self.request('/api/sources/open', {'sourceId': source_id})[0], 200)

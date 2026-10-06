@@ -17,7 +17,9 @@ if str(_APP) not in sys.path:
 
 from core import documents as doc  # noqa: E402
 from core import storage  # noqa: E402
+from core import vault  # noqa: E402
 from core.errors import RequestError  # noqa: E402
+from vault_fixture import use_temp_vault  # noqa: E402
 
 
 def payload(name, raw):
@@ -83,20 +85,16 @@ class FakeOle:
 
 
 class DocumentTests(unittest.TestCase):
-    def setUp(self):  # 추출 결과 보관(sources)은 임시 폴더로 — 실제 내 문서에 쓰지 않는다
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        patcher = mock.patch.object(storage, 'SOURCES_DIR', Path(temp.name))
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.sources = Path(temp.name)
+    def setUp(self):  # 추출 결과 보관(암호화 저장소)은 임시 DB 로 — 실제 APP_DATA 에 쓰지 않는다
+        use_temp_vault(self)
 
     def test_source_is_kept_once_with_original_name(self):
         out = doc.extract_text(payload('C:/x/보도자료 1.txt', '본문'.encode()))
         again = doc.extract_text(payload('보도자료 1.txt', '본문'.encode()))
         self.assertEqual(out['sourceId'], again['sourceId'])
         self.assertEqual(Path(out['path']).name, '보도자료 1.txt')
-        self.assertEqual((self.sources / out['sourceId'] / 'text.txt').read_text(encoding='utf-8'), '본문')
+        with vault.connect() as db:
+            self.assertEqual(db.execute('SELECT text FROM sources WHERE id = ?', (out['sourceId'],)).fetchone()[0], '본문')
 
     def test_docx_paragraphs_and_tables(self):
         w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'

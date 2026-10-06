@@ -14,19 +14,18 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
-import sqlite3
 import threading
 from typing import Iterable
 
 import numpy as np
 
-from .paths import EMBEDDING_DIR, RUNTIME_DIR
+from ... import vault
+from .paths import EMBEDDING_DIR
 MODEL = "Qwen/Qwen3-Embedding-0.6B"
 REVISION = "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
 TASK = "Given a web search query, retrieve relevant passages that answer the query"
 MODEL_ID = f"{MODEL}@{REVISION}:last-token:l2:1024:8192:{TASK}"
 MODEL_PATH = EMBEDDING_DIR
-CACHE_PATH = RUNTIME_DIR / "qwen3_embedding_vectors.sqlite3"
 
 DEFAULT_K = 10
 MAX_K = 150
@@ -116,40 +115,11 @@ class QwenEncoder:
 
 
 class VectorCache:
-    """Persistent model/role/text keyed embedding cache."""
+    """Persistent model/role/text keyed embedding cache — 암호화 저장소(vault)의 embedding_vectors 테이블."""
 
-    def __init__(
-        self,
-        path: str | Path | None = None,
-        encoder: QwenEncoder | None = None,
-    ):
-        self.path = Path(path or CACHE_PATH)
+    def __init__(self, encoder: QwenEncoder | None = None):
         self.encoder = encoder or QwenEncoder()
         self.lock = threading.RLock()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-
-        with sqlite3.connect(self.path) as db:
-            db.execute(
-                """
-                CREATE TABLE IF NOT EXISTS vectors (
-                    key TEXT PRIMARY KEY,
-                    vector BLOB NOT NULL,
-                    origin TEXT NOT NULL
-                )
-                """
-            )
-            db.execute(
-                """
-                CREATE TABLE IF NOT EXISTS metadata (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL
-                )
-                """
-            )
-            db.execute(
-                "INSERT OR REPLACE INTO metadata(key, value) VALUES (?, ?)",
-                ("model_id", MODEL_ID),
-            )
 
     @staticmethod
     def validate(values: np.ndarray, count: int) -> None:
@@ -173,11 +143,11 @@ class VectorCache:
             raise ValueError(f"Unknown embedding role: {role}")
 
         keys = [vector_key(text, role) for text in texts]
-        with self.lock, sqlite3.connect(self.path) as db:
+        with self.lock, vault.connect() as db:
             found: dict[str, np.ndarray] = {}
             for key in dict.fromkeys(keys):
                 row = db.execute(
-                    "SELECT vector FROM vectors WHERE key=?",
+                    "SELECT vector FROM embedding_vectors WHERE key=?",
                     (key,),
                 ).fetchone()
                 if row:
@@ -200,7 +170,7 @@ class VectorCache:
                     found[key] = value
                     db.execute(
                         """
-                        INSERT OR REPLACE INTO vectors(key, vector, origin)
+                        INSERT OR REPLACE INTO embedding_vectors(key, vector, origin)
                         VALUES (?,?,?)
                         """,
                         (

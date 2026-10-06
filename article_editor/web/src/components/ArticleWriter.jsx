@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
+import { supportedClaimRanges } from "../api/claim-details.js";
 // 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
 import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useFactCheck, useBodyChunks } from "./EditorialAssist";
 import { 
@@ -986,6 +987,7 @@ const MARK = {
   REVIEW: "bg-violet-200/70",
   EXTERNAL_REQUIRED: "bg-violet-200/70",
   FOCUS: "bg-emerald-200/80", // 서랍의 '팩트 일치' 카드에 마우스를 올린 동안
+  DETAIL: "bg-amber-200/80", // 날짜·기관·주체는 별도 의미 확인이 필요
 };
 const OUTLINE = { CONFLICT: "#9f1239", EVIDENCE_GAP: "#b45309", REVIEW: "#6d28d9", EXTERNAL_REQUIRED: "#6d28d9" }; // 하이라이트색의 진한 판(마우스 올린 문장)
 const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요", EXTERNAL_REQUIRED: "검토 필요" };
@@ -999,10 +1001,10 @@ function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, r
 
   const ranges = useMemo(() => {
     const out = results
-      .map((r) => (r.verdict === "SUPPORTED" && r.id === focus ? { ...r, verdict: "FOCUS", spans: [] } : r))
+      .map((r) => (r.verdict === "SUPPORTED" && r.id === focus ? { ...r, verdict: "FOCUS", spans: supportedClaimRanges(r.claimText, r.details).map((s) => ({ ...s, start: s.start + r.start, end: s.end + r.start })) } : r))
       .filter((r) => MARK[r.verdict] && r.start >= 0 && value.slice(r.start, r.start + r.claimText.length) === r.claimText)
       .flatMap((r) => (r.spans.length ? r.spans : [{ start: r.start, end: r.start + r.claimText.length }])
-        .map((x) => ({ ...x, verdict: r.verdict, key: r.judgedBy === "external" ? "" : r.key })))
+        .map((x) => ({ ...x, verdict: r.verdict === "FOCUS" && x.detail ? "DETAIL" : r.verdict, key: r.judgedBy === "external" ? "" : r.key })))
       .sort((a, b) => a.start - b.start);
     return out.filter((x, i) => i === 0 || x.start >= out[i - 1].end); // 겹치면 앞의 것만
   }, [results, value, focus]);
@@ -1012,7 +1014,7 @@ function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, r
   ranges.forEach((x, i) => {
     parts.push(value.slice(cursor, x.start));
     parts.push(<mark key={i} data-key={x.key} className={`${MARK[x.verdict]} text-transparent rounded-sm`}
-      style={x.key && hover?.key === x.key ? { outline: `2px solid ${OUTLINE[x.verdict]}`, outlineOffset: 1 } : undefined} title={MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
+      style={x.key && hover?.key === x.key ? { outline: `2px solid ${OUTLINE[x.verdict]}`, outlineOffset: 1 } : undefined} title={x.title || MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
     cursor = x.end;
   });
   parts.push(value.slice(cursor) + "\n"); // 마지막 줄바꿈도 높이를 맞춘다

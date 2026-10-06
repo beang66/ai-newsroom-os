@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from datetime import datetime, timezone
 
@@ -29,11 +30,15 @@ def record_factcheck_event(
     model_metadata: dict | None,
     linked_source_count: int,
 ) -> None:
-    """Append one passive fact-check event.
+    """Append one passive fact-check event — 연구용이라 기본은 기록하지 않는다.
+
+    주장 문장·근거 발췌가 평문 파일로 남기 때문이다(보안). 개발에서 필요하면 FACTCHECK_ROUTING_LOG=1 로 켠다.
 
     This logger must never affect the user-visible verdict. It stores only the
     claim and the selected evidence excerpt, not full source documents.
     """
+    if os.environ.get('FACTCHECK_ROUTING_LOG') != '1':
+        return
     try:
         ev = evidence or {}
         row = {

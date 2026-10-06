@@ -3,6 +3,7 @@
 #   python -m pip install -r packaging/requirements-build.txt
 #   python -m PyInstaller --noconfirm --clean packaging/AINewsroom.spec
 #
-# 앱의 실제 런타임 의존성은 pywebview 하나이며 Windows 에서는 pythonnet 을 함께 씁니다.
+# 앱의 실제 런타임 의존성은 pywebview, 암호화 저장소(requirements-storage.txt)이며 Windows 에서는 pythonnet 을 함께 씁니다.
 pyinstaller>=6.22
 pywebview>=6.2.1
+-r ../requirements-storage.txt

@@ -17,6 +17,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { registerSource, openSourceFile, sourcePreview, sourceChunks, isDevMode } from "../api/editorial";
+import { supportedClaimRanges } from "../api/claim-details.js";
 
 // 모든 자료는 코어(/api/materials/extract)가 텍스트를 뽑고 원본을 내 문서에 보관한다 → 기사 sources 에 등록
 const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -295,6 +296,7 @@ export default function FactCheckDrawer({
                     <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${(VERDICT_BADGE[item.verdict] || REVIEW_BADGE)[1]}`}>
                       {item.status === "verified" ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
                       {(VERDICT_BADGE[item.verdict] || REVIEW_BADGE)[0]}
+                      {item.verdict === "SUPPORTED" && item.details?.length > 0 && " · 세부 확인 필요"}
                       {item.matchRate != null && ` (${item.matchRate}%)`}
                     </span>
                     {item.judgedBy === "external" && (
@@ -311,19 +313,34 @@ export default function FactCheckDrawer({
                       기사 본문 대상 문장
                     </span>
                     <p className="font-bold text-slate-800 leading-snug">
-                      "<Marked text={item.claimText} spans={item.spans.map((s) => ({ start: s.start - item.start, end: s.end - item.start }))} ok={item.verdict === "SUPPORTED"} />"
+                      "<Marked text={item.claimText} spans={item.verdict === "SUPPORTED" ? supportedClaimRanges(item.claimText, item.details) : item.spans.map((s) => ({ start: s.start - item.start, end: s.end - item.start }))} ok={item.verdict === "SUPPORTED"} />"
                     </p>
                   </div>
 
-                  {/* 2. 업로드 파일 원문 근거 발췌 — 본문 하이라이트와 짝인 근거 값(빨강)과 그 문장(노랑) */}
+                  {/* 2. 일치하는 근거 문장/표 항목은 초록, 불일치는 대응 값과 그 문장을 강조 */}
                   {item.quote && <div className="bg-blue-50/60 p-2.5 rounded-xl border border-blue-100 text-xs space-y-1">
                     <span className="text-[10px] font-black text-blue-600 block uppercase tracking-wide flex items-center gap-1">
                       <Sparkles className="w-3 h-3" />
                       원문 문서 발췌 근거
                     </span>
                     <p className="text-slate-800 italic leading-relaxed" data-testid="evidence-quote">
-                      "<Marked text={item.quote} spans={item.quoteSpans} sentence ok={item.verdict === "SUPPORTED"} />"
+                      "<Marked text={item.quote} spans={item.quoteSpans} sentence={item.verdict !== "SUPPORTED"} ok={item.verdict === "SUPPORTED"} />"
                     </p>
+                    {item.verdict === "SUPPORTED" && !item.quoteSpans.length && (
+                      <p className="text-[10px] text-slate-500">청크는 일치로 판정됐지만, 대응하는 근거 구간을 특정하지 못했습니다.</p>
+                    )}
+                  </div>}
+
+                  {item.details?.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2.5 space-y-2" data-testid="claim-details">
+                    <p className="text-[10px] font-black text-amber-900">날짜·기관·주체 근거 확인</p>
+                    {item.details.map((d) => <div key={d.start} className="text-[11px]">
+                      <div className="flex flex-wrap items-center gap-x-2">
+                        <strong className="text-slate-800">{d.text}</strong>
+                        <span className="text-amber-800">{d.label}</span>
+                      </div>
+                      {d.reference && <p className="mt-0.5 break-all text-slate-500">{d.location === 'title' ? '자료명' : '원문 표기'}: {d.reference}</p>}
+                    </div>)}
+                    <p className="text-[10px] text-slate-500">표기 위치를 찾은 결과입니다. 날짜의 의미와 기관·주체의 관계가 각각 검증된 것은 아닙니다.</p>
                   </div>}
 
                   {/* 3. AI 검증 해설 */}
@@ -383,7 +400,7 @@ function Marked({ text, spans = [], sentence = false, ok = false }) {
   marks.forEach((s, i) => {
     if (s.start < cursor) return;
     inner.push(text.slice(cursor, s.start));
-    inner.push(<mark key={i} className={`${ok ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900"} not-italic font-bold rounded-sm px-0.5`}>{text.slice(s.start, s.end)}</mark>);
+    inner.push(<mark key={i} title={s.title} className={`${s.detail ? "bg-amber-200 text-amber-950" : ok ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900"} not-italic font-bold rounded-sm px-0.5`}>{text.slice(s.start, s.end)}</mark>);
     cursor = s.end;
   });
   inner.push(text.slice(cursor, to));

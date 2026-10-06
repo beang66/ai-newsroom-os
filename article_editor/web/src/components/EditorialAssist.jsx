@@ -17,7 +17,36 @@ import {
   needsRecheck,
   recheckEvidence,
   externalRecheck,
+  cachedExternalRecheck,
 } from "../api/editorial";
+
+/** 외부 재판정 요청 항목 — 클릭 재검토와 저장된 판정 복원이 **똑같은 형식**이어야 코어가 저장된 기록을 찾는다 */
+const recheckItems = (todo) => todo.map(([text, r], i) => {
+  const ev = recheckEvidence(r);
+  return { id: String(i), claim: text, evidence: ev.map((e) => e.text || ""), titles: ev.map((e) => e.material_title || "") };
+});
+
+/** 원고를 다시 열었을 때: 이미 받아 둔 AI 재판정(코어에 저장됨)을 조회 전용으로 가져와 문장별 기억에 붙인다(OpenAI 호출 없음).
+ *  한 번 물어본 문장은 다시 묻지 않는다(state.tried). 하나라도 붙으면 true — 복원은 덤이라 실패해도 로컬 판정은 그대로 보인다 */
+async function restoreExternal(state, content) {
+  const present = new Set(splitSentences(content).map((s) => s.text));
+  const todo = [...state.cache.entries()].filter(([text, r]) => present.has(text) && !state.tried.has(text) && needsRecheck(r));
+  if (!todo.length) return false;
+  todo.forEach(([text]) => state.tried.add(text));
+  try {
+    let restored = false;
+    for (const x of await cachedExternalRecheck(recheckItems(todo))) {
+      const hit = todo[Number(x.id)];
+      if (hit) {
+        state.cache.set(hit[0], { ...hit[1], external: x });
+        restored = true;
+      }
+    }
+    return restored;
+  } catch {
+    return false;
+  }
+}
 
 /** 팩트체크 — 본문·취재자료가 바뀌고 1.5초 멈추면 자동으로 돈다(옛 UI 의 '작성 멈춤 감지').
  *  실행 중에 또 바뀌면 끝난 뒤 한 번 더 — 요청이 겹치지 않는다.
@@ -29,7 +58,7 @@ export function useFactCheck(article) {
   const [error, setError] = useState("");
   const latest = useRef(article);
   latest.current = article;
-  const state = useRef({ running: false, again: false, cacheKey: "", cache: new Map() });
+  const state = useRef({ running: false, again: false, cacheKey: "", cache: new Map(), tried: new Set() });
 
   const run = useCallback(async (fresh = false) => {
     if (state.current.running) {
@@ -39,7 +68,7 @@ export function useFactCheck(article) {
     const { content, sources = [] } = latest.current;
     const materials = sources.filter((s) => s.text != null);
     const key = materials.map((s) => s.id).join();
-    if (fresh === true || key !== state.current.cacheKey) state.current = { ...state.current, cacheKey: key, cache: new Map() };
+    if (fresh === true || key !== state.current.cacheKey) state.current = { ...state.current, cacheKey: key, cache: new Map(), tried: new Set() };
     if (!materials.length) return setError("검증에 쓸 자료(PDF·HWP·HWPX·DOCX·TXT)를 올려 주세요.");
     if (!splitSentences(content).length) {
       setResults([]);
@@ -49,7 +78,9 @@ export function useFactCheck(article) {
     setBusy(true);
     setError("");
     try {
-      setResults(await factcheckArticle(content, materials, state.current.cache));
+      const items = await factcheckArticle(content, materials, state.current.cache);
+      // 다시 열었을 때 이미 받은 AI 재판정을 붙인다 — 붙으면 기억에서 화면만 다시 그린다(코어 판정 없음)
+      setResults((await restoreExternal(state.current, content)) ? await factcheckArticle(content, materials, state.current.cache) : items);
     } catch (e) {
       setError(e?.message || String(e));
     } finally {
@@ -80,11 +111,7 @@ export function useFactCheck(article) {
     setRecheckBusy(true);
     setError("");
     try {
-      const items = todo.map(([text, r], i) => {
-        const ev = recheckEvidence(r);
-        return { id: String(i), claim: text, evidence: ev.map((e) => e.text || ""), titles: ev.map((e) => e.material_title || "") };
-      });
-      for (const x of await externalRecheck(items)) {
+      for (const x of await externalRecheck(recheckItems(todo))) {
         const hit = todo[Number(x.id)];
         if (hit) state.current.cache.set(hit[0], { ...hit[1], external: x });
       }

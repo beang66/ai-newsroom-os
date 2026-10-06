@@ -6,7 +6,9 @@ reached only through the backend proxy (see ARCHITECTURE.md — backend-managed 
 팩트체크·의미 청킹(core/ai/factcheck)은 torch/onnxruntime 을 쓰므로 처음 호출할 때 불러온다.
 """
 import importlib.util
+from collections import Counter
 
+from .. import factcheck_memo as memo
 from ..ai.router import assist as _assist
 from ..ai.transcribe import transcribe as _transcribe
 from ..errors import RequestError
@@ -59,15 +61,60 @@ class AIManager:
             if not isinstance(material, dict):
                 raise RequestError('materials 항목 형식을 확인해 주세요.')
             _text(material.get('content') or material.get('summary') or '', '자료 본문')
-        if not self.factcheck_status()['ready']:
-            raise RequestError('팩트체크 모델이 아직 설치되지 않았어요. 모델 설치 후 다시 시도해 주세요.', 503)
-        from ..ai.factcheck.service import review_workspace
-        return review_workspace(nodes, materials)
+        # 이미 판정한 (문장, 자료) 조합은 암호화 저장소의 기록을 쓰고, 처음 보는 문장만 판정한다(memo)
+        fingerprint, version = memo.fingerprint(materials), memo.model_version()
+        keys = {i: memo.node_key(node, fingerprint, version) for i, node in enumerate(nodes) if memo.judged(node)}
+        stored = memo.get_many(keys.values())
+        pending = [i for i, key in keys.items() if key not in stored]
+        fresh = {'results': [], 'node_statuses': {}, 'critiques': []}
+        if pending or not keys:
+            if not self.factcheck_status()['ready']:
+                raise RequestError('팩트체크 모델이 아직 설치되지 않았어요. 모델 설치 후 다시 시도해 주세요.', 503)
+            from ..ai.factcheck.service import review_workspace
+            fresh = review_workspace([nodes[i] for i in pending] if keys else nodes, materials)
+            by_id = {str(nodes[i]['id']): keys[i] for i in pending}
+            cards = {c.get('nodeId'): c for c in fresh.get('critiques', [])}
+            new = {by_id[r['node_id']]: memo.pack_node(r, fresh['node_statuses'].get(r['node_id']), cards.get(r['node_id']))
+                   for r in fresh['results'] if r['node_id'] in by_id}
+            memo.put_many(new)
+            stored.update(new)
+        if not keys:
+            return fresh
+        from ..ai.factcheck.assertion import find_support_spans
+        results, statuses, critiques = [], {}, []
+        for i, key in keys.items():
+            if key in stored:
+                result, status, card = memo.unpack_node(stored[key], str(nodes[i]['id']))
+                # 표시 위치는 응답 때 계산: 예전 판정 캐시도 재판정 없이 새 표시를 쓴다.
+                if result.get('status') == 'SUPPORTED':
+                    result['support_spans'] = find_support_spans(nodes[i]['text'], (result.get('evidence') or {}).get('text') or '')
+                results.append(result)
+                statuses[result['node_id']] = status
+                if card:
+                    critiques.append(card)
+        meta = {k: v for k, v in fresh.items() if k not in ('results', 'node_statuses', 'critiques', 'counts', 'cached')}
+        return {**meta, 'success': True, 'cached': len(results) - len(fresh['results']),
+                'counts': dict(Counter(r['status'] for r in results)),
+                'node_statuses': statuses, 'critiques': critiques, 'results': results}
 
     def factcheck_external(self, payload):
-        """로컬 판정기가 확정 못 한 문장만 OpenAI 로 재판정(임시·시험용). payload: {items: [{id, claim, evidence: [str]}]}"""
+        """로컬 판정기가 확정 못 한 문장만 OpenAI 로 재판정(임시·시험용). payload: {items: [{id, claim, evidence: [str]}], cachedOnly?}
+        cachedOnly 가 참이면 저장된 재판정 결과만 돌려주고 OpenAI 는 부르지 않는다(원고를 다시 열 때 화면 복원용)."""
         from ..ai.factcheck.external import judge
-        return judge(payload)
+        items = payload.get('items')
+        if not isinstance(items, list) or not 0 < len(items) or not all(isinstance(i, dict) for i in items):
+            return judge(payload)  # 형식 오류는 judge 가 알린다
+        keys = [memo.external_key(i) for i in items]
+        stored = memo.get_many(keys)  # 같은 문장·근거는 다시 OpenAI 에 묻지 않는다(비용·시간)
+        todo = [i for i, key in zip(items, keys) if key not in stored]
+        if todo and not payload.get('cachedOnly'):
+            out = judge({'items': todo})
+            ids = {str(i.get('id')): memo.external_key(i) for i in todo}
+            memo.put_many({ids[str(r.get('id'))]: {k: v for k, v in r.items() if k != 'id'}
+                           for r in out.get('results', []) if str(r.get('id')) in ids})
+            stored = memo.get_many(keys)
+        return {'results': [dict(stored[key], id=item.get('id')) for item, key in zip(items, keys) if key in stored],
+                'count': len(items)}
 
     def semantic_parse(self, payload):
         """자료 본문을 의미 단위(청크)로 나눈다. 경계 모델이 없으면 규칙만 쓴다."""

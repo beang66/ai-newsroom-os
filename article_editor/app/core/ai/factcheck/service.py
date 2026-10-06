@@ -4,7 +4,7 @@ from collections import Counter
 
 from .paths import JUDGE_DIR, settings
 from .semantic_chunker_v3 import clean as _clean
-from .assertion import find_explicit_value_conflicts, find_near_copy_differences, shares_value
+from .assertion import find_explicit_value_conflicts, find_near_copy_differences, shares_value, recipient_assertions
 from .chunker import chunk_document
 from .semantic_provider import OnnxJudgeProvider
 from .observability import record_factcheck_event
@@ -160,13 +160,35 @@ def _judge_qwen_candidates(provider, claim, node, candidates):
         focus_spans = []
 
         text = evidence.get("text") or ""
+        relation_spans = []
+        relation_checks = []
+        # 긴 문장의 대부분이 맞아도 수신자가 바뀐 절 하나를 놓칠 수 있어 같은 모델로 그 관계를 따로 검사한다.
+        if status == "SUPPORTED" and len(claim) >= 100:
+            for atom in recipient_assertions(claim):
+                if len(atom['text']) >= len(claim) - 20:
+                    continue
+                check = provider.judge(atom['text'], [{"sentence": text}])
+                relation_checks.append({'claim': atom['text'], 'status': check.status, 'confidence': check.confidence})
+                if check.status == "SUPPORTED":
+                    continue
+                status = "CONFLICT" if check.status == "CONFLICT" else "REVIEW"
+                confidence = check.confidence
+                reason = f"{atom['action']} 대상 ‘{atom['target']}’을 별도 판정했습니다. " + check.reason
+                counterparts = [a for a in recipient_assertions(text) if a['action'] == atom['action']
+                                and re.sub(r'\s', '', a['object']) == re.sub(r'\s', '', atom['object'])]
+                other = counterparts[0] if len(counterparts) == 1 else None
+                relation_spans = [{'claim_start': atom['start'], 'claim_end': atom['end'], 'claim_text': atom['target'],
+                                   'evidence_start': other['start'] if other else 0,
+                                   'evidence_end': other['end'] if other else 0,
+                                   'evidence_text': other['target'] if other else '', 'kind': 'recipient_relation'}]
+                break
         if status == "CONFLICT":
             # 판정은 판정기가 한다. 위치는 화면에서 틀린 부분만 강조하는 데만 쓴다:
             # 같은 항목의 값이 다르면 그 값, 아니면 근거를 거의 그대로 옮긴 문장에서 달라진 단어
-            conflict_spans = find_explicit_value_conflicts(claim, text) or find_near_copy_differences(claim, text, window=True)
+            conflict_spans = relation_spans or find_explicit_value_conflicts(claim, text) or find_near_copy_differences(claim, text, window=True)
             focus_spans = list(conflict_spans)
         elif status != "SUPPORTED":
-            focus_spans = find_near_copy_differences(claim, text, window=True)  # 검토·근거 부족도 달라진 부분만
+            focus_spans = relation_spans or find_near_copy_differences(claim, text, window=True)  # 검토·근거 부족도 달라진 부분만
         else:
             focus_spans = find_near_copy_differences(claim, text)
             legacy_score = _score(claim, evidence, evidence.get("material_id") in linked_ids)
@@ -185,7 +207,7 @@ def _judge_qwen_candidates(provider, claim, node, candidates):
             "conflict_spans": conflict_spans,
             "focus_spans": focus_spans,
             "provider": judgement.provider,
-            "model_metadata": judgement.metadata,
+            "model_metadata": {**(judgement.metadata or {}), 'relation_checks': relation_checks},
         })
         if status in ("SUPPORTED", "CONFLICT"):
             break

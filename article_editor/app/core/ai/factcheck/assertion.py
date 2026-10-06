@@ -8,6 +8,36 @@ from __future__ import annotations
 import re
 from difflib import SequenceMatcher
 
+_RECIPIENT_RE = re.compile(
+    r'(?P<target>(?:관할\s+)?[가-힣A-Za-z·ㆍ]+?(?:단체장|서장|장관|기관장|기관|위원회|청장|지사|시장|군수|구청장))'
+    r'\s*(?:등\s*)?에\s*게\s*(?P<action>제출|신고|통보|보고)'
+)
+
+
+def recipient_assertions(text: str) -> list[dict]:
+    """긴 문장에서 목적물-수신자-행위를 별도 주장으로 꺼낸다. 참/거짓 판정은 모델이 한다.
+
+    ponytail: 명시적인 수신자와 바로 이어진 제출/신고/통보/보고만 다룬다. 다른 관계는 학습·분해 확장이 필요하다.
+    """
+    out = []
+    for m in _RECIPIENT_RE.finditer(text):
+        prefix = text[max(0, m.start() - 160):m.start()]
+        objects = list(re.finditer(r'(?:[가-힣A-Za-z0-9]+\s+)?[가-힣A-Za-z0-9]+[을를](?=\s)', prefix))
+        if not objects:
+            continue
+        obj = objects[-1].group().strip()
+        if obj in ('이를', '이것을', '그것을'):
+            continue  # 짧은 주장에 대명사만 남으면 무엇을 보내는지 바뀔 수 있다
+        tail = text[m.start():]
+        stop = re.search(r'[.?!]', tail)
+        if stop:
+            tail = tail[:stop.end()]
+        out.append({'text': obj + ' ' + tail.replace('**', '').replace('__', '').replace('~~', ''),
+                    'object': obj, 'action': m['action'], 'target': m['target'],
+                    'start': m.start('target'), 'end': m.end('target')})
+    return out
+
+
 VALUE_RE = re.compile(
     r"\d{4}\s*년\s*\d{1,2}\s*월(?:\s*\d{1,2}\s*일)?|"
     r"\d{1,2}\s*월\s*\d{1,2}\s*일|"
@@ -72,6 +102,37 @@ def shares_value(claim: str, evidence: str) -> bool:
                 out.add(v)
         return out
     return bool(values(claim) & values(evidence))
+
+
+def find_support_spans(claim: str, evidence: str) -> list[dict]:
+    """이미 일치로 판정된 청크에서 관련 문장/표 항목을 찾는다(판정에는 사용하지 않는다).
+
+    띄어쓰기·조사가 다른 공시 표도 비교한다. 같은 값은 표기가 달라도 검색 신호로 쓰고,
+    대응하는 표현이 부족하거나 최상위 항목이 동점이면 위치를 단정하지 않는다.
+    """
+    compact = lambda text: re.sub(r'[^가-힣A-Za-z0-9]', '', text).lower()
+    needle = compact(claim)
+    if not needle or not evidence:
+        return []
+    # 문장·줄·번호가 붙은 표 항목 경계. 소수점/ISO 날짜/쉼표가 있는 금액은 자르지 않는다.
+    cuts = [0, *[m.end() for m in re.finditer(r'\n+|(?<=[.!?])\s+|\s+(?=\d{1,2}\.\s)', evidence)], len(evidence)]
+    candidates = []
+    for start, end in zip(cuts, cuts[1:]):
+        part = evidence[start:end]
+        start += len(part) - len(part.lstrip())
+        end -= len(part) - len(part.rstrip())
+        part = evidence[start:end]
+        blocks = SequenceMatcher(None, needle, compact(part), autojunk=False).get_matching_blocks()
+        shared = sum(b.size for b in blocks if b.size >= 2)
+        if shared < 4 or shared / len(needle) < 0.2:
+            continue
+        score = (shares_value(claim, part), max(b.size for b in blocks), shared)
+        candidates.append((score, start, end))
+    candidates.sort(reverse=True)
+    if not candidates or (len(candidates) > 1 and candidates[0][0] == candidates[1][0]):
+        return []
+    _, start, end = candidates[0]
+    return [{'evidence_start': start, 'evidence_end': end}]
 
 
 def find_explicit_value_conflicts(claim: str, evidence: str) -> list[dict]:

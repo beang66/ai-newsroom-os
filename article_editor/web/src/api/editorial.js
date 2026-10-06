@@ -1,6 +1,7 @@
 // 편집 보조 기능 — 옛 시험용 UI(article-workspace, 기능 담당자 제작)가 쓰던 코어 기능을 새 UI 용으로 옮긴 얇은 층.
 // 응답 모양 차이(원격 AI / 로컬 모델)를 여기서 흡수해 컴포넌트는 문자열 목록만 받는다.
 import { core } from "./core.js";
+import { claimDetails } from "./claim-details.js";
 
 const clean = (values) => [...new Set(values.map((v) => String(v || "").trim()).filter(Boolean))];
 
@@ -140,7 +141,16 @@ export function splitSentences(content) {
     if (/^\s*(출처|사진|자료|그래픽|영상|제공)\s*[:：]/.test(piece) || /^[^.?!]{0,30}기자\s*[\w.+-]*@[\w.-]+$/.test(piece)) return;
     let text = "";
     const map = [];
+    // 채팅에서 복사한 굵게/취소선 표시는 화면 원문에 남기되 판정 문장에서는 제외한다.
+    const decorations = new Set();
+    for (const m of piece.matchAll(/(\*\*|__|~~)(?=\S)([\s\S]*?\S)\1/g)) {
+      for (let j = 0; j < m[1].length; j += 1) {
+        decorations.add(from + m.index + j);
+        decorations.add(from + m.index + m[0].length - m[1].length + j);
+      }
+    }
     for (let i = from; i < to; i += 1) {
+      if (decorations.has(i)) continue;
       if (/\s/.test(content[i])) {
         if (text.endsWith(" ")) continue;
         text += " ";
@@ -149,7 +159,7 @@ export function splitSentences(content) {
     }
     out.push({ raw: content.slice(from, to), start: from, end: to, text, map });
   };
-  const boundary = /([.?!]["'”’)\]]*)(?=\s|$)|\n[ \t]*\n/g;
+  const boundary = /([.?!](?:["'”’)\]]|\*{1,2}|_{1,2}|~~)*)(?=\s|$)|\n[ \t]*\n/g;
   let start = 0;
   let m;
   while ((m = boundary.exec(content || ""))) {
@@ -181,14 +191,14 @@ export async function factcheckArticle(content, files, cache = new Map()) {
   }
   return nodes.filter((n) => cache.has(n.text)).map((node) => {
     const r = cache.get(node.text);
-    if (r.external) return externalItem(node, r);
+    if (r.external) return externalItem(node, r, files);
     // 틀린 값 위치(코어 conflict_spans/focus_spans, 공백 정리된 문장 기준) → 원문 위치로 되돌린다
-    const pairs = (node.text === r.claim ? (r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || []) : [])
+    const pairs = (r.status !== "SUPPORTED" && node.text === r.claim ? (r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || []) : [])
       .filter((x) => x.claim_end > x.claim_start && x.claim_end <= node.map.length);
     const spans = pairs.map((x) => ({ start: node.map[x.claim_start], end: node.map[x.claim_end - 1] + 1 }));
     // 같은 짝의 근거 쪽 위치(근거 발췌 quote 기준) — 서랍 카드에서 본문 하이라이트와 짝을 맞춰 표시
     const quote = r.evidence?.text || "";
-    const quoteSpans = pairs
+    const quoteSpans = (r.status === "SUPPORTED" ? r.support_spans || [] : pairs)
       .filter((x) => x.evidence_end > x.evidence_start && x.evidence_end <= quote.length)
       .map((x) => ({ start: x.evidence_start, end: x.evidence_end }));
     return {
@@ -204,6 +214,7 @@ export async function factcheckArticle(content, files, cache = new Map()) {
       sourceDoc: r.evidence?.material_title || "",
       page: "",
       quote,
+      details: claimDetails(node.raw, quote, files.find((f) => f.id === r.evidence?.material_id || f.name === r.evidence?.material_title)),
       comment: r.reason || "",
       suggestedFix: null,
       needsRecheck: needsRecheck(r),
@@ -226,10 +237,16 @@ export async function externalRecheck(items) {
   return (await core.factcheckExternal(items)).results || [];
 }
 
+/** 이미 받아 둔 외부 재판정만 조회(저장된 것만 — OpenAI 호출·비용 없음). 원고를 다시 열 때 AI 판정을 화면에 복원한다.
+ *  items 는 externalRecheck 와 똑같은 형식이어야 저장된 기록을 찾는다 */
+export async function cachedExternalRecheck(items) {
+  return (await core.factcheckExternal(items, undefined, { cachedOnly: true })).results || [];
+}
+
 const EXTERNAL_VERDICT = { SUPPORTED: "SUPPORTED", CONFLICT: "CONFLICT", NOT_ENOUGH_INFO: "EVIDENCE_GAP" };
 
 /** 외부 판정 결과 → 카드·하이라이트. wrong_text·evidence_text 는 원문에서 그대로 찾을 수 있을 때만 위치로 쓴다 */
-function externalItem(node, r) {
+function externalItem(node, r, files) {
   const x = r.external;
   const verdict = EXTERNAL_VERDICT[x.verdict] || "REVIEW";
   const evidence = recheckEvidence(r);
@@ -250,6 +267,7 @@ function externalItem(node, r) {
     sourceDoc: source.material_title || "",
     page: "",
     quote,
+    details: claimDetails(node.raw, quote, files.find((f) => f.id === source.material_id || f.name === source.material_title)),
     comment: `AI 재판정(OpenAI): ${x.reason}`,
     suggestedFix: null,
     judgedBy: "external",

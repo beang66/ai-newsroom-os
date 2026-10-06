@@ -58,6 +58,7 @@ APP_DATA = Path(os.environ.get('AI_NEWSROOM_APPDATA')
                 or Path(os.environ.get('LOCALAPPDATA') or Path.home() / '.local' / 'share') / APP_NAME)
 ARTICLES_DIR = DOCUMENTS / 'articles'
 SOURCES_DIR = DOCUMENTS / 'sources'
+DB_PATH = APP_DATA / 'vault.db'  # 원고·취재자료 암호화 저장소(core/vault.py). 동기화되는 내 문서가 아니라 APP_DATA 에 둔다
 WORKSPACE = APP_DATA  # 로그·캐시·웹뷰(옛 이름 유지 — 예전 .article-workspace 자리)
 
 # .env 탐색 순서: 가까운 폴더가 우선. APP_DATA 는 설치본에서 키를 두는 자리. OS 환경변수가 항상 우선(setdefault).

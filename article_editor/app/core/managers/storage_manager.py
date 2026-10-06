@@ -1,8 +1,8 @@
 """Storage Manager — local data access (doc §4, §6).
 
 Frontend and AI modules must not touch file paths directly; they go through here.
-Current implementation: local JSON article files (``core/storage.py``).
-Planned: encrypted SQLite + project files + attachments.
+Current implementation: encrypted SQLite (``core/storage.py`` on ``core/vault.py``, SQLCipher).
+Planned: project files + attachments.
 """
 from ..storage import latest_article as _latest_article, open_source as _open_source, save_article as _save_article, source_file as _source_file
 

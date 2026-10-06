@@ -5,6 +5,11 @@ info:
   description: |
     operationId가 canonical Core named method다. 최종 EXE는 pywebview IPC로 호출한다.
     HTTP 경로는 브라우저 통합 테스트용 adapter이며 별도의 제품 계약이 아니다.
+    구현 상태(2026-10-07): 이 파일의 /api/core/v0.8 경로와 대부분의 operationId는 목표 계약이다.
+    feature/app-core의 현행 HTTP는 /api/*이며 saveArticle(draft), latestArticle(),
+    openSource(sourceId), sourceBytes(sourceId) 등만 확인되었다. getKnowledgeMap,
+    createSnapshot 및 공통 UUID 조회는 미구현이다.
+    실제 호출·저장 및 계약 차이는 CORE_REALITY_AUDIT_2026-10-07.md를 참조한다.
 servers:
   - url: /api/core/v0.8
 security:

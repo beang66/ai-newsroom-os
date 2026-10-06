@@ -10,6 +10,8 @@ import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import assert from "node:assert/strict";
 
 const require = createRequire(import.meta.url);
@@ -61,11 +63,14 @@ const stub = createServer((req, res) => {
 });
 await new Promise((r) => stub.listen(0, "127.0.0.1", r));
 
+const SMOKE_DOCS = fs.mkdtempSync(path.join(os.tmpdir(), "ainews-smoke-"));
 const server = spawn(process.env.PYTHON || "python", ["app/server.py"], {
   cwd: ROOT,
   env: {
     ...process.env,
     PORT,
+    // 원고·취재자료는 임시 폴더에 — 실제 내 문서\AI Newsroom 을 더럽히지 않는다
+    AI_NEWSROOM_DOCUMENTS: SMOKE_DOCS,
     USE_LOCAL_MODELS: "false",
     PYTHONIOENCODING: "utf-8",
     AI_BACKEND: "remote",
@@ -161,6 +166,9 @@ try {
   await see("전환 중인 기사");
   await go("보관함");
   await see("기사 중심 통합 보관함");
+  // 팩트체크 서랍에 올린 자료가 기사 취재자료로 남아 보관함에 보여야 한다(깨진 파일은 빠짐)
+  await page.getByText("취재자료 (1건)").waitFor();
+  await page.getByText("• 자료.txt").waitFor();
   await go("녹음 파일");
   await see("인터뷰·녹취 스튜디오");
   // 녹음 전사: 파일 → 코어 /api/interview/transcribe → 백엔드 /ai/audio/transcriptions(multipart) → 화자별 대화
@@ -188,6 +196,7 @@ try {
 } finally {
   await browser?.close();
   server.kill();
+  fs.rmSync(SMOKE_DOCS, { recursive: true, force: true });
   stub.close();
   // 테스트가 만든 원고 파일은 지운다(사용자 원고와 섞이지 않게)
   for (const id of savedIds) fs.rmSync(new URL(`.article-workspace/articles/${id}.json`, ROOT), { force: true });

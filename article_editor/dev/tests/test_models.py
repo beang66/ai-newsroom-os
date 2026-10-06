@@ -72,18 +72,19 @@ def digest(data: bytes) -> str:
 
 
 class PathDefaultsTests(unittest.TestCase):
-    """기본 저장 위치가 **설치 폴더 안**인지 확인한다(사용자 프로필로 새지 않게)."""
+    """기본 모델 위치가 앱 데이터 폴더(%LOCALAPPDATA%/AI Newsroom/models)인지 확인한다(2026-10-06, app_paths)."""
 
     @staticmethod
     def _configured(key):
         """`.env` 에 직접 적어 둔 항목은 기본값 검사에서 제외한다."""
         return any(line.strip().startswith(key + '=') for line in env_lines())
 
-    def test_models_and_cache_live_inside_install_folder(self):
+    def test_models_and_cache_live_in_app_data(self):
         self.assertEqual(config.MODELS_MANIFEST, config.BUNDLE / 'models_manifest.json')
         self.assertTrue(config.MODELS_MANIFEST.is_file(), '매니페스트는 앱에 동봉된다')
         if not (self._configured('MODELS_DIR') or os.environ.get('MODELS_DIR')):
-            self.assertEqual(config.MODELS_DIR, config.APP_ROOT / 'models')
+            # 예전 위치를 옮기지 못한 PC(다른 드라이브 등)에서는 예전 위치를 그대로 쓴다(config._models_dir)
+            self.assertIn(config.MODELS_DIR, (config.APP_DATA / 'models', config.APP_ROOT / 'models'))
         if not (self._configured('HF_HOME') or self._configured('HEADLINE_CACHE_DIR')):
             expected = str(config.MODELS_DIR / 'hf')
             self.assertEqual(config.HF_HOME, expected)

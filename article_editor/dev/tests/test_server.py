@@ -117,13 +117,13 @@ class ServerTests(ApiTestCase):
             self.assertEqual(self.request('/api/unsplash/search?q=forest&page=' + page)[0], 400)
 
     def test_local_file_save_and_update(self):
-        with tempfile.TemporaryDirectory() as temp, patch.object(storage, 'ROOT', Path(temp)):
+        with tempfile.TemporaryDirectory() as temp, patch.object(storage, 'ARTICLES_DIR', Path(temp) / 'articles'):
             draft = {'schemaVersion': 3, 'title': '원고', 'bodyHtml': '<p>내용</p>', 'confirmed': {'headline': True, 'subheadline': False}}
             status, raw, _ = self.request('/api/articles/save', {'draft': draft})
             self.assertEqual(status, 200)
             result = json.loads(raw)
             identifier = result['articleId']
-            target = Path(temp) / '.article-workspace' / 'articles' / result['fileName']
+            target = Path(temp) / 'articles' / result['fileName']
             self.assertTrue(target.exists())
             self.assertEqual(json.loads(target.read_text(encoding='utf-8'))['title'], '원고')
             draft.update(articleId=identifier, title='수정 원고')
@@ -158,8 +158,12 @@ class ServerTests(ApiTestCase):
 
     def test_materials_extract(self):
         import base64
-        status, raw, _ = self.request('/api/materials/extract', {'filename': '자료.txt', 'data': base64.b64encode('보도자료 본문'.encode()).decode()})
-        self.assertEqual((status, json.loads(raw)['text']), (200, '보도자료 본문'))
+        with tempfile.TemporaryDirectory() as temp, patch.object(storage, 'SOURCES_DIR', Path(temp)):
+            status, raw, _ = self.request('/api/materials/extract', {'filename': '자료.txt', 'data': base64.b64encode('보도자료 본문'.encode()).decode()})
+            out = json.loads(raw)
+            self.assertEqual((status, out['text']), (200, '보도자료 본문'))
+            self.assertEqual(Path(out['path']).read_text(encoding='utf-8'), '보도자료 본문')  # 원본 보관
+            self.assertTrue((Path(temp) / out['sourceId'] / 'text.txt').is_file())
         self.assertEqual(self.request('/api/materials/extract', {'filename': 'x.exe', 'data': 'eA=='})[0], 415)
 
     def test_models_status_endpoint(self):

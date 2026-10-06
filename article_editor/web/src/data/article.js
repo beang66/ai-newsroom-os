@@ -13,6 +13,7 @@ export function createEmptyArticle() {
     createdAt: now,
     updatedAt: now,
     linkedSources: [],
+    sources: [], // 올린 취재자료 [{id, name, format, size, chars, path, addedAt, text}] — text 는 메모리에만(원본·텍스트는 코어가 내 문서에 보관)
     linkedInterviews: [],
     photos: [],
     cardNews: [],

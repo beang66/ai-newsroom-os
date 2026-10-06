@@ -8,7 +8,7 @@
     python app/launcher.py --smoke write 창 검증 하네스(데스크톱 셸)
 
 배포본(exe)도 **같은 CLI**를 쓴다. 다만 인자가 없으면 창 모드가 기본이고,
-진단 로그는 `.article-workspace/logs/app.log` 에 남는다(packaging/README.md).
+진단 로그는 `%LOCALAPPDATA%/AI Newsroom/logs/app.log` 에 남는다(app_paths, packaging/README.md).
 
 서버는 별도 프로세스가 아니라 이 프로세스의 스레드에서 돈다(desktop/runtime.py).
 배포본에서 `sys.executable` 이 자기 자신이라 재실행 루프가 되는 문제를 없앤다.
@@ -25,7 +25,7 @@ _APP_DIR = Path(__file__).resolve().parent
 if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))
 
-from app_paths import APP_ROOT, BUNDLE, ENV_DIRS, FRONTEND, FROZEN, WORKSPACE  # noqa: E402
+from app_paths import APP_DATA, APP_ROOT, BUNDLE, DOCUMENTS, ENV_DIRS, FRONTEND, FROZEN, WORKSPACE  # noqa: E402
 from desktop import runtime  # noqa: E402
 
 LOG_PATH = WORKSPACE / 'logs' / 'app.log'
@@ -160,6 +160,8 @@ def print_diagnostics(url, server):
     ai, has_url, has_token = backend_info()
     print(f'[진단] AI 경로     : {ai} (백엔드 주소 {"설정" if has_url else "없음"}, 토큰 {"설정" if has_token else "없음"})')
     print(f'[진단] 로그        : {LOG_PATH}')
+    print(f'[진단] 기사·취재자료: {DOCUMENTS}')
+    print(f'[진단] 앱 데이터   : {APP_DATA}')
     try:
         from core.managers.model_manager import ModelManager
 

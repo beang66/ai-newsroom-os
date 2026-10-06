@@ -15,10 +15,10 @@ import {
   ShieldCheck,
   RefreshCw
 } from "lucide-react";
-import { extractMaterialText, factcheckArticle } from "../api/editorial";
+import { registerSource, factcheckArticle } from "../api/editorial";
 
-// 텍스트 파일은 브라우저에서 바로 읽고, PDF·HWP·HWPX·DOCX 는 코어(/api/materials/extract)가 추출한다
-const TEXT_FILE = /\.(txt|md|csv|json|html?)$/i;
+// 모든 자료는 코어(/api/materials/extract)가 텍스트를 뽑고 원본을 내 문서에 보관한다 → 기사 sources 에 등록
+const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 const VERDICT_BADGE = {
   SUPPORTED: ["팩트 일치", "bg-emerald-50 text-emerald-700 border-emerald-200"],
   CONFLICT: ["자료와 불일치", "bg-rose-50 text-rose-700 border-rose-200"],
@@ -35,47 +35,38 @@ export default function FactCheckDrawer({
   article,
   setArticle
 }) {
-  // 업로드된 근거/취재 파일 목록 상태
-  const [uploadedFiles, setUploadedFiles] = useState([]);
+  // 등록된 취재자료는 기사(article.sources)에 둔다 — 서랍을 닫아도, 보관함에서도 보인다. 실패한 파일만 여기
+  const [failedFiles, setFailedFiles] = useState([]);
+  const sources = article.sources || [];
 
   // 대조 및 추출된 근거자료 목록 상태
   const [evidenceList, setEvidenceList] = useState([]);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [checkError, setCheckError] = useState("");
   const fileInputRef = useRef(null);
 
   // 파일 업로드 처리 핸들러
   const handleFileUpload = async (files) => {
     if (!files || files.length === 0) return;
-
-    const newFiles = await Promise.all(Array.from(files).map(async (f, idx) => {
-      let text = null;
-      let status = "등록됨";
-      try {
-        text = TEXT_FILE.test(f.name) ? await f.text() : await extractMaterialText(f);
-      } catch (e) {
-        status = e?.message || "텍스트 추출 실패";
-      }
-      return {
-        id: `uploaded-${Date.now()}-${idx}`,
-        name: f.name,
-        size: `${(f.size / (1024 * 1024)).toFixed(1)} MB`,
-        uploadTime: "방금 전",
-        status,
-        type: f.name.split(".").pop() || "doc",
-        text
-      };
-    }));
-
-    const all = [...newFiles, ...uploadedFiles];
-    setUploadedFiles(all);
+    setIsUploading(true);
+    const results = await Promise.all(Array.from(files).map((f) =>
+      registerSource(f).catch((e) => ({ failed: true, id: `failed-${Date.now()}-${f.name}`, name: f.name, size: f.size, error: e?.message || "텍스트 추출 실패" }))
+    ));
+    setIsUploading(false);
+    const added = results.filter((r) => !r.failed);
+    setFailedFiles((prev) => [...results.filter((r) => r.failed), ...prev]);
+    if (!added.length) return;
+    const ids = new Set(added.map((r) => r.id));
+    const all = [...added, ...sources.filter((s) => !ids.has(s.id))]; // 같은 파일은 한 번만
+    setArticle((prev) => ({ ...prev, sources: all }));
     runCheck(all);
   };
 
-  // 코어 팩트체크(core.factcheckRun): 본문 문장 ↔ 등록된 텍스트 자료
-  const runCheck = (files = uploadedFiles) => {
+  // 코어 팩트체크(core.factcheckRun): 본문 문장 ↔ 등록된 자료(텍스트)
+  const runCheck = (files = sources) => {
     const materials = files.filter((f) => f.text != null);
     if (!materials.length) return setCheckError("검증에 쓸 자료(PDF·HWP·HWPX·DOCX·TXT)를 올려 주세요.");
     setCheckError("");
@@ -114,10 +105,12 @@ export default function FactCheckDrawer({
     alert(`"${ev.sourceDoc}" 근거자료 인용 주석이 본문 끝에 삽입되었습니다.`);
   };
 
-  // 파일 삭제
+  // 기사에서 자료 연결 해제(내 문서의 원본 파일은 지우지 않는다)
   const handleDeleteFile = (id) => {
-    setUploadedFiles((prev) => prev.filter((f) => f.id !== id));
+    setFailedFiles((prev) => prev.filter((f) => f.id !== id));
+    setArticle((prev) => ({ ...prev, sources: (prev.sources || []).filter((f) => f.id !== id) }));
   };
+  const fileRows = [...failedFiles, ...sources];
 
   return (
     /* ──────────────────────────────────────────
@@ -191,7 +184,7 @@ export default function FactCheckDrawer({
               />
 
               <div className="w-11 h-11 rounded-2xl bg-white shadow-xs border border-slate-200 flex items-center justify-center text-blue-600">
-                {isAnalyzing ? (
+                {isAnalyzing || isUploading ? (
                   <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
                 ) : (
                   <FileText className="w-5 h-5" />
@@ -200,7 +193,7 @@ export default function FactCheckDrawer({
 
               <div>
                 <p className="text-xs font-bold text-slate-800">
-                  {isAnalyzing ? "문서를 읽고 기사와 팩트 대조 중..." : "검증할 문서나 보도자료를 이곳에 끌어다 놓으세요"}
+                  {isUploading ? "문서에서 글자를 읽는 중..." : isAnalyzing ? "문서를 읽고 기사와 팩트 대조 중..." : "검증할 문서나 보도자료를 이곳에 끌어다 놓으세요"}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
                   PDF · HWP · HWPX · DOCX · TXT 지원 (스캔 PDF 제외)
@@ -209,13 +202,13 @@ export default function FactCheckDrawer({
             </div>
 
             {/* 업로드된 파일 리스트 */}
-            {uploadedFiles.length > 0 && (
+            {fileRows.length > 0 && (
               <div className="space-y-2 pt-1">
                 <span className="text-[11px] font-bold text-slate-500">
-                  등록된 검증 원천자료 ({uploadedFiles.length}건)
+                  등록된 검증 원천자료 ({sources.length}건)
                 </span>
                 <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                  {uploadedFiles.map((file) => (
+                  {fileRows.map((file) => (
                     <div
                       key={file.id}
                       className="flex items-center justify-between p-2.5 bg-slate-100/70 hover:bg-slate-100 rounded-xl text-xs border border-slate-200/80 transition"
@@ -224,22 +217,24 @@ export default function FactCheckDrawer({
                         <FileCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                         <div className="truncate">
                           <p className="font-bold text-slate-900 truncate">{file.name}</p>
-                          <p className="text-[10px] text-slate-400">{file.size} · {file.uploadTime}</p>
+                          <p className="text-[10px] text-slate-400" title={file.path || ""}>
+                            {mb(file.size)}{file.addedAt ? ` · ${file.addedAt}` : ""}{file.text == null && !file.failed ? " · 본문 다시 불러오기 필요" : ""}
+                          </p>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <span title={file.status} className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md max-w-[160px] truncate ${
-                          file.text != null
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-red-100 text-red-800"
+                        <span title={file.error || file.path} className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md max-w-[160px] truncate ${
+                          file.failed
+                            ? "bg-red-100 text-red-800"
+                            : "bg-emerald-100 text-emerald-800"
                         }`}>
-                          {file.status}
+                          {file.failed ? file.error : "등록됨"}
                         </span>
                         <button
                           onClick={() => handleDeleteFile(file.id)}
                           className="p-1 text-slate-400 hover:text-red-600 rounded transition cursor-pointer"
-                          title="삭제"
+                          title={file.failed ? "목록에서 지우기" : "기사에서 연결 해제(원본 파일은 내 문서에 남음)"}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

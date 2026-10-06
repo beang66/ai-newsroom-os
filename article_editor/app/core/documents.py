@@ -1,5 +1,7 @@
 """자료 파일 → 텍스트 (팩트체크 서랍 업로드). PDF·DOCX·HWPX·HWP·텍스트.
 
+추출에 성공한 파일은 원본과 텍스트를 내 문서/AI Newsroom/sources 에 보관한다(storage.save_source).
+
 PDF 는 pypdf, 옛 HWP(한글 5.x 바이너리)는 olefile 로 열고 본문 레코드를 직접 읽는다.
 DOCX·HWPX 는 zip 안의 XML 이라 표준 라이브러리로 충분하다. 스캔 PDF(이미지)는 글자가 없어 OCR 이 필요하다.
 """
@@ -11,6 +13,7 @@ import zipfile
 import zlib
 from xml.etree import ElementTree as ET
 
+from . import storage
 from .errors import RequestError
 
 MAX_FILE = 30_000_000
@@ -120,7 +123,7 @@ READERS = {'pdf': _pdf, 'docx': _docx, 'hwpx': _hwpx, 'hwp': _hwp,
 
 
 def extract_text(payload):
-    """payload: {filename, data(base64 또는 data URL)} → {text, chars, format}"""
+    """payload: {filename, data(base64 또는 data URL)} → {text, chars, format, sourceId, path}"""
     name = payload.get('filename')
     data = payload.get('data')
     if not isinstance(name, str) or not isinstance(data, str) or not data:
@@ -144,4 +147,5 @@ def extract_text(payload):
     text = re.sub(r'[ \t ]+\n', '\n', text).strip()
     if not text:
         raise RequestError('글자를 찾지 못했습니다. 스캔한 이미지 PDF 는 OCR 이 필요합니다.', 422)
-    return {'text': text, 'chars': len(text), 'format': fmt}
+    source_id, path = storage.save_source(name, raw, text)
+    return {'text': text, 'chars': len(text), 'format': fmt, 'sourceId': source_id, 'path': path}

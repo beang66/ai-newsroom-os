@@ -1,6 +1,6 @@
 """모델·런타임 데이터 위치 — 매니페스트(models_manifest.json)의 dir 이름과 맞춘다.
 
-모델은 MODELS_DIR(설치 폴더 안), 캐시·로그는 사용자 작업공간(.article-workspace)에 둔다.
+모델은 MODELS_DIR(%LOCALAPPDATA%/AI Newsroom/models), 캐시·로그는 APP_DATA/factcheck 에 둔다(app_paths).
 """
 import json
 import os

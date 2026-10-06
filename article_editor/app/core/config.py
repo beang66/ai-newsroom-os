@@ -5,7 +5,7 @@ if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))
 
 # 실행 위치는 app_paths.py 한 곳에서만 판단한다(개발/배포 exe 동일 규칙).
-from app_paths import APP_ROOT, BUNDLE, FRONTEND, env_lines  # noqa: E402
+from app_paths import APP_DATA, APP_ROOT, BUNDLE, FRONTEND, env_lines  # noqa: E402
 
 # 공개 기본값(커밋됨) — 새 PC·배포본에서 .env 없이 동작하게 한다. .env/OS 환경변수가 우선.
 from . import defaults  # noqa: E402
@@ -35,12 +35,27 @@ APP_TOKEN = os.environ.get('APP_TOKEN', '')
 SUPABASE_URL = (os.environ.get('SUPABASE_URL') or defaults.SUPABASE_URL or '').rstrip('/')
 SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY') or defaults.SUPABASE_ANON_KEY
 # 로컬 모델 — 배포본은 동봉하지 않고 첫 사용 때 내려받는다(docs/LOCAL_MODELS.md 설계 B).
-# 매니페스트는 앱에 동봉(읽기 전용), 실제 파일은 **설치 경로 안** APP_ROOT/models/ 에 쌓인다(포터블).
-MODELS_DIR = pathlib.Path(os.environ.get('MODELS_DIR') or (APP_ROOT / 'models'))
+# 매니페스트는 앱에 동봉(읽기 전용), 실제 파일은 %LOCALAPPDATA%\AI Newsroom\models 에 쌓인다(2026-10-06, app_paths).
+
+
+def _models_dir():
+    """예전 위치(APP_ROOT/models)가 있으면 새 위치로 폴더째 옮긴다(같은 드라이브면 즉시).
+    옮기지 못하면(다른 드라이브·사용 중) 예전 위치를 그대로 쓴다 — 수 GB 를 복사하지 않는다."""
+    new, old = APP_DATA / 'models', APP_ROOT / 'models'
+    if old.is_dir() and not new.exists():
+        try:
+            new.parent.mkdir(parents=True, exist_ok=True)
+            old.rename(new)
+        except OSError:
+            return old
+    return new
+
+
+MODELS_DIR = pathlib.Path(os.environ.get('MODELS_DIR') or _models_dir())
 MODELS_MANIFEST = pathlib.Path(
     os.environ.get('MODELS_MANIFEST') or (BUNDLE / 'models_manifest.json')
 )
-# 허깅페이스 캐시도 설치 경로 안에 둔다(제목·부제 모델이 사용자 프로필로 새지 않게).
+# 허깅페이스 캐시도 모델 폴더 안에 둔다(제목·부제 모델이 사용자 프로필로 새지 않게).
 # .env 로 HF_HOME / HEADLINE_CACHE_DIR 를 주면 그쪽이 우선한다(디스크가 좁을 때).
 HF_HOME = os.environ.setdefault('HF_HOME', str(MODELS_DIR / 'hf'))
 LIMIT = threading.BoundedSemaphore(3)

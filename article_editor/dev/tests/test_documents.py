@@ -3,6 +3,7 @@ import base64
 import io
 import struct
 import sys
+import tempfile
 import types
 import unittest
 import zipfile
@@ -15,6 +16,7 @@ if str(_APP) not in sys.path:
     sys.path.insert(0, str(_APP))
 
 from core import documents as doc  # noqa: E402
+from core import storage  # noqa: E402
 from core.errors import RequestError  # noqa: E402
 
 
@@ -81,6 +83,21 @@ class FakeOle:
 
 
 class DocumentTests(unittest.TestCase):
+    def setUp(self):  # 추출 결과 보관(sources)은 임시 폴더로 — 실제 내 문서에 쓰지 않는다
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        patcher = mock.patch.object(storage, 'SOURCES_DIR', Path(temp.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.sources = Path(temp.name)
+
+    def test_source_is_kept_once_with_original_name(self):
+        out = doc.extract_text(payload('C:/x/보도자료 1.txt', '본문'.encode()))
+        again = doc.extract_text(payload('보도자료 1.txt', '본문'.encode()))
+        self.assertEqual(out['sourceId'], again['sourceId'])
+        self.assertEqual(Path(out['path']).name, '보도자료 1.txt')
+        self.assertEqual((self.sources / out['sourceId'] / 'text.txt').read_text(encoding='utf-8'), '본문')
+
     def test_docx_paragraphs_and_tables(self):
         w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
         xml = (f'<w:document {w}><w:body><w:p><w:r><w:t>예산은 </w:t></w:r><w:r><w:t>10억원이다.</w:t></w:r></w:p>'

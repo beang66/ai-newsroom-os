@@ -93,7 +93,7 @@ export default function ArchiveView({ article }) {
                 <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">{art.subtitle}</p>
 
                 <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100 text-[11px] text-slate-400 font-semibold">
-                  <span>취재자료: {art.linkedSources.length}건</span>
+                  <span>취재자료: {art.linkedSources.length + (art.sources || []).length}건</span>
                   <span>|</span>
                   <span>녹취: {art.linkedInterviews.length}건</span>
                 </div>
@@ -140,9 +140,14 @@ export default function ArchiveView({ article }) {
                 <Search className="w-4 h-4 text-slate-800 mt-0.5 flex-shrink-0" />
                 <div className="text-xs space-y-1 flex-1">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900">취재자료 ({selectedArticle.linkedSources.length}건)</span>
+                    <span className="font-bold text-slate-900">취재자료 ({selectedArticle.linkedSources.length + (selectedArticle.sources || []).length}건)</span>
                     <span className="text-[10px] bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded font-bold">공식 출처</span>
                   </div>
+                  {(selectedArticle.sources || []).map((src) => (
+                    <div key={src.id} className="text-slate-700 font-semibold truncate" title={src.path}>
+                      • {src.name} <span className="text-slate-400 font-normal">({(src.format || "").toUpperCase()} · {src.chars?.toLocaleString()}자)</span>
+                    </div>
+                  ))}
                   {selectedArticle.linkedSources.map((srcId) => (
                     <div key={srcId} className="text-slate-700 font-semibold">• {srcId}</div>
                   ))}

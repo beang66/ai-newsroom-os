@@ -123,7 +123,12 @@ python app/launcher.py --models install --from "\\서버\배포\models\factcheck
 python app/launcher.py --models
 ```
 
-### 저장 위치 — 설치 경로 안
+### 저장 위치
+
+> **2026-10-06 변경:** 아래 '설치 경로 안' 설계를 바꿨다. 모델·캐시·로그는 `%LOCALAPPDATA%\AI Newsroom\`,
+> 기사·취재자료 원본은 `내 문서\AI Newsroom\`(app/app_paths.py). 예전 `article_editor/models/`·`.article-workspace/` 는
+> 첫 실행 때 자동으로 옮긴다(같은 드라이브면 즉시, 못 옮기면 예전 모델 폴더를 그대로 사용). `MODELS_DIR` 로 바꿀 수 있는 것은 같다.
+> 아래 표는 변경 전 기록이다.
 
 | 대상 | 기본 위치 | 바꾸는 방법 |
 |---|---|---|

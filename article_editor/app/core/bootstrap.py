@@ -3,6 +3,7 @@ import os, socket, sys, threading
 from http.server import ThreadingHTTPServer
 
 from .config import PORT
+from app_paths import migrate_legacy
 from .api import Handler
 from .ai.local_models import load_headline_model
 
@@ -40,7 +41,11 @@ def create_server(port=None):
     ``python server.py`` 는 메인 스레드에서 그대로 돌리고, launcher 와 배포본은
     이 서버를 데몬 스레드에 얹어 창과 같은 프로세스에서 서빙한다.
     포트가 이미 사용 중이면 OSError 를 그대로 올린다(남의 포트를 밀어내지 않는다).
+    예전 저장 위치(.article-workspace)가 남아 있으면 먼저 새 위치로 옮긴다(app_paths.migrate_legacy).
     """
+    left = migrate_legacy()
+    if left:
+        print(f'[저장 위치] 옮기지 못한 파일 {len(left)}개는 예전 자리에 남겨 둡니다(사용 중이거나 같은 이름이 이미 있음).', flush=True)
     return LoopbackServer(('127.0.0.1', int(PORT if port is None else port)), Handler)
 
 

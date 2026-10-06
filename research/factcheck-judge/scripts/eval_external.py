@@ -77,7 +77,9 @@ def main():
     args = ap.parse_args()
     if args.v10:
         from evaluate import load_model, predict
-        models = HERE.parents[1] / 'article_editor' / 'models' / 'factcheck-qwen3-0.6b-v10'
+        sys.path.insert(0, str(HERE.parents[1] / 'article_editor' / 'app'))
+        from core.config import MODELS_DIR  # 앱 모델 폴더(%LOCALAPPDATA%/AI Newsroom/models, 2026-10-06)
+        models = MODELS_DIR / 'factcheck-qwen3-0.6b-v10'
         tok, model = load_model(str(models / 'base' / 'Qwen3-0.6B'), str(models / 'adapters' / 'v10-paraphrase'), False)
         judge = lambda c, e: predict(tok, model, [(c, e)], 192)[0]  # noqa: E731
     else:

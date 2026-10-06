@@ -228,5 +228,5 @@ train 6720 + KLUE 5400 / dev 1285 + KLUE 600. KLUE 를 늘린 만큼 KLUE 검증
 
 ## 앱에 넣을 때(통과 후, 이 PC)
 
-봉인 test 평가 → 어댑터를 `article_editor/models/` 로 → 모델 매니페스트 항목 추가 →
+봉인 test 평가 → `package_judge.py --out` 으로 앱 모델 폴더(`%LOCALAPPDATA%\AI Newsroom\models`, 2026-10-06 이전에는 `article_editor/models/`)에 → 모델 매니페스트 항목 추가 →
 `semantic_provider.py` 의 베이스 경로·입력 길이(현재 192)를 새 모델에 맞춤 → `npm run test:python`.

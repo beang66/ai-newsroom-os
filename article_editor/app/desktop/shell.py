@@ -21,7 +21,7 @@ _APP_DIR = Path(__file__).resolve().parent.parent  # app/ (실행 코드 루트)
 if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))
 
-from app_paths import APP_ROOT  # noqa: E402
+from app_paths import APP_DATA  # noqa: E402
 
 WINDOW_TITLE = 'AI Newsroom — 기사 작성'
 WINDOW_SIZE = (1280, 900)
@@ -32,14 +32,13 @@ URL_PATH = '/index.html'
 def storage_dir() -> Path:
     """WebView2 사용자 데이터 폴더(IndexedDB 영속용).
 
-    기본값은 앱 폴더 안(.article-workspace/webview)이라 포터블 실행을 유지하고,
-    .article-workspace/ 는 이미 gitignore 처리되어 있다.
+    기본값은 %LOCALAPPDATA%/AI Newsroom/webview(app_paths.APP_DATA).
     DESKTOP_STORAGE_DIR 환경변수로 덮어쓸 수 있다.
     """
     override = os.environ.get('DESKTOP_STORAGE_DIR')
     if override:
         return Path(override).expanduser()
-    return APP_ROOT / '.article-workspace' / 'webview'
+    return APP_DATA / 'webview'
 
 
 def shell_available() -> bool:

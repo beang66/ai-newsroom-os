@@ -58,9 +58,20 @@ export async function transcribeAudio(file) {
   return core.transcribe(file.name, await readDataUrl(file));
 }
 
-/** 자료 파일(PDF·DOCX·HWP·HWPX) → 텍스트. 코어가 형식별로 추출한다(30MB 이하) */
-export async function extractMaterialText(file) {
-  return (await core.extractText(file.name, await readDataUrl(file))).text;
+/** 취재자료 등록 — 코어가 텍스트를 뽑고 원본·텍스트를 내 문서\AI Newsroom\sources 에 보관한다(30MB 이하).
+ *  → 기사 sources 항목 {id, name, format, size, chars, path, addedAt, text} */
+export async function registerSource(file) {
+  const d = await core.extractText(file.name, await readDataUrl(file));
+  return {
+    id: d.sourceId,
+    name: file.name,
+    format: d.format,
+    size: file.size,
+    chars: d.chars,
+    path: d.path,
+    addedAt: new Date().toLocaleString("sv-SE", { hour12: false }).slice(0, 16),
+    text: d.text,
+  };
 }
 
 const VERDICT = { SUPPORTED: "verified", CONFLICT: "conflict" };
@@ -99,7 +110,7 @@ export async function flowSummary(body) {
 
 const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-/** 원고 디스크 저장(.article-workspace/articles). 사진 원본(data URL)은 크기 때문에 빼고 출처 정보만 남긴다 */
+/** 원고 디스크 저장(내 문서/AI Newsroom/articles). 사진 원본(data URL)은 크기 때문에 빼고 출처 정보만 남긴다 */
 export async function saveDraft(article, articleId) {
   const bodyHtml = (article.content || "")
     .split(/\n{2,}/)
@@ -112,6 +123,7 @@ export async function saveDraft(article, articleId) {
     subtitle: article.subtitle || "",
     bodyHtml,
     photos,
+    sources: (article.sources || []).map(({ text, ...meta }) => meta), // 본문 텍스트는 sources/<id>/text.txt 에 있다
     status: article.status || "",
   });
   return d.articleId;

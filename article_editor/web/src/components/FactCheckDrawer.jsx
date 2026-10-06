@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   RefreshCw
 } from "lucide-react";
-import { registerSource, factcheckArticle, openSourceFile, sourcePreview, sourceChunks, isDevMode } from "../api/editorial";
+import { registerSource, openSourceFile, sourcePreview, sourceChunks, isDevMode } from "../api/editorial";
 
 // 모든 자료는 코어(/api/materials/extract)가 텍스트를 뽑고 원본을 내 문서에 보관한다 → 기사 sources 에 등록
 const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -35,17 +35,16 @@ export default function FactCheckDrawer({
   onClose,
   article,
   setArticle,
-  evidenceList, // 팩트체크 결과 — ArticleWriter 가 들고 본문 하이라이트에도 쓴다
-  setEvidenceList
+  // 팩트체크 실행·결과는 ArticleWriter(useFactCheck)가 맡는다 — 글쓰기가 멈추면 자동으로 돌고, 본문 하이라이트에도 쓴다
+  factCheck
 }) {
+  const { results: evidenceList, busy: isAnalyzing, error: checkError, run: runCheck } = factCheck;
   // 등록된 취재자료는 기사(article.sources)에 둔다 — 서랍을 닫아도, 보관함에서도 보인다. 실패한 파일만 여기
   const [failedFiles, setFailedFiles] = useState([]);
   const sources = article.sources || [];
 
   const [isDragging, setIsDragging] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [checkError, setCheckError] = useState("");
   const [viewing, setViewing] = useState(null); // 보고 있는 자료(SourceViewer)
   const fileInputRef = useRef(null);
 
@@ -62,20 +61,7 @@ export default function FactCheckDrawer({
     if (!added.length) return;
     const ids = new Set(added.map((r) => r.id));
     const all = [...added, ...sources.filter((s) => !ids.has(s.id))]; // 같은 파일은 한 번만
-    setArticle((prev) => ({ ...prev, sources: all }));
-    runCheck(all);
-  };
-
-  // 코어 팩트체크(core.factcheckRun): 본문 문장 ↔ 등록된 자료(텍스트)
-  const runCheck = (files = sources) => {
-    const materials = files.filter((f) => f.text != null);
-    if (!materials.length) return setCheckError("검증에 쓸 자료(PDF·HWP·HWPX·DOCX·TXT)를 올려 주세요.");
-    setCheckError("");
-    setIsAnalyzing(true);
-    factcheckArticle(article.content, materials)
-      .then(setEvidenceList)
-      .catch((e) => setCheckError(e?.message || String(e)))
-      .finally(() => setIsAnalyzing(false));
+    setArticle((prev) => ({ ...prev, sources: all })); // 자료가 바뀌면 useFactCheck 가 자동으로 다시 검증한다
   };
 
   // 드래그 앤 드롭 이벤트

@@ -104,31 +104,60 @@ const VERDICT = { SUPPORTED: "verified", CONFLICT: "conflict" };
 
 /** 기사 문장을 등록 자료(텍스트)에 비춰 팩트체크 → 팩트체크 서랍 카드 목록
  *  files: [{ id, name, text }] */
-export async function factcheckArticle(content, files) {
-  // 문장마다 본문 위치(start)를 기억해 두면 결과를 원고에 하이라이트할 수 있다
-  const nodes = [];
-  let cursor = 0;
-  for (const para of (content || "").split(/\n+/)) {
-    for (const piece of para.split(/(?<=[.?!])\s+/)) {
-      const text = piece.trim();
-      const start = text ? content.indexOf(text, cursor) : -1;
-      if (start >= 0) cursor = start + text.length;
-      if (text.length >= 10 && nodes.length < 200) nodes.push({ id: `s${nodes.length + 1}`, type: "TEXT", text, start });
+/** 본문 → 문장 [{raw, start, end, text(공백 정리), map(정리된 글자 → 원문 위치)}].
+ *  마침표·물음표·느낌표에서 나눈다. PDF 에서 붙여 넣은 글은 문장 중간에 줄바꿈이 있으므로 줄바꿈은 공백으로 보고,
+ *  빈 줄은 제목줄(줄바꿈 없는 40자 미만 한 줄) 뒤에서만 문장을 끊는다. 10자 미만 조각은 검증하지 않는다. */
+export function splitSentences(content) {
+  const out = [];
+  const push = (from, to) => {
+    while (from < to && /\s/.test(content[from])) from += 1;
+    while (to > from && /\s/.test(content[to - 1])) to -= 1;
+    if (to - from < 10) return;
+    let text = "";
+    const map = [];
+    for (let i = from; i < to; i += 1) {
+      if (/\s/.test(content[i])) {
+        if (text.endsWith(" ")) continue;
+        text += " ";
+      } else text += content[i];
+      map.push(i);
     }
+    out.push({ raw: content.slice(from, to), start: from, end: to, text, map });
+  };
+  const boundary = /([.?!]["'”’)\]]*)(?=\s|$)|\n[ \t]*\n/g;
+  let start = 0;
+  let m;
+  while ((m = boundary.exec(content || ""))) {
+    if (!m[1]) { // 빈 줄: 앞 덩어리가 줄바꿈 없는 짧은 한 줄(제목줄)일 때만 끊는다 — PDF 줄바꿈 중간의 빈 줄은 문장이 이어진다
+      const before = content.slice(start, m.index).trim();
+      if (before.includes("\n") || before.length >= 40) continue;
+    }
+    const end = m[1] ? m.index + m[1].length : m.index;
+    push(start, end);
+    start = end;
   }
+  push(start, (content || "").length);
+  return out;
+}
+
+export async function factcheckArticle(content, files) {
+  // 문장마다 본문 위치를 기억해 두면 결과를 원고에 하이라이트할 수 있다
+  const nodes = splitSentences(content).slice(0, 200).map((s, i) => ({ ...s, id: `s${i + 1}` }));
   if (!nodes.length) throw Error("검증할 본문 문장이 없어요. 본문을 먼저 작성해 주세요.");
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
   const materials = files.map((f) => ({ id: f.id, title: f.name, content: f.text }));
-  const d = await core.factcheckRun(nodes.map(({ start, ...n }) => n), materials);
+  const d = await core.factcheckRun(nodes.map((n) => ({ id: n.id, type: "TEXT", text: n.text })), materials);
   return (d.results || []).map((r) => {
     const node = byId[r.node_id] || {};
-    // 틀린 값 위치(코어 conflict_spans/focus_spans, 문장 기준) → 본문 기준. 코어가 공백을 정리해 문장이 달라졌으면 문장 전체만
+    // 틀린 값 위치(코어 conflict_spans/focus_spans, 공백 정리된 문장 기준) → 원문 위치로 되돌린다
     const spans = node.text === r.claim
-      ? [...(r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || [])].map((x) => ({ start: node.start + x.claim_start, end: node.start + x.claim_end }))
+      ? (r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || [])
+        .filter((x) => x.claim_end > x.claim_start && x.claim_end <= node.map.length)
+        .map((x) => ({ start: node.map[x.claim_start], end: node.map[x.claim_end - 1] + 1 }))
       : [];
     return {
       id: r.node_id,
-      claimText: node.text ?? r.claim,
+      claimText: node.raw ?? r.claim,
       start: node.start ?? -1,
       spans,
       verdict: r.status, // SUPPORTED | CONFLICT | EVIDENCE_GAP | REVIEW …

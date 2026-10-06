@@ -1,6 +1,6 @@
 // 편집 보조 UI 조각 — 코어 기능(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장)을 ArticleWriter 에 붙인다.
 // ArticleWriter(프론트 담당 파일)에는 이 조각을 배치하는 몇 줄만 둔다 → main 동기화 때 충돌을 줄인다.
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, Search, ListOrdered, Loader2 } from "lucide-react";
 import {
   suggestHeadlines,
@@ -10,7 +10,59 @@ import {
   importPhoto,
   flowSummary,
   saveDraft,
+  factcheckArticle,
+  splitSentences,
 } from "../api/editorial";
+
+/** 팩트체크 — 본문·취재자료가 바뀌고 1.5초 멈추면 자동으로 돈다(옛 UI 의 '작성 멈춤 감지').
+ *  실행 중에 또 바뀌면 끝난 뒤 한 번 더 — 요청이 겹치지 않는다. 바뀌지 않은 문장은 코어 캐시로 빠르다.
+ *  → { results, busy, error, run } (run = 지금 바로 다시 검증) */
+export function useFactCheck(article) {
+  const [results, setResults] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const latest = useRef(article);
+  latest.current = article;
+  const state = useRef({ running: false, again: false });
+
+  const run = useCallback(async () => {
+    if (state.current.running) {
+      state.current.again = true;
+      return;
+    }
+    const { content, sources = [] } = latest.current;
+    const materials = sources.filter((s) => s.text != null);
+    if (!materials.length) return setError("검증에 쓸 자료(PDF·HWP·HWPX·DOCX·TXT)를 올려 주세요.");
+    if (!splitSentences(content).length) {
+      setResults([]);
+      return setError("검증할 본문 문장이 없어요. 본문을 먼저 작성해 주세요.");
+    }
+    state.current.running = true;
+    setBusy(true);
+    setError("");
+    try {
+      setResults(await factcheckArticle(content, materials));
+    } catch (e) {
+      setError(e?.message || String(e));
+    } finally {
+      state.current.running = false;
+      setBusy(false);
+      if (state.current.again) {
+        state.current.again = false;
+        run();
+      }
+    }
+  }, []);
+
+  const sourceKey = (article.sources || []).map((s) => s.id).join();
+  useEffect(() => {
+    if (!(article.sources || []).some((s) => s.text != null) || !splitSentences(article.content).length) return;
+    const timer = setTimeout(run, 1500);
+    return () => clearTimeout(timer);
+  }, [article.content, sourceKey, run]);
+
+  return { results, busy, error, run };
+}
 
 const MIN_BODY = 20; // 코어 assist 하한(본문 20자)
 

@@ -127,17 +127,26 @@ def _word_rows(text: str) -> list[dict]:
     ]
 
 
-def find_near_copy_differences(claim: str, evidence: str, min_ratio: float = 0.72) -> list[dict]:
+def find_near_copy_differences(claim: str, evidence: str, min_ratio: float = 0.72, window: bool = False) -> list[dict]:
     """Locate small textual substitutions only when the two statements are already very similar.
 
     This is a localization helper, not a semantic verdict. It is intentionally
     disabled for freely paraphrased sentences so normal newsroom rewriting is
     not mistaken for a factual conflict.
+
+    window=True: 근거가 여러 문장짜리 청크일 때, 청크 안에서 주장과 맞닿은 구간만 잘라 비교한다(화면 강조용 —
+    판정 경로(일치→검토 가드)는 기본값 False 를 그대로 쓴다).
     """
     claim_rows = _word_rows(claim)
     evidence_rows = _word_rows(evidence)
     if not claim_rows or not evidence_rows:
         return []
+    if window and len(evidence_rows) > len(claim_rows) * 1.3:
+        probe = SequenceMatcher(None, [r["key"] for r in claim_rows], [r["key"] for r in evidence_rows], autojunk=False)
+        blocks = [b for b in probe.get_matching_blocks() if b.size >= 2]
+        if not blocks:
+            return []
+        evidence_rows = evidence_rows[blocks[0].b:blocks[-1].b + blocks[-1].size]
 
     matcher = SequenceMatcher(
         None,

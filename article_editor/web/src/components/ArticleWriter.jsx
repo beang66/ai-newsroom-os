@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
 // 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
-import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton } from "./EditorialAssist";
+import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useFactCheck } from "./EditorialAssist";
 import { 
   Sparkles, 
   Search, 
@@ -47,8 +47,9 @@ export default function ArticleWriter({
 
   // 팩트체크 & 근거자료 우측 슬라이더(Drawer) 열림 상태
   const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(false);
-  // 팩트체크 결과 — 서랍을 닫아도 본문 하이라이트가 남도록 여기에 둔다
-  const [factResults, setFactResults] = useState([]);
+  // 팩트체크 — 글쓰기가 멈추면 자동 실행. 서랍을 닫아도 본문 하이라이트가 남도록 여기에 둔다
+  const factCheck = useFactCheck(article);
+  const factIssues = factCheck.results.filter((r) => r.verdict !== "SUPPORTED").length;
 
   // 2. 미리보기 플랫폼 탭: 'donga' (동아일보 공식 웹) | 'naver' (네이버 뉴스 포털)
   const [previewPlatform, setPreviewPlatform] = useState("donga");
@@ -227,6 +228,11 @@ export default function ArticleWriter({
         {/* 우측: 뷰 모드 전환 및 [CMS 최종 발행] 버튼 */}
         <div className="flex items-center gap-3 flex-wrap">
           {saveStatus && <span className="text-[11px] font-bold text-slate-500" data-testid="save-status">{saveStatus}</span>}
+          {(factCheck.busy || factCheck.results.length > 0) && (
+            <span className={`text-[11px] font-bold ${factIssues ? "text-rose-600" : "text-emerald-600"}`} data-testid="factcheck-status">
+              {factCheck.busy ? "팩트체크 중…" : factIssues ? `확인 필요 ${factIssues}문장` : "팩트체크 통과"}
+            </span>
+          )}
           {/* 뷰 모드 전환 탭 (레퍼런스 이미지 스타일 알약 캡슐) */}
           <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-full border border-[#DDD6CB]/80 shadow-inner">
             <button
@@ -520,7 +526,7 @@ export default function ArticleWriter({
               <HighlightedBody
                 value={article.content}
                 onChange={(content) => setArticle({ ...article, content })}
-                results={factResults}
+                results={factCheck.results}
               />
             </div>
 
@@ -686,8 +692,7 @@ export default function ArticleWriter({
             onClose={() => setIsFactCheckDrawerOpen(false)}
             article={article}
             setArticle={setArticle}
-            evidenceList={factResults}
-            setEvidenceList={setFactResults}
+            factCheck={factCheck}
           />
         )}
 
@@ -959,7 +964,7 @@ export default function ArticleWriter({
 }
 
 // 팩트체크 결과 하이라이트 — 투명 textarea 뒤에 같은 글자를 깔고 구간에 색을 칠한다(옛 archive-os EditorView 방식).
-// 충돌은 틀린 값(conflict_spans)만, 없으면 문장 전체. 본문을 고쳐 문장이 바뀐 결과는 칠하지 않는다.
+// 코어가 짚은 위치(틀린 값·거의 같은 문장의 다른 부분)만 칠하고, 위치가 없으면 문장 전체. 본문을 고쳐 문장이 바뀐 결과는 칠하지 않는다.
 const MARK = {
   CONFLICT: "bg-rose-200/90 ring-1 ring-inset ring-rose-400",
   EVIDENCE_GAP: "bg-amber-200/80",
@@ -972,7 +977,7 @@ function HighlightedBody({ value, onChange, results }) {
   const ranges = useMemo(() => {
     const out = results
       .filter((r) => MARK[r.verdict] && r.start >= 0 && value.slice(r.start, r.start + r.claimText.length) === r.claimText)
-      .flatMap((r) => (r.verdict === "CONFLICT" && r.spans.length ? r.spans : [{ start: r.start, end: r.start + r.claimText.length }])
+      .flatMap((r) => (r.spans.length ? r.spans : [{ start: r.start, end: r.start + r.claimText.length }])
         .map((x) => ({ ...x, verdict: r.verdict })))
       .sort((a, b) => a.start - b.start);
     return out.filter((x, i) => i === 0 || x.start >= out[i - 1].end); // 겹치면 앞의 것만

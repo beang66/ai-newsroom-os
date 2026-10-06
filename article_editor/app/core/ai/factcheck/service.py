@@ -159,15 +159,16 @@ def _judge_qwen_candidates(provider, claim, node, candidates):
         conflict_spans = []
         focus_spans = []
 
+        text = evidence.get("text") or ""
         if status == "CONFLICT":
-            # 판정은 판정기가 한다. 값 불일치는 화면에서 틀린 값만 강조하는 위치로만 쓴다.
-            conflict_spans = find_explicit_value_conflicts(claim, evidence.get("text") or "")
+            # 판정은 판정기가 한다. 위치는 화면에서 틀린 부분만 강조하는 데만 쓴다:
+            # 같은 항목의 값이 다르면 그 값, 아니면 근거를 거의 그대로 옮긴 문장에서 달라진 단어
+            conflict_spans = find_explicit_value_conflicts(claim, text) or find_near_copy_differences(claim, text, window=True)
             focus_spans = list(conflict_spans)
-        elif status == "SUPPORTED":
-            focus_spans = find_near_copy_differences(
-                claim,
-                evidence.get("text") or "",
-            )
+        elif status != "SUPPORTED":
+            focus_spans = find_near_copy_differences(claim, text, window=True)  # 검토·근거 부족도 달라진 부분만
+        else:
+            focus_spans = find_near_copy_differences(claim, text)
             legacy_score = _score(claim, evidence, evidence.get("material_id") in linked_ids)
             if legacy_score >= 0.84 and focus_spans:
                 status = "REVIEW"

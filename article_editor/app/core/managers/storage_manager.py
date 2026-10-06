@@ -4,7 +4,7 @@ Frontend and AI modules must not touch file paths directly; they go through here
 Current implementation: local JSON article files (``core/storage.py``).
 Planned: encrypted SQLite + project files + attachments.
 """
-from ..storage import open_source as _open_source, save_article as _save_article
+from ..storage import open_source as _open_source, save_article as _save_article, source_file as _source_file
 
 
 class StorageManager:
@@ -15,3 +15,7 @@ class StorageManager:
     def open_source(self, data):
         """보관한 취재자료 원본을 기본 프로그램으로 연다 ``{"sourceId": ...}``."""
         return _open_source(data)
+
+    def source_file(self, source_id):
+        """앱 안 뷰어용 취재자료 원본 → (bytes, mime)."""
+        return _source_file(source_id)

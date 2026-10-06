@@ -48,17 +48,29 @@ def save_source(filename, raw, text):
     return source_id, str(original)
 
 
-def open_source(data):
-    """보관한 취재자료 원본을 이 PC 의 기본 프로그램(PDF 뷰어·한글 등)으로 연다. payload: {sourceId}"""
-    source_id = data.get('sourceId')
+def _original(source_id):
+    """보관한 취재자료 원본 경로. ID 는 16자 hex 만 받는다(경로 조작 방지)."""
     if not isinstance(source_id, str) or not re.fullmatch(r'[a-f0-9]{16}', source_id):
         raise RequestError('잘못된 자료 ID입니다.')
     folder = SOURCES_DIR / source_id
     originals = [p for p in folder.glob('*') if p.is_file() and p.name != 'text.txt'] if folder.is_dir() else []
     if not originals:
         raise RequestError('보관된 원본 파일을 찾지 못했습니다.', 404)
+    return originals[0]
+
+
+def source_file(source_id):
+    """앱 안 뷰어용 원본 바이트 → (bytes, mime)."""
+    original = _original(source_id)
+    mime = {'.pdf': 'application/pdf'}.get(original.suffix.lower(), 'application/octet-stream')
+    return original.read_bytes(), mime
+
+
+def open_source(data):
+    """보관한 취재자료 원본을 이 PC 의 기본 프로그램(PDF 뷰어·한글 등)으로 연다. payload: {sourceId}"""
+    original = _original(data.get('sourceId'))
     if os.name == 'nt':
-        os.startfile(originals[0])  # noqa: S606 — 우리가 저장한 파일만(ID 검증)
+        os.startfile(original)  # noqa: S606 — 우리가 저장한 파일만(ID 검증)
     else:
-        subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(originals[0])])
-    return {'opened': True, 'path': str(originals[0])}
+        subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(original)])
+    return {'opened': True, 'path': str(original)}

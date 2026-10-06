@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
 // 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
 import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useAutosave } from "./EditorialAssist";
@@ -46,6 +46,8 @@ export default function ArticleWriter({
 
   // 팩트체크 & 근거자료 우측 슬라이더(Drawer) 열림 상태
   const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(false);
+  // 팩트체크 결과 — 서랍을 닫아도 본문 하이라이트가 남도록 여기에 둔다
+  const [factResults, setFactResults] = useState([]);
 
   // 2. 미리보기 플랫폼 탭: 'donga' (동아일보 공식 웹) | 'naver' (네이버 뉴스 포털)
   const [previewPlatform, setPreviewPlatform] = useState("donga");
@@ -515,11 +517,10 @@ export default function ArticleWriter({
                 </div>
               )}
 
-              <textarea
+              <HighlightedBody
                 value={article.content}
-                onChange={(e) => setArticle({ ...article, content: e.target.value })}
-                placeholder="기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다..."
-                className="w-full min-h-[460px] text-slate-900 text-xs md:text-sm leading-relaxed p-5 bg-slate-50/70 rounded-2xl border border-slate-200 focus:bg-white focus:border-slate-800 outline-none transition-all resize-y shadow-2xs font-sans"
+                onChange={(content) => setArticle({ ...article, content })}
+                results={factResults}
               />
             </div>
 
@@ -685,6 +686,8 @@ export default function ArticleWriter({
             onClose={() => setIsFactCheckDrawerOpen(false)}
             article={article}
             setArticle={setArticle}
+            evidenceList={factResults}
+            setEvidenceList={setFactResults}
           />
         )}
 
@@ -951,6 +954,52 @@ export default function ArticleWriter({
         </div>
       )}
 
+    </div>
+  );
+}
+
+// 팩트체크 결과 하이라이트 — 투명 textarea 뒤에 같은 글자를 깔고 구간에 색을 칠한다(옛 archive-os EditorView 방식).
+// 충돌은 틀린 값(conflict_spans)만, 없으면 문장 전체. 본문을 고쳐 문장이 바뀐 결과는 칠하지 않는다.
+const MARK = {
+  CONFLICT: "bg-rose-200/90 ring-1 ring-inset ring-rose-400",
+  EVIDENCE_GAP: "bg-amber-200/80",
+  REVIEW: "bg-violet-200/70",
+  EXTERNAL_REQUIRED: "bg-violet-200/70",
+};
+const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요", EXTERNAL_REQUIRED: "검토 필요" };
+
+function HighlightedBody({ value, onChange, results }) {
+  const ranges = useMemo(() => {
+    const out = results
+      .filter((r) => MARK[r.verdict] && r.start >= 0 && value.slice(r.start, r.start + r.claimText.length) === r.claimText)
+      .flatMap((r) => (r.verdict === "CONFLICT" && r.spans.length ? r.spans : [{ start: r.start, end: r.start + r.claimText.length }])
+        .map((x) => ({ ...x, verdict: r.verdict })))
+      .sort((a, b) => a.start - b.start);
+    return out.filter((x, i) => i === 0 || x.start >= out[i - 1].end); // 겹치면 앞의 것만
+  }, [results, value]);
+
+  const parts = [];
+  let cursor = 0;
+  ranges.forEach((x, i) => {
+    parts.push(value.slice(cursor, x.start));
+    parts.push(<mark key={i} className={`${MARK[x.verdict]} text-transparent rounded-sm`} title={MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
+    cursor = x.end;
+  });
+  parts.push(value.slice(cursor) + "\n"); // 마지막 줄바꿈도 높이를 맞춘다
+
+  // 뒤의 글자 층이 높이를 정하고(글이 길어지면 같이 늘어남) textarea 는 그 위를 덮는다 → 줄바꿈 위치가 항상 같다
+  const box = "w-full min-h-[460px] text-xs md:text-sm leading-relaxed p-5 rounded-2xl border font-sans whitespace-pre-wrap break-words";
+  return (
+    <div className="relative bg-slate-50/70 rounded-2xl focus-within:bg-white transition-all">
+      <div aria-hidden="true" data-testid="fact-highlight" className={`${box} text-transparent border-transparent pointer-events-none`}>
+        {parts}
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다..."
+        className={`${box} absolute inset-0 h-full overflow-hidden text-slate-900 bg-transparent border-slate-200 focus:border-slate-800 outline-none resize-none shadow-2xs`}
+      />
     </div>
   );
 }

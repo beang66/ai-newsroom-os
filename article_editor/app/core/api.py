@@ -1,4 +1,4 @@
-import os, re, json, mimetypes, urllib.request, urllib.parse, urllib.error
+import os, re, sys, json, mimetypes, urllib.request, urllib.parse, urllib.error
 from http.server import BaseHTTPRequestHandler
 
 from . import config
@@ -27,7 +27,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.headers.get('Host') in (f'localhost:{self.port()}',f'127.0.0.1:{self.port()}')
     def do_GET(self):
         if not self.allowed():return self.send(403,{'error':'로컬 주소로 접속해 주세요.'})
-        if self.path=='/api/status':return self.send(200,{'ready':bool(os.environ.get('OPENAI_API_KEY')),'headline_ready':headline_dependencies_ready(),'headline_model':HEADLINE_MODEL,'subtitle_model':SUBTITLE_MODEL,'pipeline_version':PIPELINE_VERSION,'unsplash_ready':bool(os.environ.get('UNSPLASH_ACCESS_KEY')),'workspace_version':'3.0.0'})
+        if self.path=='/api/status':return self.send(200,{'ready':bool(os.environ.get('OPENAI_API_KEY')),'headline_ready':headline_dependencies_ready(),'headline_model':HEADLINE_MODEL,'subtitle_model':SUBTITLE_MODEL,'pipeline_version':PIPELINE_VERSION,'unsplash_ready':bool(os.environ.get('UNSPLASH_ACCESS_KEY')),'workspace_version':'3.0.0','dev':not getattr(sys,'frozen',False)})
         if self.path=='/api/session':
             try:return self.send(200,CORE.session.status())
             except RequestError as e:return self.send(e.status,{'error':e.message})
@@ -48,6 +48,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not 1<=page<=10000:raise RequestError('올바른 사진 페이지를 선택해 주세요.')
                 result=unsplash_get('/search/photos?'+urllib.parse.urlencode({'query':q,'per_page':3,'page':page}))
                 return self.send(200,{'photos':result.get('results',[])[:3],'page':page,'totalPages':min(10000,result.get('total_pages',0)),'total':result.get('total',0)})
+            except RequestError as e:return self.send(e.status,{'error':e.message})
+        match=re.fullmatch(r'/api/sources/([a-f0-9]{16})/file',path.path)
+        if match:
+            try:return self.send(200,*CORE.storage.source_file(match.group(1)))
             except RequestError as e:return self.send(e.status,{'error':e.message})
         match=re.fullmatch(r'/api/unsplash/photo/([A-Za-z0-9_-]{1,80})(/track)?',path.path)
         if match:

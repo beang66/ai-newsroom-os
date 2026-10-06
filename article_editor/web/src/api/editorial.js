@@ -77,33 +77,70 @@ export async function registerSource(file) {
 /** 취재자료 원본을 기본 프로그램(PDF 뷰어·한글 등)으로 연다 */
 export const openSourceFile = (sourceId) => core.openSource(sourceId);
 
+/** 앱 안 원본 보기: PDF 는 Blob URL, HWP·HWPX 는 HTML(@ssabrojs/hwpxjs, MIT — 처음 쓸 때만 불러온다).
+ *  → { kind: "pdf", url } | { kind: "html", html } */
+export async function sourcePreview(source) {
+  const blob = await core.sourceBytes(source.id);
+  if (source.format === "pdf") return { kind: "pdf", url: URL.createObjectURL(new Blob([blob], { type: "application/pdf" })) };
+  const { HwpxReader, hwpToHwpx } = await import("@ssabrojs/hwpxjs");
+  let bytes = new Uint8Array(await blob.arrayBuffer());
+  if (source.format === "hwp") bytes = await hwpToHwpx(bytes);
+  const reader = new HwpxReader();
+  await reader.loadFromArrayBuffer(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  const style = "<meta charset='utf-8'><style>body{font-family:'Malgun Gothic',sans-serif;padding:24px 32px;line-height:1.6}" +
+    "table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #bbb;padding:4px 8px;vertical-align:top}img{max-width:100%}</style>";
+  return { kind: "html", html: style + (await reader.extractHtml({ embedImages: true })) };
+}
+
+/** 개발 실행(파이썬)인지 — 청크 보기 같은 개발용 화면만 켠다 */
+export const isDevMode = async () => Boolean((await core.status()).dev);
+
+/** 팩트체크와 똑같이 자료를 청크로 나눈다(공백 정리 → 의미 청킹) → [{text, kind, field}] */
+export async function sourceChunks(text) {
+  return (await core.semanticParse((text || "").replace(/\s+/g, " ").trim())).units || [];
+}
+
 const VERDICT = { SUPPORTED: "verified", CONFLICT: "conflict" };
 
 /** 기사 문장을 등록 자료(텍스트)에 비춰 팩트체크 → 팩트체크 서랍 카드 목록
  *  files: [{ id, name, text }] */
 export async function factcheckArticle(content, files) {
-  const nodes = (content || "")
-    .split(/\n+/)
-    .flatMap((p) => p.split(/(?<=[.?!])\s+/))
-    .map((t) => t.trim())
-    .filter((t) => t.length >= 10)
-    .slice(0, 200)
-    .map((text, i) => ({ id: `s${i + 1}`, type: "TEXT", text }));
+  // 문장마다 본문 위치(start)를 기억해 두면 결과를 원고에 하이라이트할 수 있다
+  const nodes = [];
+  let cursor = 0;
+  for (const para of (content || "").split(/\n+/)) {
+    for (const piece of para.split(/(?<=[.?!])\s+/)) {
+      const text = piece.trim();
+      const start = text ? content.indexOf(text, cursor) : -1;
+      if (start >= 0) cursor = start + text.length;
+      if (text.length >= 10 && nodes.length < 200) nodes.push({ id: `s${nodes.length + 1}`, type: "TEXT", text, start });
+    }
+  }
   if (!nodes.length) throw Error("검증할 본문 문장이 없어요. 본문을 먼저 작성해 주세요.");
+  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
   const materials = files.map((f) => ({ id: f.id, title: f.name, content: f.text }));
-  const d = await core.factcheckRun(nodes, materials);
-  return (d.results || []).map((r) => ({
-    id: r.node_id,
-    claimText: r.claim,
-    verdict: r.status, // SUPPORTED | CONFLICT | EVIDENCE_GAP | REVIEW …
-    status: VERDICT[r.status] || "unverified",
-    matchRate: r.confidence == null ? null : Math.round(r.confidence * 100),
-    sourceDoc: r.evidence?.material_title || "",
-    page: "",
-    quote: r.evidence?.text || "",
-    comment: r.reason || "",
-    suggestedFix: null,
-  }));
+  const d = await core.factcheckRun(nodes.map(({ start, ...n }) => n), materials);
+  return (d.results || []).map((r) => {
+    const node = byId[r.node_id] || {};
+    // 틀린 값 위치(코어 conflict_spans/focus_spans, 문장 기준) → 본문 기준. 코어가 공백을 정리해 문장이 달라졌으면 문장 전체만
+    const spans = node.text === r.claim
+      ? [...(r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || [])].map((x) => ({ start: node.start + x.claim_start, end: node.start + x.claim_end }))
+      : [];
+    return {
+      id: r.node_id,
+      claimText: node.text ?? r.claim,
+      start: node.start ?? -1,
+      spans,
+      verdict: r.status, // SUPPORTED | CONFLICT | EVIDENCE_GAP | REVIEW …
+      status: VERDICT[r.status] || "unverified",
+      matchRate: r.confidence == null ? null : Math.round(r.confidence * 100),
+      sourceDoc: r.evidence?.material_title || "",
+      page: "",
+      quote: r.evidence?.text || "",
+      comment: r.reason || "",
+      suggestedFix: null,
+    };
+  });
 }
 
 /** 기사 흐름 요약 3~5문장 */

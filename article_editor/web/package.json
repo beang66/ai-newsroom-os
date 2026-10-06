@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ssabrojs/hwpxjs": "^0.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "autoprefixer": "^10.6.1",
     "lucide-react": "^1.49.0",

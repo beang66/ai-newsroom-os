@@ -174,6 +174,9 @@ class ServerTests(ApiTestCase):
             source_id = json.loads(raw)['sourceId']
             self.assertEqual(self.request('/api/sources/open', {'sourceId': source_id})[0], 200)
             self.assertEqual([Path(p).name for p in opened], ['원본.txt'])
+            status, body, headers = self.request(f'/api/sources/{source_id}/file')  # 앱 안 뷰어용 원본
+            self.assertEqual((status, body.decode()), (200, '본문'))
+            self.assertEqual(self.request('/api/sources/../file')[0], 404)
             self.assertEqual(self.request('/api/sources/open', {'sourceId': '../etc'})[0], 400)
             self.assertEqual(self.request('/api/sources/open', {'sourceId': '0' * 16})[0], 404)
 

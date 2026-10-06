@@ -159,7 +159,12 @@ try {
   // 등록한 자료 이름을 누르면 추출 본문을 볼 수 있다
   await page.getByRole("button", { name: "자료.txt" }).click();
   await page.getByRole("dialog", { name: "취재자료 보기" }).getByText("스모크 테스트 본문입니다.").waitFor();
+  // 개발 실행이면 청크 보기(청크별 색 밑줄)가 있다
+  await page.getByRole("button", { name: "청크 보기 (개발)" }).click();
+  await page.getByTestId("chunk-view").getByText(/청크 [1-9][0-9]*개/).waitFor();
   await page.getByRole("dialog", { name: "취재자료 보기" }).getByTitle("닫기").click();
+  // 검증 결과는 본문 뒤 하이라이트 층에 칠해진다(판정은 엔진 몫이라 층이 있는지만 본다)
+  await page.getByTestId("fact-highlight").waitFor({ state: "attached" });
   // 5. 취재자료 검색 창
   await page.getByText("취재자료 검색").first().click();
   await page.getByPlaceholder("자료 제목, 키워드, 내용 검색").waitFor();

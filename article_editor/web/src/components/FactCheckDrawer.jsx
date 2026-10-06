@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { 
   X, 
@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   RefreshCw
 } from "lucide-react";
-import { registerSource, factcheckArticle, openSourceFile } from "../api/editorial";
+import { registerSource, factcheckArticle, openSourceFile, sourcePreview, sourceChunks, isDevMode } from "../api/editorial";
 
 // 모든 자료는 코어(/api/materials/extract)가 텍스트를 뽑고 원본을 내 문서에 보관한다 → 기사 sources 에 등록
 const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -34,21 +34,19 @@ export default function FactCheckDrawer({
   isOpen,
   onClose,
   article,
-  setArticle
+  setArticle,
+  evidenceList, // 팩트체크 결과 — ArticleWriter 가 들고 본문 하이라이트에도 쓴다
+  setEvidenceList
 }) {
   // 등록된 취재자료는 기사(article.sources)에 둔다 — 서랍을 닫아도, 보관함에서도 보인다. 실패한 파일만 여기
   const [failedFiles, setFailedFiles] = useState([]);
   const sources = article.sources || [];
 
-  // 대조 및 추출된 근거자료 목록 상태
-  const [evidenceList, setEvidenceList] = useState([]);
-
   const [isDragging, setIsDragging] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [checkError, setCheckError] = useState("");
-  const [viewing, setViewing] = useState(null); // 본문을 보고 있는 자료
-  const [openError, setOpenError] = useState("");
+  const [viewing, setViewing] = useState(null); // 보고 있는 자료(SourceViewer)
   const fileInputRef = useRef(null);
 
   // 파일 업로드 처리 핸들러
@@ -223,7 +221,7 @@ export default function FactCheckDrawer({
                             <p className="font-bold text-slate-900 truncate">{file.name}</p>
                           ) : (
                             <button
-                              onClick={() => { setOpenError(""); setViewing(file); }}
+                              onClick={() => setViewing(file)}
                               title="눌러서 자료 보기"
                               className="block max-w-full font-bold text-slate-900 truncate text-left hover:text-blue-700 hover:underline cursor-pointer"
                             >
@@ -361,42 +359,114 @@ export default function FactCheckDrawer({
           </button>
         </div>
         {/* 서랍(aside)은 애니메이션 transform 때문에 fixed 가 서랍 안에 갇힌다 → body 로 portal */}
-        {viewing && createPortal(
-          <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={() => setViewing(null)}>
-            <div
-              role="dialog"
-              aria-label="취재자료 보기"
-              className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="p-4 border-b border-slate-200 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-extrabold text-slate-900 text-sm break-all">{viewing.name}</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5 break-all">
-                    {(viewing.format || "").toUpperCase()} · 추출 {viewing.chars?.toLocaleString()}자 · {viewing.path}
-                  </p>
-                </div>
-                <button onClick={() => setViewing(null)} title="닫기" className="p-1.5 rounded-full text-slate-400 hover:text-slate-900 cursor-pointer">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <pre className="flex-1 overflow-auto p-4 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap font-sans">
-                {viewing.text ?? "추출된 본문을 불러오지 못했어요. 원본을 열어 확인해 주세요."}
-              </pre>
-              <div className="p-3 border-t border-slate-200 flex items-center justify-between gap-2 text-xs">
-                <span className="text-slate-400">팩트체크는 위 추출 본문으로 대조합니다{openError && <span className="text-rose-600"> · {openError}</span>}</span>
-                <button
-                  onClick={() => openSourceFile(viewing.id).catch((e) => setOpenError(e?.message || String(e)))}
-                  className="px-4 py-1.5 bg-[#23211F] text-white font-bold rounded-full cursor-pointer flex items-center gap-1"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  원본 열기
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+        {viewing && createPortal(<SourceViewer source={viewing} onClose={() => setViewing(null)} />, document.body)}
       </aside>
+  );
+}
+
+// 청크마다 다른 색 밑줄(개발 모드) — 이웃 청크끼리 색이 겹치지 않게 돌려 쓴다
+const CHUNK_COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2"];
+const PREVIEWABLE = new Set(["pdf", "hwp", "hwpx"]);
+
+/** 취재자료 보기: 추출 본문(팩트체크가 읽는 글자) / 원본(PDF·HWP·HWPX) / 청크(개발 모드) */
+function SourceViewer({ source, onClose }) {
+  const [tab, setTab] = useState("text");
+  const [preview, setPreview] = useState(null); // { kind, url|html } | { error }
+  const [chunks, setChunks] = useState(null); // [{text, kind, field}] | { error }
+  const [dev, setDev] = useState(false);
+  const [openError, setOpenError] = useState("");
+
+  useEffect(() => {
+    isDevMode().then(setDev).catch(() => setDev(false));
+  }, []);
+  useEffect(() => {
+    if (tab === "original" && !preview) {
+      sourcePreview(source).then(setPreview).catch((e) => setPreview({ error: e?.message || String(e) }));
+    }
+    if (tab === "chunks" && !chunks) {
+      sourceChunks(source.text).then(setChunks).catch((e) => setChunks({ error: e?.message || String(e) }));
+    }
+  }, [tab, source, preview, chunks]);
+  useEffect(() => () => preview?.url && URL.revokeObjectURL(preview.url), [preview]);
+
+  const tabs = [["text", "추출 본문"], ...(PREVIEWABLE.has(source.format) ? [["original", "원본 보기"]] : []), ...(dev ? [["chunks", "청크 보기 (개발)"]] : [])];
+  const tabClass = (key) => `px-3 py-1 rounded-full font-bold cursor-pointer ${tab === key ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-900"}`;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label="취재자료 보기"
+        className="bg-white rounded-2xl shadow-xl w-full max-w-4xl h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-4 border-b border-slate-200 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-extrabold text-slate-900 text-sm break-all">{source.name}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5 break-all">
+              {(source.format || "").toUpperCase()} · 추출 {source.chars?.toLocaleString()}자 · {source.path}
+            </p>
+            <div className="flex gap-1 mt-2 text-[11px]">
+              {tabs.map(([key, label]) => (
+                <button key={key} onClick={() => setTab(key)} className={tabClass(key)}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <button onClick={onClose} title="닫기" className="p-1.5 rounded-full text-slate-400 hover:text-slate-900 cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {tab === "text" && (
+          <pre className="flex-1 overflow-auto p-4 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap font-sans">
+            {source.text ?? "추출된 본문을 불러오지 못했어요. 원본을 열어 확인해 주세요."}
+          </pre>
+        )}
+
+        {tab === "original" && (
+          <div className="flex-1 min-h-0 bg-slate-100">
+            {!preview && <p className="p-4 text-xs text-slate-500">원본을 불러오는 중…</p>}
+            {preview?.error && <p className="p-4 text-xs text-rose-600">원본을 표시하지 못했어요: {preview.error} — '원본 열기'로 확인해 주세요.</p>}
+            {preview?.kind === "pdf" && <iframe title="원본 PDF" src={preview.url} className="w-full h-full border-0" />}
+            {/* HWP·HWPX 변환 HTML 은 스크립트 없는 격리 iframe 에 — 문서 안 내용이 앱을 건드리지 못한다 */}
+            {preview?.kind === "html" && <iframe title="원본 문서" sandbox="" srcDoc={preview.html} className="w-full h-full border-0 bg-white" />}
+          </div>
+        )}
+
+        {tab === "chunks" && (
+          <div className="flex-1 overflow-auto p-4 text-xs leading-loose text-slate-800" data-testid="chunk-view">
+            {!chunks && <p className="text-slate-500">청크로 나누는 중…</p>}
+            {chunks?.error && <p className="text-rose-600">{chunks.error}</p>}
+            {Array.isArray(chunks) && (
+              <>
+                <p className="text-[11px] text-slate-400 mb-2">
+                  청크 {chunks.length}개 · 평균 {Math.round(chunks.reduce((n, c) => n + c.text.length, 0) / Math.max(1, chunks.length))}자 — 밑줄 색이 바뀌는 곳이 경계. 마우스를 올리면 종류가 보입니다
+                </p>
+                {chunks.map((c, i) => (
+                  <span
+                    key={i}
+                    title={`#${i + 1} · ${c.kind}${c.field ? " · " + c.field : ""} · ${c.text.length}자`}
+                    style={{ textDecoration: `underline 2px ${CHUNK_COLORS[i % CHUNK_COLORS.length]}`, textUnderlineOffset: "4px" }}
+                  >
+                    {c.text}{" "}
+                  </span>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="p-3 border-t border-slate-200 flex items-center justify-between gap-2 text-xs">
+          <span className="text-slate-400">팩트체크는 '추출 본문'으로 대조합니다{openError && <span className="text-rose-600"> · {openError}</span>}</span>
+          <button
+            onClick={() => openSourceFile(source.id).catch((e) => setOpenError(e?.message || String(e)))}
+            className="px-4 py-1.5 bg-[#23211F] text-white font-bold rounded-full cursor-pointer flex items-center gap-1"
+          >
+            <ExternalLink className="w-3 h-3" />
+            원본 열기
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

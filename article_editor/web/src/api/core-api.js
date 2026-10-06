@@ -21,6 +21,7 @@ export const ROUTES = Object.freeze({
   transcribe: "/api/interview/transcribe",
   materialsExtract: "/api/materials/extract",
   sourcesOpen: "/api/sources/open",
+  sourceFile: (id) => "/api/sources/" + encodeURIComponent(id) + "/file",
   unsplashSearch: "/api/unsplash/search",
   photo: (id) => "/api/unsplash/photo/" + encodeURIComponent(id),
   photoTrack: (id) => "/api/unsplash/photo/" + encodeURIComponent(id) + "/track",
@@ -72,6 +73,8 @@ export function createCoreApi(transport) {
     /** 보관한 취재자료 원본을 이 PC 의 기본 프로그램으로 열기 */
     openSource: (sourceId, signal) =>
       transport.json(ROUTES.sourcesOpen, { sourceId }, signal),
+    /** 보관한 취재자료 원본 바이트(앱 안 뷰어용) → Blob */
+    sourceBytes: (sourceId, signal) => transport.bytes(ROUTES.sourceFile(sourceId), signal),
     /** 원고 디스크 저장 (파일: .article-workspace/articles) */
     saveArticle: (draft, signal) =>
       transport.json(ROUTES.articlesSave, { draft }, signal),

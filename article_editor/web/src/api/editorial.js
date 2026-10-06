@@ -135,6 +135,9 @@ export function splitSentences(content) {
     while (from < to && /\s/.test(content[from])) from += 1;
     while (to > from && /\s/.test(content[to - 1])) to -= 1;
     if (to - from < 10) return;
+    // 출처·사진·기자 표기 줄은 사실 주장이 아니다(예: '출처 : 주주경제신문(https://…)', '홍길동 기자 hong@…')
+    const piece = content.slice(from, to);
+    if (/^\s*(출처|사진|자료|그래픽|영상|제공)\s*[:：]/.test(piece) || /^[^.?!]{0,30}기자\s*[\w.+-]*@[\w.-]+$/.test(piece)) return;
     let text = "";
     const map = [];
     for (let i = from; i < to; i += 1) {

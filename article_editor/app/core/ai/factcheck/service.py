@@ -246,8 +246,10 @@ def _judge_qwen_candidates(provider, claim, node, candidates):
             if any(x["status"] == "EXTERNAL_REQUIRED" for x in reviewish):
                 chosen = {**chosen, "status": "EXTERNAL_REQUIRED"}
         elif judged:
+            # 보여 줄 근거는 본문 청크로 — '자료명: … 날짜: .' 같은 자료 정보 줄은 기자에게 쓸모가 없다
+            body = [x for x in judged if x["evidence"].get("kind") != "metadata"] or judged
             chosen = min(
-                judged,
+                body,
                 key=lambda x: x["evidence"].get("retrieval_rank", 999999),
             )
             chosen = {

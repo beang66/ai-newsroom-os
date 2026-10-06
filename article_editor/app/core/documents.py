@@ -11,6 +11,7 @@ import re
 import struct
 import zipfile
 import zlib
+from html.parser import HTMLParser
 from xml.etree import ElementTree as ET
 
 from . import storage
@@ -118,8 +119,44 @@ def _plain(raw):
     return raw.decode('utf-8', 'replace')
 
 
+class _HtmlText(HTMLParser):
+    """HTML → 본문 글자. 블록·표 행은 줄바꿈, 표 칸은 공백 둘, script·style·head 는 버린다(문자 참조는 HTMLParser 가 푼다)."""
+    BLOCK = {'p', 'div', 'br', 'tr', 'li', 'table', 'section', 'article', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'title'}
+    SKIP = {'script', 'style', 'head', 'noscript'}
+
+    def __init__(self):
+        super().__init__()
+        self.parts, self.skip = [], 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.SKIP:
+            self.skip += 1
+        elif tag in self.BLOCK:
+            self.parts.append('\n')
+        elif tag in ('td', 'th'):
+            self.parts.append('  ')
+
+    def handle_endtag(self, tag):
+        if tag in self.SKIP:
+            self.skip = max(0, self.skip - 1)
+        elif tag in self.BLOCK:
+            self.parts.append('\n')
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.parts.append(re.sub(r'\s+', ' ', data))  # 소스의 줄바꿈은 공백 — 줄은 블록·표 행에서만 바뀐다
+
+
+def _html(raw):
+    parser = _HtmlText()
+    parser.feed(_plain(raw))
+    parser.close()
+    text = re.sub(r'[ \t ]+', ' ', ''.join(parser.parts))
+    return re.sub(r'\n\s*\n+', '\n\n', re.sub(r' *\n *', '\n', text)).strip()
+
+
 READERS = {'pdf': _pdf, 'docx': _docx, 'hwpx': _hwpx, 'hwp': _hwp,
-           'txt': _plain, 'md': _plain, 'csv': _plain, 'json': _plain, 'html': _plain, 'htm': _plain}
+           'txt': _plain, 'md': _plain, 'csv': _plain, 'json': _plain, 'html': _html, 'htm': _html}
 
 
 def extract_text(payload):

@@ -141,6 +141,12 @@ class DocumentTests(unittest.TestCase):
             self.skipTest('pypdf 미설치')
         self.assertEqual(doc.extract_text(payload('e.pdf', minimal_pdf('Budget 10 billion')))['text'], 'Budget 10 billion')
 
+    def test_html_body_text_only(self):
+        page = ("<html><head><title>공시</title><style>td{width:89px}</style></head><body>"
+                "<p>예산은&nbsp;20억원</p><table><tr><td width=\"89\"><span>국비</span></td>\n<td>13억</td></tr>"
+                "<tr><td>군비</td><td>7억</td></tr></table><script>alert(1)</script></body></html>")
+        self.assertEqual(doc.extract_text(payload("g.html", page.encode()))["text"], "예산은 20억원\n\n국비 13억\n\n군비 7억")
+
     def test_plain_text_cp949(self):
         self.assertEqual(doc.extract_text(payload('f.txt', '보도자료'.encode('cp949')))['text'], '보도자료')
 

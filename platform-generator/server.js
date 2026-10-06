@@ -2,10 +2,16 @@ const express = require("express");
 const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
-
+const { suggestKeywords } = require("./ai-client");
 const app = express();
 
 app.use(express.json({ limit: "10mb" }));
+app.use(express.static(path.join(__dirname, "public")));
+
+require("./editor-routes")(app);
+require("./generate-routes")(app);
+require("./validation-routes")(app);
+
 
 const OUTPUT_DIR = path.join(__dirname, "output");
 
@@ -501,7 +507,73 @@ app.post("/render", async (req, res) => {
   }
 });
 
-app.listen(3000, () => {
-  console.log("Renderer server running");
-  console.log("http://localhost:3000");
+
+app.post("/api/article/keywords", async (req, res) => {
+  const article = req.body?.article;
+
+  if (
+    typeof article?.title !== "string" ||
+    typeof article?.content !== "string" ||
+    !article.title.trim() ||
+    !article.content.trim()
+  ) {
+    return res.status(400).json({
+      success: false,
+      error: "기사 제목과 원문을 모두 입력해주세요.",
+    });
+  }
+
+  if (article.title.length > 500 || article.content.length > 30000) {
+    return res.status(400).json({
+      success: false,
+      error: "제목은 500자, 원문은 30,000자 이내로 입력해주세요.",
+    });
+  }
+
+  try {
+    const candidates = await suggestKeywords(article);
+
+    res.json({
+      success: true,
+      candidates,
+    });
+  } catch (error) {
+    const status = Number(error.status);
+
+    const message =
+      status === 401
+        ? "OpenAI API 키를 확인해주세요."
+        : status === 429
+          ? "OpenAI API 잔액·사용 한도·요청 빈도를 확인해주세요."
+          : status === 403 || status === 404
+            ? "모델 이름과 API 프로젝트의 사용 권한을 확인해주세요."
+            : status === 400
+              ? "OpenAI 요청 설정을 확인해주세요."
+              : error.status
+                ? "OpenAI 요청에 실패했습니다. 잠시 후 다시 시도해주세요."
+                : error.message;
+
+    console.error("키워드 요청 실패:", {
+  name: error.name,
+  status: error.status,
+  code: error.code,
+  type: error.type,
+});
+
+    res.status(502).json({
+      success: false,
+      error: message,
+    });
+  }
+});
+
+
+
+app.listen(3001, () => {
+  console.log("현재 서버 파일:", __filename);
+  console.log(
+    "화면 파일 존재:",
+    fs.existsSync(path.join(__dirname, "public", "index.html"))
+  );
+  console.log("http://localhost:3001");
 });

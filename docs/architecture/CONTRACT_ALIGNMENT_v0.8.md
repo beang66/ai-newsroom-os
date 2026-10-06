@@ -203,10 +203,14 @@ v1.0을 확정하기 전에 실제 기사 하나를 아래 순서로 통과시�
 아래는 전체 연결 테스트가 성공한 뒤 진행합니다.
 
 - Supabase를 전체 서비스의 메인 DB라고 가정해 바로 구조를 변경하기
+- `feature/su4228-article-workspace`를 App Core에 다시 병합하기
+- critique-organizer의 SQLite를 두 번째 공식 DB로 채택하기
+- UI에서 n8n·renderer·Supabase·critique server를 직접 호출하는 새 코드 추가하기
+- Vertical Slice와 팀 리뷰 전에 아키텍처 문서를 `main`에 병합하기
 - Contract v1.0 확정
 - 복잡한 Data Map 시각화 고도화
 - 그래프 DB 도입
 - 고급 RAG 재정렬/추천 기능
 - CMS 고급 연동
 
-지금의 목표는 기능을 늘리는 것이 아니라 **팀원들의 기능이 하나의 서비스처럼 연결되는 최소 공통 기반을 만드는 것**입니다.
+지금의 목표는 기능을 늘리는 것이 아니라 **팀원들의 기능이 하나의 서비스처럼 연결되는 최소 공통 기반을 만드는 것**입니다. HTTP adapter와 최종 IPC가 같은 Core named method·payload로 Vertical Slice를 통과한 뒤 v1.0 확정과 `main` 병합을 검토합니다.

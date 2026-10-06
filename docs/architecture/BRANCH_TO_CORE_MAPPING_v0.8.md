@@ -3,15 +3,16 @@
 상태: **Reality Audit 결과 / 개발 작업표**  
 기준일: 2026-10-04  
 기준선: `feature/app-core`  
+비교 기준 SHA: `feature/app-core@d579665`, `feature/su4228-article-workspace@fb985c2`, `feature/platform-generator@113d2fc`
 통합 원칙: 기존 기능을 다시 만들지 않고 **App Core 계약에 Adapter로 연결**
 
 ## 0. 먼저 확인된 브랜치 상태
 
 | 브랜치 | 현재 관계 | 판단 |
 |---|---|---|
-| `feature/app-core` | 기준선 | Browser+HTTP / EXE+IPC 공통 Core로 유지 |
-| `feature/su4228-article-workspace` | app-core보다 46 commits behind, ahead 0 | **별도 merge 금지**. 필요한 기능은 이미 app-core에 흡수됨 |
-| `feature/platform-generator` | app-core와 diverged, 고유 3 commits | Platform + critique-organizer를 **기능 단위로 편입** |
+| `feature/app-core` | 기준선 | 통합 테스트 HTTP adapter / 최종 EXE IPC의 공통 Core로 유지 |
+| `feature/su4228-article-workspace` | 위 SHA 기준 app-core보다 69 commits behind, ahead 0 | **별도 merge 금지**. 필요한 기능은 이미 app-core에 흡수됨 |
+| `feature/platform-generator` | 위 SHA 기준 app-core와 diverged, 고유 4 commits | Platform + critique-organizer를 **기능 단위로 편입** |
 | STT 전용 최신 브랜치 | 현재 branch 목록에서 확인되지 않음 | Core에 `/api/interview/transcribe`는 존재. 박소현 최신 구현이 별도라면 먼저 push/대조 필요 |
 
 > 핵심: “세 브랜치를 합친다”가 아니라 **App Core에 이미 들어간 코드는 유지하고, 아직 갈라진 기능만 Core 계약에 맞춰 편입**한다.
@@ -426,6 +427,22 @@ Core가 Snapshot에서 article/title을 읽고 Verification service에 전달한
 
 # 6. 중복/제거 후보
 
+## 6-1. canonical Core named method
+
+최종 EXE/IPC와 브라우저 통합 테스트용 HTTP adapter는 아래 이름과 payload를 공유합니다. `OPENAPI_v0.8.yaml`의 `operationId`가 이 이름의 기준입니다.
+
+| 기능 | Core named method |
+|---|---|
+| 기사 저장/Revision 생성 | `saveArticle` |
+| Snapshot 생성 | `createSnapshot` |
+| 검증 시작 | `verifySnapshot` |
+| 플랫폼 변환 | `createPlatformOutput` |
+| STT | `transcribeMedia` |
+| 미디어 등록 | `registerMediaAsset` |
+| 작업 조회/취소 | `getJob` / `cancelJob` |
+
+## 6-2. 중복 구현 처리
+
 | 현재 구현 | 조치 |
 |---|---|
 | article-workspace의 별도 `server.py` | **병합하지 않음** — app-core가 후속 구현 |
@@ -472,13 +489,9 @@ Core가 Snapshot에서 article/title을 읽고 Verification service에 전달한
 
 ---
 
-# 8. 지금 수정하면 안 되는 것
+# 8. 적용 보류 범위
 
-- `feature/su4228-article-workspace`를 app-core에 다시 merge
-- Supabase를 전체 데이터의 메인 DB로 전환
-- critique-organizer의 SQLite를 그대로 “두 번째 공식 DB”로 채택
-- UI에서 n8n / renderer / Supabase / critique server를 직접 호출하는 새 코드 추가
-- 실제 Vertical Slice 전에 v1.0 확정
+적용 보류와 v1.0 확정 조건은 `CONTRACT_ALIGNMENT_v0.8.md` §11을 단일 기준으로 사용합니다. 이 문서에서는 구현별 중복/제거 판단과 Adapter 작업만 관리합니다.
 
 ---
 

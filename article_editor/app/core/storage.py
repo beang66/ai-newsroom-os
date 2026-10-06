@@ -34,6 +34,23 @@ def save_article(data):
     return {'saved': True, 'articleId': identifier, 'fileName': target.name, 'folder': str(ARTICLES_DIR)}
 
 
+def latest_article():
+    """가장 최근에 저장된 원고(앱을 열면 이어서 작업). 취재자료 본문은 sources/<id>/text.txt 에서 다시 붙인다."""
+    files = sorted(ARTICLES_DIR.glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True) if ARTICLES_DIR.is_dir() else []
+    for path in files:
+        try:
+            draft = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue  # 깨진 파일은 건너뛰고 그다음 최근 원고
+        for source in draft.get('sources') or []:
+            sid = source.get('id')
+            text = SOURCES_DIR / sid / 'text.txt' if isinstance(sid, str) and re.fullmatch(r'[a-f0-9]{16}', sid) else None
+            if text and text.is_file():
+                source['text'] = text.read_text(encoding='utf-8')
+        return {'draft': draft}
+    return {'draft': None}
+
+
 def save_source(filename, raw, text):
     """취재자료 원본과 추출 텍스트를 sources/<내용 해시>/ 에 둔다. 같은 파일은 한 번만 저장된다.
     파일 이름은 사용자가 탐색기에서 알아보도록 원래 이름을 쓴다(경로 문자만 걸러 낸다)."""

@@ -15,6 +15,7 @@ export const ROUTES = Object.freeze({
   modelsCancel: "/api/models/cancel",
   assist: "/api/assist",
   articlesSave: "/api/articles/save",
+  articlesLatest: "/api/articles/latest",
   factcheckStatus: "/api/factcheck/status",
   factcheckRun: "/api/factcheck/run",
   semanticParse: "/api/semantic/parse",
@@ -75,9 +76,11 @@ export function createCoreApi(transport) {
       transport.json(ROUTES.sourcesOpen, { sourceId }, signal),
     /** 보관한 취재자료 원본 바이트(앱 안 뷰어용) → Blob */
     sourceBytes: (sourceId, signal) => transport.bytes(ROUTES.sourceFile(sourceId), signal),
-    /** 원고 디스크 저장 (파일: .article-workspace/articles) */
+    /** 원고 디스크 저장 (파일: 내 문서/AI Newsroom/articles) */
     saveArticle: (draft, signal) =>
       transport.json(ROUTES.articlesSave, { draft }, signal),
+    /** 가장 최근에 저장된 원고(앱을 열면 이어서 작업) → { draft | null } */
+    latestArticle: (signal) => transport.json(ROUTES.articlesLatest, null, signal),
     /** Unsplash 사진 검색 (1페이지 3장) */
     searchPhotos: (query, page = 1, signal) =>
       transport.json(

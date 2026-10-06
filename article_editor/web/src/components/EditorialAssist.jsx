@@ -228,29 +228,32 @@ export function FlowSummaryButton({ body }) {
   );
 }
 
-/** 기사가 바뀌면 1.5초 뒤 코어에 저장(옛 UI 와 같은 간격). 상태 문구를 돌려준다 */
-export function useAutosave(article) {
+/** 기사가 바뀌면 1.5초 뒤 코어에 저장(옛 UI 와 같은 간격). 상태 문구를 돌려준다.
+ *  App 에서 한 번만 쓴다 — 어느 화면에 있든 저장되고, 저장 ID 는 article.articleId 에 남아 같은 파일을 덮어쓴다 */
+export function useAutosave(article, setArticle) {
   const [status, setStatus] = useState("");
-  const idRef = useRef(null);
+  const idRef = useRef(article.articleId || null);
   const first = useRef(true);
   useEffect(() => {
     if (first.current) {
-      first.current = false; // 처음 연 기사(목업 포함)는 바꾸기 전까지 저장하지 않는다
+      first.current = false; // 처음 연(또는 불러온) 기사는 바꾸기 전까지 저장하지 않는다
       return;
     }
     setStatus("저장 대기…");
     const timer = setTimeout(async () => {
       setStatus("자동 저장 중…");
       try {
-        idRef.current = await saveDraft(article, idRef.current);
+        const id = await saveDraft(article, idRef.current || article.articleId);
+        idRef.current = id;
+        if (id !== article.articleId) setArticle((prev) => ({ ...prev, articleId: id }));
         setStatus("자동 저장됨");
       } catch (e) {
         setStatus("저장 실패: " + (e?.message || e));
       }
     }, 1500);
     return () => clearTimeout(timer);
-    // 저장 대상 필드가 바뀔 때만(article 객체 전체가 아니라)
+    // 저장 대상 필드가 바뀔 때만(article 객체 전체가 아니라 — articleId 변경으로는 다시 저장하지 않는다)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [article.title, article.subtitle, article.content, article.photos]);
+  }, [article.title, article.subtitle, article.content, article.photos, article.sources, article.linkedSources, article.status]);
   return status;
 }

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
 // 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
-import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useAutosave } from "./EditorialAssist";
+import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton } from "./EditorialAssist";
 import { 
   Sparkles, 
   Search, 
@@ -39,7 +39,8 @@ export default function ArticleWriter({
   factCheckIssues,
   activeFactIndex,
   onApplyFactFix,
-  onSkipFactFix
+  onSkipFactFix,
+  saveStatus // 자동 저장은 App 에서(어느 화면에 있든 저장된다)
 }) {
   // 1. 화면 뷰 모드: 'editor' (에디터만) | 'split' (에디터+미리보기 나란히) | 'preview' (미리보기 전체)
   const [viewMode, setViewMode] = useState("editor");
@@ -78,7 +79,6 @@ export default function ArticleWriter({
 
   const headlineSuggest = useSuggestions("headline", article);
   const subtitleSuggest = useSuggestions("subtitle", article);
-  const saveStatus = useAutosave(article);
 
   // 텍스트 드래그 선택 서식 툴바
   const handleSelection = () => {

@@ -133,6 +133,18 @@ class ServerTests(ApiTestCase):
             draft['articleId'] = '../../outside'
             self.assertEqual(self.request('/api/articles/save', {'draft': draft})[0], 400)
 
+    def test_latest_article_reopens_newest_with_source_text(self):
+        import os as _os
+        with tempfile.TemporaryDirectory() as temp, patch.object(storage, "ARTICLES_DIR", Path(temp) / "articles"),                 patch.object(storage, "SOURCES_DIR", Path(temp) / "sources"):
+            self.assertEqual(json.loads(self.request("/api/articles/latest")[1]), {"draft": None})
+            source_id, _ = storage.save_source("자료.txt", "원문".encode(), "원문")
+            old = json.loads(self.request("/api/articles/save", {"draft": {"bodyHtml": "<p>옛</p>", "title": "옛 원고"}})[1])
+            _os.utime(Path(temp) / "articles" / old["fileName"], (1, 1))  # 확실히 더 오래된 파일로
+            self.request("/api/articles/save", {"draft": {"bodyHtml": "<p>새</p>", "content": "새", "title": "새 원고",
+                                                          "sources": [{"id": source_id, "name": "자료.txt"}]}})
+            draft = json.loads(self.request("/api/articles/latest")[1])["draft"]
+            self.assertEqual((draft["title"], draft["content"], draft["sources"][0]["text"]), ("새 원고", "새", "원문"))
+
     def test_summary_model_schema(self):
         def summarize(name, prompt, schema, text):
             self.assertEqual(schema['properties']['paragraphs']['minItems'], 3)

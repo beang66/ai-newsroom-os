@@ -163,8 +163,33 @@ export async function saveDraft(article, articleId) {
     subtitle: article.subtitle || "",
     bodyHtml,
     photos,
+    content: article.content || "", // 다시 열 때 그대로 복원(bodyHtml 은 발행·변환용)
+    linkedSources: article.linkedSources || [],
     sources: (article.sources || []).map(({ text, ...meta }) => meta), // 본문 텍스트는 sources/<id>/text.txt 에 있다
     status: article.status || "",
+    createdAt: article.createdAt || "",
   });
   return d.articleId;
+}
+
+/** 앱을 열 때 이어서 작업할 가장 최근 원고 → 기사 객체(없으면 null). content 가 없는 옛 원고는 bodyHtml 에서 글자만 */
+export async function loadLatestArticle(empty) {
+  const { draft } = await core.latestArticle();
+  if (!draft) return null;
+  const content = draft.content ?? new DOMParser()
+    .parseFromString((draft.bodyHtml || "").replace(/<br\s*\/?>/g, "\n").replace(/<\/p>/g, "\n\n"), "text/html")
+    .body.textContent.trim();
+  return {
+    ...empty,
+    articleId: draft.articleId,
+    title: draft.title || "",
+    subtitle: draft.subtitle || "",
+    content,
+    status: draft.status || empty.status,
+    createdAt: draft.createdAt || empty.createdAt,
+    updatedAt: (draft.savedAt || "").replace("T", " ").slice(0, 16) || empty.updatedAt,
+    linkedSources: draft.linkedSources || [],
+    sources: draft.sources || [],
+    photos: draft.photos || [],
+  };
 }

@@ -34,6 +34,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/factcheck/status':
             try:return self.send(200,CORE.ai.factcheck_status())
             except RequestError as e:return self.send(e.status,{'error':e.message})
+        if self.path=='/api/articles/latest':return self.send(200,CORE.storage.latest_article())
         if self.path=='/api/models':
             try:return self.send(200,CORE.models.status())
             except RequestError as e:return self.send(e.status,{'error':e.message})

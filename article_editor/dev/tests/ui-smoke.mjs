@@ -186,6 +186,15 @@ try {
   await see("전사 완료");
   await go("기사 작성");
   await see("취재자료 검색");
+  // 앱을 다시 열면 마지막 화면과 최근 원고(제목·본문·취재자료)가 그대로 — 자동 저장(1.5초) 뒤 새로고침
+  await go("보관함");
+  await page.waitForTimeout(2500);
+  await page.reload();
+  await see("기사 중심 통합 보관함");
+  await page.getByText("취재자료 (1건)").waitFor();
+  await go("기사 작성");
+  assert.equal(await page.getByPlaceholder("기사 제목을 입력하거나 AI 추천을 확인하세요").inputValue(), "스텁 제목 둘");
+  assert.ok((await body.inputValue()).startsWith("스모크 테스트 본문입니다."));
   // 7. 좁은 화면에서도 첫 화면이 오류 없이 그려지는지
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
@@ -194,7 +203,7 @@ try {
 
   for (const name of ["headlines", "subtitles", "article_flow_summary", "photo_keywords", "search:stub wafer", "stt:multipart/form-data"])
     assert.ok(stubCalls.includes(name), `코어가 백엔드로 ${name} 를 요청하지 않았습니다: ${stubCalls}`);
-  assert.ok(savedIds.size > 0, "자동 저장 요청이 없었습니다");
+  assert.equal(savedIds.size, 1, "같은 원고는 화면을 오가도 한 파일에 저장돼야 합니다: " + [...savedIds]);
   assert.deepEqual(problems, [], "브라우저 오류:\n" + problems.join("\n"));
   console.log("PASS ui-smoke: 코어 연결·제목/부제 추천·흐름 요약·자동 저장·사진 찾기·팩트체크 서랍·자료 검색·플랫폼 변환·보관함·녹취 전사·모바일 폭");
 } catch (error) {

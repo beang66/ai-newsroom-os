@@ -10,10 +10,31 @@ import ArchiveView from "./components/ArchiveView";
 
 import { createEmptyArticle } from "./data/article";
 import { coreSnapshot } from "./api/core";
+import { loadLatestArticle } from "./api/editorial";
+import { useAutosave } from "./components/EditorialAssist";
 
+// 마지막으로 보던 화면(작성·보관함 등) — 이 PC 화면 설정이라 브라우저 저장소에 둔다(없거나 막혀도 동작)
+const TAB_KEY = "ai-newsroom:lastTab";
+const readTab = () => { try { return localStorage.getItem(TAB_KEY) || "writer"; } catch { return "writer"; } };
+const writeTab = (tab) => { try { localStorage.setItem(TAB_KEY, tab); } catch { /* 저장 못 해도 그만 */ } };
+
+/** 앱을 열면 가장 최근에 저장된 원고를 불러와 이어서 작업한다(없으면 새 원고) */
 export default function App() {
-  const [activeTab, setActiveTab] = useState("writer");
-  const [article, setArticle] = useState(createEmptyArticle);
+  const [initial, setInitial] = useState(null);
+  useEffect(() => {
+    loadLatestArticle(createEmptyArticle())
+      .then((a) => setInitial(a || createEmptyArticle()))
+      .catch(() => setInitial(createEmptyArticle()));
+  }, []);
+  if (!initial) return <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">최근 작업을 불러오는 중…</div>;
+  return <Workspace initialArticle={initial} />;
+}
+
+function Workspace({ initialArticle }) {
+  const [activeTab, setActiveTabState] = useState(readTab);
+  const setActiveTab = (tab) => { setActiveTabState(tab); writeTab(tab); };
+  const [article, setArticle] = useState(initialArticle);
+  const saveStatus = useAutosave(article, setArticle);
 
   // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
   const [core, setCore] = useState({ ok: false });
@@ -138,6 +159,7 @@ export default function App() {
                 activeFactIndex={activeFactIndex}
                 onApplyFactFix={handleApplyFactFix}
                 onSkipFactFix={handleSkipFactFix}
+                saveStatus={saveStatus}
               />
             )}
 
@@ -161,6 +183,7 @@ export default function App() {
                 activeFactIndex={activeFactIndex}
                 onApplyFactFix={handleApplyFactFix}
                 onSkipFactFix={handleSkipFactFix}
+                saveStatus={saveStatus}
               />
             )}
 

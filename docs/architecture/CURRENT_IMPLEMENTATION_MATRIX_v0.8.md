@@ -7,7 +7,7 @@
 
 ## 한눈에 보는 결론
 
-1. 팀원별 기능이 서로 다른 방식으로 만들어져 있습니다. 화면은 React/Vite, 핵심 기능은 Python, 사진 저장은 Supabase, 플랫폼 변환은 Node/n8n 등으로 나뉘어 있습니다.
+1. 팀원별 기능이 서로 다른 방식으로 만들어져 있습니다. 화면은 React/Vite, 핵심 기능은 Python, 사진 저장은 Supabase, 플랫폼 변환은 Node등으로 나뉘어 있습니다.
 2. `feature/app-core`는 단순 참고안이 아니라 **App Core 기준선**으로 사용합니다. React UI는 `api.js`만 통해 Python Core를 호출하고, 통합 테스트에서는 HTTP adapter, 최종 EXE에서는 pywebview IPC로 같은 named method 계약을 사용합니다.
 3. 저장 구조는 하나의 클라우드 DB로 몰지 않습니다. 기사·취재자료는 Local-first, Supabase는 인증·메타데이터·공유/협업 계층이라는 Core 원칙을 유지하면서 사진·플랫폼 결과 등 다른 브랜치의 저장 방식을 연결해야 합니다.
 4. 기사 검증에서 사용하는 주장·근거·출처 위치 정보는 좋은 기반이 있습니다. 다만 기능마다 다른 이름/ID를 쓰지 않도록 공통 ID가 필요합니다.
@@ -27,7 +27,7 @@
 | STT | 음성→텍스트 API | `Transcript` + `TranscriptSegment` | 문장/구간별 고정 ID 부여 |
 | 기사 검증 | factcheck 기능 | `Claim` + `VerificationRun/Issue` | 주장 ID를 다른 기능에서도 재사용 |
 | 근거 검색 | Candidate/Assessment 형태 | `SourceChunk` + `EvidenceLink` | 출처 ID와 근거 위치 통일 |
-| 플랫폼 변환 | n8n | 고정 기사본 → `PlatformOutput` | Snapshot ID를 입력으로 받기 |
+| 플랫폼 변환 | Node 고정 기사본 → `PlatformOutput` | Snapshot ID를 입력으로 받기 |
 | 이미지 렌더링 | Node/Playwright, 로컬 JPEG | `MediaAsset` 결과물 | localhost 파일 경로 제거 |
 | Data Map | 기능별 데이터가 흩어져 있음 | 공통 관계 데이터 조회 | 별도 RAG/DB 중복 구축 금지 |
 
@@ -49,7 +49,7 @@
 RAG, 기사 검증, Data Map, Archive가 같은 Claim/Evidence를 사용합니다.
 
 ### 4. 오래 걸리는 작업의 상태 표현 통일
-AI 검증, STT, 이미지 생성/렌더링, n8n처럼 바로 끝나지 않는 작업은 모두 `ProcessingJob`으로 관리합니다.
+AI 검증, STT, 이미지 생성/렌더링 처럼 바로 끝나지 않는 작업은 모두 `ProcessingJob`으로 관리합니다.
 
 `대기(queued) → 실행 중(running) → 성공(succeeded) / 실패(failed) / 취소(cancelled)`
 
@@ -72,7 +72,7 @@ AI 검증, STT, 이미지 생성/렌더링, n8n처럼 바로 끝나지 않는 �
 2. 검증/플랫폼 변환 담당: 실행 직전에 `ArticleSnapshot`을 만들고 그 ID 사용
 3. RAG 담당: 기존 검색 결과를 `SourceChunk` 형식으로 연결
 4. 미디어 담당: 기존 `photo_assets`를 `MediaAsset` 형식으로 연결
-5. 플랫폼 변환 담당: n8n/Playwright 실행 상태를 `ProcessingJob`, 결과를 `PlatformOutput`으로 연결
+5. 플랫폼 변환 담당: node/Playwright 실행 상태를 `ProcessingJob`, 결과를 `PlatformOutput`으로 연결
 6. Data Map 담당: Claim/Evidence/Entity 공통 데이터를 읽어서 시각화
 
 ## 팀 리뷰 때 딱 5가지만 확인

@@ -30,6 +30,50 @@ def _context(text: str, start: int, end: int, width: int = 14) -> set[str]:
     return {around[i:i + 2] for i in range(len(around) - 1)}
 
 
+_BIG = {'조': 1e12, '억': 1e8, '만': 1e4}
+
+
+def to_number(token: str) -> float | None:
+    """'62만7546주'·'627,546'·'1천500만원'·'3억 2천만원' → 같은 수. 날짜·해석 불가면 None."""
+    s = re.sub(r'[,\s]', '', token or '')
+    if re.search(r'[년월일]', s):
+        return None
+    s = re.sub(r'(원|%|명|건|주|가구|개국|개|회)$', '', s)
+    total = group = 0.0
+    num = ''
+    for ch in s + '#':
+        if ch.isdigit() or ch == '.':
+            num += ch
+            continue
+        try:
+            n = float(num) if num else (1.0 if ch in '천백' else 0.0)
+        except ValueError:
+            return None
+        if ch in '천백':
+            group += n * (1000 if ch == '천' else 100)
+        elif ch in _BIG:
+            total += (group + n) * _BIG[ch]
+            group = 0.0
+        elif ch == '#':
+            group += n
+        else:
+            return None
+        num = ''
+    return total + group
+
+
+def shares_value(claim: str, evidence: str) -> bool:
+    """문장과 근거에 표기만 다른 같은 수(100 이상, 연도 제외)가 있는가 — 관련 근거 신호(판정 아님)."""
+    def values(text):
+        out = set()
+        for m in VALUE_RE.finditer(text or ''):
+            v = to_number(m.group(0))
+            if v is not None and v >= 100 and not (1900 <= v <= 2100 and float(v).is_integer() and len(m.group(0).strip()) == 4):
+                out.add(v)
+        return out
+    return bool(values(claim) & values(evidence))
+
+
 def find_explicit_value_conflicts(claim: str, evidence: str) -> list[dict]:
     """본문 문장에서 근거와 다른 값의 위치(화면 강조용 — 판정은 판정기가 한다).
 

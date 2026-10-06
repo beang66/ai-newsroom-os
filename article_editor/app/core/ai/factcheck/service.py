@@ -4,7 +4,7 @@ from collections import Counter
 
 from .paths import JUDGE_DIR, settings
 from .semantic_chunker_v3 import clean as _clean
-from .assertion import find_explicit_value_conflicts, find_near_copy_differences
+from .assertion import find_explicit_value_conflicts, find_near_copy_differences, shares_value
 from .chunker import chunk_document
 from .semantic_provider import OnnxJudgeProvider
 from .observability import record_factcheck_event
@@ -413,6 +413,10 @@ def review_workspace(nodes, materials):
             ),
             "conflict_spans": conflict_spans,
             "focus_spans": focus_spans,
+            # '근거 부족'인데 검색 후보에 같은 수(표기만 다른 것 포함)가 있다 — 판정기가 못 읽었을 수 있어 외부 재판정 대상
+            "related_evidence": status == "EVIDENCE_GAP" and any(
+                shares_value(claim, c.get("text") or "") for c in evidence_candidates if c.get("kind") != "metadata"
+            ),
             "provider": provider_name,
             "model_metadata": model_metadata,
         })

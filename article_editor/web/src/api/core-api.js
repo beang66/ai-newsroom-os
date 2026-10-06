@@ -18,6 +18,7 @@ export const ROUTES = Object.freeze({
   articlesLatest: "/api/articles/latest",
   factcheckStatus: "/api/factcheck/status",
   factcheckRun: "/api/factcheck/run",
+  factcheckExternal: "/api/factcheck/external",
   semanticParse: "/api/semantic/parse",
   transcribe: "/api/interview/transcribe",
   materialsExtract: "/api/materials/extract",
@@ -62,6 +63,9 @@ export function createCoreApi(transport) {
     /** 팩트체크: nodes=[{id,type,text,linkedSourceIds?}], materials=[{id,title,content,date?,speaker?}] */
     factcheckRun: (nodes, materials, signal) =>
       transport.json(ROUTES.factcheckRun, { nodes, materials }, signal),
+    /** 외부 재판정(임시·OpenAI): items=[{id, claim, evidence:[str], titles?:[str]}] → { results:[{id, verdict, reason, wrong_text, evidence_text}] } */
+    factcheckExternal: (items, signal) =>
+      transport.json(ROUTES.factcheckExternal, { items }, signal),
     /** 의미 단위 청킹: source = frontend | opendart */
     semanticParse: (text, source = "frontend", signal) =>
       transport.json(ROUTES.semanticParse, { text, source }, signal),

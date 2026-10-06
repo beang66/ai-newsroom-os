@@ -64,6 +64,11 @@ class AIManager:
         from ..ai.factcheck.service import review_workspace
         return review_workspace(nodes, materials)
 
+    def factcheck_external(self, payload):
+        """로컬 판정기가 확정 못 한 문장만 OpenAI 로 재판정(임시·시험용). payload: {items: [{id, claim, evidence: [str]}]}"""
+        from ..ai.factcheck.external import judge
+        return judge(payload)
+
     def semantic_parse(self, payload):
         """자료 본문을 의미 단위(청크)로 나눈다. 경계 모델이 없으면 규칙만 쓴다."""
         text = _text(payload.get('text'), '본문')

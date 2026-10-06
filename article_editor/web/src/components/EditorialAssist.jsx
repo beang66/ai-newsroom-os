@@ -14,6 +14,9 @@ import {
   splitSentences,
   isDevMode,
   bodyChunks,
+  needsRecheck,
+  recheckEvidence,
+  externalRecheck,
 } from "../api/editorial";
 
 /** 팩트체크 — 본문·취재자료가 바뀌고 1.5초 멈추면 자동으로 돈다(옛 UI 의 '작성 멈춤 감지').
@@ -66,7 +69,32 @@ export function useFactCheck(article) {
     return () => clearTimeout(timer);
   }, [article.content, sourceKey, run]);
 
-  return { results, busy, error, run };
+  // 외부 재판정(임시·OpenAI): 로컬 판정기가 확정 못 한 문장만 보낸다. 결과는 문장별 기억에 붙어 문장을 고치기 전까지 유지된다
+  const [recheckBusy, setRecheckBusy] = useState(false);
+  const recheck = useCallback(async () => {
+    const present = new Set(splitSentences(latest.current.content).map((s) => s.text));
+    const todo = [...state.current.cache.entries()].filter(([text, r]) => present.has(text) && needsRecheck(r));
+    if (!todo.length) return;
+    setRecheckBusy(true);
+    setError("");
+    try {
+      const items = todo.map(([text, r], i) => {
+        const ev = recheckEvidence(r);
+        return { id: String(i), claim: text, evidence: ev.map((e) => e.text || ""), titles: ev.map((e) => e.material_title || "") };
+      });
+      for (const x of await externalRecheck(items)) {
+        const hit = todo[Number(x.id)];
+        if (hit) state.current.cache.set(hit[0], { ...hit[1], external: x });
+      }
+      await run(); // 모두 기억에 있으니 코어 판정 없이 화면만 다시 그린다
+    } catch (e) {
+      setError("AI 재판정 실패: " + (e?.message || String(e)));
+    } finally {
+      setRecheckBusy(false);
+    }
+  }, [run]);
+
+  return { results, busy, error, run, recheck, recheckBusy, recheckCount: results.filter((r) => r.needsRecheck).length };
 }
 
 /** 본문 청크 밑줄(개발 실행에서만) — 켜 두면 본문이 바뀌고 0.8초 뒤 청킹 모델로 다시 나눈다.

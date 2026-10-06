@@ -260,6 +260,15 @@ export default function FactCheckDrawer({
                 </p>
                 {checkError && <p className="text-[11px] text-rose-600 mt-1" data-testid="factcheck-error">{checkError}</p>}
               </div>
+              {/* 임시(시험용): 로컬 판정기가 확정 못 한 문장만 OpenAI 로 재판정 */}
+              <button
+                onClick={() => factCheck.recheck()}
+                disabled={!factCheck.recheckCount || factCheck.recheckBusy || isAnalyzing}
+                title="검토 필요·관련 근거가 있는 근거 부족 문장만 OpenAI 로 다시 판정(임시 시험 기능)"
+                className="ml-auto mr-1 px-2.5 py-1 text-[11px] font-bold rounded-full border border-violet-300 text-violet-700 hover:bg-violet-50 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+              >
+                {factCheck.recheckBusy ? "AI 재판정 중…" : `AI 재판정 ${factCheck.recheckCount}건 (임시)`}
+              </button>
               <button
                 onClick={() => runCheck(true)}
                 disabled={isAnalyzing}
@@ -284,6 +293,9 @@ export default function FactCheckDrawer({
                       {(VERDICT_BADGE[item.verdict] || REVIEW_BADGE)[0]}
                       {item.matchRate != null && ` (${item.matchRate}%)`}
                     </span>
+                    {item.judgedBy === "external" && (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">AI 재판정</span>
+                    )}
                     {item.sourceDoc && (
                       <span className="text-[11px] font-bold text-slate-400">출처: {item.sourceDoc}</span>
                     )}

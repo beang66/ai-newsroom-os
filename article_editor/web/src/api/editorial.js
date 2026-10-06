@@ -181,6 +181,7 @@ export async function factcheckArticle(content, files, cache = new Map()) {
   }
   return nodes.filter((n) => cache.has(n.text)).map((node) => {
     const r = cache.get(node.text);
+    if (r.external) return externalItem(node, r);
     // 틀린 값 위치(코어 conflict_spans/focus_spans, 공백 정리된 문장 기준) → 원문 위치로 되돌린다
     const pairs = (node.text === r.claim ? (r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || []) : [])
       .filter((x) => x.claim_end > x.claim_start && x.claim_end <= node.map.length);
@@ -204,8 +205,54 @@ export async function factcheckArticle(content, files, cache = new Map()) {
       quote,
       comment: r.reason || "",
       suggestedFix: null,
+      needsRecheck: needsRecheck(r),
     };
   });
+}
+
+/** 외부 재판정 대상: 로컬 판정기가 확정 못 한 문장 — 검토 필요, 그리고 관련 근거(같은 수)가 있는데 '근거 부족'인 것 */
+export const needsRecheck = (r) =>
+  !r.external && (["REVIEW", "EXTERNAL_REQUIRED"].includes(r.status) || (r.status === "EVIDENCE_GAP" && r.related_evidence));
+
+/** 재판정에 보낼 근거: 검색 상위 본문 청크 3개(자료 정보 줄 제외) */
+export const recheckEvidence = (r) => {
+  const top = (r.evidence_candidates || []).filter((c) => c.kind !== "metadata").slice(0, 3);
+  return top.length ? top : r.evidence ? [r.evidence] : [];
+};
+
+/** 외부 재판정(임시·OpenAI) — items: [{id, claim, evidence:[str], titles:[str]}] → 결과 목록 */
+export async function externalRecheck(items) {
+  return (await core.factcheckExternal(items)).results || [];
+}
+
+const EXTERNAL_VERDICT = { SUPPORTED: "SUPPORTED", CONFLICT: "CONFLICT", NOT_ENOUGH_INFO: "EVIDENCE_GAP" };
+
+/** 외부 판정 결과 → 카드·하이라이트. wrong_text·evidence_text 는 원문에서 그대로 찾을 수 있을 때만 위치로 쓴다 */
+function externalItem(node, r) {
+  const x = r.external;
+  const verdict = EXTERNAL_VERDICT[x.verdict] || "REVIEW";
+  const evidence = recheckEvidence(r);
+  const source = evidence.find((e) => x.evidence_text && (e.text || "").includes(x.evidence_text)) || evidence[0] || {};
+  const quote = source.text || "";
+  const at = x.wrong_text ? node.text.indexOf(x.wrong_text) : -1;
+  const q = x.evidence_text ? quote.indexOf(x.evidence_text) : -1;
+  return {
+    id: node.id,
+    claimText: node.raw,
+    start: node.start,
+    spans: at >= 0 ? [{ start: node.map[at], end: node.map[at + x.wrong_text.length - 1] + 1 }] : [],
+    quoteSpans: q >= 0 ? [{ start: q, end: q + x.evidence_text.length }] : [],
+    verdict,
+    status: VERDICT[verdict] || "unverified",
+    matchRate: null,
+    sourceDoc: source.material_title || "",
+    page: "",
+    quote,
+    comment: `AI 재판정(OpenAI): ${x.reason}`,
+    suggestedFix: null,
+    judgedBy: "external",
+    needsRecheck: false,
+  };
 }
 
 /** 기사 흐름 요약 3~5문장 */

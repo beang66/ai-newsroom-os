@@ -70,10 +70,12 @@ export function useFactCheck(article) {
   }, [article.content, sourceKey, run]);
 
   // 외부 재판정(임시·OpenAI): 로컬 판정기가 확정 못 한 문장만 보낸다. 결과는 문장별 기억에 붙어 문장을 고치기 전까지 유지된다
+  // key(공백 정리된 문장)를 주면 그 문장만 — 본문 하이라이트를 눌러 '상위모델로 재검토'
   const [recheckBusy, setRecheckBusy] = useState(false);
-  const recheck = useCallback(async () => {
+  const recheck = useCallback(async (key) => {
     const present = new Set(splitSentences(latest.current.content).map((s) => s.text));
-    const todo = [...state.current.cache.entries()].filter(([text, r]) => present.has(text) && needsRecheck(r));
+    const todo = [...state.current.cache.entries()].filter(([text, r]) =>
+      present.has(text) && (key ? text === key && !r.external : needsRecheck(r)));
     if (!todo.length) return;
     setRecheckBusy(true);
     setError("");

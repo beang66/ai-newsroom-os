@@ -539,6 +539,8 @@ export default function ArticleWriter({
                 onChange={(content) => setArticle({ ...article, content })}
                 results={factCheck.results}
                 chunks={bodyChunks.chunks}
+                onRecheck={factCheck.recheck}
+                recheckBusy={factCheck.recheckBusy}
               />
             </div>
 
@@ -988,12 +990,15 @@ const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부�
 // 청크 밑줄(개발 모드) — 이웃 청크끼리 색이 겹치지 않게 돌려 쓴다
 const CHUNK_COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2"];
 
-function HighlightedBody({ value, onChange, results, chunks = null }) {
+function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, recheckBusy }) {
+  const layer = useRef(null);
+  const [hover, setHover] = useState(null); // { key, x, y } — 하이라이트 위 마우스(textarea 가 위를 덮어 마크가 이벤트를 못 받으니 좌표로 찾는다)
+
   const ranges = useMemo(() => {
     const out = results
       .filter((r) => MARK[r.verdict] && r.start >= 0 && value.slice(r.start, r.start + r.claimText.length) === r.claimText)
       .flatMap((r) => (r.spans.length ? r.spans : [{ start: r.start, end: r.start + r.claimText.length }])
-        .map((x) => ({ ...x, verdict: r.verdict })))
+        .map((x) => ({ ...x, verdict: r.verdict, key: r.judgedBy === "external" ? "" : r.key })))
       .sort((a, b) => a.start - b.start);
     return out.filter((x, i) => i === 0 || x.start >= out[i - 1].end); // 겹치면 앞의 것만
   }, [results, value]);
@@ -1002,16 +1007,28 @@ function HighlightedBody({ value, onChange, results, chunks = null }) {
   let cursor = 0;
   ranges.forEach((x, i) => {
     parts.push(value.slice(cursor, x.start));
-    parts.push(<mark key={i} className={`${MARK[x.verdict]} text-transparent rounded-sm`} title={MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
+    parts.push(<mark key={i} data-key={x.key} className={`${MARK[x.verdict]} text-transparent rounded-sm`} title={MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
     cursor = x.end;
   });
   parts.push(value.slice(cursor) + "\n"); // 마지막 줄바꿈도 높이를 맞춘다
 
   // 뒤의 글자 층이 높이를 정하고(글이 길어지면 같이 늘어남) textarea 는 그 위를 덮는다 → 줄바꿈 위치가 항상 같다
   const box = "w-full min-h-[460px] text-xs md:text-sm leading-relaxed p-5 rounded-2xl border font-sans whitespace-pre-wrap break-words";
+  const findMark = (e) => {
+    if (!onRecheck || !layer.current) return null;
+    const box = layer.current.parentElement.getBoundingClientRect();
+    for (const m of layer.current.querySelectorAll("mark[data-key]")) {
+      if (!m.dataset.key) continue; // 이미 AI 재판정한 문장
+      for (const r of m.getClientRects())
+        if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom)
+          return { key: m.dataset.key, x: e.clientX - box.left, y: r.top - box.top };
+    }
+    return null;
+  };
+
   return (
     <div className="relative bg-slate-50/70 rounded-2xl focus-within:bg-white transition-all">
-      <div aria-hidden="true" data-testid="fact-highlight" className={`${box} text-transparent border-transparent pointer-events-none`}>
+      <div ref={layer} aria-hidden="true" data-testid="fact-highlight" className={`${box} text-transparent border-transparent pointer-events-none`}>
         {parts}
       </div>
       {chunks && (
@@ -1032,9 +1049,21 @@ function HighlightedBody({ value, onChange, results, chunks = null }) {
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onMouseMove={(e) => setHover(findMark(e))}
+        onMouseLeave={() => setHover(null)}
+        onClick={(e) => {
+          const hit = findMark(e);
+          if (hit && !recheckBusy && e.target.selectionEnd === e.target.selectionStart) onRecheck(hit.key);
+        }}
         placeholder="기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다..."
-        className={`${box} absolute inset-0 h-full overflow-hidden text-slate-900 bg-transparent border-slate-200 focus:border-slate-800 outline-none resize-none shadow-2xs`}
+        className={`${box} absolute inset-0 h-full overflow-hidden text-slate-900 bg-transparent border-slate-200 focus:border-slate-800 outline-none resize-none shadow-2xs ${hover ? "cursor-pointer" : ""}`}
       />
+      {hover && (
+        <div data-testid="recheck-tip" className="absolute z-10 -translate-x-1/2 -translate-y-full -mt-1 px-2 py-1 rounded-md bg-slate-900 text-white text-[11px] font-bold pointer-events-none whitespace-nowrap shadow"
+          style={{ left: hover.x, top: hover.y - 4 }}>
+          {recheckBusy ? "상위모델 재검토 중…" : "상위모델로 재검토"}
+        </div>
+      )}
     </div>
   );
 }

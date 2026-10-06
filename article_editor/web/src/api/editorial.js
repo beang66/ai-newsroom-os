@@ -193,6 +193,7 @@ export async function factcheckArticle(content, files, cache = new Map()) {
       .map((x) => ({ start: x.evidence_start, end: x.evidence_end }));
     return {
       id: node.id,
+      key: node.text,
       claimText: node.raw,
       start: node.start,
       spans,
@@ -238,6 +239,7 @@ function externalItem(node, r) {
   const q = x.evidence_text ? quote.indexOf(x.evidence_text) : -1;
   return {
     id: node.id,
+    key: node.text,
     claimText: node.raw,
     start: node.start,
     spans: at >= 0 ? [{ start: node.map[at], end: node.map[at + x.wrong_text.length - 1] + 1 }] : [],

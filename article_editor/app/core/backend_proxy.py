@@ -54,6 +54,14 @@ def _headers() -> dict:
 
 
 def _fail(error: urllib.error.HTTPError):
+    # 백엔드는 OpenAI 응답 코드를 그대로 넘긴다 — 401 이 '로그인 필요'가 아니라 백엔드의 OpenAI 키 거절일 수 있다
+    if error.code == 401:
+        try:
+            body = error.read().decode('utf-8', 'replace')
+        except Exception:
+            body = ''
+        if 'api key' in body.lower() or 'invalid_api_key' in body:
+            raise RequestError('백엔드(Render)의 OpenAI 키가 거절됐어요. Render 의 OPENAI_API_KEY 를 확인해 주세요.', 502) from None
     messages = {
         401: '백엔드 인증이 필요합니다. 다시 로그인해 주세요.',
         403: '이 작업을 수행할 권한이 없습니다.',

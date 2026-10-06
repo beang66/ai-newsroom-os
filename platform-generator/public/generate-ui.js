@@ -79,7 +79,7 @@
     const fields = [...document.querySelectorAll(
       "#article-url, #import-article, #include-card-news, #article-title, #article-content, #custom-keywords, " +
       "#article-requirements, #suggest-keywords, #keyword-candidates input, " +
-      ".platform input, #generate-selected, .text-generate-tools button, #save, #load"
+      ".platform input, #generate-selected, .text-generate-tools button, #load-local-draft, #save, #load"
     )];
     const previousDisabled = fields.map((field) => field.disabled);
     const surfaces = [get("stage")?.closest(".panel"), get("cards")?.closest(".panel"),
@@ -99,9 +99,8 @@
 
       window.CardEditor.applyCardNewsDraft(result.draft, expectedRevision, input);
 
-      // 현재 text-editor-ui.js에서는 Instagram 탭이 카드 편집 화면입니다.
-      // 다음 단계에서 별도 카드뉴스 탭으로 분리합니다.
-      window.TextEditor?.showPlatform("instagram");
+      // 플랫폼 원고를 유지하고 독립 카드뉴스 탭으로 전환합니다.
+      window.TextEditor?.showPlatform("card_news");
 
       const evidenceIssues = result.draft.cards.filter(
         (card) => card.evidence_valid !== true

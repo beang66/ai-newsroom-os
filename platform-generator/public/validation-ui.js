@@ -10,6 +10,7 @@
 
   const names = {
     instagram: "Instagram",
+    card_news: "카드뉴스",
     threads: "Threads",
     blog: "Blog",
   };
@@ -75,8 +76,8 @@
     let context;
     let draft;
 
-    if (platform === "instagram") {
-      context = state.instagram_generation_input;
+    if (platform === "card_news") {
+      context = state.card_news_generation_input || state.instagram_generation_input;
 
       draft = {
         core_text: state.core_text,
@@ -99,6 +100,7 @@
             body: card.body,
           },
 
+          design: CardTemplate.normalizeDesign(card),
           source_evidence: card.source_evidence || [],
         })),
       };
@@ -111,7 +113,12 @@
 
       context = textDraft.generation_input;
 
-      if (platform === "threads") {
+      if (platform === "instagram") {
+        draft = {opening: textDraft.opening, paragraphs: textDraft.paragraphs,
+          closing: textDraft.closing, hashtags: textDraft.hashtags,
+          block_evidence: textDraft.block_evidence || null,
+          source_evidence: textDraft.source_evidence || []};
+      } else if (platform === "threads") {
         draft = {
           draft_version: textDraft.draft_version || "",
           opening: textDraft.opening,
@@ -179,6 +186,7 @@
         /sections\[(\d+)\]/g,
         (_, index) => `블로그 문단 ${Number(index) + 1}`,
       )
+      .replace(/hashtags/g, "해시태그")
       .replace(/core_text/g, "핵심 요약")
       .replace(/source_evidence/g, "원문 근거")
       .replace(/\.?content/g, "")
@@ -322,7 +330,7 @@
       ...document.querySelectorAll(
         "#article-title, #article-content, #custom-keywords, " +
           "#article-requirements, #keyword-candidates input, " +
-          ".platform input, #save, #load",
+          ".platform input, #article-url, #import-article, #include-card-news, #load-local-draft, #save, #load",
       ),
       ...generationButtons,
       button,
@@ -381,8 +389,9 @@
         result: result.validation,
       };
 
-      if (platform === "instagram") {
+      if (platform === "card_news") {
         state.validation_status = result.validation.status;
+        if (state.card_news) state.card_news.validation_status = result.validation.status;
       } else {
         state.text_drafts[platform].validation_status =
           result.validation.status;
@@ -414,7 +423,7 @@
   // 15. 직접 원고를 수정하면 이전 검수 결과 무효화
   // 사진 변경이나 기사 입력란 변경은 이 이벤트 대상에서 제외합니다.
   document.addEventListener("input", (event) => {
-    if (!event.target.matches("[data-field], .text-editor-field textarea")) {
+    if (!event.target.closest("[data-field], .text-editor-field textarea")) {
       return;
     }
 
@@ -458,10 +467,10 @@
     render();
   };
 
-  // 19. Instagram 생성 결과 적용 후 검수 상태 갱신
-  const originalApply = window.CardEditor.applyInstagramDraft;
+  // 19. 독립 카드뉴스 적용 후 검수 상태 갱신
+  const originalApply = window.CardEditor.applyCardNewsDraft;
 
-  window.CardEditor.applyInstagramDraft = function (...args) {
+  window.CardEditor.applyCardNewsDraft = function (...args) {
     const result = originalApply.apply(this, args);
     queueMicrotask(render);
     return result;

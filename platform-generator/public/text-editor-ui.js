@@ -3,7 +3,7 @@
 //
 // 역할:
 // - Instagram / Threads / Blog 편집 화면을 전환합니다.
-// - Threads / Blog 초안을 생성하고 직접 수정할 수 있게 합니다.
+// - Instagram / Threads / Blog 초안을 생성하고 직접 수정합니다. 카드뉴스는 별도 탭입니다.
 // - 원문 근거를 읽기 전용으로 표시합니다.
 // - 다른 UI 모듈에 플랫폼 조회·전환·초안 적용 기능을 제공합니다.
 //
@@ -36,19 +36,20 @@
   const photoTools = document.querySelector(".photo-tools");
   const instagramButton = get("generate-instagram");
   if (!center || !right || !instagramButton) {
-    console.error("편집 패널과 Instagram 생성 버튼을 확인해주세요.");
+    console.error("편집 패널과 카드뉴스 생성 버튼을 확인해주세요.");
     return;
   }
   // state, revision, draw()는 index.html에서 선언한 공통 상태입니다.
   const names = {
-    instagram: "카드뉴스",
+    instagram: "Instagram",
+    card_news: "카드뉴스",
     threads: "Threads",
     blog: "Blog",
   };
   let selectedView = "instagram";
   let busy = false;
   // ==========================================================
-  // 2. Instagram 화면의 최초 표시 상태 보관
+  // 2. 카드뉴스 화면의 최초 표시 상태 보관
   // 텍스트 화면에서 숨겼다가 복원할 때 사용합니다.
   // ==========================================================
   const centerOriginal = [...center.children].map((element) => ({
@@ -137,7 +138,7 @@
   const tabs = document.createElement("div");
   tabs.className = "platform-tabs";
   const tabButtons = {};
-  for (const platform of Object.keys(names)) {
+  for (const platform of ["instagram", "threads", "blog", "card_news"]) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = names[platform];
@@ -283,15 +284,15 @@
     Object.entries(tabButtons).forEach(([key, button]) => {
       button.setAttribute("aria-pressed", String(key === platform));
     });
-    const instagram = platform === "instagram";
-    showOriginal(centerOriginal, instagram);
-    showOriginal(rightOriginal, instagram);
-    textEditor.hidden = instagram;
-    outline.hidden = instagram;
+    const isCardNews = platform === "card_news";
+    showOriginal(centerOriginal, isCardNews);
+    showOriginal(rightOriginal, isCardNews);
+    textEditor.hidden = isCardNews;
+    outline.hidden = isCardNews;
     if (photoTools) {
-      photoTools.hidden = !instagram;
+      photoTools.hidden = !isCardNews;
     }
-    if (instagram) {
+    if (isCardNews) {
       draw();
       return;
     }
@@ -325,6 +326,31 @@
         setValue(value);
         markTextChanged(draft);
       };
+    }
+    // 9-0. Instagram 게시글: 텍스트와 해시태그를 각각 편집합니다.
+    if (platform === "instagram") {
+      const caption = document.createElement("pre");
+      caption.id = "instagram-caption-preview";
+      caption.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.8;padding:14px;background:#f6f7f3;border-radius:10px;";
+      function refreshCaption() {
+        caption.textContent = [draft.opening, ...draft.paragraphs, draft.closing,
+          draft.hashtags.join(" ")].filter(value => value.trim()).join("\n\n");
+      }
+      function change(set) { return value => { set(value); markTextChanged(draft); refreshCaption(); }; }
+      const opening = addField("도입", draft.opening, change(value => {draft.opening = value;}), 3);
+      addEvidence(opening, "도입의 원문 근거", draft.block_evidence?.opening, draft);
+      draft.paragraphs.forEach((paragraph, index) => {
+        const field = addField(`본문 ${index + 1}`, paragraph,
+          change(value => {draft.paragraphs[index] = value;}));
+        addEvidence(field, `본문 ${index + 1}의 원문 근거`, draft.block_evidence?.paragraphs?.[index], draft);
+      });
+      const closing = addField("마무리", draft.closing, change(value => {draft.closing = value;}), 3);
+      addEvidence(closing, "마무리의 원문 근거", draft.block_evidence?.closing, draft);
+      addField("해시태그 · 3~5개, 공백으로 구분", draft.hashtags.join(" "),
+        change(value => {draft.hashtags = value.trim() ? value.trim().split(/\s+/u) : [];}), 2);
+      const title = document.createElement("h3"); title.textContent = "게시글 미리보기";
+      textEditor.append(title, caption);
+      refreshCaption();
     }
     // --------------------------------------------------------
     // 9-1. Threads 편집과 항목별 근거
@@ -526,10 +552,18 @@
   // ==========================================================
   function validateTextDraft(platform, draft) {
     if (
-      !["threads", "blog"].includes(platform) ||
+      !["instagram", "threads", "blog"].includes(platform) ||
       draft?.platform !== platform
     ) {
       throw new Error("생성 결과의 플랫폼이 올바르지 않습니다.");
+    }
+    if (platform === "instagram") {
+      if (typeof draft.opening !== "string" || typeof draft.closing !== "string" ||
+          !Array.isArray(draft.paragraphs) || draft.paragraphs.some(x => typeof x !== "string") ||
+          !Array.isArray(draft.hashtags) || draft.hashtags.some(x => typeof x !== "string")) {
+        throw new Error("Instagram 게시글 형식을 확인해주세요.");
+      }
+      return;
     }
     if (platform === "threads") {
       if (
@@ -598,7 +632,7 @@
     revision++;
   }
   // ==========================================================
-  // 12. Threads / Blog 개별 생성 버튼
+  // 12. Instagram / Threads / Blog 개별 생성 버튼 (이 순서로 표시)
   // ==========================================================
   const generationTools = document.createElement("div");
   generationTools.className = "text-generate-tools";
@@ -608,9 +642,10 @@
   generationStatus.setAttribute("aria-live", "polite");
   generationStatus.style.whiteSpace = "pre-wrap";
   const generationButtons = [];
-  for (const platform of ["threads", "blog"]) {
+  for (const platform of ["instagram", "threads", "blog"]) {
     const button = document.createElement("button");
     button.type = "button";
+    button.id = "generate-" + platform + "-text";
     button.textContent = `${names[platform]} 원고 생성`;
     button.onclick = () => generate(platform);
     generationButtons.push(button);
@@ -620,6 +655,8 @@
   // 카드뉴스 선택 상자가 숨겨져도 텍스트 생성 버튼은 계속 표시합니다.
   const cardOptions = get("card-news-options");
   (cardOptions || instagramButton.parentElement).after(generationTools);
+  // 카드 선택 항목은 플랫폼 영역에 두고, 카드 생성 버튼만 원고 버튼 뒤로 옮깁니다.
+  generationTools.after(instagramButton.parentElement);
   // ==========================================================
   // 13. 개별 원고 생성
   // 입력을 시작 시점에 복사하고, 완료 후 UI 잠금을 복원합니다.
@@ -661,7 +698,7 @@
         "#article-title, #article-content, #custom-keywords, " +
           "#article-requirements, #suggest-keywords, " +
           "#keyword-candidates input, .platform input, " +
-          "#generate-instagram, #generate-selected, #save, #load",
+          "#generate-instagram, #generate-selected, #load-local-draft, #save, #load",
       ),
       ...generationButtons,
     ];

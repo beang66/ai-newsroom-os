@@ -163,13 +163,12 @@
       });
     },
 
-    // 기존 호출 호환용: 모든 호출부 이전 확인 후 삭제합니다.
-    // 기존 Instagram 단독 생성 버튼
+    // Instagram 게시글 생성: 카드 생성은 generateCardNews를 사용합니다.
     generateInstagramDraft(payload) {
       return generateDraft("instagram", payload, {
         jsonError:
           "서버 응답을 읽지 못했습니다. 서버 실행과 generate-routes 연결을 확인해주세요.",
-        errorMessage: "카드뉴스 생성에 실패했습니다.",
+        errorMessage: "Instagram 원고 생성에 실패했습니다.",
       });
     },
 

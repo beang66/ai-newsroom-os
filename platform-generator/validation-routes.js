@@ -4,7 +4,7 @@ module.exports = function registerValidationRoutes(app) {
   app.post("/api/validate", async (req, res) => {
     const input = req.body;
 
-    if (!["instagram", "threads", "blog"].includes(input?.platform)) {
+    if (!["card_news", "instagram", "threads", "blog"].includes(input?.platform)) {
       return res.status(400).json({
         success: false,
         error: "검수할 플랫폼을 확인해주세요.",

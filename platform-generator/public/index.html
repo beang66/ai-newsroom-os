@@ -356,6 +356,20 @@
       <div id="stage" class="stage">
         <div id="canvas" class="scaled"></div>
       </div>
+      <!-- 카드 디자인: 본문 데이터와 사진을 유지하고 배치만 변경합니다. -->
+      <div id="card-design-tools" class="panel" style="margin-top:16px;padding:16px">
+        <strong id="card-role-label"></strong>
+        <label for="card-layout">정보 배치</label>
+        <select id="card-layout" style="width:100%;padding:10px">
+          <option value="standard">설명형</option><option value="comparison">비교형</option>
+          <option value="list">목록형</option><option value="steps">단계형</option><option value="stat">수치 강조형</option>
+        </select>
+        <label for="card-highlights">강조할 구절 (쉼표로 구분, 최대 8개)</label>
+        <input id="card-highlights" placeholder="현재 제목·본문에 있는 구절을 입력하세요">
+        <label><input id="card-compact" type="checkbox" style="width:auto"> 글자를 조금 작게 표시</label>
+        <p class="notice">비교형은 본문을 두 줄로, 목록·단계형은 2~4개 항목으로 줄바꿈하세요. 단계형은 실제 순서가 있는 내용에 사용하세요.</p>
+        <p id="card-fit-status" class="notice" role="status" aria-live="polite"></p>
+      </div>
       <p id="status" role="status" aria-live="polite"></p>
       <div class="row">
         <button id="export" class="dark">현재 카드 JPG 다운로드</button>
@@ -433,6 +447,30 @@
     function tell(text) {
       $('status').textContent = text;
     }
+    // 화면과 JPG에 현재 순서의 역할·페이지를 동일하게 전달합니다.
+    function displayCard(card, index) {
+      return {...card, role: index === 0 ? 'cover' : index === state.cards.length - 1 ? 'closing' : 'body',
+        page:index + 1, total_pages:state.cards.length};
+    }
+    // 글 맞춤은 실제 화면 치수로 확인합니다. 자동 축소 후에도 넘치면 출력이 차단됩니다.
+    function checkCardFit() {
+      const fit = CardTemplate.fitCard($('canvas').querySelector('.news-card'));
+      const design = CardTemplate.normalizeDesign(current());
+      const lines = current().body.split('\n').filter(line => line.trim()).length;
+      const invalidLayout = design.layout === 'comparison' ? lines !== 2 :
+        ['list','steps'].includes(design.layout) && (lines < 2 || lines > 4);
+      $('card-fit-status').textContent = invalidLayout ? '선택한 배치에 맞게 본문 줄바꿈을 조정해주세요.' :
+        !fit.measured ? '카드 화면을 연 뒤 글 크기를 확인합니다.' : fit.overflow ?
+        '글이 카드 영역을 넘습니다. 문장을 줄이거나 카드를 나눈 뒤 저장해주세요.' :
+        `글 영역 확인 완료 · 글 크기 ${Math.round(fit.scale * 100)}%`;
+      return fit;
+    }
+    // 중첩 강조 태그에서도 편집 대상 전체의 텍스트를 읽습니다.
+    function readCardField(element) {
+      if (typeof element.innerText === 'string') return element.innerText.replace(/\r\n/g,'\n');
+      const lines = [...element.querySelectorAll('.card-line')];
+      return lines.length ? lines.map(line => line.textContent).join('\n') : element.textContent;
+    }
     // 3. 텍스트·사진 수정 시 편집 버전과 검수 상태 갱신
     function dirty(text = true) {
       revision++;
@@ -471,7 +509,7 @@
         mini.className = 'mini';
         const inner = document.createElement('div');
         inner.className = 'scaled';
-        inner.innerHTML = CardTemplate.markup(card);
+        inner.innerHTML = CardTemplate.markup(displayCard(card, index));
         mini.append(inner);
         const label = document.createElement('div');
         label.className = 'thumb-label';
@@ -491,6 +529,7 @@
         const width = Math.max(90, button.clientWidth - 22);
         mini.style.height = width * 1.25 + 'px';
         inner.style.transform = 'scale(' + width / 1080 + ')';
+        CardTemplate.fitCard(inner.querySelector('.news-card'));
       });
       $('count').textContent = state.cards.length + '장';
       $('up').disabled = active === 0;
@@ -500,10 +539,17 @@
     // 6. 선택한 카드와 사진 출처 표시
     function draw() {
       const card = current();
-      $('canvas').innerHTML = CardTemplate.markup(card, true);
+      $('canvas').innerHTML = CardTemplate.markup(displayCard(card, active), true);
       $('card-title').textContent = (active + 1) + '번 카드 편집';
       $('download').hidden = true;
       sizeStage();
+      const design = CardTemplate.normalizeDesign(card);
+      $('card-layout').value = design.layout;
+      $('card-highlights').value = design.highlights.join(', ');
+      $('card-compact').checked = design.compact;
+      $('card-role-label').textContent = active === 0 ? '표지 · 핵심 제목' : active === state.cards.length - 1 ? '마무리 · 핵심 정리' : '본문 · 하나의 메시지';
+      checkCardFit();
+      requestAnimationFrame(checkCardFit);
       drawList();
       const credit = $('photo-credit');
       credit.replaceChildren();
@@ -528,15 +574,18 @@
     }
     // 7. 카드 텍스트 직접 수정
     $('canvas').addEventListener('input', event => {
-      const field = event.target.dataset.field;
+      const element = event.target.closest('[data-field]');
+      const field = element?.dataset.field;
       if (['keyword', 'headline', 'body'].includes(field)) {
-        current()[field] = event.target.innerText;
+        current()[field] = readCardField(element);
         dirty();
+        checkCardFit();
       }
     });
     // 8. 붙여넣기는 서식 없는 텍스트로 처리
     $('canvas').addEventListener('paste', event => {
-      if (!event.target.dataset.field) return;
+      const element = event.target.closest('[data-field]');
+      if (!element) return;
       event.preventDefault();
       const text = event.clipboardData.getData('text/plain');
       const selection = window.getSelection();
@@ -549,10 +598,24 @@
       range.collapse(true);
       selection.removeAllRanges();
       selection.addRange(range);
-      current()[event.target.dataset.field] = event.target.innerText;
+      current()[element.dataset.field] = readCardField(element);
       dirty();
     });
-    $('canvas').addEventListener('dblclick', event => {
+    // 편집이 끝나면 새 강조·배치를 다시 표시합니다. 입력 중에는 커서를 유지합니다.
+    $('canvas').addEventListener('focusout', event => {
+      if (event.target.closest('[data-field]') && !$('canvas').contains(event.relatedTarget)) draw();
+    });
+    // 디자인 변경도 전체 초안 저장에 포함됩니다. 네트워크 요청은 발생하지 않습니다.
+    for (const id of ['card-layout','card-highlights','card-compact']) {
+      $(id).addEventListener('change', () => {
+        current().design = CardTemplate.normalizeDesign({design:{layout:$('card-layout').value,
+          highlights:$('card-highlights').value.split(','), compact:$('card-compact').checked}});
+        dirty(false); draw(); tell('카드 디자인 변경이 반영되었습니다.');
+      });
+    }
+    document.fonts?.ready.then(() => {checkCardFit();drawList();});
+    window.addEventListener('news:platform-changed', () => requestAnimationFrame(checkCardFit));
+    $('canvas').addEventListener('dblclick' , event => {
       if (
         event.target.classList.contains('shade') ||
         event.target.classList.contains('photo')
@@ -701,6 +764,7 @@
     // 기존 JSON 파일 가져오기는 유지하고, 서버 저장 목록 버튼을 별도로 추가합니다.
     const localLoadButton = document.createElement('button');
     localLoadButton.type = 'button';
+    localLoadButton.id = 'load-local-draft';
     localLoadButton.textContent = '내 문서 초안 불러오기';
     $('load').insertAdjacentElement('afterend', localLoadButton);
     localLoadButton.onclick = async () => {
@@ -732,12 +796,14 @@
     };
     // JPG 생성: 요청은 api.js에서 처리
     $('export').onclick = async () => {
-      const card = structuredClone(current());
+      const card = structuredClone(displayCard(current(), active));
       const version = revision;
       const button = $('export');
       button.disabled = true;
       tell('현재 카드를 JPG로 출력 중입니다…');
       try {
+        const fit = checkCardFit();
+        if (fit.measured && fit.overflow) throw new Error('글이 카드 영역을 넘습니다. 문장을 줄이거나 카드를 나눠주세요.');
         const data = await NewsApi.renderCard(card);
         if (
           version !== revision ||
@@ -801,6 +867,7 @@
             card_id: card.card_id || crypto.randomUUID(),
             page: index + 1,
             role: card.role,
+            design: CardTemplate.normalizeDesign(card),
             keyword: content.keyword,
             headline: content.headline,
             body: content.body,
@@ -835,9 +902,7 @@
             validation_status: "not_checked",
           },
           card_news_generation_input: sourceInput,
-          // 기존 validation-ui.js가 원문을 찾는 임시 호환 항목입니다.
-          // 카드뉴스 검수 경로를 분리한 뒤 제거합니다.
-          instagram_generation_input: sourceInput,
+          // Instagram 게시글의 원문 입력은 text_drafts.instagram에 따로 보관합니다.
         };
         // 새 카드 세트의 C1 등이 이전 카드와 같아도 자동 첨부하지 않습니다.
         if (state.text_drafts?.threads) {
@@ -864,8 +929,7 @@
   <script src="/text-editor-ui.js"></script>
   <script src="/batch-generate-ui.js"></script>
   <script src="/validation-ui.js"></script>
-  <!-- 공통 카드의 Threads 첨부 선택·순서·저장 연결 -->
-  <script src="/card-attachments-ui.js"></script>
+  <!-- 카드뉴스는 독립 탭에서 생성·편집합니다. 이전 첨부 UI는 로드하지 않습니다. -->
   <script type="module" src="/assets/photo-bridge.js"></script>
 </body>
 </html>

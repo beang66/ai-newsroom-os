@@ -25,7 +25,7 @@
 **현재 파일**
 - `article_editor/app/core/api.py`
 - `article_editor/app/core/storage.py`
-- `article_editor/api.js 또는 Core 공통 호출 경계core-api.js`
+- `article_editor/web/src/api/core-api.js`
 
 **현재 endpoint**
 - `POST /api/articles/save`
@@ -67,7 +67,7 @@
 - `article_editor/app/core/api.py`
 - `article_editor/app/core/managers/ai_manager.py`
 - `article_editor/app/core/ai/factcheck/`
-- `article_editor/api.js 또는 Core 공통 호출 경계core-api.js`
+- `article_editor/web/src/api/core-api.js`
 
 **현재 endpoint**
 - `GET /api/factcheck/status`
@@ -90,10 +90,10 @@
 - Core factcheck와 critique-organizer가 둘 다 “검증 엔진 + 근거”를 소유하면 중복된다.
 
 **책임 경계**
-- 강창희 Core: **검증 호출 경계, AI/provider 실행 기반**
-- 안정빈: **검증 도메인 규칙, Claim/Evidence/Issue 결과 구조, Critique 기능**
+- 강창희 Core: **검증 호출 경계, 검증 도메인 규칙, Claim/Evidence/Issue 결과 구조, AI/provider 실행 기반**
+- 안정빈: **critique-organizer의 기존 검증 데이터를 공통 구조로 연결하는 Adapter와 Critique 기능**
 - 강창희의 RAG: 근거 후보 탐색
-- 안정빈의 Verification: 작성 결과물의 사실/논리/출처/오류 판단
+- 강창희의 Verification: 작성 결과물의 사실/논리/출처/오류 판단
 
 **수정**
 - UI는 Core의 단일 `verifySnapshot(...)` 계약만 호출.
@@ -162,7 +162,7 @@ photos[]
 
 **수정**
 - article-workspace branch 자체는 merge하지 않는다.
-- app-core에 들어온 작성 UI가 `api.js 또는 Core 공통 호출 경계`를 통해서만 저장하도록 유지.
+- app-core에 들어온 작성 UI가 `api.js`를 통해서만 저장하도록 유지.
 
 ---
 
@@ -214,7 +214,7 @@ photos[]
 - `article_editor/app/core/ai/transcribe.py`
 - `article_editor/app/core/managers/ai_manager.py`
 - `article_editor/app/core/api.py`
-- `article_editor/api.js 또는 Core 공통 호출 경계core-api.js`
+- `article_editor/web/src/api/core-api.js`
 
 **현재 endpoint**
 - `POST /api/interview/transcribe`
@@ -295,7 +295,7 @@ requirements
 - 플랫폼별 review status 유지
 
 **담당 — 강창희**
-- `api.js 또는 Core 공통 호출 경계core-api.js`에 Platform Core method 추가
+- `api.js`에 Platform Core method 추가
 - Python Core에 n8n Adapter 연결
 
 ---
@@ -420,7 +420,7 @@ Core가 Snapshot에서 article/title을 읽고 Verification service에 전달한
 
 **담당 — 강창희**
 - Core에 Verification/Archive/Knowledge named methods를 노출할 자리 제공.
-- UI가 critique 서버를 직접 호출하지 않도록 `api.js 또는 Core 공통 호출 경계` 경계 유지.
+- UI가 critique 서버를 직접 호출하지 않도록 `api.js` 단일 경계 유지.
 
 ---
 
@@ -447,7 +447,7 @@ Core가 Snapshot에서 article/title을 읽고 Verification service에 전달한
 |---:|---|---|---|---|
 | 1 | 강창희 + 안정빈 | `core/storage.py`, ERD | Article / Revision / Snapshot ID 경계 확정 | Snapshot ID로 검증/변환 호출 가능 |
 | 2 | 안정빈 | critique `contracts.py/store.py` + Core adapter | Source/Chunk/Claim/Evidence/Verification 매핑 | 별도 DB ID를 공통 ID로 변환 가능 |
-| 3 | 강창희 | `api.js 또는 Core 공통 호출 경계core-api.js`, Python Core | Verification/Platform/Media named method 자리 확정 | UI가 외부 서버를 직접 호출하지 않음 |
+| 3 | 강창희 | `api.js`, Python Core | Verification/Platform/Media named method 자리 확정 | UI가 외부 서버를 직접 호출하지 않음 |
 | 4 | 이정민 | n8n 10/11/12 workflow | `snapshot_id` 입력 + PlatformOutput 결과 계약 | 변환 원본 기사 버전 추적 가능 |
 | 5 | 박소현 | STT 최신 코드 + Core transcribe | Transcript/Segment canonical ID | Evidence가 segment ID를 참조 가능 |
 | 6 | 고서연 + 강창희 | photo/media integration | Local-first MediaAsset adapter | 원본 사진이 기본적으로 Local에 저장되고 ID로 재사용 |

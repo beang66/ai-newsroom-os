@@ -13,7 +13,7 @@
 ```text
 React UI
    ↓
-api.js 또는 Core 공통 호출 경계  ← UI와 Core의 유일한 호출 경계
+api.js  ← UI와 Core의 유일한 호출 경계
    ↓
 통합 테스트: HTTP/local server
 최종 제품: pywebview EXE + IPC

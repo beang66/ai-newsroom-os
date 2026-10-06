@@ -8,32 +8,16 @@
 
 > **구현 상태 확인 (2026-10-07):** 아래의 Snapshot, 공통 UUID, SourceChunk, Claim/EvidenceLink, ProcessingJob 및 KnowledgeMap은 **v0.8 목표**이며 현재 Core의 구현 사실이 아니다. 현행 Core는 `core-api.js` named method → `/api/*` HTTP → Python managers, SQLCipher `articles/article_revisions/sources/media` 저장을 제공한다. 현재 `/api/articles/latest`는 가장 최근 기사 한 건만 조회하고, IPC 브리지는 미구현이다. 실제 메서드·저장 스키마 및 누락·미정의·중복 항목은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md)을 따른다. 아래 실행 구조의 IPC/Supabase/Backend 연결 설명은 제품 설계와 구현 확인 범위를 구별해 읽는다.
 
-## 0. 이미 구현된 실행 구조
+## 0. 현재 Core와 목표 실행 구조
 
-`feature/app-core`를 확인한 결과, 아래 구조는 이미 구현·검증되어 있으므로 통합의 기준선으로 사용합니다.
+| 구분 | 현재 코드에서 확인 | v0.8 목표 / 확인 필요 |
+|---|---|---|
+| UI 호출 | `createAppApi()` → `core-api.js` named methods → HTTP `/api/*` → Python `api.py`/managers | 기능별 메서드·인자와 오류를 공통 계약으로 고정 |
+| 로컬 저장 | SQLCipher의 `articles`, `article_revisions`, `sources`, `media` 및 검증 캐시. 기기 키는 OS 보안 저장소 | 공통 UUID/alias, Snapshot, 조회·자료 수명 주기 정의 |
+| EXE/IPC | `ipc.js`는 브리지 호출 형태를 준비했으나, 확인한 Python 라우터에는 해당 브리지 구현이 없다. 브리지 부재 시 `mode:"ipc"`도 HTTP로 전환 | 실제 pywebview 브리지 연결과 HTTP/IPC 동일 응답 검증 |
+| 클라우드/외부 기능 | 이 점검은 로컬 Core 저장·호출 파일을 기준으로 한다 | Auth·메타데이터·공유·외부 AI의 저장 경계는 기능별 통합 시 검증 |
 
-```text
-React UI
-   ↓
-api.js  ← UI와 Core의 유일한 호출 경계
-   ↓
-통합 테스트: HTTP/local server
-최종 제품: pywebview EXE + IPC
-   ↓
-Python App Core
-   ├─ 로컬 기사/사용자 데이터
-   ├─ 각 팀 기능 모듈
-   ├─ Supabase: 로그인·메타데이터·공유/협업
-   └─ Backend: 외부 AI 등 서버 기능
-```
-
-- Desktop shell은 **pywebview**, Windows 패키징은 **PyInstaller**가 이미 채택·실기 검증되었습니다.
-- 개발 중에는 HTTP를 사용해 브라우저에서도 작업하고, 출시 EXE는 같은 Core 기능 계약을 IPC로 호출합니다.
-- 각 기능은 자유롭게 개발하되, 프론트의 서버/Core 요청(fetch, axios 등)은 `api.js` 한 파일의 기능별 함수로 모읍니다. Core 통합 시 이 호출부만 IPC로 전환합니다.
-- 기사 본문·전체 취재자료는 **Local-first**입니다. Supabase를 전체 데이터의 메인 DB로 가정하지 않습니다.
-- Supabase는 Auth·메타데이터·공유/협업용 Control Plane입니다.
-- 배포 EXE는 운영용 외부 서비스 비밀정보를 직접 보관하지 않는 구조입니다.
-- 따라서 v1.0에서 확정할 것은 **① Domain 데이터 규칙 ② UI↔Core 기능 계약 ③ HTTP↔IPC 대응 ④ Local↔Cloud 저장 경계**입니다.
+기사 본문과 자료 원본은 현재 로컬 암호화 DB에 저장된다. OpenAPI의 `/api/core/v0.8/*` 및 ERD의 새 엔티티는 바로 호출하거나 마이그레이션할 수 있는 구현 API/스키마로 해석하지 않는다. 상세 호출과 누락·중복 점검은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md)을 따른다.
 
 ## 1. 앞으로 개발하는 순서
 

@@ -205,7 +205,7 @@ v1.0을 확정하기 전에 실제 기사 하나를 아래 순서로 통과시�
 - Supabase를 전체 서비스의 메인 DB라고 가정해 바로 구조를 변경하기
 - `feature/su4228-article-workspace`를 App Core에 다시 병합하기
 - critique-organizer의 SQLite를 두 번째 공식 DB로 채택하기
-- UI에서 n8n·renderer·Supabase·critique server를 직접 호출하는 새 코드 추가하기
+- UI에서 node·renderer·Supabase·critique server를 직접 호출하는 새 코드 추가하기
 - Vertical Slice와 팀 리뷰 전에 아키텍처 문서를 `main`에 병합하기
 - Contract v1.0 확정
 - 복잡한 Data Map 시각화 고도화

@@ -4,14 +4,7 @@ from collections import Counter
 
 from .paths import JUDGE_DIR, settings
 from .semantic_chunker_v3 import clean as _clean
-from .assertion import (
-    DIRECT_CONFLICT,
-    analyze_assertion_relation,
-    find_explicit_contrast_conflicts,
-    find_explicit_value_conflicts,
-    find_morphological_oppositions,
-    find_near_copy_differences,
-)
+from .assertion import find_explicit_value_conflicts, find_near_copy_differences
 from .chunker import chunk_document
 from .semantic_provider import OnnxJudgeProvider
 from .observability import record_factcheck_event
@@ -137,62 +130,6 @@ def _candidate_chunks(node, all_chunks):
     return candidates or all_chunks
 
 
-def _retrieve_contextual_conflict(claim, node, all_chunks):
-    """Find high-confidence conflicts before asking the classifier for a verdict.
-
-    The rules are linguistic/structural rather than document-specific: explicit
-    value mismatches, direct polarity opposition, explicit A-not-B contrasts,
-    and 유-/무- condition oppositions. They scan all relevant chunks so a
-    lexical top-1 miss cannot hide a clear contradiction elsewhere in a source.
-    """
-    ranked = []
-    linked_ids = set(node.get("linkedSourceIds") or [])
-    for row in _candidate_chunks(node, all_chunks):
-        text = row.get("text") or ""
-        score = _score(claim, row, row.get("material_id") in linked_ids)
-        if score < 0.12:
-            continue
-
-        spans = find_explicit_value_conflicts(claim, text)
-        kind = "value_mismatch" if spans else None
-        priority = 4 if spans and score >= 0.18 else 0
-
-        if not spans:
-            spans = find_explicit_contrast_conflicts(claim, text)
-            if spans:
-                kind = "explicit_contrast"
-                priority = 4
-
-        if not spans:
-            spans = find_morphological_oppositions(claim, text)
-            if spans:
-                kind = "morphological_opposition"
-                priority = 4
-
-        relation = analyze_assertion_relation(claim, text, score)
-        if not spans and score >= 0.72 and relation.relation == DIRECT_CONFLICT:
-            # Whole-sentence polarity heuristics are only safe on highly
-            # aligned text. On free paraphrases, words like '없는' and '있음'
-            # may refer to different predicates and must be left to the model.
-            spans = find_near_copy_differences(claim, text)
-            kind = "direct_opposition"
-            priority = 3
-
-        if priority:
-            ranked.append((priority, score, row, spans, kind, relation.reason))
-
-    if not ranked:
-        return None
-    priority, score, row, spans, kind, reason = max(ranked, key=lambda item: (item[0], item[1]))
-    return {
-        **row,
-        "retrieval_score": round(score, 4),
-        "conflict_spans": spans,
-        "conflict_kind": kind,
-        "conflict_reason": reason,
-    }
-
-
 def _retrieve_qwen_candidates(claim, node, all_chunks, limit=DEFAULT_K):
     """Retrieve semantically related evidence in the pinned Qwen3 space."""
     candidates = _candidate_chunks(node, all_chunks)
@@ -222,28 +159,16 @@ def _judge_qwen_candidates(provider, claim, node, candidates):
         conflict_spans = []
         focus_spans = []
 
-        # Preserve the old deterministic value guard, but keep its threshold in
-        # the original lexical/structural score space. Qwen cosine is not
-        # calibrated to the legacy 0.84/0.18 thresholds.
-        legacy_score = _score(
-            claim,
-            evidence,
-            evidence.get("material_id") in linked_ids,
-        )
-        explicit_value_spans = find_explicit_value_conflicts(
-            claim,
-            evidence.get("text") or "",
-        )
-        if explicit_value_spans and legacy_score >= 0.18:
-            status = "CONFLICT"
-            reason = "같은 사실 항목의 명시값이 근거 자료와 다릅니다."
-            conflict_spans = list(explicit_value_spans)
-            focus_spans = list(explicit_value_spans)
+        if status == "CONFLICT":
+            # 판정은 판정기가 한다. 값 불일치는 화면에서 틀린 값만 강조하는 위치로만 쓴다.
+            conflict_spans = find_explicit_value_conflicts(claim, evidence.get("text") or "")
+            focus_spans = list(conflict_spans)
         elif status == "SUPPORTED":
             focus_spans = find_near_copy_differences(
                 claim,
                 evidence.get("text") or "",
             )
+            legacy_score = _score(claim, evidence, evidence.get("material_id") in linked_ids)
             if legacy_score >= 0.84 and focus_spans:
                 status = "REVIEW"
                 reason = (
@@ -401,11 +326,6 @@ def review_workspace(nodes, materials):
             continue
 
         direct = _direct_span_match(claim, node, materials or [])
-        contextual_conflict = (
-            None
-            if direct is not None
-            else _retrieve_contextual_conflict(claim, node, chunks)
-        )
 
         evidence_candidates = []
         aggregate = None
@@ -419,16 +339,6 @@ def review_workspace(nodes, materials):
             decision_reason = "등록 자료에 같은 문장이 직접 존재합니다."
             conflict_spans = []
             focus_spans = []
-        elif contextual_conflict is not None:
-            evidence = contextual_conflict
-            status = "CONFLICT"
-            confidence = 1.0
-            decision_reason = (
-                contextual_conflict.get("conflict_reason")
-                or "등록 자료와 원고의 핵심 사실 요소가 직접 충돌합니다."
-            )
-            conflict_spans = contextual_conflict.get("conflict_spans", [])
-            focus_spans = list(conflict_spans)
         else:
             evidence_candidates = _retrieve_qwen_candidates(
                 claim,
@@ -508,12 +418,12 @@ def review_workspace(nodes, materials):
         "success": True,
         "engine": (
             f"{settings.model_id} + semantic-chunker-v3 + "
-            "qwen3-embedding-0.6b-exact-top10 + contextual-guard-v1"
+            "qwen3-embedding-0.6b-exact-top10 + early-stop"
         ),
         "model": settings.model_id,
         "chunker": "semantic_chunker_v3+boundary-roberta-base-v3",
         "retrieval": (
-            "linked-source scope + direct/contextual guard + "
+            "linked-source scope + direct-span match + "
             "Qwen3-Embedding-0.6B exact Top10"
         ),
         "retrieval_k": DEFAULT_K,

@@ -250,50 +250,6 @@ photos[]
 
 # 4. platform-generator → Core Platform Contract
 
-## 4-1. 플랫폼 생성
-
-**현재 파일**
-- `platform-generator/workflows/10_Content_Generate_API.json`
-- `11_Instagram_Generate.json`
-- `12_Threads_Generate.json`
-
-**현재 n8n endpoint**
-- Webhook: `POST content-generate`
-
-**현재 입력**
-```text
-article.article_id
-article.title
-article.content
-selected_keywords[]
-requirements
-platforms[]
-```
-
-**목표 Core 입력**
-```text
-workspace_id
-article_id
-snapshot_id
-platforms[]
-selected_keywords[]
-requirements
-```
-
-**핵심 변경**
-- `title/content`를 UI가 직접 n8n으로 보내는 것을 중단.
-- Core가 `snapshot_id`를 받아 고정된 ArticleSnapshot의 title/body를 Platform Adapter에 전달.
-- 결과는 `PlatformOutput`으로 저장.
-
-**현재 결과의 `source_evidence`**
-- 별도 근거 문자열 시스템으로 유지하지 않는다.
-- 가능한 경우 공통 `Claim/EvidenceLink` ID를 참조한다.
-- 플랫폼 변환 전용 validator는 “변환 과정에서 새 사실을 추가/왜곡했는지”만 검사하고 원 기사 검증 엔진을 중복 구현하지 않는다.
-
-**담당 — 이정민**
-- n8n workflow 입력/출력 계약 수정
-- PlatformOutput payload 정의
-- 플랫폼별 review status 유지
 
 **담당 — 강창희**
 - `api.js`에 Platform Core method 추가
@@ -308,7 +264,7 @@ requirements
 - `platform-generator/server.js`
 
 **현재 endpoint**
-- n8n → `POST http://localhost:3000/render`
+- Node → `POST http://localhost:3001`
 - Express: `POST /render`
 - Express: `GET /health`
 - Express static: `/output/*`
@@ -465,7 +421,7 @@ Core가 Snapshot에서 article/title을 읽고 Verification service에 전달한
 | 1 | 강창희 + 안정빈 | `core/storage.py`, ERD | Article / Revision / Snapshot ID 경계 확정 | Snapshot ID로 검증/변환 호출 가능 |
 | 2 | 안정빈 | critique `contracts.py/store.py` + Core adapter | Source/Chunk/Claim/Evidence/Verification 매핑 | 별도 DB ID를 공통 ID로 변환 가능 |
 | 3 | 강창희 | `api.js`, Python Core | Verification/Platform/Media named method 자리 확정 | UI가 외부 서버를 직접 호출하지 않음 |
-| 4 | 이정민 | n8n 10/11/12 workflow | `snapshot_id` 입력 + PlatformOutput 결과 계약 | 변환 원본 기사 버전 추적 가능 |
+| 4 | 이정민 | Node | `snapshot_id` 입력 + PlatformOutput 결과 계약 | 변환 원본 기사 버전 추적 가능 |
 | 5 | 박소현 | STT 최신 코드 + Core transcribe | Transcript/Segment canonical ID | Evidence가 segment ID를 참조 가능 |
 | 6 | 고서연 + 강창희 | photo/media integration | Local-first MediaAsset adapter | 원본 사진이 기본적으로 Local에 저장되고 ID로 재사용 |
 

@@ -11,31 +11,9 @@ from difflib import SequenceMatcher
 VALUE_RE = re.compile(
     r"\d{4}\s*년\s*\d{1,2}\s*월(?:\s*\d{1,2}\s*일)?|"
     r"\d{1,2}\s*월\s*\d{1,2}\s*일|"
-    r"\d[\d,]*(?:\.\d+)?\s*(?:(?:(?:조|억|천|백|만)\s*)+원|%|명|건|주|원|가구|개국|개|회)?"
+    # 1천500만원·3억 2천만원 같은 섞인 표기도 한 값으로
+    r"\d[\d,]*(?:\.\d+)?(?:\s*(?:조|억|천|백|만)(?:\s*\d[\d,]*)?)*\s*(?:원|%|명|건|주|가구|개국|개|회)?"
 )
-
-def _field_before_value(text: str, match_start: int) -> str:
-    prefix = (text or "")[max(0, match_start - 40):match_start]
-    terms = re.findall(r"[가-힣A-Za-z][가-힣A-Za-z0-9_/-]{1,20}", prefix)
-    if not terms:
-        return ""
-    generic = {"기준", "수준", "정도", "약", "대략", "최대", "최소"}
-    for raw in reversed(terms):
-        term = raw.lower()
-        term = re.sub(r"(?:은|는|이|가|을|를|의|에|에서|으로)$", "", term)
-        if term and term not in generic:
-            return term
-    return ""
-
-def _similar_field(a: str, b: str) -> bool:
-    if not a or not b:
-        return False
-    if a == b:
-        return True
-    if a.startswith(b) or b.startswith(a):
-        return min(len(a), len(b)) >= 3
-    return SequenceMatcher(None, a, b).ratio() >= 0.76
-
 
 def _value_type(v: str) -> str:
     if "년" in v or "월" in v or "일" in v:
@@ -46,56 +24,46 @@ def _value_type(v: str) -> str:
     return "number"
 
 
+def _context(text: str, start: int, end: int, width: int = 14) -> set[str]:
+    """값 앞뒤 글자의 2글자 조각(공백 제외) — 같은 항목인지 문맥으로 비교한다."""
+    around = re.sub(r"\s+", "", text[max(0, start - width):start] + "|" + text[end:end + width])
+    return {around[i:i + 2] for i in range(len(around) - 1)}
+
+
 def find_explicit_value_conflicts(claim: str, evidence: str) -> list[dict]:
-    """Return precise claim/evidence spans for same-field numeric mismatches.
+    """본문 문장에서 근거와 다른 값의 위치(화면 강조용 — 판정은 판정기가 한다).
 
-    Exact matches on the same field are deliberately excluded. This lets the UI
-    highlight only the incorrect value (for example 총급여액 7천만원 vs 8천만원)
-    while leaving other correct values in the same sentence untouched.
+    본문 값마다 근거에서 같은 종류(단위)의 값 중 앞뒤 문맥이 가장 비슷한 것을 짝으로 고르고,
+    그 짝의 값이 다를 때만 '틀린 값'으로 본다. 같은 값이 근거 다른 곳(예: 현행법 설명)에 있어도 문맥이 다르면 틀린 값이다.
+    문맥 점수가 같은 값과 비기면 표시하지 않는다(틀렸다고 단정할 근거가 약하다).
+    (2026-10-06: '값 바로 앞 단어'로 항목을 맞추던 규칙은 바꿔 쓴 문장에서 맞는 값을 칠하고 틀린 값을 놓쳤다 —
+    예: 본문 '총급여 기준을 9천만원'(맞음)을 근거 '종합소득금액 기준을 8천만원'과 짝지었고 '19% 공제율'은 못 찾음)
     """
-    claim_rows = []
-    evidence_rows = []
-    for text, rows in ((claim, claim_rows), (evidence, evidence_rows)):
-        for match in VALUE_RE.finditer(text or ""):
-            raw = match.group(0)
-            rows.append({
-                "start": match.start(),
-                "end": match.end(),
-                "text": raw,
-                "value": re.sub(r"\s+|,", "", raw),
-                "field": _field_before_value(text, match.start()),
-            })
+    def rows(text):
+        return [{"start": m.start(), "end": m.end(), "text": m.group(0), "value": re.sub(r"\s+|,", "", m.group(0))}
+                for m in VALUE_RE.finditer(text or "")]
 
+    claim_rows, evidence_rows = rows(claim), rows(evidence)
     conflicts = []
-    for claim_row in claim_rows:
-        candidates = [
-            row for row in evidence_rows
-            if _value_type(claim_row["value"]) == _value_type(row["value"])
-            and _similar_field(claim_row["field"], row["field"])
-        ]
+    for row in claim_rows:
+        kind = _value_type(row["value"])
+        candidates = [e for e in evidence_rows if _value_type(e["value"]) == kind]
         if not candidates:
-            continue
-
-        # If the same field has an exact value in the evidence, this claim value
-        # is supported and must not be highlighted merely because another value
-        # exists elsewhere in the source.
-        if any(row["value"] == claim_row["value"] for row in candidates):
-            continue
-
-        best = max(
-            candidates,
-            key=lambda row: SequenceMatcher(
-                None, claim_row["field"], row["field"]
-            ).ratio(),
-        )
+            continue  # 비교할 같은 종류의 값이 근거에 없다 — 틀렸다고 할 근거가 없다
+        mine = _context(claim, row["start"], row["end"])
+        score = lambda e: len(mine & _context(evidence, e["start"], e["end"]))  # noqa: E731
+        best = max(candidates, key=score)
+        same = [score(e) for e in candidates if e["value"] == row["value"]]
+        if best["value"] == row["value"] or (same and max(same) >= score(best)):
+            continue  # 가장 비슷한 자리의 값이 같다 — 맞는 값
         conflicts.append({
-            "claim_start": claim_row["start"],
-            "claim_end": claim_row["end"],
-            "claim_text": claim_row["text"],
+            "claim_start": row["start"],
+            "claim_end": row["end"],
+            "claim_text": row["text"],
             "evidence_start": best["start"],
             "evidence_end": best["end"],
             "evidence_text": best["text"],
-            "field": claim_row["field"],
+            "field": kind,
         })
     return conflicts
 

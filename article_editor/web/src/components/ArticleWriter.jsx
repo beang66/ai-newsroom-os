@@ -985,6 +985,7 @@ const MARK = {
   REVIEW: "bg-violet-200/70",
   EXTERNAL_REQUIRED: "bg-violet-200/70",
 };
+const OUTLINE = { CONFLICT: "#9f1239", EVIDENCE_GAP: "#b45309", REVIEW: "#6d28d9", EXTERNAL_REQUIRED: "#6d28d9" }; // 하이라이트색의 진한 판(마우스 올린 문장)
 const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요", EXTERNAL_REQUIRED: "검토 필요" };
 
 // 청크 밑줄(개발 모드) — 이웃 청크끼리 색이 겹치지 않게 돌려 쓴다
@@ -1008,7 +1009,7 @@ function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, r
   ranges.forEach((x, i) => {
     parts.push(value.slice(cursor, x.start));
     parts.push(<mark key={i} data-key={x.key} className={`${MARK[x.verdict]} text-transparent rounded-sm`}
-      style={x.key && hover?.key === x.key ? { outline: "2px solid rgb(15 23 42 / 0.75)", outlineOffset: 1 } : undefined} title={MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
+      style={x.key && hover?.key === x.key ? { outline: `2px solid ${OUTLINE[x.verdict]}`, outlineOffset: 1 } : undefined} title={MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
     cursor = x.end;
   });
   parts.push(value.slice(cursor) + "\n"); // 마지막 줄바꿈도 높이를 맞춘다

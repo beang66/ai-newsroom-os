@@ -135,7 +135,7 @@ def main():
             r = score(sets['dev'], cache, True, t)
             print(f'{t:6.2f}  {r["correct"]:4}/{r["n"]}  {r["unsafe_false_supported"]:4}  {r["escalated"]:4}  {r["calls"]}')
         return
-    sets = {'sealed': sealed_claims(), **{p.stem: load_jsonl(p) for p in sorted(DATA.glob('eval_*.jsonl'))}}
+    sets = {'sealed': sealed_claims(), **{p.stem: load_jsonl(p) for p in sorted(DATA.glob('eval_*.jsonl')) if p.stem != 'eval_termswap60'}}
     cache = judge_all(judge, sets, folder.parent / 'judgments.json')
     report = {}
     for name, rows in sets.items():

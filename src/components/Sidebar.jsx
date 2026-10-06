@@ -6,6 +6,7 @@ import {
   FileCheck2, 
   ChevronLeft, 
   Minus,
+  Network,
 } from "lucide-react";
 
 /**
@@ -21,6 +22,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
     { id: "writer", label: "기사 작성", icon: PenTool },
     { id: "interview", label: "녹음 파일", icon: Mic },
     { id: "convert", label: "플랫폼 변환", icon: Sparkles },
+    { id: "datamap", label: "데이터맵", icon: Network },
   ];
 
   // 활성 탭 식별 함수

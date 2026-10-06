@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
 import { 
   Sparkles, 
@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 export default function ArticleWriter({ 
+  locationRequest,
   article, 
   setArticle, 
   onOpenSearch, 
@@ -72,6 +73,23 @@ export default function ArticleWriter({
   const [isGenerating, setIsGenerating] = useState(false);
 
   const editorRef = useRef(null);
+  const bodyInputRef = useRef(null);
+  const handledLocation = useRef(null);
+  const locationText = locationRequest?.claimText || "";
+  const locationIndex = locationText ? article.content.indexOf(locationText) : -1;
+  const uniqueLocation = locationIndex >= 0 && article.content.indexOf(locationText, locationIndex + 1) < 0;
+  const locationNotice = locationRequest?.articleId === article.id
+    ? uniqueLocation ? "데이터맵에서 선택한 문장을 현재 원고에서 강조했습니다." : "현재 원고에서 해당 문장을 하나로 특정할 수 없습니다. 검증 시점의 원고와 현재 내용을 확인해 주세요."
+    : "";
+  useEffect(() => {
+    if (!locationRequest || locationRequest.articleId !== article.id) return;
+    if (handledLocation.current === locationRequest || !uniqueLocation) return;
+    handledLocation.current = locationRequest;
+    const input = bodyInputRef.current;
+    input?.focus();
+    input?.setSelectionRange(locationIndex, locationIndex + locationText.length);
+    input?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [locationRequest, article.id, uniqueLocation, locationIndex, locationText]);
   const photoInputRef = useRef(null);
 
   // 텍스트 드래그 선택 서식 툴바
@@ -188,6 +206,7 @@ export default function ArticleWriter({
 
   return (
     <div className="w-full space-y-5 animate-float-in">
+      {locationNotice && <div role="status" className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">{locationNotice}</div>}
 
       {/* ──────────────────────────────────────────
           1. 최상단 통합 컨트롤 툴바
@@ -508,6 +527,7 @@ export default function ArticleWriter({
               )}
 
               <textarea
+                ref={bodyInputRef}
                 value={article.content}
                 onChange={(e) => setArticle({ ...article, content: e.target.value })}
                 placeholder="기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다..."

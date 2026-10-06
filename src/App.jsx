@@ -7,15 +7,19 @@ import SourceSearch from "./components/SourceSearch";
 import InterviewStudio from "./components/interview/InterviewStudio";
 import FormatConverter from "./components/FormatConverter";
 import ArchiveView from "./components/ArchiveView";
+import DataMap from "./features/data-map/DataMap";
 
 import { initialArticles, mockFactCheckIssues } from "./data/mockData";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("writer");
   const [article, setArticle] = useState(initialArticles[0]);
+  const [articleLocation, setArticleLocation] = useState(null);
+  // Explicit demo for this prototype. Production / Core integration defaults to API.
+  const dataMapMode = import.meta.env.VITE_DATA_MAP_MODE || (import.meta.env.DEV ? "demo" : "api");
 
   // Sidebar collapse state
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.matchMedia("(max-width: 900px)").matches);
 
   // Fact check sequential state
   const [factCheckActive, setFactCheckActive] = useState(false);
@@ -111,6 +115,7 @@ export default function App() {
             {activeTab === "writer" && (
               <ArticleWriter
                 article={article}
+                locationRequest={articleLocation}
                 setArticle={setArticle}
                 onOpenSearch={() => setShowSearchModal(true)}
                 onRunFactCheck={handleRunFactCheck}
@@ -147,6 +152,11 @@ export default function App() {
 
             {activeTab === "convert" && (
               <FormatConverter />
+            )}
+
+            {activeTab === "datamap" && (
+              <DataMap key={article.id} article={article} workspaceId={article.workspace_id || import.meta.env.VITE_WORKSPACE_ID}
+                mode={dataMapMode} onArticleLocation={request => { setArticleLocation({ ...request, nonce: Date.now() }); setActiveTab("writer"); }} />
             )}
 
             {activeTab === "archive" && (

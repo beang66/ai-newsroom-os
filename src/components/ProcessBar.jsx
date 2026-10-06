@@ -1,5 +1,5 @@
 import React from "react";
-import { PenTool, Sparkles, FileCheck2 } from "lucide-react";
+import { PenTool, Sparkles, FileCheck2, Network } from "lucide-react";
 
 /**
  * 인덱스 바인더 탭(Binder Tab) 네비게이션 컴포넌트
@@ -9,6 +9,7 @@ export default function ProcessBar({ activeTab, setActiveTab }) {
   const steps = [
     { id: "writer", label: "작성·검토", icon: PenTool },
     { id: "convert", label: "플랫폼 변환", icon: Sparkles },
+    { id: "datamap", label: "데이터맵", icon: Network },
     { id: "archive", label: "보관함", icon: FileCheck2 },
   ];
 
@@ -21,7 +22,7 @@ export default function ProcessBar({ activeTab, setActiveTab }) {
   };
 
   return (
-    <div className="w-full flex items-end justify-start gap-2 md:gap-3 px-4 md:px-8 select-none relative z-30">
+    <div className="w-full flex flex-wrap items-end justify-start gap-2 md:gap-3 px-4 md:px-8 select-none relative z-30">
       {steps.map((step) => {
         const active = isStepActive(step.id);
         const Icon = step.icon;

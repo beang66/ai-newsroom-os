@@ -118,6 +118,7 @@ function Workspace({ initialArticle }) {
         coreReady={core.ok}
         coreLabel={core.ok ? "코어 연결됨" : "코어 대기"}
         session={core.session}
+        onSession={(session) => setCore((prev) => ({ ...prev, session }))}
       />
 
       {/* 2. Main Workspace Layout: Outer Big Glass Box Removed, Sidebar & Main Curvature preserved */}

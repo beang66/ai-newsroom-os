@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Newspaper, Bell, User, Clock, CheckCircle2, FileEdit } from "lucide-react";
+import AutoLoginToggle from "./AutoLoginToggle";
 
 export default function Header({
   currentArticleTitle = "",
@@ -8,6 +9,7 @@ export default function Header({
   coreReady = false,
   coreLabel = "",
   session = null,
+  onSession = () => {},
 }) {
   const [isLoggedIn, setIsLoggedIn] = useState(true);
   // 코어가 알려주는 세션이 있으면 그 값을 우선한다(토큰은 오지 않는다 — 상태만).
@@ -86,6 +88,8 @@ export default function Header({
           </button>
 
           <div className="h-3.5 w-[1px] bg-slate-200 my-auto" />
+
+          <AutoLoginToggle session={session} onSession={onSession} />
 
           {signedIn ? (
             <div className="flex items-center gap-2">

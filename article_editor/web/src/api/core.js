@@ -23,3 +23,6 @@ export async function coreSnapshot() {
     return { ok: false, error: String(error?.message || error) };
   }
 }
+
+/** 공용 테스트 계정 자동 로그인 켜기/끄기(개발 실행 전용) → 새 세션 상태 */
+export const setAutoLogin = (enabled) => core.setAutoLogin(enabled);

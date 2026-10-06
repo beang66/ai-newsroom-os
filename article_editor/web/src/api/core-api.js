@@ -10,6 +10,7 @@ export const ROUTES = Object.freeze({
   status: "/api/status",
   session: "/api/session",
   signOut: "/api/session/signout",
+  sessionAuto: "/api/session/auto",
   models: "/api/models",
   modelsInstall: "/api/models/install",
   modelsCancel: "/api/models/cancel",
@@ -48,6 +49,8 @@ export function createCoreApi(transport) {
       transport.json(ROUTES.session, { email, password }, signal),
     /** 로그아웃 */
     signOut: (signal) => transport.json(ROUTES.signOut, {}, signal),
+    /** 공용 테스트 계정 자동 로그인 켜기/끄기(개발 실행 전용) → session() 과 같은 모양 */
+    setAutoLogin: (enabled, signal) => transport.json(ROUTES.sessionAuto, { enabled }, signal),
     /** 로컬 모델 상태(설치 여부·진행률·마지막 오류) — 첫 사용 때 내려받는다 */
     models: (signal) => transport.json(ROUTES.models, null, signal),
     /** 모델 설치 시작(백그라운드). 진행률은 models() 로 폴링한다 */

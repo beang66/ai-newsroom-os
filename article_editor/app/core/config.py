@@ -30,6 +30,10 @@ _DEFAULT_AI_BACKEND = 'remote' if (getattr(sys, 'frozen', False) or AI_BACKEND_U
 AI_BACKEND = os.environ.get('AI_BACKEND', _DEFAULT_AI_BACKEND).strip().lower()
 # 사용자 토큰(JWT) 자리 — 세션 관리가 붙기 전까지 환경변수로 주입한다.
 APP_TOKEN = os.environ.get('APP_TOKEN', '')
+# 공용 테스트 계정 자동 로그인(개발 실행 전용, 배포본 무시) — 계정은 Supabase 에 만들고 이메일·비밀번호는 각자 .env 에만 둔다
+TEST_ACCOUNT_EMAIL = os.environ.get('TEST_ACCOUNT_EMAIL', '').strip()
+TEST_ACCOUNT_PASSWORD = os.environ.get('TEST_ACCOUNT_PASSWORD', '')
+AUTO_LOGIN_DEFAULT = os.environ.get('AUTO_LOGIN', 'true').strip().lower() not in ('0', 'false', 'no', 'off')
 # Supabase(Control Plane: Auth / Postgres / Storage) — 앱은 anon 키 + 사용자 JWT로 직접 접근한다.
 # service_role 키는 절대 앱에 두지 않는다(백엔드 전용, ARCHITECTURE.md).
 SUPABASE_URL = (os.environ.get('SUPABASE_URL') or defaults.SUPABASE_URL or '').rstrip('/')

@@ -16,7 +16,7 @@ const SKIP = [
   /^web[\\/]src[\\/]api[\\/]/, // 계약·전송 경계 자체(여기만 코어를 안다)
   /[\\/]node_modules[\\/]/,
 ];
-const EXT = new Set([".js", ".mjs", ".ts", ".tsx"]);
+const EXT = new Set([".js", ".jsx", ".mjs", ".ts", ".tsx"]);
 const PATTERNS = [
   [/\bfetch\s*\(/, "fetch() 직접 호출"],
   [/\bXMLHttpRequest\b/, "XMLHttpRequest"],

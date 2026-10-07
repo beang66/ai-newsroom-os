@@ -282,13 +282,17 @@ export async function flowSummary(body) {
 
 const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-/** 원고 디스크 저장(내 문서/AI Newsroom/articles). 사진 원본(data URL)은 크기 때문에 빼고 출처 정보만 남긴다 */
+/** 원고 저장. 사진은 코어의 data/original 필드로 보내 암호화 media 저장소에서 중복 없이 보관한다. */
 export async function saveDraft(article, articleId) {
   const bodyHtml = (article.content || "")
     .split(/\n{2,}/)
     .map((p) => `<p>${escapeHtml(p.trim()).replace(/\n/g, "<br>")}</p>`)
     .join("");
-  const photos = (article.photos || []).map(({ url, ...meta }) => ({ ...meta, url: url?.startsWith("data:") ? "" : url }));
+  const photos = (article.photos || []).map(({ url, ...meta }) => ({
+    ...meta,
+    data: url?.startsWith("data:") ? url : meta.data,
+    url: url?.startsWith("data:") ? "" : url,
+  }));
   const d = await core.saveArticle({
     ...(articleId ? { articleId } : {}),
     title: article.title || "",
@@ -322,6 +326,6 @@ export async function loadLatestArticle(empty) {
     updatedAt: (draft.savedAt || "").replace("T", " ").slice(0, 16) || empty.updatedAt,
     linkedSources: draft.linkedSources || [],
     sources: draft.sources || [],
-    photos: draft.photos || [],
+    photos: (draft.photos || []).map((photo) => ({ ...photo, url: photo.data || photo.url || "" })),
   };
 }

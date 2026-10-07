@@ -142,6 +142,20 @@ try {
   await page.getByTestId("photo-finder").locator("img").nth(2).waitFor();
   await page.getByRole("button", { name: "닫기" }).click();
 
+  // 3-1. 로컬 사진 → PhotoEditor → 편집본을 기사에 반영
+  await page.getByRole("button", { name: /사진·미디어 편집/ }).click();
+  await page.locator('input[type="file"][accept="image/jpeg,image/png,image/webp"]').setInputFiles({
+    name: "smoke.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8//8/AwMDEwMDAwMDAwAkBgMB/DXemwAAAABJRU5ErkJggg==", "base64"),
+  });
+  const photoEditor = page.getByTestId("photo-editor");
+  await photoEditor.waitFor();
+  await photoEditor.getByRole("button", { name: "1:1" }).click();
+  await photoEditor.getByLabel("사진 설명").fill("스모크 사진");
+  await photoEditor.getByRole("button", { name: "본문에 넣기" }).click();
+  await see("편집본을 반영하고 본문 끝에 사진 태그를 삽입했습니다.");
+
   // 4. 작성·검토 → 팩트체크 서랍
   await page.getByText("기사 팩트체크 & 근거자료").first().click();
   await see("팩트체크 & 근거자료 검증");
@@ -229,7 +243,7 @@ try {
     assert.ok(stubCalls.includes(name), `코어가 백엔드로 ${name} 를 요청하지 않았습니다: ${stubCalls}`);
   assert.equal(savedIds.size, 1, "같은 원고는 화면을 오가도 한 파일에 저장돼야 합니다: " + [...savedIds]);
   assert.deepEqual(problems, [], "브라우저 오류:\n" + problems.join("\n"));
-  console.log("PASS ui-smoke: 코어 연결·제목/부제 추천·흐름 요약·자동 저장·사진 찾기·팩트체크 서랍·자료 검색·플랫폼 변환·보관함·녹취 전사·모바일 폭");
+  console.log("PASS ui-smoke: 코어 연결·제목/부제 추천·흐름 요약·자동 저장·사진 찾기·PhotoEditor·팩트체크 서랍·자료 검색·플랫폼 변환·보관함·녹취 전사·모바일 폭");
 } catch (error) {
   if (page) await page.screenshot({ path: new URL("temp/ui-smoke-failure.png", ROOT).pathname.slice(1) }).catch(() => {});
   console.error("FAIL ui-smoke:", error.message);

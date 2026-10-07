@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
+import PhotoEditor from "./PhotoEditor";
 import { supportedClaimRanges } from "../api/claim-details.js";
 // 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
 import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useFactCheck, useBodyChunks } from "./EditorialAssist";
@@ -58,10 +59,13 @@ export default function ArticleWriter({
   const [previewPlatform, setPreviewPlatform] = useState("donga");
 
   // 3. 사진/미디어 관리 상태
-  const [photos, setPhotos] = useState(article.photos || []);
+  const photos = article.photos || [];
+  const [editingPhoto, setEditingPhoto] = useState(null);
+  const [photoError, setPhotoError] = useState("");
+  const [photoNotice, setPhotoNotice] = useState("");
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [newCaption, setNewCaption] = useState("");
-  const [newSource, setNewSource] = useState("동아일보 DB");
+  const [newSource, setNewSource] = useState("");
   const [newProvider, setNewProvider] = useState("");
   const [newRatio, setNewRatio] = useState("16:9");
 
@@ -133,21 +137,26 @@ export default function ArticleWriter({
   // 사진 업로드 핸들러
   const handlePhotoUpload = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
+    setPhotoError("");
     if (file) {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 20 * 1024 * 1024) {
+        setPhotoError("20MB 이하 JPG·PNG·WebP 사진을 선택해 주세요.");
+        return;
+      }
       const reader = new FileReader();
+      reader.onerror = () => setPhotoError("사진 파일을 읽지 못했습니다. 다시 선택해 주세요.");
       reader.onload = (uploadEvt) => {
         if (uploadEvt.target?.result) {
           const newPhoto = {
-            id: `photo-${Date.now()}`,
+            id: `photo-${crypto.randomUUID()}`,
             url: uploadEvt.target.result,
             caption: newCaption || file.name,
-            source: newSource || "동아일보 DB",
-            provider: newProvider || "기자",
+            source: newSource,
+            provider: newProvider,
             ratio: newRatio
           };
-          const updated = [newPhoto, ...photos];
-          setPhotos(updated);
-          setArticle((prev) => ({ ...prev, photos: updated }));
+          setEditingPhoto(newPhoto);
           setNewCaption("");
           setShowPhotoModal(false);
         }
@@ -163,7 +172,17 @@ export default function ArticleWriter({
       ...prev,
       content: prev.content + photoTag
     }));
-    alert(`"${photo.caption}" 사진이 기사 본문에 삽입되었습니다.`);
+    setPhotoNotice(`“${photo.caption}” 사진 태그를 본문 끝에 삽입했습니다.`);
+  };
+
+  const handleApplyPhoto = (photo) => {
+    setArticle((prev) => ({
+      ...prev,
+      photos: [photo, ...(prev.photos || []).filter((p) => p.id !== photo.id)],
+      content: prev.content + `\n\n[사진 삽입: ${photo.caption} (출처: ${photo.source}, 제공: ${photo.provider})]\n\n`,
+    }));
+    setPhotoNotice(`“${photo.caption}” 편집본을 반영하고 본문 끝에 사진 태그를 삽입했습니다.`);
+    setEditingPhoto(null);
   };
 
   // CMS 발행/이관 실행
@@ -176,8 +195,19 @@ export default function ArticleWriter({
     }, 1200);
   };
 
+  if (editingPhoto) return (
+    <PhotoEditor
+      key={editingPhoto.id}
+      photo={editingPhoto}
+      onBack={() => setEditingPhoto(null)}
+      onApply={handleApplyPhoto}
+      charCount={article.content.length}
+    />
+  );
+
   return (
     <div className="w-full space-y-5 animate-float-in">
+      {photoNotice && <p role="status" className="px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">{photoNotice}</p>}
 
       {/* ──────────────────────────────────────────
           1. 최상단 통합 컨트롤 툴바
@@ -737,9 +767,8 @@ export default function ArticleWriter({
             <PhotoFinder
               body={article.content}
               onPick={(photo) => {
-                const updated = [photo, ...photos];
-                setPhotos(updated);
-                setArticle((prev) => ({ ...prev, photos: updated }));
+                setEditingPhoto(photo);
+                setShowPhotoModal(false);
               }}
             />
 
@@ -811,10 +840,11 @@ export default function ArticleWriter({
                   type="file"
                   ref={photoInputRef}
                   onChange={handlePhotoUpload}
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   className="hidden"
                 />
               </div>
+              {photoError && <p role="alert" className="text-rose-600">{photoError}</p>}
             </div>
 
             {/* 현재 등록된 사진 리스트 */}
@@ -827,12 +857,16 @@ export default function ArticleWriter({
                       <img src={p.url} alt="p" className="w-10 h-8 object-cover rounded-md flex-shrink-0" />
                       <span className="font-bold text-slate-800 truncate">{p.caption}</span>
                     </div>
-                    <button
-                      onClick={() => handleInsertPhotoToContent(p)}
-                      className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded-lg shadow-2xs flex-shrink-0 cursor-pointer"
-                    >
-                      본문 삽입
-                    </button>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => { setEditingPhoto(p); setShowPhotoModal(false); }}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded-lg shadow-2xs cursor-pointer"
+                      >편집</button>
+                      <button
+                        onClick={() => handleInsertPhotoToContent(p)}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded-lg shadow-2xs cursor-pointer"
+                      >본문 삽입</button>
+                    </div>
                   </div>
                 ))}
               </div>

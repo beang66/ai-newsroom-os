@@ -246,6 +246,13 @@ class ServerTests(ApiTestCase):
         self.assertEqual(self.request('/api/jobs/%s/cancel' % missing, {})[0], 404)
         self.assertEqual(self.request('/api/jobs/not-a-uuid')[0], 404)
 
+    def test_latest_article_storage_error_is_a_json_error(self):
+        def broken():
+            raise storage.RequestError('암호화 저장소를 열 수 없습니다.', 500)
+        with patch.object(api.CORE.storage, 'latest_article', broken):
+            status, raw, _ = self.request('/api/articles/latest')
+        self.assertEqual((status, json.loads(raw)), (500, {'error': '암호화 저장소를 열 수 없습니다.'}))
+
     def test_latest_article_reopens_newest_with_source_text(self):
         use_temp_vault(self)
         self.assertEqual(json.loads(self.request("/api/articles/latest")[1]), {"draft": None})
@@ -293,7 +300,7 @@ class ServerTests(ApiTestCase):
         import base64
         opened = []
         use_temp_vault(self)
-        with patch.object(storage.os, 'startfile', opened.append, create=True), patch.object(storage.os, 'name', 'nt'):
+        with patch.object(storage.os, 'startfile', opened.append, create=True), patch.object(storage.sys, 'platform', 'win32'):
             raw = self.request('/api/materials/extract', {'filename': '원본.txt', 'data': base64.b64encode('본문'.encode()).decode()})[1]
             source_id = json.loads(raw)['sourceId']
             self.assertEqual(self.request('/api/sources/open', {'sourceId': source_id})[0], 200)
@@ -313,8 +320,11 @@ class ServerTests(ApiTestCase):
         self.assertIn('dir', payload)
 
     def test_models_install_without_source_is_rejected(self):
-        # 매니페스트에 base 가 아직 없으므로 동기 검증에서 503
-        status, raw, _ = self.request('/api/models/install', {'modelId': 'factcheck-judge-0.6b-v3'})
+        # 원본 주소(base)가 없는 모델은 동기 검증에서 503. 지금 매니페스트는 모두 base 가 있으므로
+        # 테스트 안에서만 base 를 비운다(실제 다운로드가 시작되지 않게).
+        real_entry = api.CORE.models.entry
+        with patch.object(api.CORE.models, 'entry', lambda model_id='': {**real_entry(model_id), 'base': ''}):
+            status, raw, _ = self.request('/api/models/install', {'modelId': 'factcheck-judge-0.6b-v3'})
         self.assertEqual(status, 503)
         self.assertIn('원본 주소', json.loads(raw)['error'])
 

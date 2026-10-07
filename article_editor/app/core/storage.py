@@ -474,7 +474,7 @@ def open_source(data):
     folder.mkdir(parents=True, exist_ok=True)
     original = folder / name
     original.write_bytes(raw)
-    if os.name == 'nt':
+    if sys.platform == 'win32':  # os.name 이 아니라 sys.platform — 테스트가 윈도우 분기를 흉내 내도 경로 처리(pathlib)는 그대로다
         os.startfile(original)  # noqa: S606 — 우리가 만든 임시 파일만(ID 검증)
     else:
         subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(original)])

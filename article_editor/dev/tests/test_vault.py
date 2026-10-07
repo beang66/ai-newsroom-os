@@ -66,7 +66,7 @@ class VaultTests(unittest.TestCase):
 
     def test_open_copy_is_removed_on_cleanup(self):
         source_id, _ = storage.save_source('원본.txt', b'secret', 'secret')
-        with mock.patch.object(storage.os, 'startfile', create=True), mock.patch.object(storage.os, 'name', 'nt'):
+        with mock.patch.object(storage.os, 'startfile', create=True), mock.patch.object(storage.sys, 'platform', 'win32'):
             path = Path(storage.open_source({'sourceId': source_id})['path'])
         self.assertEqual(path.read_bytes(), b'secret')
         storage.cleanup_open()

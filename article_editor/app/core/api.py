@@ -37,9 +37,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/factcheck/status':
             try:return self.send(200,CORE.ai.factcheck_status())
             except RequestError as e:return self.send(e.status,error_body(e))
-        # TODO(debt: DEBT-008): latest_article의 RequestError가 JSON 응답으로 변환되지 않는다.
-        # 키/저장소 오류 때 연결만 끊길 수 있으므로 다른 GET처럼 오류 본문 처리를 붙일 것.
-        if self.path=='/api/articles/latest':return self.send(200,CORE.storage.latest_article())
+        if self.path=='/api/articles/latest':
+            try:return self.send(200,CORE.storage.latest_article())
+            except RequestError as e:return self.send(e.status,error_body(e))
         found=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions(?:/(\d{1,6}))?',self.path)
         if found:
             try:return self.send(200,CORE.storage.get_revision(found.group(1),int(found.group(2))) if found.group(2) else CORE.storage.list_revisions(found.group(1)))

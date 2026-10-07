@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import DataMapView from "../features/data-map/DataMapView.jsx";
 
-// ponytail: 코어에 원고 목록 API 가 아직 없다 — 지금 쓰는 기사 하나만 보인다. 목록 API 가 생기면 여기서 불러온다
+// ponytail: 원고 목록은 코어에 있다(GET /api/articles) — 하지만 다른 원고를 편집기로 여는 API 가 없어 지금 쓰는 기사 하나만 보인다. 여는 API 가 생기면 목록을 붙인다
 export default function ArchiveView({ article }) {
   const articles = [article];
   const selectedArticle = article;

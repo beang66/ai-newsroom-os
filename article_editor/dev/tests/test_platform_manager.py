@@ -12,11 +12,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 _APP = Path(__file__).resolve().parents[2] / "app"
 if str(_APP) not in sys.path:
     sys.path.insert(0, str(_APP))
 
 from core.errors import RequestError
+import vault_fixture  # noqa: E402,F401  — app/ 를 sys.path 에 올린다
 from core.managers.platform_manager import PlatformManager
 
 _REAL_BRIDGE = (Path(__file__).resolve().parents[3] / "platform-generator" / "core-bridge.js").as_posix()
@@ -102,6 +104,44 @@ class PlatformManagerBridgeTests(unittest.TestCase):
         self.assertEqual(sent["path"], "responses")
         self.assertEqual(sent["payload"]["model"], config.TEXT_MODEL)
         self.assertIs(sent["payload"]["store"], False)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node.js 가 필요합니다")
+class PlatformManagerSnapshotTests(unittest.TestCase):
+    """snapshotId 가 오면 화면이 보낸 기사 대신 고정본의 제목·본문으로 만들고, 응답에 snapshotId 를 싣는다(재현 가능한 입력)."""
+
+    def setUp(self):
+        from vault_fixture import use_temp_vault
+        use_temp_vault(self)
+        self.dir = tempfile.mkdtemp(prefix="ainews-platform-")
+        Path(self.dir, "core-adapter.js").write_text(_ADAPTER, encoding="utf-8")
+        patcher = patch.dict(os.environ, {"PLATFORM_GENERATOR_DIR": self.dir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(shutil.rmtree, self.dir, True)
+
+    def test_generate_uses_snapshot_text_and_echoes_id(self):
+        from core import storage
+        aid = storage.save_article({"draft": {"bodyHtml": "<p>고정본 본문입니다.</p>", "content": "고정본 본문입니다.", "title": "고정본 제목"}})["articleId"]
+        snapshot = storage.create_snapshot(aid)
+        sent = []
+
+        def fake_ai(request):
+            sent.append(json.loads(request["input"]))
+            return {"status": "completed", "output": []}
+
+        with patch.object(PlatformManager, "_ai", staticmethod(fake_ai)):
+            result = PlatformManager().generate({"platform": "threads", "snapshotId": snapshot["id"],
+                                                 "payload": {"article": {"title": "화면의 다른 제목", "content": "다른 본문"}, "selected_keywords": ["핵심"]}})
+        self.assertEqual(result["snapshotId"], snapshot["id"])
+        self.assertEqual(sent[0]["article"], {"title": "고정본 제목", "content": "고정본 본문입니다."})
+        self.assertEqual(sent[0]["selected_keywords"], ["핵심"])
+
+    def test_unknown_snapshot_is_404_before_node_runs(self):
+        with patch("core.managers.platform_manager.shutil.which", return_value=None):  # Node 가 없어도 404 가 먼저
+            with self.assertRaises(RequestError) as error:
+                PlatformManager().generate({"platform": "threads", "snapshotId": "00000000-0000-4000-8000-000000000000", "payload": {}})
+        self.assertEqual(error.exception.status, 404)
 
 
 class PlatformManagerGuardTests(unittest.TestCase):

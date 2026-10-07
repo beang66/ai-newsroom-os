@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS article_revisions (
   draft_json TEXT NOT NULL, created_at TEXT NOT NULL, id TEXT, PRIMARY KEY (article_id, revision_no));
 CREATE TABLE IF NOT EXISTS media (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, header TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS media_assets (
+  id TEXT PRIMARY KEY, media_id TEXT NOT NULL REFERENCES media(id), workspace_id TEXT NOT NULL, kind TEXT NOT NULL,
+  mime_type TEXT NOT NULL, filename TEXT NOT NULL, caption TEXT NOT NULL, generated INTEGER NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS embedding_vectors (
   key TEXT PRIMARY KEY, vector BLOB NOT NULL, origin TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS factcheck_memo (

@@ -12,6 +12,7 @@ from .. import factcheck_memo as memo
 from ..ai.router import assist as _assist
 from ..ai.transcribe import transcribe as _transcribe
 from ..errors import RequestError
+from ..storage import get_snapshot
 
 MAX_NODES, MAX_MATERIALS, MAX_TEXT = 200, 50, 500_000
 
@@ -47,7 +48,16 @@ class AIManager:
 
     def factcheck_run(self, payload):
         """원고 문장(nodes)을 등록 자료(materials)에 비춰 판정한다.
-        nodes: [{id, type, text, linkedSourceIds?}], materials: [{id, title, content, date?, speaker?}]"""
+        nodes: [{id, type, text, linkedSourceIds?}], materials: [{id, title, content, date?, speaker?}]
+        snapshotId(선택): 이 검증이 어느 고정본(ArticleSnapshot)에 대한 것인지. 있으면 고정본이 있는지 확인하고 응답에 그대로 실어 준다.
+        판정 기록(memo)은 문장·자료·모델 버전으로만 식별하므로 고정본이 달라도 같은 문장은 판정을 다시 쓴다 — snapshotId 는 출처 표시용이다."""
+        snapshot_id = payload.get('snapshotId')
+        if snapshot_id is not None:
+            get_snapshot(snapshot_id)  # 형식 오류 400, 없으면 404
+        result = self._factcheck_run(payload)
+        return {**result, 'snapshotId': snapshot_id} if snapshot_id is not None else result
+
+    def _factcheck_run(self, payload):
         nodes, materials = payload.get('nodes'), payload.get('materials')
         if not isinstance(nodes, list) or not 0 < len(nodes) <= MAX_NODES:
             raise RequestError(f'검증할 문장(nodes)을 1~{MAX_NODES}개 보내 주세요.')

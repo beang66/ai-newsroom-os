@@ -37,6 +37,13 @@ PHOTO_FIELDS = ('data', 'original')  # 사진 항목에서 base64 data URL 이 �
 MEDIA_REF = re.compile(r'media:([a-f0-9]{32})')
 
 
+def _store_media(db, head, raw):
+    """사진 바이트를 media 표에 한 번만 둔다(같은 바이트·머리글이면 같은 id). → 32자리 id"""
+    media_id = hashlib.sha256(head.encode() + b'\0' + raw).hexdigest()[:32]
+    db.execute('INSERT OR IGNORE INTO media VALUES (?, ?, ?, ?, ?)', (media_id, vault.WORKSPACE_ID, head, raw, _now()))
+    return media_id
+
+
 def _pack(db, draft):
     """원고의 사진(data URL, base64)을 media 테이블에 한 번만 저장하고 원고에는 'media:<id>' 만 남긴다.
     같은 사진은 해시가 같아 한 번만 저장된다(data·original 이 같고, 본문만 고쳐도 사진이 복사되지 않는다)."""
@@ -55,9 +62,7 @@ def _pack(db, draft):
                     raw = base64.b64decode(b64, validate=True)
                 except ValueError:
                     continue  # 읽지 못하면 원고 안에 그대로 둔다(잃지 않는다)
-                media_id = hashlib.sha256(head.encode() + b'\0' + raw).hexdigest()[:32]
-                db.execute('INSERT OR IGNORE INTO media VALUES (?, ?, ?, ?, ?)', (media_id, vault.WORKSPACE_ID, head, raw, _now()))
-                photo[key] = 'media:' + media_id
+                photo[key] = 'media:' + _store_media(db, head, raw)
         packed.append(photo)
     return dict(draft, photos=packed)
 

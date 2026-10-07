@@ -5,6 +5,7 @@ Current implementation: encrypted SQLite (``core/storage.py`` on ``core/vault.py
 Planned: project files + attachments.
 """
 from ..diagnostics import guarded
+from ..media_assets import get_media_asset as _get_media_asset, media_asset_file as _media_asset_file, register_media_asset as _register_media_asset
 from ..storage import (create_snapshot as _create_snapshot, get_revision as _get_revision, get_snapshot as _get_snapshot,
                        latest_article as _latest_article, list_revisions as _list_revisions, list_snapshots as _list_snapshots,
                        open_source as _open_source, restore_revision as _restore_revision, save_article as _save_article,
@@ -51,3 +52,15 @@ class StorageManager:
     def get_snapshot(self, snapshot_id):
         """고정본 한 건(본문 포함)."""
         return _get_snapshot(snapshot_id)
+
+    def register_media_asset(self, data):
+        """사진을 미디어 자산(UUID)으로 등록한다 ``{"kind":"image","mime_type":..,"data":"data:..;base64,.."}`` (같은 바이트면 같은 자산)."""
+        return guarded('media_register', _register_media_asset, data)
+
+    def get_media_asset(self, asset_id):
+        """미디어 자산 정보."""
+        return _get_media_asset(asset_id)
+
+    def media_asset_file(self, asset_id):
+        """미디어 자산의 이미지 바이트 → (bytes, mime)."""
+        return _media_asset_file(asset_id)

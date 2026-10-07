@@ -18,6 +18,7 @@ import threading
 from pathlib import Path
 
 from ..errors import RequestError
+from ..storage import get_snapshot
 
 # Node 프로세스에 넘기지 않는 값(외부 AI 호출은 코어가 대신한다)
 _WITHHELD_ENV = ("OPENAI_API_KEY", "GEMINI_API_KEY", "AI_PROVIDER", "OPENAI_MODEL", "GEMINI_MODEL")
@@ -133,7 +134,19 @@ class PlatformManager:
             raise RequestError(str(response.get("error") or "플랫폼 변환에 실패했습니다."), status)
         return response.get("result")
 
+    @staticmethod
+    def _from_snapshot(data: dict):
+        """snapshotId 가 있으면 그 고정본(제목·본문)을 입력으로 쓴다. → (snapshot_id | None, 고정본 기사 | None)"""
+        snapshot_id = data.get("snapshotId")
+        if snapshot_id is None:
+            return None, None
+        snapshot = get_snapshot(snapshot_id)  # 형식 오류 400, 없으면 404
+        return snapshot["id"], {"title": snapshot["title"], "content": snapshot["body_text"]}
+
     def keywords(self, data: dict):
+        snapshot_id, snapshot_article = self._from_snapshot(data)
+        if snapshot_article:
+            return {**self._call({"action": "keywords", "article": snapshot_article}), "snapshotId": snapshot_id}
         article = data.get("article")
         if not isinstance(article, dict):
             raise RequestError("기사 정보가 필요합니다.")
@@ -150,4 +163,8 @@ class PlatformManager:
             raise RequestError("지원하지 않는 플랫폼입니다.")
         if not isinstance(payload, dict):
             raise RequestError("플랫폼 생성 입력이 필요합니다.")
+        snapshot_id, snapshot_article = self._from_snapshot(data)
+        if snapshot_article:  # 고정본이 있으면 화면이 보낸 기사 대신 고정본의 제목·본문으로 만든다(같은 입력이면 재현 가능)
+            result = self._call({"action": "generate", "platform": platform, "payload": {**payload, "article": snapshot_article}})
+            return {**result, "snapshotId": snapshot_id} if isinstance(result, dict) else result
         return self._call({"action": "generate", "platform": platform, "payload": payload})

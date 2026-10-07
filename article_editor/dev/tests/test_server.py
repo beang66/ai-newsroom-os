@@ -152,6 +152,21 @@ class ServerTests(ApiTestCase):
         draft['articleId'] = '../../outside'
         self.assertEqual(self.request('/api/articles/save', {'draft': draft})[0], 400)
 
+    def test_media_asset_routes(self):
+        import base64
+        use_temp_vault(self)
+        raw = b'\x89PNG\r\n\x1a\nroute-bytes'
+        body = {'kind': 'image', 'mime_type': 'image/png', 'data': 'data:image/png;base64,' + base64.b64encode(raw).decode(), 'caption': '경로 시험'}
+        status, payload, _ = self.request('/api/media-assets', body)
+        asset = json.loads(payload)
+        self.assertEqual((status, asset['caption'], asset['byte_size']), (200, '경로 시험', len(raw)))
+        self.assertEqual(json.loads(self.request('/api/media-assets/' + asset['id'])[1])['id'], asset['id'])
+        status, file_bytes, headers = self.request('/api/media-assets/%s/file' % asset['id'])
+        self.assertEqual((status, file_bytes, headers['Content-Type']), (200, raw, 'image/png'))
+        self.assertEqual(self.request('/api/media-assets/00000000-0000-4000-8000-000000000000')[0], 404)
+        self.assertEqual(self.request('/api/media-assets', dict(body, kind='video'))[0], 400)
+        self.assertEqual(self.request('/api/media-assets', body, origin='http://evil.example')[0], 403)
+
     def test_revision_history_routes(self):
         use_temp_vault(self)
         first = json.loads(self.request('/api/articles/save', {'draft': {'bodyHtml': '<p>1</p>', 'content': '첫 본문', 'title': '제목1'}})[1])['articleId']

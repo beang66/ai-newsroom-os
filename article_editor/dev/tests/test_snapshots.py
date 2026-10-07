@@ -161,5 +161,28 @@ class RequestErrorCompatTests(unittest.TestCase):
         self.assertEqual(RequestError('x', 409, code='REVISION_CONFLICT').code, 'REVISION_CONFLICT')
 
 
+class FactcheckSnapshotInputTests(unittest.TestCase):
+    """팩트체크는 snapshotId 를 받으면 고정본이 있는지 확인하고 응답에 싣는다(없으면 404, 안 보내면 예전과 같음)."""
+
+    def setUp(self):
+        use_temp_vault(self)
+
+    def test_snapshot_id_is_validated_and_echoed(self):
+        from unittest import mock
+        from core.managers.ai_manager import AIManager
+        aid = storage.save_article({'draft': {'bodyHtml': '<p>본문</p>', 'content': '본문', 'title': '제목'}})['articleId']
+        snapshot = storage.create_snapshot(aid)
+        manager = AIManager()
+        with mock.patch.object(AIManager, '_factcheck_run', return_value={'results': []}):
+            self.assertEqual(manager.factcheck_run({'snapshotId': snapshot['id']})['snapshotId'], snapshot['id'])
+            self.assertNotIn('snapshotId', manager.factcheck_run({}))
+            with self.assertRaises(RequestError) as error:
+                manager.factcheck_run({'snapshotId': '00000000-0000-4000-8000-000000000000'})
+            self.assertEqual(error.exception.status, 404)
+            with self.assertRaises(RequestError) as error:
+                manager.factcheck_run({'snapshotId': 'nope'})
+            self.assertEqual(error.exception.status, 400)
+
+
 if __name__ == '__main__':
     unittest.main()

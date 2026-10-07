@@ -1,16 +1,33 @@
 {
-  "name": "clova-speech-stt-project",
-  "version": "1.0.0",
-  "description": "NAVER CLOVA Speech 장문 음성인식 API 독립 테스트 프로젝트",
+  "name": "ai_newsroom",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "install:server": "npm --prefix server install",
-    "install:client": "npm --prefix client install",
-    "install:all": "npm install && npm run install:server && npm run install:client",
-    "dev:server": "npm --prefix server run dev",
-    "dev:client": "npm --prefix client run dev",
-    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,green\" \"npm run dev:server\" \"npm run dev:client\""
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "check": "npm run lint && npm run build",
+    "preview": "vite preview",
+    "stt:install": "npm --prefix server install && npm --prefix client install",
+    "stt:server": "npm --prefix server run dev",
+    "stt:client": "npm --prefix client run dev"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "autoprefixer": "^10.6.1",
+    "lucide-react": "^1.49.0",
+    "postcss": "^8.5.28",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^8.2.2",
+    "oxlint": "^1.81.0",
+    "vite": "^8.3.0"
   }
 }

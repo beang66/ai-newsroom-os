@@ -21,3 +21,7 @@ temp/
 build/
 dist/
 
+
+# Prepared third-party Node/npm bundle; reproducible from prepare_platform.py
+packaging/vendor/
+packaging/vendor-previous-*/

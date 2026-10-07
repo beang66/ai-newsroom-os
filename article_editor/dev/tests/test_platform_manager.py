@@ -159,3 +159,47 @@ class PlatformManagerGuardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlatformManagerFrozenLookupTests(unittest.TestCase):
+    def test_bundle_lookup_override_and_path_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            exe_dir, bundle = root / "exe", root / "bundle"
+            exe_dir.mkdir()
+            (bundle / "platform-generator").mkdir(parents=True)
+            (bundle / "platform-generator" / "core-adapter.js").touch()
+            with patch.object(sys, "frozen", True, create=True), \
+                    patch.object(sys, "_MEIPASS", str(bundle), create=True), \
+                    patch.object(sys, "executable", str(exe_dir / "AINewsroom.exe")), \
+                    patch.dict(os.environ, {"PLATFORM_GENERATOR_DIR": ""}), \
+                    patch("core.managers.platform_manager.shutil.which", return_value="path-node") as which:
+                self.assertEqual(PlatformManager._generator_dir(), bundle / "platform-generator")
+                self.assertEqual(PlatformManager._node_executable(), "path-node")
+                which.assert_called_once_with("node")
+                (bundle / "node").mkdir()
+                (bundle / "node" / "node.exe").touch()
+                self.assertEqual(PlatformManager._node_executable(), str(bundle / "node" / "node.exe"))
+                (exe_dir / "node").mkdir()
+                (exe_dir / "node" / "node.exe").touch()
+                self.assertEqual(PlatformManager._node_executable(), str(exe_dir / "node" / "node.exe"))
+                with patch.dict(os.environ, {"PLATFORM_GENERATOR_DIR": str(root / "override")}):
+                    self.assertEqual(PlatformManager._generator_dir(), (root / "override").resolve())
+                (bundle / "platform-generator" / "core-adapter.js").unlink()
+                (exe_dir / "platform-generator").mkdir()
+                (exe_dir / "platform-generator" / "core-adapter.js").touch()
+                self.assertEqual(PlatformManager._generator_dir(), exe_dir / "platform-generator")
+                sys._MEIPASS = str(exe_dir)
+                self.assertEqual(PlatformManager._generator_dir(), exe_dir / "platform-generator")
+                (exe_dir / "node" / "node.exe").unlink()
+                which.return_value = None
+                with self.assertRaises(RequestError) as error:
+                    PlatformManager()._call({})
+                self.assertEqual(error.exception.status, 503)
+                self.assertIn("Node.js", str(error.exception))
+                which.return_value = "path-node"
+                (exe_dir / "platform-generator" / "core-adapter.js").unlink()
+                with self.assertRaises(RequestError) as error:
+                    PlatformManager()._call({})
+                self.assertEqual(error.exception.status, 503)
+                self.assertIn("어댑터", str(error.exception))

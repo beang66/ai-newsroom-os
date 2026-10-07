@@ -14,6 +14,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -33,8 +34,26 @@ class PlatformManager:
         override = os.environ.get("PLATFORM_GENERATOR_DIR", "").strip()
         if override:
             return Path(override).expanduser().resolve()
+        if getattr(sys, "frozen", False):
+            exe_dir = Path(sys.executable).resolve().parent
+            bundle = Path(getattr(sys, "_MEIPASS", exe_dir))
+            for root in (bundle, exe_dir):
+                if (root / "platform-generator" / "core-adapter.js").is_file():
+                    return root / "platform-generator"
+            return bundle / "platform-generator"
         # article_editor/app/core/managers -> repository root
         return Path(__file__).resolve().parents[4] / "platform-generator"
+
+    @staticmethod
+    def _node_executable() -> str | None:
+        if getattr(sys, "frozen", False):
+            exe_dir = Path(sys.executable).resolve().parent
+            bundle = Path(getattr(sys, "_MEIPASS", exe_dir))
+            for root in (exe_dir, bundle):
+                node = root / "node" / "node.exe"
+                if node.is_file():
+                    return str(node)
+        return shutil.which("node")
 
     @staticmethod
     def _ai(request):
@@ -57,7 +76,7 @@ class PlatformManager:
         proc.stdin.flush()
 
     def _call(self, payload: dict):
-        node = shutil.which("node")
+        node = self._node_executable()
         if not node:
             raise RequestError("플랫폼 변환 엔진을 실행할 Node.js를 찾지 못했습니다.", 503)
 

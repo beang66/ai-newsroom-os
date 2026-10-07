@@ -10,6 +10,10 @@ echo [1/3] 빌드 도구 확인
 %PY% -m pip install --disable-pip-version-check -r packaging\requirements-build.txt
 if errorlevel 1 goto fail
 
+echo Preparing bundled Node and platform generator
+%PY% packaging\prepare_platform.py
+if errorlevel 1 goto fail
+
 echo [2/3] 이전 빌드 정리
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist

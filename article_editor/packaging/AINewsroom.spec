@@ -13,13 +13,16 @@
 
 설계 메모
 - 진입점은 ``launcher.py`` 하나다(개발 실행과 배포본의 CLI/코드 경로가 같다).
-- 앱이 읽는 리소스는 ``frontend/`` 뿐이다. ``app_paths.py`` 가 배포본에서
+- 앱이 읽는 UI·모델 매니페스트·선택적 Node 어댑터를 동봉한다. ``app_paths.py`` 가 배포본에서
   ``BUNDLE=_internal/`` · ``APP_ROOT=exe 폴더`` 로 해석해 준다.
 - WebView2 .NET DLL 은 pywebview 의 PyInstaller 훅이 자동 수집한다
   (``webview/lib/**`` → ``Util.dll_path()`` 가 번들 안에서 같은 상대경로로 찾는다).
 """
 import os
+import runpy
 from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_all
 
 APP_DIR = Path(SPECPATH).parent  # article_editor/ (프로젝트 루트)
 SRC = APP_DIR / 'app'  # 실행 코드(진입점·core·desktop·frontend)
@@ -27,7 +30,7 @@ NAME = os.environ.get('AINEWSROOM_NAME') or 'AINewsroom'
 ONEFILE = os.environ.get('AINEWSROOM_ONEFILE', '').lower() not in ('', '0', 'false')
 ICON = APP_DIR / 'packaging' / 'app.ico'
 
-# 앱이 직접 읽는 정적 리소스(코어는 표준 라이브러리만 쓴다).
+# 읽기 전용 리소스만 동봉한다. vault·모델 가중치·.env 는 사용자 데이터다.
 datas = [
     (str(SRC / 'frontend'), 'frontend'),
     # 모델 매니페스트(파일 목록·해시) — 실제 모델 파일은 첫 사용 때 models/ 로 내려받는다
@@ -41,17 +44,53 @@ hiddenimports = [
     'desktop.runtime',
     'desktop.shell',
     'desktop.smoke',
+    'keyring.backends.Windows',
+    'win32ctypes.pywin32.win32cred',
+    'win32ctypes.pywin32.pywintypes',
+    'sqlcipher3._sqlite3',
 ]
 
-# 로컬 AI(수 GB)와 개발·테스트 도구는 넣지 않는다.
-# core/ai/local_models.py 가 지연 import 라 없어도 실행된다(USE_LOCAL_MODELS 미사용).
+# Include lazy AI imports without importing core/config (or reading .env) at build time.
+hiddenimports += [
+    '.'.join(path.relative_to(SRC).with_suffix('').parts)
+    for path in (SRC / 'core' / 'ai').rglob('*.py')
+    if path.name != '__init__.py'
+]
+binaries = []
+for package in ('sqlcipher3', 'keyring', 'win32ctypes', 'onnxruntime', 'tokenizers', 'numpy'):
+    package_datas, package_binaries, package_imports = collect_all(
+        package,
+        include_py_files=False,
+        filter_submodules=lambda name: not any(part in ('tests', 'testing', 'tools', 'quantization')
+                                                for part in name.split('.')),
+        exclude_datas=['**/tests/**', '**/testing/**', '**/__pycache__/**'],
+    )
+    datas += package_datas
+    # collect_all includes collect_dynamic_libs; Analysis also resolves .pyd DLL dependencies.
+    binaries += package_binaries
+    hiddenimports += package_imports
+
+# Required prepared runtime: the teammate PC does not need Node/npm.
+# Preparation is a separate step; the EXE build never downloads dependencies.
+platform_tools = runpy.run_path(str(APP_DIR / 'packaging' / 'prepare_platform.py'))
+vendor, platform_info = platform_tools['prepared_bundle']()
+node = vendor / 'node' / 'node.exe'
+binaries.append((str(node), 'node'))
+datas.append((str(vendor / 'node' / 'LICENSE'), 'node'))
+datas.append((str(vendor / 'bundle.json'), '.'))
+generator = vendor / 'platform-generator'
+generator_files = [path for path in generator.rglob('*') if path.is_file()]
+datas += [(str(path), str(Path('platform-generator') / path.relative_to(generator).parent))
+          for path in generator_files]
+print(f"[packaging] Node {platform_info['version']} x64: {node.stat().st_size:,} bytes")
+print(f"[packaging] Platform generator: {len(generator_files):,} files, {sum(p.stat().st_size for p in generator_files):,} bytes")
+
+# ONNX inference libraries are included; model weights and training stacks are not.
 excludes = [
     'torch',
     'transformers',
     'sentencepiece',
     'safetensors',
-    'tokenizers',
-    'numpy',
     'scipy',
     'pandas',
     'matplotlib',
@@ -79,7 +118,7 @@ exe_options = dict(
 a = Analysis(
     [str(SRC / 'launcher.py')],
     pathex=[str(SRC)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

@@ -1,129 +1,193 @@
-# packaging/ — 데스크톱 배포본(exe) 만들기
+﻿# Windows EXE packaging (HTTP mode)
 
-`article_editor` 전체를 **Python 설치가 필요 없는 exe** 로 묶습니다. 셸이 Python(pywebview)이라
-Node/Chromium 동봉 없이 **PyInstaller 한 갈래**로 끝납니다.
+The EXE runs the existing local HTTP core in a thread and opens the built React UI
+in a pywebview/WebView2 window. IPC is deferred. Teammates do not need Python or Node.js.
 
-| 파일 | 역할 |
+## Build
+
+Run from `article_editor/` on Windows x64. Use the same Python interpreter for
+installation and PyInstaller; this environment has Python 3.13 at the path below
+and has no `py` launcher:
+
+```powershell
+$python = 'C:\Users\504-03\AppData\Local\Programs\Python\Python313\python.exe'
+& $python -m pip install -r packaging\requirements-build.txt
+& $python packaging\prepare_platform.py
+& $python -m PyInstaller --noconfirm --clean packaging\AINewsroom.spec
+```
+
+`packaging\build_windows.bat` is the interactive equivalent with `py -3` or
+`python` on PATH. It prepares the platform bundle, then removes existing `build/` and `dist/`. The direct command
+above avoids that blanket deletion. Both output folders are already ignored in
+`article_editor/.gitignore`; never commit or ship build staging/logs.
+
+The build requirements include SQLCipher (`sqlcipher3-wheels`), keyring, ONNX
+Runtime, tokenizers, NumPy, pywebview, and the PDF/HWP document readers. The spec
+collects native extensions, DLLs/providers, metadata for keyring backend discovery,
+the Windows Credential Manager backend, and lazy AI imports. `collect_all` also
+collects dynamic libraries ([PyInstaller hook documentation](https://pyinstaller.org/en/stable/hooks.html#PyInstaller.utils.hooks.collect_all)).
+Torch/transformers and training tools remain excluded.
+
+`app/frontend/index.html` and its assets must already be built. The UI build is
+owned by the frontend workstream; the EXE build does not modify `web/` or rebuild it.
+For a separate frontend build, run `npm --prefix web ci` and
+`npm --prefix web run build` before packaging.
+
+Default output (distribute the entire folder):
+
+```text
+dist/AINewsroom/
+  AINewsroom.exe
+  AINewsroom-debug.exe
+  _internal/
+    frontend/
+    models_manifest.json
+    platform-generator/       required; includes production node_modules
+    node/node.exe             bundled Windows x64 runtime
+    node/LICENSE              matching Node/third-party license notices
+    bundle.json               build input provenance
+    ... Python libraries, native DLLs, WebView2 .NET libraries
+```
+
+- `$env:AINEWSROOM_ONEFILE = '1'`: produces `dist/AINewsroom.exe` and
+  `dist/AINewsroom-debug.exe`; resources extract to `_MEIPASS` on each run.
+- `$env:AINEWSROOM_NAME = 'CustomName'`: changes both executable names and the
+  one-dir output folder.
+- `packaging/app.ico`, if present, becomes the executable icon.
+- Remove the option environment variables to return to default one-dir output.
+- The ONNX libraries and optional generator increase size; measure the actual
+  output instead of using the obsolete 28 MB estimate.
+
+## Bundled platform conversion / Node.js
+
+Run `python packaging/prepare_platform.py` before the first EXE build or after
+changing platform-generator sources. The repeatable tool copies source JavaScript,
+`public/` runtime assets and the unchanged package/lock files into an isolated
+staging folder, then installs `npm ci --omit=dev --no-audit --no-fund` there.
+It copies the build PC's Windows x64 node.exe and downloads the matching official
+Node LICENSE (including third-party notices). Browser downloads are disabled.
+The development generator/node_modules and all .env files are excluded from copying.
+
+Prepared inputs are published to ignored `packaging/vendor/`, which survives
+`build/` and `dist/` cleanup. Existing task-owned prepared bundles are renamed to
+`vendor-previous-*` on refresh, never recursively deleted. Source digests detect
+concurrent changes and stale prepared sources. Dependency packages retain their
+existing license files. Repeated preparation reuses a complete matching bundle.
+
+The PyInstaller spec uses these prepared files without network/npm calls. Missing,
+incomplete or stale prepared sources now stop the build with a preparation message;
+the generator is no longer silently omitted. The spec prints bundled sizes.
+
+Prepared on this PC (2026-10-07): Node **v24.18.0 Windows x64**, 92,534,088 bytes;
+generator + **110 production packages**, 5,871 files, 55,409,882 bytes.
+Combined prepared files are about **141.24 MiB**, not the final EXE distribution size.
+Functional generation/EXE tests remain deferred. The next step is the EXE build.
+
+Frozen lookup order:
+
+| Resource | Lookup |
 |---|---|
-| `AINewsroom.spec` | 빌드 명세(리소스·제외 목록·실행 파일 정의) |
-| `build_windows.bat` | 도구 설치 → 정리 → 빌드 → 안내 (더블클릭 가능) |
-| `requirements-build.txt` | 빌드에만 필요한 패키지(pyinstaller, pywebview) |
+| Generator | `PLATFORM_GENERATOR_DIR` override, then `_MEIPASS/platform-generator`, then `<exe folder>/platform-generator` |
+| Node | `<exe folder>/node/node.exe`, then `_MEIPASS/node/node.exe`, then PATH |
 
-## 빌드
+The runtime still reports HTTP 503 if its Node/adapter files are missing. Prepared
+builds include both. Development lookup and the `PLATFORM_GENERATOR_DIR` override
+retain their behavior. Conversion routes AI requests through the Python core
+rather than passing API keys to Node.
 
+## First run for a teammate
+
+1. Unzip the entire `AINewsroom` folder and run `AINewsroom.exe`. Keep `_internal`
+   beside both EXEs. Windows 10/11 x64, Edge WebView2 Runtime, and the .NET Framework
+   used by pythonnet are required; install WebView2 if the window cannot open.
+2. Sign in with your own account for backend AI services. The EXE ignores the
+   development `.env` test-account auto-login feature even when account variables
+   exist. General `.env` configuration is still supported; do not distribute a
+   developer `.env` or production API keys. OS environment variables take priority.
+3. Save a sample article, close the app, reopen it, and verify the saved article.
+   Article revisions, sources, and media are encrypted in the vault. There is no
+   plaintext articles folder for normal saves.
+4. Install local ONNX title/subtitle, boundary, judge and embedding models through
+   the app's model installer or the CLI below. Weights are not bundled. All five
+   checked-in manifest entries now point to Hugging Face repositories under Tig0w0.
+   A local/UNC source with `--from` remains optional for offline installation.
+5. Use platform conversion with the bundled generator and Node. No separate Node
+   installation is required on the teammate PC.
+
+## Data and device key
+
+```text
+%LOCALAPPDATA%/AI Newsroom/
+  vault.db             encrypted SQLCipher database (plus WAL/SHM when open)
+  models/              installed model files and hf/ cache
+  webview/             WebView2 profile / IndexedDB
+  logs/app.log         EXE diagnostic log
+  settings.json        local preferences
+  open/                temporary decrypted files opened in external programs
 ```
-packaging\build_windows.bat
-```
 
-직접 실행해도 같습니다.
+The device key is stored under the `AI Newsroom` service / `device-key` account in
+Windows Credential Manager via keyring. It is tied to the Windows user on that PC;
+copying the EXE or vault alone is not a cross-PC backup/restore mechanism. A missing
+key fails closed. Login credentials do not replace this key.
 
-```
-python -m pip install -r packaging\requirements-build.txt
-python -m PyInstaller --noconfirm --clean packaging\AINewsroom.spec
-```
+`Documents/AI Newsroom` follows the Windows known Documents folder (including
+OneDrive redirection) for legacy material/export-related paths; new saves use the
+vault. Development and frozen builds use the same default data location.
+`AI_NEWSROOM_APPDATA`, `AI_NEWSROOM_DOCUMENTS`, and `AI_NEWSROOM_VAULT` override these
+paths; the vault override is a **database filename**, not a directory.
+`MODELS_DIR` can override the model directory. The EXE folder is for code/resources,
+not normal vault/model storage. Existing legacy files may be imported at startup.
 
-## 산출물
+## CLI and safe diagnostics
 
-```
-dist\AINewsroom\
-├─ AINewsroom.exe          창 모드(콘솔 없음) — 사용자용
-├─ AINewsroom-debug.exe    콘솔 진단용 — 지원·검증용
-└─ _internal\              파이썬 런타임 + frontend\ + webview\lib(WebView2 .NET DLL)
-```
-
-- 약 28 MB. `frontend/`(화면)와 `webview/lib`(WebView2 DLL)를 포함하고 **torch/transformers는 제외**합니다(수 GB).
-- **단일 파일**: `set AINEWSROOM_ONEFILE=1` 후 빌드 → `dist\AINewsroom.exe`(+ `-debug.exe`).
-  실행할 때마다 임시 폴더로 풀리므로 첫 창이 몇 초 늦게 뜹니다.
-- 이름 변경: `set AINEWSROOM_NAME=기사작업실`
-- 아이콘: `packaging\app.ico` 파일을 두면 자동 적용됩니다.
-
-## 실행과 CLI (개발 실행과 동일)
-
-| 명령 | 동작 |
+| Command | Behavior |
 |---|---|
-| `AINewsroom.exe` | 창 모드(기본). 창을 닫으면 종료 |
-| `AINewsroom.exe --browser` | 기본 브라우저로 열기 |
-| `AINewsroom-debug.exe --check` | 창 없이 진단 + `STARTUP CHECK PASSED` |
-| `AINewsroom-debug.exe --smoke write` / `--smoke read` | 창 검증 하네스 7항목 |
-| `--debug` | WebView2 개발자 도구 |
+| `AINewsroom.exe` | Native window; closing it stops the local HTTP core |
+| `AINewsroom.exe --browser` | Open the UI in a browser |
+| `AINewsroom-debug.exe --check` | Headless startup diagnostics; prints `STARTUP CHECK PASSED` on success |
+| `AINewsroom-debug.exe --models` | Report manifest/model installation status |
+| `AINewsroom-debug.exe --models install --from "\\server\share\models"` | Install model files with size/hash verification |
+| `AINewsroom-debug.exe --smoke write` / `--smoke read` | Opens a real window and checks UI/IndexedDB persistence; has no headless option |
+| `--debug` | Enable WebView2 developer tools |
 
-## 포터블 규칙 (중요)
+The smoke harness does **not** save/reopen an article in the encrypted core vault;
+its persistence check is an IndexedDB marker. Skip it in a headless build sandbox.
+Embedding retrieval now defaults to ONNX Runtime + tokenizers + NumPy;
+torch/transformers are required only for the explicit development override.
+Rebuild the EXE to include this change and the configured Hugging Face manifest.
+Actual download/inference and encrypted article persistence checks remain deferred.
 
-배포본은 **exe가 놓인 폴더를 앱 폴더로 씁니다**(`app_paths.py`).
+Never validate a build against the real vault or real device key. This Python
+snippet runs `--check` with environment overrides **only in the child process**,
+cleans the new temporary directories, and cannot load developer `.env` files:
 
-```
-어디든\AINewsroom\
-├─ AINewsroom.exe
-├─ .env                       ← 여기에 두면 그대로 읽습니다(없으면 OS 환경변수만 사용)
-└─ .article-workspace\        ← 자동 생성(첫 실행)
-   ├─ articles\               ← POST /api/articles/save 로 저장한 원고
-   ├─ webview\                ← 창의 IndexedDB 임시저장(WebView2 프로필)
-   ├─ logs\app.log            ← 창 모드 진단 로그
-   └─ desktop-shell-smoke.json
-```
-
-- 폴더째 복사해도 `.env`·임시저장·로그가 따라옵니다. 설치 프로그램 없이 압축 배포가 가능합니다.
-- `.env` 탐색 순서: `exe 폴더 → 상위 3단계`(가까운 파일 우선, 실제 OS 환경변수가 최우선).
-- 단일 파일 빌드에서도 앱 폴더는 **exe가 있는 폴더**입니다(임시 폴더가 아닙니다).
-
-## 요구 환경
-
-| 항목 | 내용 |
-|---|---|
-| OS | Windows 10/11 x64 |
-| WebView2 런타임 | Edge와 함께 설치됨(이 환경 `154.0.4258.48`). 없으면 Evergreen 부트스트래퍼 설치 |
-| .NET | pythonnet이 .NET Framework 4.6.2+ 사용(Windows 기본 포함) |
-| Python | **불필요**(번들에 포함) |
-
-## 로컬 AI 모델(선택)
-
-제목·부제 로컬 모델은 ONNX 변환본(`headline-ket5-onnx`, `subtitle-kobart-onnx`, 매니페스트로 설치)을
-`onnxruntime`+`tokenizers`로 돌립니다(2026-10-02부터 torch/transformers 불필요). 현재 spec 은
-`tokenizers`·`numpy`를 제외하므로 배포본에서 `USE_LOCAL_MODELS=true` 면 "로컬 모델이 설치되지 않았어요" 안내(503)가 납니다.
-로컬 모델을 쓰려면 `requirements-headline.txt`를 넣고 모델을 설치하세요.
-기본 구성은 원격 AI(`OPENAI_API_KEY`)입니다.
-
-### 모델은 첫 사용 때 내려받습니다 (설계 B, `docs/LOCAL_MODELS.md`)
-
-- 배포본은 **매니페스트만** 동봉합니다(`_internal/models_manifest.json`). 실제 모델 파일(팩트체크 2.18 GB)은
-  첫 사용 때 `<exe 폴더>/models/` 로 내려받습니다(**포터블**, SHA-256 검증·이어받기).
-- 설치/상태 확인:
-  ```
-  AINewsroom-debug.exe --models                 # 상태
-  AINewsroom-debug.exe --models install         # 매니페스트 base 에서 다운로드
-  AINewsroom-debug.exe --models install --from "\\서버\배포\models\..."   # 사내망/오프라인 설치
-  ```
-- 매니페스트 생성: `python dev/checks/make_model_manifest.py --dir <모델폴더> --id <id> --out app/models_manifest.json`
-- **저장 위치는 설치 폴더 안**입니다: 모델은 `<exe 폴더>/models/`, 허깅페이스 캐시(제목·부제)는 그 안 `models/hf/`.
-  폴더째 복사하면 모델도 따라옵니다. 쓰기 권한이 없는 곳(예: Program Files)이면 `MODELS_DIR` 를 지정하세요.
-
-## 프론트엔드 빌드 (React/Vite) — 포장 전 필수
-
-`app/frontend/` 는 **빌드 산출물**입니다(소스는 `article_editor/web/`). 예전처럼 손으로 고치는 곳이 아닙니다.
-
-```
-npm --prefix web install      # 최초 1회 (Node 20.19+ / 현재 v24 확인)
-npm --prefix web run build    # → app/frontend/ (index.html + assets/*, 코어가 서빙·spec 이 동봉)
+```python
+import os, subprocess, tempfile
+from pathlib import Path
+with tempfile.TemporaryDirectory(prefix="ainews-exe-check-") as directory:
+    root = Path(directory)
+    env = {**os.environ,
+        "AI_NEWSROOM_APPDATA": str(root / "appdata"),
+        "AI_NEWSROOM_DOCUMENTS": str(root / "documents"),
+        "AI_NEWSROOM_VAULT": str(root / "vault" / "vault.db"),
+        "AI_NEWSROOM_KEY_SERVICE": "AI Newsroom (exe-build-check)",
+        "AI_NEWSROOM_SKIP_DOTENV": "1",
+        "MODELS_DIR": str(root / "models"),
+        "DESKTOP_STORAGE_DIR": str(root / "webview"),
+    }
+    result = subprocess.run([r"dist\AINewsroom\AINewsroom-debug.exe", "--check"],
+                            env=env, timeout=60)
+    raise SystemExit(result.returncode)
 ```
 
-- 창 없이 개발: `npm --prefix web run dev` (Vite 5173, `/api` 는 로컬 코어 8765 로 프록시)
-- 옛 vanilla 프론트(`app/frontend-legacy/`)는 2026-10-02 삭제했습니다. 필요하면 git `a5e9c94` 의 `app/frontend/` 에서 복원합니다.
-- 경계 검사는 `article_editor` 에서 `npm test` (대상: `web/src`, `web/src/api/` 예외)
+Save this snippet under ignored `temp/` and run it with the selected Python from
+`article_editor/`. `--check` verifies HTTP/UI startup and reports shell/models
+status; it does not prove ONNX inference, downloads, or article persistence.
+Vault use during an isolated check can create a Credential Manager entry under the
+test service; keep any cleanup confined to that service, never the normal one.
 
-## 검증 기록 (2026-10-02, Windows · PyInstaller 6.22.3)
-
-- `AINewsroom-debug.exe --check` → `STARTUP CHECK PASSED`
-  (앱 폴더 = exe 폴더, 리소스 = `_internal`, 로컬 AI 미포함, WebView2 `154.0.4258.48`)
-- `AINewsroom.exe` 단독 실행 → 창 제목 `AI Newsroom — 기사 작성`, `127.0.0.1:8877` 리스닝, `GET /api/status` 정상
-- `--smoke write` → **7/7 PASS**, `--smoke read` → **7/7 PASS**
-  (표식 `2026-10-02T02:21:41.808Z` 가 **다른 exe 프로세스에서도 유지** = 배포본 IndexedDB 영속 확인)
-
-## 문제 해결
-
-| 증상 | 확인할 것 |
-|---|---|
-| 창이 뜨지 않음 | `AINewsroom-debug.exe --check` → `.article-workspace\logs\app.log` |
-| 다른 프로그램이 8877~8899 를 쓰는 중 | 런처는 **배타 바인딩**이라 그 포트를 건너뛰고 다음 포트에 뜹니다(남의 프로그램을 밀어내지 않습니다). 23개가 모두 차 있으면 안내 후 종료 |
-| "Windows의 PC 보호" 경고 | 코드 서명이 없어서 나오는 SmartScreen 안내. 인증서를 넣고 `signtool`로 서명 |
-| WebView2 없음 안내 | Evergreen 부트스트래퍼 설치 |
-| 내보내기·드래그·인쇄 | `desktop/README.md`의 "사람이 직접 확인해야 하는 항목" 참고 |
+If the window fails, inspect the isolated log or `%LOCALAPPDATA%/AI Newsroom/logs/app.log`.
+The core picks an available loopback port from 8877 through 8899 without displacing
+other applications. Unsigned EXEs can show Windows SmartScreen warnings; signing
+and distribution policy are reviewer decisions.

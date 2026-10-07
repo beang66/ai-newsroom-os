@@ -1,0 +1,554 @@
+/* ====================================================
+   인터뷰·녹취 스튜디오 (StudioView) 미니멀 스타일시트
+   - 흰색 배경, 매우 연한 회색 보조 배경
+   - 둥근 카드, 얇은 border, 넓은 여백, 과도한 그림자 배제
+   ==================================================== */
+
+:root {
+  --studio-bg: #f8fafc;
+  --studio-card-bg: #ffffff;
+  --studio-border: #e2e8f0;
+  --studio-border-hover: #cbd5e1;
+  --studio-text-main: #0f172a;
+  --studio-text-sub: #475569;
+  --studio-text-muted: #94a3b8;
+  --studio-primary: #1e293b;
+  --studio-primary-hover: #0f172a;
+  --studio-accent: #2563eb;
+  --studio-radius: 12px;
+}
+
+.studio-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+  color: var(--studio-text-main);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Pretendard', sans-serif;
+  line-height: 1.6;
+}
+
+/* ================= 1. 상단 헤더 ================= */
+.studio-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--studio-card-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--studio-radius);
+  margin-bottom: 20px;
+}
+
+.studio-title-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.studio-main-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--studio-text-main);
+}
+
+.studio-meta-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.85rem;
+  color: var(--studio-text-sub);
+}
+
+.studio-meta-item strong {
+  color: var(--studio-text-main);
+}
+
+.studio-meta-divider {
+  color: var(--studio-border);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.status-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.studio-header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-studio {
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border: 1px solid var(--studio-border);
+  background: #ffffff;
+  color: var(--studio-text-main);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-studio:hover {
+  background: #f1f5f9;
+  border-color: var(--studio-border-hover);
+}
+
+.btn-studio-primary {
+  background: var(--studio-primary);
+  color: #ffffff;
+  border-color: var(--studio-primary);
+}
+
+.btn-studio-primary:hover {
+  background: var(--studio-primary-hover);
+}
+
+/* ================= 2. 음성 플레이어 ================= */
+.player-card {
+  background: var(--studio-card-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--studio-radius);
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+
+.player-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.player-filename {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--studio-text-main);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-time-display {
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--studio-text-sub);
+  font-weight: 500;
+}
+
+.player-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  position: relative;
+  cursor: pointer;
+  margin-bottom: 16px;
+  outline: none;
+}
+
+.player-progress-fill {
+  height: 100%;
+  background: var(--studio-primary);
+  border-radius: 4px;
+  transition: width 0.1s linear;
+}
+
+.player-controls-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.player-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-ctrl-btn {
+  background: #ffffff;
+  border: 1px solid var(--studio-border);
+  color: var(--studio-text-main);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.player-ctrl-btn:hover {
+  background: #f1f5f9;
+}
+
+.player-play-btn {
+  background: var(--studio-primary);
+  color: #ffffff;
+  border-color: var(--studio-primary);
+  padding: 8px 20px;
+  min-width: 80px;
+}
+
+.player-play-btn:hover {
+  background: var(--studio-primary-hover);
+}
+
+.speed-select {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--studio-border);
+  font-size: 0.85rem;
+  color: var(--studio-text-main);
+  background: #ffffff;
+  cursor: pointer;
+  outline: none;
+}
+
+/* ================= 3. 메인 콘텐츠 (6 : 4 2열 구조) ================= */
+.studio-main-grid {
+  display: grid;
+  grid-template-columns: 6fr 4fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 900px) {
+  .studio-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.content-pane {
+  background: var(--studio-card-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--studio-radius);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.pane-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.pane-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--studio-text-main);
+}
+
+.pane-badge {
+  font-size: 0.78rem;
+  color: var(--studio-text-muted);
+  font-weight: 500;
+}
+
+/* ================= 4. 왼쪽: 인터뷰 녹취 세그먼트 ================= */
+.segments-scroll-area {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 650px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.segment-card {
+  border: 1px solid var(--studio-border);
+  border-radius: 10px;
+  padding: 16px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.segment-card:hover {
+  border-color: var(--studio-border-hover);
+  background: #fafafa;
+}
+
+.segment-card.active-segment {
+  border-color: var(--studio-primary);
+  background: #f8fafc;
+  box-shadow: 0 0 0 1px var(--studio-primary);
+}
+
+.segment-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.segment-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.segment-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #1e293b;
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.segment-time {
+  font-size: 0.8rem;
+  color: var(--studio-text-sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.segment-confidence {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.segment-body {
+  font-size: 0.98rem;
+  line-height: 1.7;
+  color: var(--studio-text-main);
+  margin-bottom: 10px;
+  word-break: keep-all;
+}
+
+/* 단어 시간 보기 */
+.words-toggle-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--studio-accent);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.words-toggle-btn:hover {
+  text-decoration: underline;
+}
+
+.words-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px solid var(--studio-border);
+}
+
+.word-pill {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.78rem;
+  color: #334155;
+}
+
+.word-pill small {
+  color: #94a3b8;
+  margin-left: 3px;
+}
+
+/* ================= 5. 오른쪽: 전체 Transcript ================= */
+.transcript-search-row {
+  margin-bottom: 14px;
+}
+
+.transcript-search-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--studio-border);
+  font-size: 0.9rem;
+  outline: none;
+  background: #f8fafc;
+  transition: border-color 0.15s ease;
+}
+
+.transcript-search-input:focus {
+  border-color: var(--studio-primary);
+  background: #ffffff;
+}
+
+.transcript-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.btn-small {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  border-radius: 6px;
+}
+
+.full-text-scroll-area {
+  max-height: 570px;
+  overflow-y: auto;
+  font-size: 1rem;
+  line-height: 1.85;
+  color: #1e293b;
+  padding: 16px;
+  background: #fafbfc;
+  border-radius: 8px;
+  border: 1px solid #f1f5f9;
+  white-space: pre-wrap;
+  word-break: keep-all;
+}
+
+.highlight-match {
+  background: #fef08a;
+  color: #854d0e;
+  padding: 1px 3px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+
+/* ================= 6. 하단: AI 인터뷰 분석 ================= */
+.studio-ai-card {
+  background: var(--studio-card-bg);
+  border: 1px solid var(--studio-border);
+  border-radius: var(--studio-radius);
+  padding: 24px;
+}
+
+.ai-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.ai-header-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--studio-text-main);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+.ai-section-box {
+  background: #fafbfc;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  padding: 18px 20px;
+}
+
+.ai-section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-summary-text {
+  font-size: 0.98rem;
+  line-height: 1.8;
+  color: #1e293b;
+  word-break: keep-all;
+}
+
+.ai-keypoints-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-keypoint-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: #334155;
+  line-height: 1.6;
+}
+
+.ai-bullet {
+  color: #475569;
+  font-weight: 700;
+}
+
+.ai-keywords-flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-keyword-tag {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #1e293b;
+  padding: 5px 12px;
+  border-radius: 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* 토스트 메시지 */
+.studio-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #1e293b;
+  color: #ffffff;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

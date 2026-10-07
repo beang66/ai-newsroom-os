@@ -1,0 +1,16 @@
+{
+  "name": "clova-speech-stt-project",
+  "version": "1.0.0",
+  "description": "NAVER CLOVA Speech 장문 음성인식 API 독립 테스트 프로젝트",
+  "scripts": {
+    "install:server": "npm --prefix server install",
+    "install:client": "npm --prefix client install",
+    "install:all": "npm install && npm run install:server && npm run install:client",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,green\" \"npm run dev:server\" \"npm run dev:client\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

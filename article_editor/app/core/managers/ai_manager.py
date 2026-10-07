@@ -14,6 +14,8 @@ from ..ai.transcribe import transcribe as _transcribe
 from ..errors import RequestError
 from ..storage import get_snapshot
 
+FACTCHECK_BATCH = 5  # 한 번에 판정하고 기록하는 문장 수
+
 MAX_NODES, MAX_MATERIALS, MAX_TEXT = 200, 50, 500_000
 
 
@@ -61,6 +63,14 @@ class AIManager:
         result = self._factcheck_run(payload)
         return {**result, 'snapshotId': snapshot_id} if snapshot_id is not None else result
 
+    @staticmethod
+    def _memo_part(part, by_id, stored):
+        cards = {c.get('nodeId'): c for c in part.get('critiques', [])}
+        new = {by_id[r['node_id']]: memo.pack_node(r, part['node_statuses'].get(r['node_id']), cards.get(r['node_id']))
+               for r in part['results'] if r['node_id'] in by_id}
+        memo.put_many(new)
+        stored.update(new)
+
     def _factcheck_run(self, payload):
         nodes, materials = payload.get('nodes'), payload.get('materials')
         if not isinstance(nodes, list) or not 0 < len(nodes) <= MAX_NODES:
@@ -85,13 +95,18 @@ class AIManager:
             if not self.factcheck_status()['ready']:
                 raise RequestError('팩트체크 모델이 아직 설치되지 않았어요. 모델 설치 후 다시 시도해 주세요.', 503)
             from ..ai.factcheck.service import review_workspace
-            fresh = review_workspace([nodes[i] for i in pending] if keys else nodes, materials)
             by_id = {str(nodes[i]['id']): keys[i] for i in pending}
-            cards = {c.get('nodeId'): c for c in fresh.get('critiques', [])}
-            new = {by_id[r['node_id']]: memo.pack_node(r, fresh['node_statuses'].get(r['node_id']), cards.get(r['node_id']))
-                   for r in fresh['results'] if r['node_id'] in by_id}
-            memo.put_many(new)
-            stored.update(new)
+            if keys:
+                # 5문장씩 끊어 판정하고 그때마다 기록한다 — 중간에 끊겨도 다음 실행은 이어서 한다
+                fresh = {'results': [], 'node_statuses': {}, 'critiques': []}
+                for n in range(0, len(pending), FACTCHECK_BATCH):
+                    part = review_workspace([nodes[i] for i in pending[n:n + FACTCHECK_BATCH]], materials)
+                    self._memo_part(part, by_id, stored)
+                    fresh = {**part, 'results': fresh['results'] + part['results'],
+                             'node_statuses': {**fresh['node_statuses'], **part['node_statuses']},
+                             'critiques': fresh['critiques'] + part['critiques']}
+            else:
+                fresh = review_workspace(nodes, materials)
         if not keys:
             return fresh
         from ..ai.factcheck.assertion import find_support_spans

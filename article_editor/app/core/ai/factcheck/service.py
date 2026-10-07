@@ -1,3 +1,4 @@
+import os
 import re
 import uuid
 from collections import Counter
@@ -108,6 +109,11 @@ def _retrieve_qwen_candidates(claim, node, all_chunks, limit=DEFAULT_K, indexes=
     return rank_chunks(claim, candidates, limit=limit, index=index)
 
 
+# 한 주장에 판정기를 돌리는 최대 후보 수. 근거가 없는 주장은 후보를 전부 판정해 가장 오래 걸린다(건당 ~1초).
+# ponytail: 검색 상위 5개로 제한(기본). 정확도 우선이면 FACTCHECK_JUDGE_K=10.
+JUDGE_LIMIT = max(1, int(os.environ.get('FACTCHECK_JUDGE_K', '5') or 5))
+
+
 def _judge_qwen_candidates(provider, claim, node, candidates):
     """Judge Qwen candidates one at a time and conservatively aggregate them.
 
@@ -121,7 +127,7 @@ def _judge_qwen_candidates(provider, claim, node, candidates):
     linked_ids = set(node.get("linkedSourceIds") or [])
     judged = []
 
-    for evidence in candidates:
+    for evidence in candidates[:JUDGE_LIMIT]:
         judgement = provider.judge(claim, [{"sentence": evidence["text"]}])
         status = judgement.status
         reason = judgement.reason

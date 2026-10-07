@@ -61,7 +61,7 @@ MODELS_MANIFEST = pathlib.Path(
     os.environ.get('MODELS_MANIFEST') or (BUNDLE / 'models_manifest.json')
 )
 # 허깅페이스 캐시도 모델 폴더 안에 둔다(제목·부제 모델이 사용자 프로필로 새지 않게).
-# .env 로 HF_HOME / HEADLINE_CACHE_DIR 를 주면 그쪽이 우선한다(디스크가 좁을 때).
+# .env 로 HF_HOME 을 주면 그쪽이 우선한다(디스크가 좁을 때).
 HF_HOME = os.environ.setdefault('HF_HOME', str(MODELS_DIR / 'hf'))
 LIMIT = threading.BoundedSemaphore(3)
 # 진단 출력이 인코딩 때문에 죽지 않게 한다(cp949 콘솔에서 em dash 등은 표현 불가).
@@ -74,6 +74,5 @@ for _stream in (sys.stdout, sys.stderr):
             pass
 HEADLINE_MODEL = os.environ.get('HEADLINE_MODEL', 'onebeans/keT5-news-title-gen')
 SUBTITLE_MODEL = os.environ.get('SUBTITLE_MODEL', 'gogamza/kobart-summarization')
-HEADLINE_CACHE = os.environ.get('HEADLINE_CACHE_DIR') or str(MODELS_DIR / 'hf')
 HEADLINE_LOCK = threading.Lock()
 SUBTITLE_LOCK = threading.Lock()

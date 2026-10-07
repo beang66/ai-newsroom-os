@@ -14,12 +14,6 @@ class JobManager:
         """취소 요청. queued 면 바로 cancelled, running 이면 작업자가 멈출 때까지 running. 끝난 작업은 409."""
         return _jobs.request_cancel(job_id)
 
-    def create(self, job_type, input_ref):
-        return _jobs.create_job(job_type, input_ref)
-
-    def run_in_background(self, job_id, worker):
-        return _jobs.run_in_background(job_id, worker)
-
     def recover_interrupted(self):
         """이전 실행이 남긴 queued/running 작업을 failed(INTERRUPTED) 로 정리한다."""
         return _jobs.recover_interrupted_jobs()

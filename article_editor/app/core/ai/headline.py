@@ -1,4 +1,4 @@
-import re, os, json
+import re, json
 
 from .client import structured_call
 from .local_models import generate_headline_drafts, generate_subtitle_drafts
@@ -212,7 +212,6 @@ model_input은 뉴스 제목 생성 모델이 읽을 사실 문장입니다. 지
     repair_items=[]
     for index,fact in enumerate(angle['subtitle_facts']):
         key=f'subtitle_{index+1}'
-        source=f"{fact['action']} {fact['result']}"
         evidence_source=checked_subtitle_facts[key]
         required=list(dict.fromkeys(re.findall(r'\d+(?:\.\d+)?(?:년|개월|월|일|%|건|명|㎏)?',evidence_source)))
         required += [token for token in ('최대','최소','약','이상','이하','AI 기기','시험 중') if token in evidence_source]

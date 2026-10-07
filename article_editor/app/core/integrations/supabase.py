@@ -30,10 +30,6 @@ def configured() -> bool:
     return bool(config.SUPABASE_URL and config.SUPABASE_ANON_KEY)
 
 
-def host() -> str:
-    return urllib.parse.urlsplit(config.SUPABASE_URL).hostname or ''
-
-
 def _base() -> str:
     if not configured():
         raise RequestError('Supabase 주소/키(SUPABASE_URL, SUPABASE_ANON_KEY)가 설정되어 있지 않습니다.', 503)

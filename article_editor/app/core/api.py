@@ -1,8 +1,7 @@
 import os, re, sys, json, mimetypes, urllib.request, urllib.parse, urllib.error
 from http.server import BaseHTTPRequestHandler
 
-from . import config
-from .config import PIPELINE_VERSION, HEADLINE_MODEL, SUBTITLE_MODEL, LIMIT, ROOT, FRONTEND
+from .config import PIPELINE_VERSION, HEADLINE_MODEL, SUBTITLE_MODEL, LIMIT, FRONTEND
 from .errors import RequestError
 from .ai.local_models import headline_dependencies_ready
 from .integrations.unsplash import unsplash_get, selected_unsplash

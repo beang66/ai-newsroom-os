@@ -215,15 +215,29 @@ def save_article(data):
             'fileName': identifier + '.json', 'folder': '암호화 저장소'}  # fileName·folder 는 이전 응답과의 호환용 표시값
 
 
+def latest_revisions(db, limit=None):
+    """기사마다 **최신 저장본** 한 줄 (article_id, created_at, updated_at, revision_no, draft_json) — 최근 수정순.
+    "기사가 지금 무엇을 쓰는가"(자료 사용처·읽기 모델·이어서 작업)는 모두 이 한 곳에서 읽는다."""
+    sql = ('SELECT a.id, a.created_at, a.updated_at, r.revision_no, r.draft_json FROM articles a '
+           'JOIN article_revisions r ON r.article_id = a.id AND r.revision_no = '
+           '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id) ORDER BY a.updated_at DESC')
+    return db.execute(sql + ' LIMIT ?', (limit,)).fetchall() if limit else db.execute(sql).fetchall()
+
+
+def draft_source_ids(draft):
+    """원고가 쓰는 자료 id — 올린 자료(sources[].id)와 출처로 연결한 자료(linkedSources)."""
+    found = {s.get('id') for s in draft.get('sources') or [] if isinstance(s, dict)}
+    found |= set(draft.get('linkedSources') or [])
+    return {i for i in found if isinstance(i, str)}
+
+
 def latest_article():
     """가장 최근에 저장된 원고(앱을 열면 이어서 작업). 취재자료 본문은 sources 테이블에서 다시 붙인다."""
     with vault.connect() as db:
-        row = db.execute('SELECT r.draft_json, a.updated_at FROM articles a JOIN article_revisions r ON r.article_id = a.id '
-                         'AND r.revision_no = (SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id) '
-                         'ORDER BY a.updated_at DESC LIMIT 1').fetchone()
-        if not row:
+        rows = latest_revisions(db, limit=1)
+        if not rows:
             return {'draft': None}
-        return {'draft': _full_draft(db, row[0], row[1])}
+        return {'draft': _full_draft(db, rows[0][4], rows[0][2])}
 
 
 def _full_draft(db, draft_json, saved_at):
@@ -244,11 +258,9 @@ def _article_id(value):
 
 
 def _plain(draft):
-    """미리보기용 본문 글자(content 가 없는 옛 원고는 bodyHtml 에서 태그만 걷어 낸다)."""
+    """미리보기용 본문 글자(content 가 없는 옛 원고는 bodyHtml 에서 글자만 — 고정본 body_text 와 같은 규칙)."""
     text = draft.get('content')
-    if not isinstance(text, str):
-        text = re.sub(r'<[^>]+>', '', (draft.get('bodyHtml') or '').replace('<br>', '\n').replace('</p>', '\n\n')).strip()
-    return text
+    return text if isinstance(text, str) else _text_of(draft.get('bodyHtml'))
 
 
 def list_revisions(article_id):

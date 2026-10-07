@@ -10,7 +10,7 @@ ponytail: 전부 한 번에 읽는다(기사·자료 수백 건 규모까지). �
 import datetime
 import json
 
-from . import ids, sources, vault
+from . import ids, sources, storage, vault
 
 
 def _uuid(value):
@@ -21,20 +21,16 @@ def _uuid(value):
 
 
 def _articles(db):
-    rows = db.execute('SELECT a.id, a.created_at, a.updated_at, r.revision_no, r.draft_json, '
-                      '(SELECT count(*) FROM article_revisions WHERE article_id = a.id) '
-                      'FROM articles a JOIN article_revisions r ON r.article_id = a.id AND r.revision_no = '
-                      '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id) '
-                      'ORDER BY a.updated_at DESC').fetchall()
+    counts = dict(db.execute('SELECT article_id, count(*) FROM article_revisions GROUP BY article_id').fetchall())
     out = []
-    for article_id, created, updated, revision_no, body, count in rows:
+    for article_id, created, updated, revision_no, body in storage.latest_revisions(db):
         draft = json.loads(body)
-        source_ids = {s.get('id') for s in draft.get('sources') or [] if isinstance(s, dict)}
-        source_ids |= {i for i in draft.get('linkedSources') or [] if isinstance(i, str)}
+        count = counts.get(article_id, 0)
+        source_ids = storage.draft_source_ids(draft)
         out.append({'id': _uuid(article_id), 'title': draft.get('title') or '', 'subtitle': draft.get('subtitle') or '',
                     'status': draft.get('status') or '', 'created_at': created, 'updated_at': updated,
                     'revision_no': revision_no, 'revision_count': count,
-                    'source_ids': sorted(_uuid(i) for i in source_ids if isinstance(i, str))})
+                    'source_ids': sorted(_uuid(i) for i in source_ids)})
     return out
 
 

@@ -357,3 +357,19 @@ export async function restoreRevision(articleId, revisionNo, empty) {
   const result = await core.restoreRevision(articleId, revisionNo);
   return { article: articleFromDraft(result.draft, empty), revisionNo: result.revisionNo };
 }
+
+/** 저장된 취재자료 → 자료 검색 창 항목 {id, title, category(형식), date, snippet, content(쓰는 기사)} */
+export async function listStoredSources(signal) {
+  const { sources } = await core.listSources(signal);
+  return (sources || []).map((s) => {
+    const used = (s.usedBy || []).map((u) => u.title || "제목 없는 기사");
+    return {
+      id: s.id,
+      title: s.name,
+      category: (s.format || "기타").toUpperCase(),
+      date: (s.createdAt || "").slice(0, 10),
+      snippet: `${(s.format || "").toUpperCase()} · ${Number(s.chars || 0).toLocaleString("ko-KR")}자`,
+      content: used.length ? `이 자료를 쓰는 기사: ${used.join(", ")}` : "아직 이 자료를 쓰는 기사가 없습니다.",
+    };
+  });
+}

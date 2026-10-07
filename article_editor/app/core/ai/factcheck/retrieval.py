@@ -132,7 +132,11 @@ def create_encoder():
 
 
 class VectorCache:
-    """Persistent model/role/text keyed embedding cache — 암호화 저장소(vault)의 embedding_vectors 테이블."""
+    """Persistent model/role/text keyed embedding cache — 암호화 저장소(vault)의 embedding_vectors 테이블.
+
+    자료 조각(document) 벡터는 자료를 지울 때 함께 지운다(sources.delete_source).
+    ponytail: 팩트체크 질의(query) 벡터와 화면에서 올린 임시 자료의 벡터는 어느 자료에도 묶이지 않아 계속 쌓인다(한 개 약 4KB).
+    용량이 문제되면 source_chunks 가 참조하지 않는 오래된 벡터를 정리한다."""
 
     def __init__(self, encoder: QwenEncoder | None = None):
         self.encoder = encoder if encoder is not None else create_encoder()

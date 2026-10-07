@@ -49,7 +49,9 @@
 
 ### registerMediaAsset / getMediaAsset
 - 요청: `{"kind":"image", "mime_type":"image/png|jpeg|webp|gif", "data":"data:...;base64,...", "filename"?, "caption"?, "generated"?}` 또는 `data` 대신 `"object_ref":"media:<hex>"`(이미 저장된 사진).
-- 같은 바이트면 같은 자산(id = 사진의 UUID)이고, 설명만 갱신된다. 응답: `{id, workspace_id, kind, object_ref, mime_type, filename, caption, generated, byte_size, local_uri, created_at}`.
+- 같은 바이트면 같은 자산(id = 사진의 UUID)이다. 다시 등록해도 `caption`·`filename`(사진의 기본 설명)은 처음 값을 유지하고 비어 있을 때만 채운다. `generated`(AI 생성)는 한번 켜지면 꺼지지 않는다.
+- 기사마다 다른 설명은 원고의 `photos[].caption` 에 있고, 응답의 `usages` 가 각 기사 최신 저장본에서 읽어 준다.
+- 응답: `{id, workspace_id, kind, object_ref, mime_type, filename, caption, generated, byte_size, local_uri, created_at, usages:[{articleId, title, photoId, caption}]}`.
 - 계약과의 차이: 바이트를 `data`로 함께 보낼 수 있다(코어가 암호화 저장소에 보관). 영상·오디오는 아직 받지 않는다.
 
 ### getJob / cancelJob

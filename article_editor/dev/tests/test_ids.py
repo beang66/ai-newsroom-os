@@ -10,7 +10,7 @@ _APP = Path(__file__).resolve().parents[2] / 'app'
 if str(_APP) not in sys.path:
     sys.path.insert(0, str(_APP))
 
-from core.ids import IdError, TEAM_NAMESPACE, legacy_uuid, media_id, revision_uuid, source_id, to_legacy_hex, uuid_text  # noqa: E402
+from core.ids import IdError, TEAM_NAMESPACE, legacy_uuid, media_id, revision_uuid, source_id, uuid_text  # noqa: E402
 
 # 한 번 계산해 박아 둔 값. 네임스페이스나 이름 형식('app-core:article:abc')이 바뀌면 여기서 깨진다.
 KNOWN_ARTICLE_ABC = '9faf10d9-0423-5bf9-97ce-806fc477f904'
@@ -57,13 +57,6 @@ class UuidTextTests(unittest.TestCase):
                     'urn:uuid:' + self.CANON, None, 42):
             with self.assertRaises(IdError):
                 uuid_text(bad)
-
-    def test_to_legacy_hex_round_trip(self):
-        hex_id = to_legacy_hex(self.CANON)
-        self.assertEqual(hex_id, self.CANON.replace('-', ''))
-        self.assertEqual(uuid_text(hex_id), self.CANON)
-        with self.assertRaises(IdError):
-            to_legacy_hex('not-a-uuid')
 
 
 class RevisionUuidTests(unittest.TestCase):

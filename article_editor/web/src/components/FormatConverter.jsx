@@ -483,7 +483,9 @@ export default function FormatConverter({ article, setArticle }) {
     }
   };
 
-  const runGeneration = async () => {
+  // only: 한 항목만 만들 때(["instagram"] / ["card_news"]). 없으면 왼쪽에서 체크한 항목 전부
+  const runGeneration = async (only) => {
+    const list = Array.isArray(only) ? only : targets;
     if (!article.title?.trim() || !article.content?.trim()) {
       setMessage("기사 제목과 본문을 먼저 작성해 주세요.");
       return;
@@ -492,20 +494,20 @@ export default function FormatConverter({ article, setArticle }) {
       setMessage("콘텐츠 방향을 잡을 키워드를 하나 이상 선택해 주세요.");
       return;
     }
-    if (!targets.length) {
+    if (!list.length) {
       setMessage("생성할 플랫폼 또는 카드뉴스를 선택해 주세요.");
       return;
     }
 
     setGenerating(true);
     setMessage("");
-    const nextProgress = Object.fromEntries(targets.map((id) => [id, "대기 중"]));
+    const nextProgress = Object.fromEntries(list.map((id) => [id, "대기 중"]));
     setProgress(nextProgress);
     let nextDrafts = structuredClone(drafts);
     let nextCardNews = cardNews;
     const success = [];
 
-    for (const target of targets) {
+    for (const target of list) {
       nextProgress[target] = "생성 중";
       setProgress({ ...nextProgress });
       try {
@@ -539,7 +541,7 @@ export default function FormatConverter({ article, setArticle }) {
     }
     setMessage(
       success.length
-        ? `${success.length}/${targets.length}개 결과를 실제 생성 엔진에서 받아왔습니다.`
+        ? `${success.length}/${list.length}개 결과를 실제 생성 엔진에서 받아왔습니다.`
         : "생성된 결과가 없습니다. 오류 내용을 확인해 주세요.",
     );
     setGenerating(false);
@@ -578,7 +580,7 @@ export default function FormatConverter({ article, setArticle }) {
         </div>
         <button
           type="button"
-          onClick={runGeneration}
+          onClick={() => runGeneration()}
           disabled={generating}
           className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-[#292929] px-5 py-2.5 text-xs font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -817,6 +819,20 @@ export default function FormatConverter({ article, setArticle }) {
                   : "아직 생성 결과가 없습니다."}
               </p>
             </div>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              data-testid="generate-active"
+              onClick={() => runGeneration([activeView])}
+              disabled={generating}
+              title="이 항목만 생성합니다. 이미 있는 결과와 수정 내용은 새 결과로 바뀝니다."
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#292929] px-3 py-2 text-[11px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {activeView === "card_news"
+                ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
+                : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
+            </button>
             {activeView !== "card_news" && drafts[activeView] && (
               <button
                 type="button"
@@ -827,6 +843,7 @@ export default function FormatConverter({ article, setArticle }) {
                 {copied === activeView ? "복사됨" : "전체 복사"}
               </button>
             )}
+            </div>
           </div>
 
           {activeView === "card_news" ? (

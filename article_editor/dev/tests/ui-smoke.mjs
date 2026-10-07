@@ -265,6 +265,9 @@ try {
   await converter.getByRole("button", { name: "선택 항목 생성" }).click();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value === "스모크 인스타그램 도입"), null, { timeout: 15_000 });
   await converter.getByText("2/2개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();
+  // 보고 있는 항목만 다시 생성(원본 platform-generator 의 개별 생성 버튼)
+  await converter.getByTestId("generate-active").click();
+  await converter.getByText("1/1개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();
 
   await go("보관함");
   await see("미디어 & 변환 자산");

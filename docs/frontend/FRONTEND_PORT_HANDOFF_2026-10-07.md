@@ -12,6 +12,7 @@ main의 디자인을 앱에 이식하는 작업(U1)은 아래까지 끝났습니
 - 기사 작성 화면, 팩트체크 서랍(재검증 버튼·모바일 배치 보완)
 - PhotoEditor (사진 검색은 코어 경유, 편집본·원본은 암호화 저장소에 보관)
 - FormatConverter (platform-generator와 연결, 코어 경유)
+  - **임시로 넣은 버튼(디자인 요청 대상):** main의 FormatConverter에는 "생성" 동작이 없었습니다(가짜 문구만 있음). 원본 `feature/platform-generator`에 있던 버튼 3종 중 화면에 없던 것을 앱에서 임시로 만들었습니다. 위치·모양을 main 톤에 맞게 다듬어 주세요(아래 8장 참고).
 - **순서형 검사 패널**: 코어의 실제 판정 결과를 한 건씩 보여 줍니다(유형, 문제 문장, 사유, 근거 인용, 이전/다음). 본문 하이라이트는 전부 유지하고 지금 보는 문장만 진한 윤곽입니다. **AI 수정안 칸과 "수정 적용"은 없습니다.**
 - Pretendard 폰트는 로컬 번들로 들어 있습니다(CDN 없음).
 - 본문 청크 밑줄(개발용)은 **삭제**했습니다. 자료 보기 창의 "청크 보기 (개발)" 탭만 남아 있습니다.
@@ -138,3 +139,20 @@ main의 디자인을 앱에 이식하는 작업(U1)은 아래까지 끝났습니
 `session`, `signIn`, `signOut`, `setAutoLogin`, `models`, `installModels`, `cancelModelInstall`, `assist`(제목·부제·요약·사진 검색어), `factcheckStatus`, `factcheckRun`, `factcheckExternal`(조회 전용 옵션 포함), `semanticParse`, `transcribe`, `extractText`, `openSource`, `sourceBytes`, `saveArticle`, `latestArticle`, `searchPhotos`, `photoBytes`, `trackPhoto` — 정의는 `article_editor/web/src/api/core-api.js`
 
 > **Data Map:** 보관함(ArchiveView) 화면의 **상단 메인 작업 공간**(왼쪽 위의 큰 빈 영역)에 들어갑니다(2026-10-07 확정). 탭이 아닙니다. 지금은 이식 대상이 아니고, 이 자리는 비워 두되 모양을 바꾸지 않습니다(코드에는 `data-testid="data-map-slot"`로 표시).
+
+## 8. FormatConverter(플랫폼 변환) 생성 버튼 — 원본과 현재, 디자인 요청
+
+main의 FormatConverter는 화면 틀만 있고 생성 버튼이 없었습니다. 실제 기능을 만든 `feature/platform-generator` 원본에는 생성 버튼이 3종 있었고, 현재 화면에는 아래처럼 대응합니다.
+
+| 원본 버튼 | 원본 동작 | 현재 화면 (임시) | 디자인 요청 |
+|---|---|---|---|
+| **선택한 항목 생성** (`generate-selected`) | 체크한 플랫폼과 카드뉴스를 한 번에 생성 | 화면 오른쪽 위 "선택 항목 생성" (main 디자인에 이미 자리 있음) | 현재 위치 유지 가능, 생성 중·진행 상태 표시 정리 |
+| **Instagram / Threads / Blog 원고 생성** (`generate-<플랫폼>-text`) | 플랫폼 하나만 개별 생성 | 가운데 작업 영역 제목 줄 오른쪽의 버튼 하나("**Instagram 원고 생성**", 이미 있으면 "다시 생성"). 지금 보고 있는 탭의 항목만 만듭니다(`data-testid="generate-active"`). 체크박스와 관계없이 동작 | 위치와 모양, "다시 생성하면 수정 내용이 새 결과로 바뀜"을 알리는 방식(지금은 마우스 올림 설명만) |
+| **카드뉴스만 생성** (`generate-instagram`) | 플랫폼을 체크하지 않아도 카드뉴스만 생성, 현재 카드 목록 교체 | 카드뉴스 탭에서 같은 버튼이 "카드뉴스만 생성"(있으면 "카드뉴스 다시 생성") | 위와 같음. 카드 목록이 교체됨을 알리는 방법 |
+
+원본의 작업 흐름은 **기사 불러오기 → 키워드 제안 → 키워드 선택(또는 직접 입력) → 생성 버튼**입니다. 현재 화면에서 아직 없는 것:
+- **기사 URL로 불러오기** (`import-article`): 지금은 작성 중인 기사를 그대로 씁니다. 필요한지 결정해 주세요.
+- **키워드 직접 입력**: 추천 후보만 있습니다. 원본은 후보 선택 또는 직접 입력이 가능했습니다.
+- 생성 전 점검 문구: 원본은 "키워드를 선택하세요", "기사 제목과 원문을 먼저 입력하세요", "진행 중인 요청이 끝난 뒤 실행하세요"를 버튼 옆에 보여 줬습니다. 현재는 화면 왼쪽 아래 메시지 한 줄로 보여 줍니다.
+
+참고: 원본 UI 코드는 `git show origin/feature/platform-generator:platform-generator/public/batch-generate-ui.js`, `generate-ui.js`, `text-editor-ui.js`(12장 "개별 생성 버튼")에서 볼 수 있습니다.

@@ -8,7 +8,7 @@ from .assertion import find_explicit_value_conflicts, find_near_copy_differences
 from .chunker import chunk_document
 from .semantic_provider import OnnxJudgeProvider
 from .observability import record_factcheck_event
-from .retrieval import DEFAULT_K, RETRIEVAL_LABELS, rank_chunks, retrieval_mode
+from .retrieval import DEFAULT_K, RETRIEVAL_LABELS, ChunkIndex, rank_chunks, retrieval_mode
 
 _provider = None
 
@@ -130,12 +130,19 @@ def _candidate_chunks(node, all_chunks):
     return candidates or all_chunks
 
 
-def _retrieve_qwen_candidates(claim, node, all_chunks, limit=DEFAULT_K):
-    """Retrieve semantically related evidence in the pinned Qwen3 space."""
+def _retrieve_qwen_candidates(claim, node, all_chunks, limit=DEFAULT_K, indexes=None):
+    """Retrieve semantically related evidence in the pinned Qwen3 space.
+    indexes: 한 요청 안에서 같은 후보 집합의 색인(벡터·BM25·코드)을 재사용하는 딕셔너리(없으면 매번 만든다)."""
     candidates = _candidate_chunks(node, all_chunks)
     if not candidates:
         return []
-    return rank_chunks(claim, candidates, limit=limit)
+    index = None
+    if indexes is not None:
+        key = tuple(id(chunk) for chunk in candidates)
+        index = indexes.get(key)
+        if index is None:
+            index = indexes[key] = ChunkIndex(candidates)
+    return rank_chunks(claim, candidates, limit=limit, index=index)
 
 
 def _judge_qwen_candidates(provider, claim, node, candidates):
@@ -342,6 +349,7 @@ def review_workspace(nodes, materials):
     results = []
     node_statuses = {}
     counts = Counter()
+    indexes = {}  # 같은 후보 집합은 주장마다 다시 읽고 색인하지 않는다(retrieval.ChunkIndex)
 
     for node in nodes or []:
         node_id = str(node.get("id") or "")
@@ -370,6 +378,7 @@ def review_workspace(nodes, materials):
                 node,
                 chunks,
                 limit=DEFAULT_K,
+                indexes=indexes,
             )
             aggregate = _judge_qwen_candidates(
                 provider,

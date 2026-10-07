@@ -51,10 +51,15 @@ def _projection(seed):
     return np.random.RandomState(seed).random_sample((DIM, HASH_DIM)) < DENSITY
 
 
-def densefly_top(doc_vecs, query_vec, seed, k=LIST_K):
-    """행 평균을 뺀 벡터를 희소 이진 투영 → 부호 → 해밍 거리 오름차순."""
+def doc_codes(doc_vecs, seed):
+    """문서 쪽 희소 이진 코드. 질의와 무관하므로 후보 집합마다 한 번만 만들어 재사용한다(retrieval.ChunkIndex)."""
+    return ((doc_vecs - doc_vecs.mean(axis=1, keepdims=True)) @ _projection(seed)) > 0
+
+
+def densefly_top(doc_vecs, query_vec, seed, k=LIST_K, codes=None):
+    """행 평균을 뺀 벡터를 희소 이진 투영 → 부호 → 해밍 거리 오름차순. codes: 미리 만든 doc_codes(없으면 여기서 계산)."""
     w = _projection(seed)
-    docs = ((doc_vecs - doc_vecs.mean(axis=1, keepdims=True)) @ w) > 0
+    docs = codes if codes is not None else doc_codes(doc_vecs, seed)
     q = ((query_vec - query_vec.mean()) @ w) > 0
     dist = np.count_nonzero(docs != q[None, :], axis=1)
     return np.argsort(dist, kind="stable")[:k]
@@ -68,7 +73,8 @@ def rrf(lists, k=LIST_K):
     return [d for d, _ in sorted(score.items(), key=lambda kv: (-kv[1], kv[0]))[:k]]
 
 
-def fused_order(texts, doc_vecs, query, query_vec, k=LIST_K):
-    """후보 청크 인덱스를 융합 순위대로 돌려준다(최대 k개)."""
-    lists = [densefly_top(doc_vecs, query_vec, s) for s in SEEDS] + [BM25(texts).top(query)]
+def fused_order(texts, doc_vecs, query, query_vec, k=LIST_K, bm25=None, codes=None):
+    """후보 청크 인덱스를 융합 순위대로 돌려준다(최대 k개). bm25·codes 는 미리 만든 문서 쪽 색인(없으면 여기서 계산)."""
+    bm = bm25 if bm25 is not None else BM25(texts)
+    lists = [densefly_top(doc_vecs, query_vec, s, codes=(codes or {}).get(s)) for s in SEEDS] + [bm.top(query)]
     return rrf(lists, k)

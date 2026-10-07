@@ -211,12 +211,30 @@ def get_vector_cache() -> VectorCache:
     return _cache
 
 
+class ChunkIndex:
+    """후보 청크 집합의 문서 쪽 계산(벡터 읽기·희소 코드·BM25 색인)을 한 번만 한다.
+    주장마다 같은 집합을 다시 읽고 색인하지 않도록 한 요청 안에서 재사용한다(service.review_workspace)."""
+
+    def __init__(self, chunks: list[dict], cache: VectorCache | None = None):
+        self.chunks = chunks
+        self.texts = [str(row.get("text") or "") for row in chunks]
+        self.vectors = (cache or get_vector_cache()).encode(self.texts, "document")
+        self._fusion = None
+
+    def fusion_parts(self):
+        if self._fusion is None:
+            from .fusion import BM25, SEEDS, doc_codes
+            self._fusion = (BM25(self.texts), {seed: doc_codes(self.vectors, seed) for seed in SEEDS})
+        return self._fusion
+
+
 def rank_chunks(
     query: str,
     chunks: list[dict],
     *,
     limit: int = DEFAULT_K,
     cache: VectorCache | None = None,
+    index: ChunkIndex | None = None,
 ) -> list[dict]:
     """Rank the caller-provided chunk scope.
 
@@ -228,8 +246,8 @@ def rank_chunks(
 
     limit = max(1, min(int(limit), MAX_K, len(chunks)))
     cache = cache or get_vector_cache()
-    texts = [str(row.get("text") or "") for row in chunks]
-    corpus_vectors = cache.encode(texts, "document")
+    index = index or ChunkIndex(chunks, cache)  # index 를 받으면 문서 쪽 계산을 다시 하지 않는다
+    texts, corpus_vectors = index.texts, index.vectors
     query_vector = cache.encode([query], "query")[0]
 
     scores = corpus_vectors @ query_vector
@@ -240,7 +258,8 @@ def rank_chunks(
         )
     else:
         from .fusion import LIST_K, fused_order
-        fused = fused_order(texts, corpus_vectors, query, query_vector, k=max(limit, LIST_K))
+        bm25, codes = index.fusion_parts()
+        fused = fused_order(texts, corpus_vectors, query, query_vector, k=max(limit, LIST_K), bm25=bm25, codes=codes)
         order = np.asarray(fused, dtype=np.int64)
         engine = "qwen3-embedding-0.6b-densefly2-bm25-rrf"
 

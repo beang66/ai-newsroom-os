@@ -133,7 +133,11 @@ function Workspace({ initialArticle }) {
 
         {/* Main Content Workspace */}
         <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0">
-          <main className="main-warm-container flex-1 py-6 px-4 md:px-8 min-w-0 transition-all">
+          <main className={`flex-1 min-w-0 transition-all ${
+            activeTab === "writer" || activeTab === "publish"
+              ? ""
+              : "main-warm-container py-6 px-4 md:px-8"
+          }`}>
             {(activeTab === "writer" || activeTab === "publish") && (
               <ArticleWriter
                 article={article}

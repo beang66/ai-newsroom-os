@@ -18,12 +18,16 @@ RUNTIME_DIR = WORKSPACE / 'factcheck'  # 임베딩 캐시·라우팅 로그
 
 def embedding_runtime():
     """ONNX in production; torch is an explicit development override."""
-    return 'torch' if os.getenv('FACTCHECK_EMBEDDING_RUNTIME') == 'torch' else 'onnx'
+    value = os.getenv('FACTCHECK_EMBEDDING_RUNTIME')
+    return value if value in ('torch', 'remote') else 'onnx'
 
 
 def embedding_dependencies():
+    runtime = embedding_runtime()
+    if runtime == 'remote':
+        return ('numpy',)  # 모델 계산은 서버가 한다
     names = ('onnxruntime', 'tokenizers', 'numpy')
-    return names + ('torch', 'transformers') if embedding_runtime() == 'torch' else names
+    return names + ('torch', 'transformers') if runtime == 'torch' else names
 
 
 class _Settings:

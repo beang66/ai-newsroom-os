@@ -128,7 +128,11 @@ def create_encoder():
     if paths.embedding_runtime() == 'torch':
         return QwenEncoder()
     from .onnx_embedding import OnnxQwenEncoder
-    return OnnxQwenEncoder(paths.EMBEDDING_DIR, query_input)
+    local = OnnxQwenEncoder(paths.EMBEDDING_DIR, query_input)
+    if paths.embedding_runtime() == 'remote':
+        from .remote_embedding import RemoteQwenEncoder
+        return RemoteQwenEncoder(TASK, fallback=local)
+    return local
 
 
 class VectorCache:

@@ -108,6 +108,23 @@ class ServerTests(ApiTestCase):
         with patch.object(api, 'unsplash_get', return_value={'results': []}):
             self.assertEqual(json.loads(self.request('/api/unsplash/search?q=forest')[1]), {'photos': [], 'page': 1, 'totalPages': 0, 'total': 0})
 
+    def test_platform_keywords_route_uses_core_manager(self):
+        expected = {'candidates': [{'keyword': '핵심', 'reason': '중요', 'source_evidence': ['본문']}]}
+        with patch.object(api.CORE.platform, 'keywords', return_value=expected) as call:
+            status, raw, _ = self.request('/api/platform/keywords', {'article': {'title': '제목', 'content': '본문'}})
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(raw), expected)
+        call.assert_called_once()
+
+    def test_platform_generate_route_uses_core_manager(self):
+        expected = {'success': True, 'draft': {'platform': 'threads', 'opening': '초안'}}
+        body = {'platform': 'threads', 'payload': {'article': {'title': '제목', 'content': '본문'}, 'selected_keywords': ['핵심']}}
+        with patch.object(api.CORE.platform, 'generate', return_value=expected) as call:
+            status, raw, _ = self.request('/api/platform/generate', body)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(raw), expected)
+        call.assert_called_once_with(body)
+
     def test_search_pagination(self):
         with patch.object(api, 'unsplash_get', return_value={'results': [{'id': 'four'}], 'total_pages': 3, 'total': 7}) as call:
             status, raw, _ = self.request('/api/unsplash/search?q=forest&page=2')

@@ -304,6 +304,9 @@ export async function saveDraft(article, articleId) {
     sources: (article.sources || []).map(({ text, ...meta }) => meta), // 본문 텍스트는 sources/<id>/text.txt 에 있다
     status: article.status || "",
     createdAt: article.createdAt || "",
+    platformDrafts: article.platformDrafts || {},
+    cardNews: article.cardNews || null,
+    platformGeneration: article.platformGeneration || {},
   });
   return d.articleId;
 }
@@ -327,5 +330,8 @@ export async function loadLatestArticle(empty) {
     linkedSources: draft.linkedSources || [],
     sources: draft.sources || [],
     photos: (draft.photos || []).map((photo) => ({ ...photo, url: photo.data || photo.url || "" })),
+    platformDrafts: draft.platformDrafts || {},
+    cardNews: draft.cardNews && !Array.isArray(draft.cardNews) ? draft.cardNews : null,
+    platformGeneration: draft.platformGeneration || {},
   };
 }

@@ -1,1045 +1,847 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useMemo, useState } from "react";
 import {
-  Sparkles,
-  Upload,
-  Image as ImageIcon,
-  Copy,
-  Printer,
-  Send,
   Check,
-  Sliders,
-  Download,
+  Copy,
   FileText,
   Hash,
-  Share2,
-  Heart,
-  MessageCircle,
-  Repeat,
-  Bookmark,
-  MoreHorizontal,
-  ChevronRight,
-  Move,
-  Maximize2,
-  Layers,
-  ArrowRight,
-  CheckSquare,
-  Square,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw
+  Image as ImageIcon,
+  Loader2,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
+import { generatePlatform, suggestPlatformKeywords } from "../api/platform";
 
-// 플랫폼 전용 인라인 커스텀 아이콘
-const InstagramIcon = ({ className = "w-5 h-5" }) => (
-  <svg viewBox="0 0 24 24" className={className} stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
-  </svg>
-);
+const PLATFORM_LIST = [
+  { id: "instagram", label: "Instagram", badge: "피드 원고" },
+  { id: "threads", label: "Threads", badge: "짧은 요약" },
+  { id: "blog", label: "Blog", badge: "장문 원고" },
+];
 
-const ThreadsIcon = ({ className = "w-5 h-5" }) => (
-  <svg viewBox="0 0 24 24" className={className} stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="4" />
-    <path d="M16 12v1a3 3 0 0 1-6 0v-1a6 6 0 1 1 11.6 2.2" />
-  </svg>
-);
+const VIEW_LABELS = {
+  instagram: "Instagram",
+  threads: "Threads",
+  blog: "Blog",
+  card_news: "카드뉴스",
+};
 
-const XTwitterIcon = ({ className = "w-4 h-4" }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="currentColor">
-    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-  </svg>
-);
+const roleLabel = (role) =>
+  role === "cover" ? "표지" : role === "closing" ? "마무리" : "본문";
 
-export default function FormatConverter({ article }) {
-  // 1. 변환 대상 기사 — 지금 작성 중인 기사
-  const selectedArticle = article;
+function Evidence({ quotes, valid }) {
+  const list = Array.isArray(quotes) ? quotes.filter(Boolean) : [];
+  if (!list.length) return null;
+  return (
+    <details className="mt-2 rounded-xl border border-[#DDD6CB] bg-[#FAF8F5] px-3 py-2 text-[11px] text-[#6F685F]">
+      <summary className="cursor-pointer font-bold text-[#57514A]">
+        원문 근거 {valid === false ? "· 확인 필요" : ""}
+      </summary>
+      <ul className="mt-2 space-y-1.5 list-disc pl-4">
+        {list.map((quote, index) => (
+          <li key={index} className="leading-relaxed">{quote}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
 
-  // 2. 플랫폼 다중 선택
-  const [selectedPlatforms, setSelectedPlatforms] = useState(["instagram"]);
+function TextArea({ label, value, onChange, rows = 4, evidence, valid }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[11px] font-extrabold text-[#57514A]">{label}</label>
+      <textarea
+        value={value || ""}
+        rows={rows}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full resize-y rounded-2xl border border-[#DDD6CB] bg-white px-4 py-3 text-sm leading-7 text-[#292929] outline-none transition focus:border-[#292929]"
+      />
+      <Evidence quotes={evidence} valid={valid} />
+    </div>
+  );
+}
 
-  // 3. 다중 선택 시 현재 작업 중인 플랫폼 탭
-  const [activePlatformTab, setActivePlatformTab] = useState("instagram");
+function draftToText(platform, draft) {
+  if (!draft) return "";
+  if (platform === "instagram") {
+    return [
+      draft.opening,
+      ...(draft.paragraphs || []),
+      draft.closing,
+      (draft.hashtags || []).join(" "),
+    ].filter(Boolean).join("\n\n");
+  }
+  if (platform === "threads") {
+    return [draft.opening, ...(draft.paragraphs || []), draft.closing]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+  if (platform === "blog") {
+    return [
+      draft.title,
+      draft.intro,
+      ...(draft.sections || []).flatMap((section) => [section.heading, section.body]),
+      draft.conclusion,
+    ].filter(Boolean).join("\n\n");
+  }
+  return "";
+}
 
-  // ponytail: 해시태그 추천 AI 연결 전까지 빈 목록
-  const tagIdeas = [];
-  // 갤러리 = 기사에 넣은 사진들
-  const sampleImages = (article.photos || []).map((p) => p.url).filter(Boolean);
-  // 플랫폼 초안은 기사 제목·부제에서 시작한다(해시태그는 기자가 직접)
-  const draft = (overrides) => ({
-    title: article.title,
-    caption: article.subtitle,
-    text: [article.title, article.subtitle].filter(Boolean).join("\n\n"),
-    hashtags: [],
-    image: sampleImages[0] || "",
-    aspectRatio: "16:9",
-    zoom: 100,
-    positionX: 50,
-    positionY: 50,
-    ...overrides,
-  });
+function PlatformDraftEditor({ platform, draft, onChange, onCopy, copied }) {
+  if (!draft) {
+    return (
+      <div className="rounded-3xl border border-dashed border-[#D7D0C6] bg-white/70 p-10 text-center">
+        <Sparkles className="mx-auto mb-3 h-7 w-7 text-[#8E8982]" />
+        <p className="text-sm font-bold text-[#57514A]">
+          아직 {VIEW_LABELS[platform]} 원고가 없습니다.
+        </p>
+        <p className="mt-1 text-xs text-[#8E8982]">
+          왼쪽에서 키워드를 선택한 뒤 실제 생성 엔진을 실행하세요.
+        </p>
+      </div>
+    );
+  }
 
-  // 4. 플랫폼별 맞춤 데이터 상태 (이미지, 비율, 크기, 위치, 텍스트, 해시태그)
-  const [platformData, setPlatformData] = useState(() => ({
-    instagram: draft({ aspectRatio: "1:1" }),
-    threads: draft(),
-    twitter: draft(),
-  }));
+  const changed = (mutate) => {
+    const next = structuredClone(draft);
+    mutate(next);
+    next.validation_status = "needs_recheck";
+    next.evidence_status = "needs_recheck";
+    onChange(next);
+  };
 
-  // 마우스 커서 기반 드래그 이동 상태
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0, posX: 50, posY: 50 });
-  const [showGalleryPopover, setShowGalleryPopover] = useState(false);
+  if (platform === "instagram") {
+    return (
+      <div className="space-y-4">
+        <TextArea
+          label="도입"
+          value={draft.opening}
+          onChange={(value) => changed((next) => { next.opening = value; })}
+          rows={3}
+          evidence={draft.block_evidence?.opening}
+        />
+        {(draft.paragraphs || []).map((paragraph, index) => (
+          <TextArea
+            key={index}
+            label={`본문 ${index + 1}`}
+            value={paragraph}
+            onChange={(value) => changed((next) => { next.paragraphs[index] = value; })}
+            evidence={draft.block_evidence?.paragraphs?.[index]}
+          />
+        ))}
+        <TextArea
+          label="마무리"
+          value={draft.closing}
+          onChange={(value) => changed((next) => { next.closing = value; })}
+          rows={3}
+          evidence={draft.block_evidence?.closing}
+        />
+        <TextArea
+          label="해시태그 · 3~5개"
+          value={(draft.hashtags || []).join(" ")}
+          onChange={(value) => changed((next) => {
+            next.hashtags = value.trim() ? value.trim().split(/\s+/u) : [];
+          })}
+          rows={2}
+        />
+      </div>
+    );
+  }
 
-  const fileInputRef = useRef(null);
-  const [copiedStatus, setCopiedStatus] = useState("");
-  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
-  const [isPublishing, setIsPublishing] = useState(false);
-  const [publishedTarget, setPublishedTarget] = useState("전체");
+  if (platform === "threads") {
+    return (
+      <div className="space-y-4">
+        <TextArea
+          label="제목"
+          value={draft.opening}
+          onChange={(value) => changed((next) => { next.opening = value; })}
+          rows={3}
+          evidence={draft.block_evidence?.opening}
+          valid={draft.block_evidence_valid?.opening}
+        />
+        {(draft.paragraphs || []).map((paragraph, index) => (
+          <TextArea
+            key={index}
+            label={`핵심 문장 ${index + 1}`}
+            value={paragraph}
+            onChange={(value) => changed((next) => { next.paragraphs[index] = value; })}
+            rows={3}
+            evidence={draft.block_evidence?.paragraphs?.[index]}
+            valid={draft.block_evidence_valid?.paragraphs?.[index]}
+          />
+        ))}
+      </div>
+    );
+  }
 
-  // 플랫폼 정의
-  const platforms = [
-    {
-      id: "instagram",
-      label: "Instagram",
-      desc: "이미지 중심 · 1:1 / 4:5 / 16:9 · 캡션 및 해시태그",
-      icon: InstagramIcon,
-      badge: "피드 포맷",
-      themeColor: "from-purple-500 to-pink-500"
-    },
-    {
-      id: "threads",
-      label: "Threads",
-      desc: "텍스트 중심 · 자유로운 토론 · 미디어 카드 첨부",
-      icon: ThreadsIcon,
-      badge: "스레드 포맷",
-      themeColor: "from-slate-800 to-slate-950"
-    },
-    {
-      id: "twitter",
-      label: "X (Twitter)",
-      desc: "짧고 간결한 문구 · 신속한 뉴스 브리핑 · 미디어",
-      icon: XTwitterIcon,
-      badge: "트윗 포맷",
-      themeColor: "from-blue-500 to-slate-900"
-    }
-  ];
+  return (
+    <div className="space-y-4">
+      <TextArea
+        label="제목"
+        value={draft.title}
+        onChange={(value) => changed((next) => { next.title = value; })}
+        rows={3}
+      />
+      <TextArea
+        label="도입"
+        value={draft.intro}
+        onChange={(value) => changed((next) => { next.intro = value; })}
+      />
+      {(draft.sections || []).map((section, index) => (
+        <div key={section.section_id || index} className="rounded-2xl border border-[#DDD6CB] bg-[#FAF8F5]/70 p-3 space-y-3">
+          <TextArea
+            label={`소제목 ${index + 1}`}
+            value={section.heading}
+            onChange={(value) => changed((next) => { next.sections[index].heading = value; })}
+            rows={2}
+          />
+          <TextArea
+            label={`본문 ${index + 1}`}
+            value={section.body}
+            onChange={(value) => changed((next) => { next.sections[index].body = value; })}
+            evidence={section.source_evidence}
+            valid={section.evidence_valid}
+          />
+        </div>
+      ))}
+      <TextArea
+        label="결론"
+        value={draft.conclusion}
+        onChange={(value) => changed((next) => { next.conclusion = value; })}
+      />
+      <Evidence quotes={draft.source_evidence} valid={draft.evidence_valid} />
+      <button
+        type="button"
+        onClick={onCopy}
+        className="inline-flex items-center gap-2 rounded-full border border-[#292929] bg-[#292929] px-4 py-2 text-xs font-extrabold text-white"
+      >
+        <Copy className="h-3.5 w-3.5" />
+        {copied ? "복사됨" : "원고 전체 복사"}
+      </button>
+    </div>
+  );
+}
 
-  // 플랫폼 다중 토글 핸들러
-  const togglePlatform = (platformId) => {
-    setSelectedPlatforms((prev) => {
-      let next;
-      if (prev.includes(platformId)) {
-        next = prev.filter((p) => p !== platformId);
-      } else {
-        next = [...prev, platformId];
+function CardNewsEditor({ draft, article, onChange }) {
+  const cards = draft?.cards || [];
+  const [activeIndex, setActiveIndex] = useState(0);
+  const active = cards[activeIndex] || null;
+  const photos = article.photos || [];
+
+  if (!active) {
+    return (
+      <div className="rounded-3xl border border-dashed border-[#D7D0C6] bg-white/70 p-10 text-center">
+        <ImageIcon className="mx-auto mb-3 h-7 w-7 text-[#8E8982]" />
+        <p className="text-sm font-bold text-[#57514A]">아직 생성된 카드뉴스가 없습니다.</p>
+      </div>
+    );
+  }
+
+  const patchCard = (patch) => {
+    const next = structuredClone(draft);
+    next.cards[activeIndex] = {
+      ...next.cards[activeIndex],
+      ...patch,
+      validation_status: "needs_recheck",
+    };
+    next.validation_status = "needs_recheck";
+    onChange(next);
+  };
+
+  const patchContent = (key, value) => {
+    patchCard({ content: { ...active.content, [key]: value } });
+  };
+
+  const selectedPhoto = photos.find((photo) => photo.id === active.photoId);
+  const layout = active.design?.layout || "standard";
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_220px] gap-5">
+      <div className="space-y-4">
+        <div className="mx-auto w-full max-w-[560px]">
+          <div
+            className="relative aspect-[4/5] overflow-hidden rounded-[30px] bg-[#18181B] shadow-xl border border-black/10"
+            style={selectedPhoto?.url ? {
+              backgroundImage: `linear-gradient(rgba(0,0,0,.38),rgba(0,0,0,.7)),url("${selectedPhoto.url}")`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            } : undefined}
+          >
+            <div className="absolute inset-0 flex flex-col justify-between p-8 md:p-10 text-white">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-[0.18em] text-white/65">
+                  {active.content?.keyword || roleLabel(active.role)}
+                </span>
+              </div>
+              <div className="space-y-4">
+                <textarea
+                  value={active.content?.headline || ""}
+                  onChange={(event) => patchContent("headline", event.target.value)}
+                  rows={3}
+                  className="w-full resize-none bg-transparent text-2xl md:text-3xl font-black leading-tight outline-none placeholder:text-white/40"
+                  placeholder="카드 제목"
+                />
+                <textarea
+                  value={active.content?.body || ""}
+                  onChange={(event) => patchContent("body", event.target.value)}
+                  rows={layout === "standard" ? 5 : 6}
+                  className="w-full resize-none bg-transparent text-sm md:text-base leading-7 text-white/85 outline-none placeholder:text-white/40"
+                  placeholder="카드 본문"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-[#DDD6CB] bg-white p-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-[11px] font-extrabold text-[#57514A]">카드 키워드</label>
+              <input
+                value={active.content?.keyword || ""}
+                onChange={(event) => patchContent("keyword", event.target.value)}
+                className="w-full rounded-xl border border-[#DDD6CB] px-3 py-2 text-sm outline-none focus:border-[#292929]"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[11px] font-extrabold text-[#57514A]">정보 배치</label>
+              <select
+                value={layout}
+                onChange={(event) => patchCard({
+                  design: { ...(active.design || {}), layout: event.target.value },
+                })}
+                className="w-full rounded-xl border border-[#DDD6CB] bg-white px-3 py-2 text-sm outline-none"
+              >
+                <option value="standard">설명형</option>
+                <option value="comparison">비교형</option>
+                <option value="list">목록형</option>
+                <option value="steps">단계형</option>
+                <option value="stat">수치 강조형</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[11px] font-extrabold text-[#57514A]">기사 사진 사용</label>
+            <select
+              value={active.photoId || ""}
+              onChange={(event) => patchCard({ photoId: event.target.value || "" })}
+              className="w-full rounded-xl border border-[#DDD6CB] bg-white px-3 py-2 text-sm outline-none"
+            >
+              <option value="">검정 배경</option>
+              {photos.map((photo, index) => (
+                <option key={photo.id || index} value={photo.id || ""}>
+                  {photo.caption || `기사 사진 ${index + 1}`}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <Evidence quotes={active.source_evidence} valid={active.evidence_valid} />
+        </div>
+      </div>
+
+      <aside className="space-y-2">
+        <div className="flex items-center justify-between pb-2">
+          <span className="text-xs font-black text-[#292929]">전체 카드</span>
+          <span className="rounded-full bg-[#EFECE6] px-2 py-1 text-[10px] font-bold text-[#57514A]">
+            {cards.length}장
+          </span>
+        </div>
+        {cards.map((card, index) => (
+          <button
+            key={card.card_id || index}
+            type="button"
+            onClick={() => setActiveIndex(index)}
+            className={`w-full rounded-2xl border p-3 text-left transition ${
+              index === activeIndex
+                ? "border-[#292929] bg-[#292929] text-white"
+                : "border-[#DDD6CB] bg-white text-[#292929] hover:bg-[#FAF8F5]"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-bold opacity-70">
+                {index + 1} · {roleLabel(card.role)}
+              </span>
+              {card.evidence_valid === false && (
+                <span className="text-[9px] font-bold text-amber-500">근거 확인</span>
+              )}
+            </div>
+            <p className="mt-1 line-clamp-2 text-xs font-extrabold leading-5">
+              {card.content?.headline || "제목 없음"}
+            </p>
+          </button>
+        ))}
+      </aside>
+    </div>
+  );
+}
+
+export default function FormatConverter({ article, setArticle }) {
+  const savedConfig = article.platformGeneration || {};
+  const [selectedPlatforms, setSelectedPlatforms] = useState(
+    Array.isArray(savedConfig.selectedPlatforms) && savedConfig.selectedPlatforms.length
+      ? savedConfig.selectedPlatforms
+      : ["instagram", "threads"],
+  );
+  const [includeCardNews, setIncludeCardNews] = useState(savedConfig.includeCardNews === true);
+  const [requirements, setRequirements] = useState(savedConfig.requirements || "");
+  const [keywordCandidates, setKeywordCandidates] = useState([]);
+  const [selectedKeywords, setSelectedKeywords] = useState(savedConfig.selectedKeywords || []);
+  const [drafts, setDrafts] = useState(article.platformDrafts || {});
+  const initialCardNews = article.cardNews && !Array.isArray(article.cardNews) ? article.cardNews : null;
+  const [cardNews, setCardNews] = useState(initialCardNews);
+  const [activeView, setActiveView] = useState(
+    Object.keys(article.platformDrafts || {})[0] || (initialCardNews ? "card_news" : "instagram"),
+  );
+  const [keywordLoading, setKeywordLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState({});
+  const [message, setMessage] = useState("");
+  const [copied, setCopied] = useState("");
+
+  const targets = useMemo(
+    () => [...selectedPlatforms, ...(includeCardNews ? ["card_news"] : [])],
+    [selectedPlatforms, includeCardNews],
+  );
+
+  const persist = (nextDrafts = drafts, nextCardNews = cardNews, configPatch = {}) => {
+    if (!setArticle) return;
+    setArticle((previous) => ({
+      ...previous,
+      platformDrafts: nextDrafts,
+      cardNews: nextCardNews,
+      platformGeneration: {
+        ...(previous.platformGeneration || {}),
+        selectedPlatforms,
+        includeCardNews,
+        selectedKeywords,
+        requirements,
+        ...configPatch,
+      },
+    }));
+  };
+
+  const togglePlatform = (id) => {
+    setSelectedPlatforms((current) => {
+      const next = current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id];
+      if (!next.includes(activeView) && activeView !== "card_news") {
+        setActiveView(next[0] || (includeCardNews ? "card_news" : "instagram"));
       }
-      if (!next.includes(activePlatformTab) && next.length > 0) {
-        setActivePlatformTab(next[0]);
+      if (setArticle) {
+        setArticle((previous) => ({
+          ...previous,
+          platformGeneration: {
+            ...(previous.platformGeneration || {}),
+            selectedPlatforms: next,
+            includeCardNews,
+            selectedKeywords,
+            requirements,
+          },
+        }));
       }
       return next;
     });
   };
 
-  // 플랫폼 데이터 필드 업데이트
-  const updatePlatformField = (platform, field, value) => {
-    setPlatformData((prev) => ({
-      ...prev,
-      [platform]: {
-        ...prev[platform],
-        [field]: value
+  const toggleKeyword = (keyword) => {
+    setSelectedKeywords((current) => {
+      const next = current.includes(keyword)
+        ? current.filter((item) => item !== keyword)
+        : [...current, keyword];
+      if (setArticle) {
+        setArticle((previous) => ({
+          ...previous,
+          platformGeneration: {
+            ...(previous.platformGeneration || {}),
+            selectedPlatforms,
+            includeCardNews,
+            selectedKeywords: next,
+            requirements,
+          },
+        }));
       }
-    }));
-  };
-
-  // 이미지 업로드
-  const handleImageUpload = (e, platform) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (uploadEvt) => {
-        if (uploadEvt.target?.result) {
-          updatePlatformField(platform, "image", uploadEvt.target.result);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  // 마우스 커서 기반 드래그 핸들러 (Pan)
-  const handleMouseDown = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-    setDragStart({
-      x: e.clientX,
-      y: e.clientY,
-      posX: platformData[activePlatformTab].positionX,
-      posY: platformData[activePlatformTab].positionY
+      return next;
     });
   };
 
-  const handleMouseMove = (e) => {
-    if (!isDragging) return;
-    const deltaX = e.clientX - dragStart.x;
-    const deltaY = e.clientY - dragStart.y;
-
-    // 감도 조절 (픽셀 이동을 % 이동으로 변환)
-    const newX = Math.min(100, Math.max(0, dragStart.posX - deltaX * 0.25));
-    const newY = Math.min(100, Math.max(0, dragStart.posY - deltaY * 0.25));
-
-    updatePlatformField(activePlatformTab, "positionX", Math.round(newX));
-    updatePlatformField(activePlatformTab, "positionY", Math.round(newY));
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  // 마우스 휠로 Zoom 확대/축소
-  const handleWheel = (e) => {
-    e.preventDefault();
-    const currentZoom = platformData[activePlatformTab].zoom;
-    const zoomStep = e.deltaY < 0 ? 5 : -5;
-    const newZoom = Math.min(180, Math.max(80, currentZoom + zoomStep));
-    updatePlatformField(activePlatformTab, "zoom", newZoom);
-  };
-
-  // 해시태그 추가
-  const addHashtag = (platform, tag) => {
-    const currentText = platformData[platform].text;
-    if (!currentText.includes(tag)) {
-      updatePlatformField(platform, "text", `${currentText} ${tag}`);
+  const suggestKeywords = async () => {
+    if (!article.title?.trim() || !article.content?.trim()) {
+      setMessage("기사 제목과 본문을 먼저 작성해 주세요.");
+      return;
+    }
+    setKeywordLoading(true);
+    setMessage("");
+    try {
+      const candidates = await suggestPlatformKeywords(article);
+      setKeywordCandidates(candidates);
+      if (!candidates.length) setMessage("추천할 키워드를 찾지 못했습니다.");
+    } catch (error) {
+      setMessage(error.message || "키워드 추천에 실패했습니다.");
+    } finally {
+      setKeywordLoading(false);
     }
   };
 
-  // 텍스트 복사
-  const handleCopyText = (platform) => {
-    navigator.clipboard.writeText(platformData[platform].text);
-    setCopiedStatus(platform);
-    setTimeout(() => setCopiedStatus(""), 2000);
+  const runGeneration = async () => {
+    if (!article.title?.trim() || !article.content?.trim()) {
+      setMessage("기사 제목과 본문을 먼저 작성해 주세요.");
+      return;
+    }
+    if (!selectedKeywords.length) {
+      setMessage("콘텐츠 방향을 잡을 키워드를 하나 이상 선택해 주세요.");
+      return;
+    }
+    if (!targets.length) {
+      setMessage("생성할 플랫폼 또는 카드뉴스를 선택해 주세요.");
+      return;
+    }
+
+    setGenerating(true);
+    setMessage("");
+    const nextProgress = Object.fromEntries(targets.map((id) => [id, "대기 중"]));
+    setProgress(nextProgress);
+    let nextDrafts = structuredClone(drafts);
+    let nextCardNews = cardNews;
+    const success = [];
+
+    for (const target of targets) {
+      nextProgress[target] = "생성 중";
+      setProgress({ ...nextProgress });
+      try {
+        const generated = await generatePlatform(
+          target,
+          article,
+          selectedKeywords,
+          requirements,
+        );
+        if (!generated) throw new Error("생성 결과가 비어 있습니다.");
+        if (target === "card_news") nextCardNews = generated;
+        else nextDrafts[target] = generated;
+        nextProgress[target] = "완료";
+        success.push(target);
+      } catch (error) {
+        nextProgress[target] = `실패 · ${error.message || "생성 오류"}`;
+      }
+      setProgress({ ...nextProgress });
+    }
+
+    setDrafts(nextDrafts);
+    setCardNews(nextCardNews);
+    if (success.length) {
+      setActiveView(success[0]);
+      persist(nextDrafts, nextCardNews, {
+        selectedPlatforms,
+        includeCardNews,
+        selectedKeywords,
+        requirements,
+      });
+    }
+    setMessage(
+      success.length
+        ? `${success.length}/${targets.length}개 결과를 실제 생성 엔진에서 받아왔습니다.`
+        : "생성된 결과가 없습니다. 오류 내용을 확인해 주세요.",
+    );
+    setGenerating(false);
   };
 
-  // 인쇄 기능
-  const handlePrint = () => {
-    window.print();
+  const updateDraft = (platform, next) => {
+    const nextDrafts = { ...drafts, [platform]: next };
+    setDrafts(nextDrafts);
+    persist(nextDrafts, cardNews);
   };
 
-  // 배포 시뮬레이션
-  const handlePublish = (targetName = "전체") => {
-    setPublishedTarget(targetName);
-    setIsPublishing(true);
-    setTimeout(() => {
-      setIsPublishing(false);
-      setIsPublishModalOpen(true);
-    }, 1200);
+  const updateCardNews = (next) => {
+    setCardNews(next);
+    persist(drafts, next);
   };
 
-  const currentPlatformInfo = platforms.find((p) => p.id === activePlatformTab);
-  const currentData = platformData[activePlatformTab];
+  const copyDraft = async (platform) => {
+    await navigator.clipboard.writeText(draftToText(platform, drafts[platform]));
+    setCopied(platform);
+    window.setTimeout(() => setCopied(""), 1600);
+  };
+
+  const currentDraft = activeView === "card_news" ? cardNews : drafts[activeView];
 
   return (
-    <div 
-      className="w-full space-y-6 animate-float-in"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-    >
-
-      {/* ──────────────────────────────────────────
-          1. 상단: 전환 중인 기사 표시 & 콤팩트 기사 변경 셀렉터
-          (기존의 불필요한 큰 상단 바를 제거하고 시원하게 상향 정렬)
-         ────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-[11px] font-extrabold px-3 py-1 bg-[#EFECE6] text-[#23211F] rounded-full border border-[#DDD6CB] flex-shrink-0">
-            전환 중인 기사
+    <div className="w-full space-y-5 animate-float-in text-[#292929]" data-testid="format-converter">
+      <div className="flex flex-col gap-3 border-b border-[#E7E2D9] pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <span className="block text-[11px] font-mono font-bold uppercase tracking-[0.18em] text-[#756F67]">
+            NEWSROOM / CONTENT STUDIO
           </span>
-          <h2 className="text-sm md:text-base font-black text-slate-900 truncate">
-            {selectedArticle.title || "(제목 없음)"}
-          </h2>
+          <h2 className="text-xl font-black tracking-tight md:text-2xl">플랫폼 콘텐츠 편집실</h2>
+          <p className="mt-1 text-xs text-[#8E8982]">
+            화면은 FormatConverter, 생성은 병합된 platform-generator가 담당합니다.
+          </p>
         </div>
-
+        <button
+          type="button"
+          onClick={runGeneration}
+          disabled={generating}
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-[#292929] px-5 py-2.5 text-xs font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          {generating ? "선택 항목 생성 중" : "선택 항목 생성"}
+        </button>
       </div>
 
-      {/* ──────────────────────────────────────────
-          2단 메인 레이아웃:
-          [왼쪽] 플랫폼 선택 패널 (w-full lg:w-72 xl:w-80)
-          [오른쪽] 실시간 피드 메인 편집 캔버스 (flex-1)
-         ────────────────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row items-start gap-6 w-full">
-
-        {/* ──────────────────────────────────────────
-            [왼쪽] 플랫폼 선택 & 컨트롤 패널
-           ────────────────────────────────────────── */}
-        <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 space-y-4">
-          
-          {/* 플랫폼 선택 카드 컨테이너 */}
-          <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900">배포 플랫폼 선택</h3>
-                <p className="text-[11px] text-slate-400 font-medium">다중 선택 가능 (체크박스)</p>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="space-y-4">
+          <section className="rounded-3xl border border-[#DDD6CB] bg-white/90 p-5 shadow-sm">
+            <div className="flex items-start gap-3 border-b border-[#EFECE6] pb-4">
+              <FileText className="mt-0.5 h-4 w-4 text-[#8E8982]" />
+              <div className="min-w-0">
+                <span className="text-[10px] font-bold text-[#8E8982]">작성 중인 기사</span>
+                <p className="mt-0.5 line-clamp-2 text-sm font-black leading-5">
+                  {article.title || "제목 없는 기사"}
+                </p>
+                <span className="mt-1 block text-[10px] text-[#8E8982]">
+                  본문 {(article.content || "").length.toLocaleString()}자
+                </span>
               </div>
-              <span className="text-[11px] font-extrabold px-2.5 py-1 bg-[#EFECE6] text-[#23211F] rounded-full border border-[#DDD6CB]">
-                {selectedPlatforms.length}개 선택됨
-              </span>
             </div>
 
-            {/* 3개 플랫폼 체크박스 카드 리스트 */}
-            <div className="space-y-2.5">
-              {platforms.map((p) => {
-                const isSelected = selectedPlatforms.includes(p.id);
-                const Icon = p.icon;
-
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => togglePlatform(p.id)}
-                    className={`p-3.5 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center justify-between group active:scale-98 ${
-                      isSelected
-                        ? "bg-[#23211F] text-[#FAF8F5] border-[#23211F] shadow-sm"
-                        : "bg-[#EFECE6]/50 hover:bg-[#EFECE6] text-[#23211F] border-[#DDD6CB]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      {/* 체크박스 UI */}
-                      <div className="flex-shrink-0">
-                        {isSelected ? (
-                          <div className="w-5 h-5 rounded-md bg-white text-[#23211F] flex items-center justify-center shadow-xs">
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          </div>
-                        ) : (
-                          <div className="w-5 h-5 rounded-md border-2 border-[#DDD6CB] bg-white group-hover:border-[#23211F] transition" />
-                        )}
-                      </div>
-
-                      {/* 플랫폼 아이콘 & 명칭 */}
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <Icon className={`w-4 h-4 ${isSelected ? "text-white" : "text-[#23211F]"}`} />
-                          <span className="text-sm font-extrabold tracking-tight">{p.label}</span>
-                        </div>
-                        <span className={`text-[11px] block mt-0.5 ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
-                          {p.badge}
-                        </span>
-                      </div>
-                    </div>
-
-                    {isSelected && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* 안내 가이드 메시지 */}
-            <div className="p-3 bg-[#EFECE6]/60 rounded-2xl border border-[#DDD6CB] text-[11px] text-slate-600 leading-relaxed font-medium">
-              💡 플랫폼을 선택하면 오른쪽에 실제 포맷의 <strong className="text-slate-900">실시간 피드 편집 화면</strong>이 열리며, 이미지와 글을 화면 위에서 즉시 직접 수정할 수 있습니다.
-            </div>
-          </div>
-
-          {/* 배포 대기 채널 위젯 */}
-          {selectedPlatforms.length > 0 && (
-            <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-3 animate-float-in">
-              <span className="text-xs font-extrabold text-slate-900 block">배포 대기 채널</span>
-              <div className="space-y-1.5">
-                {selectedPlatforms.map((pid) => {
-                  const p = platforms.find((item) => item.id === pid);
-                  const isCurrent = activePlatformTab === pid;
+            <div className="pt-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-xs font-black">배포 플랫폼</h3>
+                <span className="text-[10px] text-[#8E8982]">다중 선택</span>
+              </div>
+              <div className="space-y-2">
+                {PLATFORM_LIST.map((platform) => {
+                  const selected = selectedPlatforms.includes(platform.id);
                   return (
-                    <div
-                      key={pid}
-                      onClick={() => setActivePlatformTab(pid)}
-                      className={`flex items-center justify-between p-2.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                        isCurrent
-                          ? "bg-[#23211F] text-white border-[#23211F]"
-                          : "bg-[#EFECE6]/40 text-slate-700 border-[#DDD6CB] hover:bg-[#EFECE6]"
+                    <button
+                      key={platform.id}
+                      type="button"
+                      onClick={() => togglePlatform(platform.id)}
+                      className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2.5 text-left transition ${
+                        selected
+                          ? "border-[#292929] bg-[#292929] text-white"
+                          : "border-[#DDD6CB] bg-[#FAF8F5] text-[#292929]"
                       }`}
                     >
-                      <div className="flex items-center gap-2">
-                        {p && <p.icon className="w-3.5 h-3.5" />}
-                        <span>{p?.label}</span>
+                      <div>
+                        <div className="text-xs font-extrabold">{platform.label}</div>
+                        <div className={`text-[10px] ${selected ? "text-white/60" : "text-[#8E8982]"}`}>
+                          {platform.badge}
+                        </div>
                       </div>
-                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
-                        isCurrent ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+                      <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${
+                        selected ? "border-white bg-white text-[#292929]" : "border-[#CFC7BC] bg-white"
                       }`}>
-                        {isCurrent ? "편집 중" : "준비됨"}
+                        {selected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
                       </span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
 
-              {/* 일괄 배포 퀵 버튼 */}
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-2xl border border-[#DDD6CB] bg-[#FAF8F5] p-3">
+                <input
+                  type="checkbox"
+                  checked={includeCardNews}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setIncludeCardNews(checked);
+                    if (checked && !selectedPlatforms.length) setActiveView("card_news");
+                    if (setArticle) {
+                      setArticle((previous) => ({
+                        ...previous,
+                        platformGeneration: {
+                          ...(previous.platformGeneration || {}),
+                          selectedPlatforms,
+                          includeCardNews: checked,
+                          selectedKeywords,
+                          requirements,
+                        },
+                      }));
+                    }
+                  }}
+                  className="mt-0.5"
+                />
+                <span>
+                  <strong className="block text-xs">카드뉴스도 생성</strong>
+                  <span className="text-[10px] leading-4 text-[#8E8982]">
+                    배포 플랫폼이 아닌 별도 제작 결과물
+                  </span>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-[#DDD6CB] bg-white/90 p-5 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-xs font-black">
+                <Hash className="h-3.5 w-3.5" /> 핵심 키워드
+              </h3>
               <button
-                onClick={() => handlePublish("선택 플랫폼 전체")}
-                disabled={isPublishing}
-                className="w-full mt-2 py-2.5 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs rounded-full shadow-xs transition flex items-center justify-center gap-2 cursor-pointer active:scale-95 border border-[#23211F]"
+                type="button"
+                onClick={suggestKeywords}
+                disabled={keywordLoading}
+                className="inline-flex items-center gap-1 text-[10px] font-bold text-[#57514A] disabled:opacity-50"
               >
-                <Send className="w-3.5 h-3.5" />
-                <span>선택된 {selectedPlatforms.length}개 채널 동시 배포</span>
+                {keywordLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                추천
               </button>
             </div>
-          )}
 
-        </div>
+            {keywordCandidates.length ? (
+              <div className="space-y-2">
+                {keywordCandidates.map((candidate, index) => {
+                  const keyword = candidate.keyword || String(candidate);
+                  const selected = selectedKeywords.includes(keyword);
+                  return (
+                    <button
+                      key={keyword + index}
+                      type="button"
+                      onClick={() => toggleKeyword(keyword)}
+                      className={`w-full rounded-xl border px-3 py-2 text-left ${
+                        selected
+                          ? "border-[#292929] bg-[#EFECE6]"
+                          : "border-[#E7E2D9] bg-white"
+                      }`}
+                      title={candidate.reason || ""}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${selected ? "bg-[#292929]" : "bg-[#D7D0C6]"}`} />
+                        <span className="text-xs font-bold">{keyword}</span>
+                      </div>
+                      {candidate.reason && (
+                        <p className="mt-1 line-clamp-2 pl-4 text-[10px] leading-4 text-[#8E8982]">
+                          {candidate.reason}
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="rounded-xl bg-[#FAF8F5] p-3 text-[10px] leading-4 text-[#8E8982]">
+                ‘추천’을 누르면 platform-generator가 기사 원문에서 후보를 만듭니다.
+              </p>
+            )}
 
-        {/* ──────────────────────────────────────────
-            [오른쪽] 메인 실시간 플랫폼 피드 직접 편집 영역
-           ────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 w-full transition-all duration-300">
-          
-          {selectedPlatforms.length === 0 ? (
-            /* 플랫폼 미선택 시 안내 */
-            <div className="bg-white/95 rounded-3xl border border-slate-200/80 p-12 text-center space-y-4 shadow-xs">
-              <div className="w-16 h-16 rounded-3xl bg-[#EFECE6] text-[#23211F] flex items-center justify-center mx-auto border border-[#DDD6CB]">
-                <Sparkles className="w-8 h-8 text-[#23211F]" />
-              </div>
-              <div className="space-y-1 max-w-md mx-auto">
-                <h4 className="text-base md:text-lg font-black text-slate-900">
-                  변환할 소셜 플랫폼을 선택해주세요
-                </h4>
-                <p className="text-xs md:text-sm text-slate-500 leading-relaxed font-medium">
-                  왼쪽 목록에서 <strong>Instagram, Threads, X</strong> 중 원하는 플랫폼을 체크하면, 실제 해당 피드 화면이 열리며 화면 위에서 직접 수정할 수 있습니다.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-                {platforms.map((p) => (
+            {selectedKeywords.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedKeywords.map((keyword) => (
                   <button
-                    key={p.id}
-                    onClick={() => togglePlatform(p.id)}
-                    className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] border border-[#DDD6CB] text-[#23211F] text-xs font-bold rounded-full transition cursor-pointer flex items-center gap-1.5"
+                    key={keyword}
+                    type="button"
+                    onClick={() => toggleKeyword(keyword)}
+                    className="rounded-full bg-[#292929] px-2.5 py-1 text-[10px] font-bold text-white"
                   >
-                    <p.icon className="w-3.5 h-3.5" />
-                    <span>{p.label} 추가</span>
+                    {keyword} ×
                   </button>
                 ))}
               </div>
-            </div>
-          ) : (
-            /* 플랫폼 선택 시: 메인 실시간 피드 직접 편집 캔버스 */
-            <div className="space-y-4">
+            )}
 
-              {/* 1. 상단 다중 플랫폼 전환 탭 (레퍼런스 이미지 스타일 알약 캡슐) */}
-              {selectedPlatforms.length > 1 && (
-                <div className="flex items-center justify-between bg-white/95 p-2 rounded-full border border-slate-200/80 shadow-2xs">
-                  <div className="flex items-center gap-2 pl-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-xs font-black text-slate-900">현재 편집 채널:</span>
-                  </div>
-
-                  <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-full border border-[#DDD6CB]">
-                    {selectedPlatforms.map((pid) => {
-                      const p = platforms.find((item) => item.id === pid);
-                      const isCurrent = activePlatformTab === pid;
-                      return (
-                        <button
-                          key={pid}
-                          onClick={() => setActivePlatformTab(pid)}
-                          className={`px-3.5 py-1.5 rounded-full text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-                            isCurrent
-                              ? "bg-white text-[#23211F] shadow-2xs scale-[1.02]"
-                              : "text-slate-600 hover:text-slate-900"
-                          }`}
-                        >
-                          {p && <p.icon className="w-3.5 h-3.5" />}
-                          <span>{p?.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* 2. 대형 실시간 플랫폼 피드 카드 (WYSIWYG 직접 편집 - 와이드 데스크톱 뷰) */}
-              {currentPlatformInfo && currentData && (
-                <div className="bg-white/95 rounded-3xl border border-slate-200/80 p-4 md:p-5 shadow-xs space-y-4 animate-float-in">
-                  
-                  {/* 상단 통합 미디어 컨트롤 바 (피드와 일체형) */}
-                  <div className="bg-[#EFECE6]/70 p-2.5 md:p-3 rounded-2xl border border-[#DDD6CB] flex flex-wrap items-center justify-between gap-3 shadow-2xs">
-                    
-                    {/* 이미지 비율 조절 알약 캡슐 */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-extrabold text-[#23211F] flex items-center gap-1">
-                        <ImageIcon className="w-3.5 h-3.5" />
-                        비율:
-                      </span>
-                      <div className="flex items-center gap-1 bg-white p-0.5 rounded-full border border-[#DDD6CB]">
-                        {["1:1", "4:5", "16:9"].map((ratio) => (
-                          <button
-                            key={ratio}
-                            onClick={() => updatePlatformField(activePlatformTab, "aspectRatio", ratio)}
-                            className={`px-3 py-1 text-xs font-black rounded-full transition cursor-pointer ${
-                              currentData.aspectRatio === ratio
-                                ? "bg-[#23211F] text-[#FAF8F5] shadow-2xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            {ratio}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 추천 이미지 교체 & PC 업로드 버튼 */}
-                    <div className="flex items-center gap-2">
-                      {/* 추천 갤러리 미니 썸네일 스트립 */}
-                      <div className="flex items-center gap-1.5 bg-white p-1 rounded-full border border-[#DDD6CB]">
-                        <span className="text-[10px] font-bold text-slate-400 pl-2">갤러리:</span>
-                        {sampleImages.map((imgUrl, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => updatePlatformField(activePlatformTab, "image", imgUrl)}
-                            className={`w-6 h-6 rounded-full overflow-hidden border-2 transition cursor-pointer ${
-                              currentData.image === imgUrl
-                                ? "border-[#23211F] scale-110"
-                                : "border-transparent opacity-70 hover:opacity-100"
-                            }`}
-                            title={`추천 이미지 ${idx + 1}`}
-                          >
-                            <img src={imgUrl} alt="thumb" className="w-full h-full object-cover" />
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* PC 파일 업로드 */}
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-1 px-3.5 py-1.5 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs font-bold transition cursor-pointer active:scale-95"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>사진 변경</span>
-                      </button>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={(e) => handleImageUpload(e, activePlatformTab)}
-                        accept="image/*"
-                        className="hidden"
-                      />
-                    </div>
-
-                    {/* 마우스 줌 & 리셋 컨트롤 */}
-                    <div className="flex items-center gap-2 text-xs font-bold text-[#23211F]">
-                      <div className="flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-[#DDD6CB]">
-                        <Sliders className="w-3.5 h-3.5 text-slate-500" />
-                        <span>크기:</span>
-                        <input
-                          type="range"
-                          min="80"
-                          max="180"
-                          value={currentData.zoom}
-                          onChange={(e) => updatePlatformField(activePlatformTab, "zoom", parseInt(e.target.value))}
-                          className="w-20 accent-[#23211F] cursor-pointer"
-                        />
-                        <span className="text-[11px] font-black w-8">{currentData.zoom}%</span>
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          updatePlatformField(activePlatformTab, "zoom", 100);
-                          updatePlatformField(activePlatformTab, "positionX", 50);
-                          updatePlatformField(activePlatformTab, "positionY", 50);
-                        }}
-                        className="p-1.5 bg-white hover:bg-slate-100 text-slate-600 rounded-full border border-[#DDD6CB] transition cursor-pointer"
-                        title="위치 및 크기 초기화"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                  </div>
-
-                  {/* ──────────────────────────────────────────
-                      실제 소셜 피드 카드 (메인 작업 공간)
-                     ────────────────────────────────────────── */}
-                  <div className="w-full">
-                    
-                    {/* [A] INSTAGRAM 실시간 메인 피드 에디터 */}
-                    {activePlatformTab === "instagram" && (
-                      <div className="bg-white rounded-3xl shadow-md border border-slate-200/90 overflow-hidden w-full grid grid-cols-1 lg:grid-cols-12 min-h-[460px] lg:h-[530px] animate-float-in">
-                        {/* [좌측 7열] 대형 미디어 캔버스 (마우스 드래그 & 휠 줌) */}
-                        <div
-                          onMouseDown={handleMouseDown}
-                          onWheel={handleWheel}
-                          className={`lg:col-span-7 bg-slate-950 relative overflow-hidden flex items-center justify-center min-h-[340px] lg:min-h-0 select-none group ${
-                            isDragging ? "cursor-grabbing" : "cursor-grab"
-                          }`}
-                          title="마우스로 드래그하여 이미지 위치를 조절하고, 휠로 크기를 조절하세요"
-                        >
-                          <img
-                            src={currentData.image || undefined}
-                            alt="Instagram Preview"
-                            draggable={false}
-                            style={{
-                              transform: `scale(${currentData.zoom / 100})`,
-                              objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
-                            }}
-                            className="w-full h-full object-cover pointer-events-none transition-transform duration-75"
-                          />
-
-                          {/* 드래그 조작 가이드 안내 오버레이 (호버 시 표시) */}
-                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                            <div className="bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-md border border-white/20">
-                              <Move className="w-3.5 h-3.5" />
-                              <span>마우스로 드래그하여 위치 이동 (휠: 확대/축소)</span>
-                            </div>
-                          </div>
-
-                          {/* 비율 뱃지 */}
-                          <div className="absolute top-3 left-3 bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-[11px] font-bold px-2.5 py-1 rounded-full border border-white/20">
-                            Instagram · {currentData.aspectRatio}
-                          </div>
-                        </div>
-
-                        {/* [우측 5열] 인라인 텍스트 및 인터랙션 편집 패널 */}
-                        <div className="lg:col-span-5 flex flex-col justify-between bg-white border-t lg:border-t-0 lg:border-l border-slate-100 p-5 md:p-6 overflow-hidden">
-                          
-                          {/* 1. 인스타 헤더 */}
-                          <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-shrink-0">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 p-[1.5px]">
-                                <div className="w-full h-full rounded-full bg-white p-[1px]">
-                                  <div className="w-full h-full rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-bold">
-                                    AI
-                                  </div>
-                                </div>
-                              </div>
-                              <div>
-                                <span className="font-extrabold text-slate-900 text-xs">ai_newsroom_official</span>
-                                <span className="text-[10px] text-slate-400 block">스폰서 기사 · AI Newsroom</span>
-                              </div>
-                            </div>
-                            <MoreHorizontal className="w-4 h-4 text-slate-400" />
-                          </div>
-
-                          {/* 2. 본문 직접 편집 영역 & 해시태그 (유동 스크롤 지원) */}
-                          <div className="flex-1 py-3 space-y-3 overflow-y-auto pr-1">
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-extrabold text-[#23211F] flex items-center gap-1">
-                                  ✏️ 캡션 및 본문 직접 편집
-                                </span>
-                                <span className="text-[10px] text-slate-400 font-bold">
-                                  {currentData.text.length}자
-                                </span>
-                              </div>
-                              <textarea
-                                value={currentData.text}
-                                onChange={(e) => updatePlatformField("instagram", "text", e.target.value)}
-                                rows={5}
-                                className="w-full p-3 bg-slate-50 hover:bg-white focus:bg-white rounded-xl border border-slate-200 focus:border-[#23211F] text-xs text-slate-900 leading-relaxed outline-none transition font-sans resize-none shadow-2xs"
-                                placeholder="인스타그램 게시글 내용을 직접 수정하세요..."
-                              />
-                            </div>
-
-                            {/* 추천 해시태그 원클릭 삽입 */}
-                            <div className="space-y-1.5">
-                              <span className="text-[10px] font-bold text-slate-400 block">
-                                + 추천 해시태그 원클릭 삽입:
-                              </span>
-                              <div className="flex flex-wrap gap-1.5">
-                                {tagIdeas.map((tag) => (
-                                  <button
-                                    key={tag}
-                                    onClick={() => addHashtag("instagram", tag)}
-                                    className="px-2.5 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full text-[11px] font-bold transition border border-[#DDD6CB] cursor-pointer flex items-center gap-1 active:scale-95 shadow-2xs"
-                                  >
-                                    <Hash className="w-3 h-3 text-slate-400" />
-                                    <span>{tag.replace("#", "")}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* 3. 소셜 인터랙션 및 액션 바 */}
-                          <div className="pt-3 border-t border-slate-100 space-y-3 flex-shrink-0">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3.5 text-slate-700">
-                                <Heart className="w-5 h-5 text-red-500 fill-red-500" />
-                                <MessageCircle className="w-5 h-5" />
-                                <Share2 className="w-5 h-5" />
-                              </div>
-                              <Bookmark className="w-5 h-5 text-slate-600" />
-                            </div>
-                            <p className="font-bold text-xs text-slate-900">좋아요 1,428개</p>
-
-                            <div className="flex items-center gap-2 pt-1">
-                              <button
-                                onClick={() => handleCopyText("instagram")}
-                                className="flex-1 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] font-bold text-xs rounded-full border border-[#DDD6CB] transition cursor-pointer flex items-center justify-center gap-1.5"
-                              >
-                                {copiedStatus === "instagram" ? (
-                                  <>
-                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span className="text-emerald-700">복사 완료!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3.5 h-3.5 text-slate-600" />
-                                    <span>문구 복사</span>
-                                  </>
-                                )}
-                              </button>
-                              <button
-                                onClick={() => handlePublish("Instagram")}
-                                className="px-5 py-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs rounded-full transition cursor-pointer flex items-center gap-1.5 border border-[#23211F] active:scale-95"
-                              >
-                                <Send className="w-3.5 h-3.5" />
-                                <span>단독 배포</span>
-                              </button>
-                            </div>
-                          </div>
-
-                        </div>
-                      </div>
-                    )}
-
-                    {/* [B] THREADS 실시간 메인 피드 에디터 */}
-                    {activePlatformTab === "threads" && (
-                      <div className="bg-white rounded-3xl shadow-md border border-slate-200/90 overflow-hidden w-full grid grid-cols-1 lg:grid-cols-12 min-h-[440px] lg:h-[500px] animate-float-in">
-                        {/* [스레드 프로필 헤더] */}
-                        <div className="flex items-start gap-3">
-                          <div className="w-9 h-9 rounded-full bg-[#23211F] text-white flex items-center justify-center font-extrabold text-sm flex-shrink-0">
-                            @
-                          </div>
-                          <div className="flex-1 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-extrabold text-slate-950 text-xs">ai_newsroom</span>
-                                <span className="text-[10px] text-slate-400">방금 전</span>
-                              </div>
-                              <MoreHorizontal className="w-4 h-4 text-slate-400" />
-                            </div>
-
-                            {/* 스레드 인라인 직접 텍스트 편집 */}
-                            <div className="space-y-1">
-                              <textarea
-                                value={currentData.text}
-                                onChange={(e) => updatePlatformField("threads", "text", e.target.value)}
-                                rows={4}
-                                className="w-full p-3 bg-slate-50 hover:bg-white focus:bg-white rounded-xl border border-slate-200 focus:border-[#23211F] text-xs text-slate-900 leading-relaxed outline-none transition font-sans resize-y"
-                                placeholder="스레드 내용을 직접 수정하세요..."
-                              />
-                            </div>
-
-                            {/* 인터랙티브 마우스 드래그 이미지 영역 */}
-                            <div
-                              onMouseDown={handleMouseDown}
-                              onWheel={handleWheel}
-                              className={`relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 select-none group ${
-                                isDragging ? "cursor-grabbing" : "cursor-grab"
-                              } ${
-                                currentData.aspectRatio === "1:1"
-                                  ? "aspect-square"
-                                  : currentData.aspectRatio === "4:5"
-                                  ? "aspect-[4/5]"
-                                  : "aspect-video"
-                              }`}
-                              title="마우스로 드래그하여 이미지 위치 조절 (휠: 확대/축소)"
-                            >
-                              <img
-                                src={currentData.image || undefined}
-                                alt="Threads Media"
-                                draggable={false}
-                                style={{
-                                  transform: `scale(${currentData.zoom / 100})`,
-                                  objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
-                                }}
-                                className="w-full h-full object-cover pointer-events-none transition-transform duration-75"
-                              />
-
-                              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                                <div className="bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-[11px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-md border border-white/20">
-                                  <Move className="w-3.5 h-3.5" />
-                                  <span>드래그로 위치 조절</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* 스레드 인터랙션 아이콘 */}
-                            <div className="flex items-center gap-4 text-slate-500 pt-1">
-                              <Heart className="w-4 h-4 hover:text-red-500 transition cursor-pointer" />
-                              <MessageCircle className="w-4 h-4" />
-                              <Repeat className="w-4 h-4" />
-                              <Share2 className="w-4 h-4" />
-                            </div>
-
-                            {/* 해시태그 추가 바 */}
-                            <div className="flex flex-wrap gap-1.5 pt-1">
-                              {tagIdeas.map((tag) => (
-                                <button
-                                  key={tag}
-                                  onClick={() => addHashtag("threads", tag)}
-                                  className="px-2.5 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full text-[11px] font-bold transition border border-[#DDD6CB] cursor-pointer"
-                                >
-                                  {tag}
-                                </button>
-                              ))}
-                            </div>
-
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* [C] X (TWITTER) 실시간 메인 피드 에디터 */}
-                    {activePlatformTab === "twitter" && (
-                      <div className="bg-white rounded-3xl shadow-xl border border-slate-200/90 p-5 md:p-6 w-full max-w-md animate-float-in space-y-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-[#23211F] text-white flex items-center justify-center font-extrabold text-xs">
-                            𝕏
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-extrabold text-slate-950 text-xs">AI Newsroom</span>
-                              <span className="text-[11px] text-slate-400">@ainews</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 트위터 인라인 텍스트 편집 */}
-                        <div className="space-y-1">
-                          <textarea
-                            value={currentData.text}
-                            onChange={(e) => updatePlatformField("twitter", "text", e.target.value)}
-                            rows={3}
-                            className="w-full p-3 bg-slate-50 hover:bg-white focus:bg-white rounded-xl border border-slate-200 focus:border-[#23211F] text-xs text-slate-900 leading-relaxed outline-none transition font-sans resize-y"
-                            placeholder="트윗 내용을 직접 수정하세요..."
-                          />
-                        </div>
-
-                        {/* 인터랙티브 마우스 드래그 이미지 영역 */}
-                        <div
-                          onMouseDown={handleMouseDown}
-                          onWheel={handleWheel}
-                          className={`relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 select-none group ${
-                            isDragging ? "cursor-grabbing" : "cursor-grab"
-                          } ${
-                            currentData.aspectRatio === "1:1"
-                              ? "aspect-square"
-                              : currentData.aspectRatio === "4:5"
-                              ? "aspect-[4/5]"
-                              : "aspect-video"
-                          }`}
-                          title="마우스로 드래그하여 이미지 위치 조절 (휠: 확대/축소)"
-                        >
-                          <img
-                            src={currentData.image || undefined}
-                            alt="Twitter Media"
-                            draggable={false}
-                            style={{
-                              transform: `scale(${currentData.zoom / 100})`,
-                              objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
-                            }}
-                            className="w-full h-full object-cover pointer-events-none transition-transform duration-75"
-                          />
-
-                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                            <div className="bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-[11px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-md border border-white/20">
-                              <Move className="w-3.5 h-3.5" />
-                              <span>드래그로 위치 조절</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-slate-400 text-[11px] pt-1 border-t border-slate-100">
-                          <span>오후 3:20 · 2026년 10월 2일</span>
-                          <div className="flex items-center gap-3.5">
-                            <MessageCircle className="w-3.5 h-3.5" />
-                            <Repeat className="w-3.5 h-3.5" />
-                            <Heart className="w-3.5 h-3.5 text-red-500" />
-                          </div>
-                        </div>
-
-                        {/* 해시태그 추가 */}
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {tagIdeas.map((tag) => (
-                            <button
-                              key={tag}
-                              onClick={() => addHashtag("twitter", tag)}
-                              className="px-2.5 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full text-[11px] font-bold transition border border-[#DDD6CB] cursor-pointer"
-                            >
-                              {tag}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                  </div>
-
-                  {/* 피드 하단 퀵 액션 바 (문구 복사 & 단독 배포) */}
-                  <div className="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-slate-100">
-                    <button
-                      onClick={() => handleCopyText(activePlatformTab)}
-                      className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] font-bold text-xs rounded-full border border-[#DDD6CB] transition cursor-pointer flex items-center gap-1.5 active:scale-95"
-                    >
-                      {copiedStatus === activePlatformTab ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-emerald-700">복사 완료!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5 text-slate-600" />
-                          <span>{currentPlatformInfo.label} 문구 복사</span>
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={() => handlePublish(currentPlatformInfo.label)}
-                      className="px-5 py-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs rounded-full transition cursor-pointer flex items-center gap-1.5 border border-[#23211F] active:scale-95 shadow-xs"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>{currentPlatformInfo.label} 단독 배포</span>
-                    </button>
-                  </div>
-
-                </div>
-              )}
-
-            </div>
-          )}
-
-        </div>
-
-      </div>
-
-      {/* ──────────────────────────────────────────
-          3. 최종 결과물 영역 (하단 멀티 배포 대시보드 - 기존 기능 유지)
-         ────────────────────────────────────────── */}
-      {selectedPlatforms.length > 0 && (
-        <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-5 md:p-7 shadow-xs space-y-5 animate-float-in">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="text-base md:text-lg font-black text-slate-950 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-slate-700" />
-                최종 결과물 및 멀티 배포 대시보드
+              <label className="mb-1.5 block text-[10px] font-bold text-[#8E8982]">추가 요구사항</label>
+              <textarea
+                value={requirements}
+                onChange={(event) => setRequirements(event.target.value.slice(0, 3000))}
+                onBlur={() => persist(drafts, cardNews, { requirements })}
+                rows={4}
+                placeholder="톤, 분량, 반드시 포함할 조건 등을 입력"
+                className="w-full resize-y rounded-xl border border-[#DDD6CB] bg-[#FAF8F5] px-3 py-2 text-xs leading-5 outline-none focus:border-[#292929]"
+              />
+            </div>
+          </section>
+
+          {(Object.keys(progress).length > 0 || message) && (
+            <section className="rounded-3xl border border-[#DDD6CB] bg-[#FAF8F5] p-4 text-[11px]">
+              {Object.entries(progress).map(([id, status]) => (
+                <div key={id} className="flex justify-between gap-3 py-1">
+                  <span className="font-bold">{VIEW_LABELS[id]}</span>
+                  <span className={status.startsWith("실패") ? "text-red-600" : "text-[#756F67]"}>
+                    {status}
+                  </span>
+                </div>
+              ))}
+              {message && <p className="mt-2 border-t border-[#DDD6CB] pt-2 leading-5 text-[#57514A]">{message}</p>}
+            </section>
+          )}
+        </aside>
+
+        <main className="min-w-0 rounded-3xl border border-[#DDD6CB] bg-white/90 p-4 shadow-sm md:p-6">
+          <div className="mb-5 flex flex-wrap gap-2 border-b border-[#EFECE6] pb-4">
+            {PLATFORM_LIST.filter((platform) =>
+              selectedPlatforms.includes(platform.id) || drafts[platform.id]
+            ).map((platform) => (
+              <button
+                key={platform.id}
+                type="button"
+                onClick={() => setActiveView(platform.id)}
+                className={`rounded-full px-4 py-2 text-xs font-extrabold transition ${
+                  activeView === platform.id
+                    ? "bg-[#292929] text-white"
+                    : "bg-[#EFECE6] text-[#57514A]"
+                }`}
+              >
+                {platform.label}
+                {drafts[platform.id] && <span className="ml-1.5 opacity-60">●</span>}
+              </button>
+            ))}
+            {(includeCardNews || cardNews) && (
+              <button
+                type="button"
+                onClick={() => setActiveView("card_news")}
+                className={`rounded-full px-4 py-2 text-xs font-extrabold transition ${
+                  activeView === "card_news"
+                    ? "bg-[#292929] text-white"
+                    : "bg-[#EFECE6] text-[#57514A]"
+                }`}
+              >
+                카드뉴스
+                {cardNews && <span className="ml-1.5 opacity-60">●</span>}
+              </button>
+            )}
+          </div>
+
+          <div className="mb-5 flex items-start justify-between gap-3">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#8E8982]">
+                GENERATED DRAFT
+              </span>
+              <h3 className="mt-0.5 text-lg font-black">
+                {VIEW_LABELS[activeView] || "플랫폼 원고"} 편집
               </h3>
-              <p className="text-xs text-slate-500 font-medium">
-                작업이 완료된 플랫폼별 결과물을 한눈에 점검하고 파일 저장, 인쇄 또는 즉시 배포합니다.
+              <p className="mt-1 text-[11px] leading-5 text-[#8E8982]">
+                {currentDraft?.validation_status === "needs_recheck"
+                  ? "생성 뒤 수정된 내용입니다. 원문 근거 재검수가 필요합니다."
+                  : currentDraft
+                  ? "실제 생성 엔진 결과입니다. 발행 전 사람이 최종 검토해야 합니다."
+                  : "아직 생성 결과가 없습니다."}
               </p>
             </div>
-
-            <span className="text-xs font-extrabold px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200 self-start sm:self-auto">
-              {selectedPlatforms.length}개 플랫폼 배포 준비 완료
-            </span>
-          </div>
-
-          {/* 최종 결과물 카드 요약 그리드 */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {selectedPlatforms.map((pid) => {
-              const pInfo = platforms.find((p) => p.id === pid);
-              const pData = platformData[pid];
-              return (
-                <div
-                  key={pid}
-                  className="bg-[#EFECE6]/40 p-4 rounded-2xl border border-[#DDD6CB] space-y-3 flex flex-col justify-between"
-                >
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs md:text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                        {pInfo && <pInfo.icon className="w-3.5 h-3.5" />}
-                        {pInfo?.label}
-                      </span>
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md">
-                        준비됨
-                      </span>
-                    </div>
-
-                    <div className="aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-200">
-                      <img src={pData.image || undefined} alt="final preview" className="w-full h-full object-cover" />
-                    </div>
-
-                    <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed font-sans">
-                      {pData.text}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      onClick={() => handleCopyText(pid)}
-                      className="flex-1 py-1.5 bg-white hover:bg-[#EFECE6] border border-[#DDD6CB] text-[#23211F] text-xs font-bold rounded-full transition cursor-pointer"
-                    >
-                      문구 복사
-                    </button>
-                    <button
-                      onClick={() => handlePublish(pInfo?.label)}
-                      className="px-3.5 py-1.5 bg-[#23211F] hover:bg-[#38332E] text-white text-xs font-bold rounded-full transition cursor-pointer border border-[#23211F]"
-                    >
-                      배포
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* 최종 액션 바 (인쇄, 데이터 저장, 일괄 배포) */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-2.5">
+            {activeView !== "card_news" && drafts[activeView] && (
               <button
-                onClick={handlePrint}
-                className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs font-extrabold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                type="button"
+                onClick={() => copyDraft(activeView)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#DDD6CB] bg-white px-3 py-2 text-[11px] font-bold"
               >
-                <Printer className="w-3.5 h-3.5 text-slate-600" />
-                <span>결과물 인쇄 (PDF)</span>
+                <Copy className="h-3.5 w-3.5" />
+                {copied === activeView ? "복사됨" : "전체 복사"}
               </button>
-
-              <button
-                onClick={() => alert("선택된 플랫폼의 가공된 이미지 및 텍스트 데이터가 저장되었습니다.")}
-                className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs font-extrabold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5 text-slate-600" />
-                <span>이미지 및 데이터 저장</span>
-              </button>
-            </div>
-
-            <button
-              onClick={() => handlePublish("선택 플랫폼 전체")}
-              disabled={isPublishing}
-              className="px-6 py-2.5 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full text-xs md:text-sm font-extrabold transition shadow-sm cursor-pointer flex items-center gap-2 border border-[#23211F] active:scale-95"
-            >
-              {isPublishing ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>배포 처리 중...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-3.5 h-3.5 text-white" />
-                  <span>선택된 플랫폼 일괄 배포</span>
-                </>
-              )}
-            </button>
+            )}
           </div>
-        </div>
-      )}
 
-      {/* 배포 성공 모달 팝업 */}
-      {isPublishModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-2xl space-y-4 text-center animate-float-in border border-slate-100">
-            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-              <Check className="w-6 h-6 stroke-[3]" />
-            </div>
-            <h3 className="text-lg font-black text-slate-950">배포가 완료되었습니다</h3>
-            <p className="text-xs text-slate-600 leading-relaxed font-medium">
-              [{publishedTarget}] 대상 채널에 최적화된 콘텐츠 규격으로 전송이 성공적으로 완료되었습니다.
-            </p>
-            <button
-              onClick={() => setIsPublishModalOpen(false)}
-              className="w-full py-2.5 bg-[#23211F] hover:bg-[#38332E] text-white font-extrabold text-xs rounded-full shadow-xs cursor-pointer transition border border-[#23211F]"
-            >
-              확인
-            </button>
-          </div>
-        </div>
-      )}
-
+          {activeView === "card_news" ? (
+            <CardNewsEditor draft={cardNews} article={article} onChange={updateCardNews} />
+          ) : (
+            <PlatformDraftEditor
+              platform={activeView}
+              draft={drafts[activeView]}
+              onChange={(next) => updateDraft(activeView, next)}
+              onCopy={() => copyDraft(activeView)}
+              copied={copied === activeView}
+            />
+          )}
+        </main>
+      </div>
     </div>
   );
 }

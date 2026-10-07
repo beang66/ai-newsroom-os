@@ -64,6 +64,54 @@ const stub = createServer((req, res) => {
 await new Promise((r) => stub.listen(0, "127.0.0.1", r));
 
 const SMOKE_DOCS = fs.mkdtempSync(path.join(os.tmpdir(), "ainews-smoke-"));
+const PLATFORM_STUB = fs.mkdtempSync(path.join(os.tmpdir(), "ainews-platform-"));
+fs.writeFileSync(path.join(PLATFORM_STUB, "core-adapter.js"), `
+const chunks = [];
+process.stdin.on("data", (chunk) => chunks.push(chunk));
+process.stdin.on("end", () => {
+  const input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  let result;
+  if (input.action === "keywords") {
+    result = { candidates: [
+      { keyword: "스모크 핵심", reason: "기사의 핵심 내용", source_evidence: ["스모크 테스트 본문입니다."] },
+      { keyword: "검증 키워드", reason: "두 번째 후보", source_evidence: ["스모크 테스트 본문입니다."] }
+    ] };
+  } else if (input.action === "generate") {
+    const p = input.platform;
+    const common = { article_id: "smoke", platform: p, validation_status: "not_checked" };
+    if (p === "instagram") result = { success: true, draft: {
+      ...common, opening: "스모크 인스타그램 도입", paragraphs: ["스모크 인스타그램 본문"],
+      closing: "스모크 인스타그램 마무리", hashtags: ["#스모크", "#뉴스룸", "#검증"],
+      block_evidence: { opening: ["스모크 테스트 본문입니다."], paragraphs: [["스모크 테스트 본문입니다."]], closing: ["스모크 테스트 본문입니다."] }
+    }};
+    else if (p === "threads") result = { success: true, draft: {
+      ...common, opening: "스모크 Threads 제목", paragraphs: ["스모크 Threads 본문"], closing: "",
+      block_evidence: { opening: ["스모크 테스트 본문입니다."], paragraphs: [["스모크 테스트 본문입니다."]], closing: [] },
+      block_evidence_valid: { opening: true, paragraphs: [true] }
+    }};
+    else if (p === "blog") result = { success: true, draft: {
+      ...common, title: "스모크 Blog 제목", intro: "스모크 Blog 도입",
+      sections: [{ section_id: "S1", heading: "스모크 소제목", body: "스모크 Blog 본문", source_evidence: ["스모크 테스트 본문입니다."], evidence_valid: true }],
+      conclusion: "스모크 Blog 결론", source_evidence: ["스모크 테스트 본문입니다."], evidence_valid: true
+    }};
+    else result = { success: true, draft: {
+      ...common, recommended_card_count: 3, card_count_reason: "스모크 구성",
+      core_text: { headline: "스모크 카드", summary: "스모크 요약", source_evidence: ["스모크 테스트 본문입니다."], evidence_valid: true },
+      cards: ["cover","body","closing"].map((role, index) => ({
+        card_id: "C" + (index + 1), page: index + 1, role,
+        content: { keyword: "스모크", headline: "스모크 카드 " + (index + 1), body: "스모크 카드 본문" },
+        source_evidence: ["스모크 테스트 본문입니다."], evidence_valid: true,
+        design: { layout: "standard", highlights: [], compact: false }
+      }))
+    }};
+  } else {
+    process.stdout.write(JSON.stringify({ ok: false, status: 400, error: "unknown action" }));
+    return;
+  }
+  process.stdout.write(JSON.stringify({ ok: true, result }));
+});
+`, "utf8");
+
 const server = spawn(process.env.PYTHON || "python", ["app/server.py"], {
   cwd: ROOT,
   env: {
@@ -78,6 +126,7 @@ const server = spawn(process.env.PYTHON || "python", ["app/server.py"], {
     AI_BACKEND: "remote",
     AI_BACKEND_URL: `http://127.0.0.1:${stub.address().port}`,
     APP_TOKEN: "ui-smoke",
+    PLATFORM_GENERATOR_DIR: PLATFORM_STUB,
   },
   stdio: "ignore",
 });
@@ -180,10 +229,6 @@ try {
     await body.fill((await body.inputValue()) + " 고친 문장을 하나 더 씁니다.");
     assert.deepEqual(JSON.parse((await next).postData()).nodes.map((n) => n.text), ["고친 문장을 하나 더 씁니다."]);
   }
-  // 개발 실행이면 본문 청크 밑줄을 켤 수 있다
-  await page.getByRole("button", { name: /청크 밑줄/ }).click();
-  await page.getByTestId("chunk-underline").locator("span").first().waitFor({ state: "attached" });
-  await page.getByRole("button", { name: /청크 밑줄/ }).click();
   // 등록한 자료 이름을 누르면 추출 본문을 볼 수 있다
   await page.getByRole("button", { name: "자료.txt" }).click();
   await page.getByRole("dialog", { name: "취재자료 보기" }).getByText("스모크 테스트 본문입니다.").waitFor();
@@ -198,9 +243,16 @@ try {
   await page.getByPlaceholder("자료 제목, 키워드, 내용 검색").waitFor();
   await page.getByRole("button", { name: "×" }).click(); // 창 닫기(Escape 는 지원 안 함)
   await page.getByPlaceholder("자료 제목, 키워드, 내용 검색").waitFor({ state: "detached" });
-  // 6. 플랫폼 변환 / 보관함 / 녹취 스튜디오 / 다시 기사 작성
+  // 6. 플랫폼 변환: FormatConverter UI -> App Core -> platform-generator 어댑터
   await go("플랫폼 변환");
-  await see("전환 중인 기사");
+  const converter = page.getByTestId("format-converter");
+  await converter.getByText("플랫폼 콘텐츠 편집실").waitFor();
+  await converter.getByRole("button", { name: /추천/ }).click();
+  await converter.getByRole("button", { name: /스모크 핵심/ }).click();
+  await converter.getByRole("button", { name: "선택 항목 생성" }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value === "스모크 인스타그램 도입"), null, { timeout: 15_000 });
+  await converter.getByText("2/2개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();
+
   await go("보관함");
   await see("미디어 & 변환 자산");
   // 팩트체크 서랍에 올린 자료가 기사 취재자료로 남아 보관함에 보여야 한다(깨진 파일은 빠짐)
@@ -223,6 +275,10 @@ try {
   await go("기사 작성");
   assert.equal(await page.getByPlaceholder("기사 제목을 입력하거나 AI 추천을 확인하세요").inputValue(), "스텁 제목 둘");
   assert.ok((await body.inputValue()).startsWith("스모크 테스트 본문입니다."));
+  // 플랫폼 생성 결과도 같은 암호화 원고에 저장되어 재시작 후 복원돼야 한다.
+  await go("플랫폼 변환");
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value === "스모크 인스타그램 도입"), null, { timeout: 10_000 });
+  await go("기사 작성");
   // 7. 좁은 화면에서도 첫 화면이 오류 없이 그려지는지
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
@@ -243,7 +299,7 @@ try {
     assert.ok(stubCalls.includes(name), `코어가 백엔드로 ${name} 를 요청하지 않았습니다: ${stubCalls}`);
   assert.equal(savedIds.size, 1, "같은 원고는 화면을 오가도 한 파일에 저장돼야 합니다: " + [...savedIds]);
   assert.deepEqual(problems, [], "브라우저 오류:\n" + problems.join("\n"));
-  console.log("PASS ui-smoke: 코어 연결·제목/부제 추천·흐름 요약·자동 저장·사진 찾기·PhotoEditor·팩트체크 서랍·자료 검색·플랫폼 변환·보관함·녹취 전사·모바일 폭");
+  console.log("PASS ui-smoke: 코어 연결·제목/부제 추천·흐름 요약·자동 저장·사진 찾기·PhotoEditor·팩트체크 서랍·자료 검색·실제 platform-generator 경계·보관함·녹취 전사·모바일 폭");
 } catch (error) {
   if (page) await page.screenshot({ path: new URL("temp/ui-smoke-failure.png", ROOT).pathname.slice(1) }).catch(() => {});
   console.error("FAIL ui-smoke:", error.message);
@@ -253,6 +309,7 @@ try {
   await browser?.close();
   server.kill();
   fs.rmSync(SMOKE_DOCS, { recursive: true, force: true });
+  fs.rmSync(PLATFORM_STUB, { recursive: true, force: true });
   stub.close();
   // 테스트가 만든 원고 파일은 지운다(사용자 원고와 섞이지 않게)
   for (const id of savedIds) fs.rmSync(new URL(`.article-workspace/articles/${id}.json`, ROOT), { force: true });

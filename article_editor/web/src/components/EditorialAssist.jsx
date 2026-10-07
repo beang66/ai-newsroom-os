@@ -397,6 +397,6 @@ export function useAutosave(article, setArticle) {
     return () => clearTimeout(timer);
     // 저장 대상 필드가 바뀔 때만(article 객체 전체가 아니라 — articleId 변경으로는 다시 저장하지 않는다)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [article.title, article.subtitle, article.content, article.photos, article.sources, article.linkedSources, article.status]);
+  }, [article.title, article.subtitle, article.content, article.photos, article.sources, article.linkedSources, article.status, article.platformDrafts, article.cardNews, article.platformGeneration]);
   return status;
 }

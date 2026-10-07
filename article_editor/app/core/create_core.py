@@ -5,6 +5,7 @@ Internal implementations can change freely; the exposed API contract stays stabl
 """
 from .managers.ai_manager import AIManager
 from .managers.model_manager import ModelManager
+from .managers.platform_manager import PlatformManager
 from .managers.session_manager import SessionManager
 from .managers.storage_manager import StorageManager
 
@@ -15,6 +16,7 @@ class Core:
         self.ai = AIManager()
         self.session = SessionManager()
         self.models = ModelManager()
+        self.platform = PlatformManager()
 
 
 def create_core():

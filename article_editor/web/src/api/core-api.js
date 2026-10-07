@@ -28,6 +28,8 @@ export const ROUTES = Object.freeze({
   unsplashSearch: "/api/unsplash/search",
   photo: (id) => "/api/unsplash/photo/" + encodeURIComponent(id),
   photoTrack: (id) => "/api/unsplash/photo/" + encodeURIComponent(id) + "/track",
+  platformKeywords: "/api/platform/keywords",
+  platformGenerate: "/api/platform/generate",
 });
 
 /**
@@ -101,5 +103,11 @@ export function createCoreApi(transport) {
     photoBytes: (id, signal) => transport.bytes(ROUTES.photo(id), signal),
     /** 다운로드 추적(Unsplash 가이드라인) */
     trackPhoto: (id, signal) => transport.json(ROUTES.photoTrack(id), null, signal),
+    /** 플랫폼 콘텐츠용 핵심 키워드 후보 */
+    platformKeywords: (article, signal) =>
+      transport.json(ROUTES.platformKeywords, { article }, signal),
+    /** platform-generator 실제 생성 엔진 호출 */
+    generatePlatform: (platform, payload, signal) =>
+      transport.json(ROUTES.platformGenerate, { platform, payload }, signal),
   };
 }

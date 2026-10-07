@@ -162,7 +162,7 @@ function Workspace({ initialArticle }) {
             )}
 
             {activeTab === "convert" && (
-              <FormatConverter article={article} />
+              <FormatConverter article={article} setArticle={setArticle} />
             )}
 
             {activeTab === "archive" && (

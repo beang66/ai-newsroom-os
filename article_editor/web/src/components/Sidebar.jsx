@@ -39,7 +39,7 @@ function AiSparkleStarIcon({ className = "w-5 h-5", strokeWidth = 2.2 }) {
  * - 펼친 상태: 가로 확장 Glass Navigation Drawer (w: ~295px)
  */
 export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setActiveTab, session = null }) {
-  // 프로필 칸은 코어가 알려주는 세션 상태를 보여 준다(가짜 이름·요금제 없음). 로그인 화면은 병합 후 단계(F1)에서 만든다
+  // 프로필 칸은 코어가 알려주는 세션 상태를 보여 준다(가짜 이름·요금제 없음).
   const email = session?.email || "";
   const profileName = session?.signedIn ? (email || "로그인됨") : "로그인하지 않음";
   const profileInitial = email ? email.slice(0, 1).toUpperCase() : "👤";
@@ -216,7 +216,8 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
         )}
 
         <button
-          title={!isExpanded ? "Settings (준비 중)" : "준비 중"}
+          title={!isExpanded ? "Settings" : undefined}
+          aria-label="Settings"
           className={`transition-all duration-200 cursor-pointer relative group text-left ${isExpanded
             ? "w-full hover:bg-white/50 rounded-[20px] p-2 pr-3.5 flex items-center gap-3 text-[#444444] hover:text-[#222222]"
             : "w-11 h-11 rounded-full flex items-center justify-center text-[#555555] hover:text-[#222222] hover:bg-white/50"
@@ -260,7 +261,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
                     {profileName}
                   </div>
                   <div className="text-[10px] text-[#8E8982] font-medium truncate">
-                    {session?.signedIn ? "AI Newsroom" : "로그인 화면은 준비 중"}
+                    {session?.signedIn ? "AI Newsroom" : "로컬 작업 가능"}
                   </div>
                 </div>
               </div>

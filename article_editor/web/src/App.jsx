@@ -6,6 +6,8 @@ import SourceSearch from "./components/SourceSearch";
 import InterviewStudio from "./components/interview/InterviewStudio";
 import FormatConverter from "./components/FormatConverter";
 import ArchiveView from "./components/ArchiveView";
+import LoginDialog from "./components/LoginDialog";
+import ModelsDialog from "./components/ModelsDialog";
 
 import { createEmptyArticle } from "./data/article";
 import { coreSnapshot } from "./api/core";
@@ -23,6 +25,8 @@ export default function App() {
   useEffect(() => {
     loadLatestArticle(createEmptyArticle())
       .then((a) => setInitial(a || createEmptyArticle()))
+      // TODO(debt: DEBT-007): 조회 실패도 저장 원고 없음으로 취급해 빈 원고를 보여 준다.
+      // 저장소/키 오류와 실제 빈 저장소를 구분하고 오류·재시도 UI를 제공할 것.
       .catch(() => setInitial(createEmptyArticle()));
   }, []);
   if (!initial) return <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">최근 작업을 불러오는 중…</div>;
@@ -37,10 +41,19 @@ function Workspace({ initialArticle }) {
 
   // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
   const [core, setCore] = useState({ ok: false });
+  const [showLogin, setShowLogin] = useState(false);
+  const [showModels, setShowModels] = useState(false);
+  const onSession = (session) => setCore((prev) => ({ ...prev, session }));
   useEffect(() => {
     let alive = true;
     coreSnapshot().then((snapshot) => {
-      if (alive) setCore(snapshot);
+      if (alive) {
+        setCore(snapshot);
+        const session = snapshot.session;
+        if (session && !session.signedIn && !session.autoLogin?.available && !session.autoLogin?.enabled) {
+          setShowLogin(true);
+        }
+      }
     });
     return () => {
       alive = false;
@@ -81,7 +94,9 @@ function Workspace({ initialArticle }) {
         coreReady={core.ok}
         coreLabel={core.ok ? "코어 연결됨" : "코어 대기"}
         session={core.session}
-        onSession={(session) => setCore((prev) => ({ ...prev, session }))}
+        onSession={onSession}
+        onLogin={() => setShowLogin(true)}
+        onModels={() => setShowModels(true)}
         saveStatus={saveStatus}
       />
 
@@ -93,6 +108,7 @@ function Workspace({ initialArticle }) {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           session={core.session}
+          onModels={() => setShowModels(true)}
         />
 
         {/* Main Content Workspace */}
@@ -108,6 +124,7 @@ function Workspace({ initialArticle }) {
                 setArticle={setArticle}
                 onOpenSearch={() => setShowSearchModal(true)}
                 saveStatus={saveStatus}
+                onModels={() => setShowModels(true)}
               />
             )}
 
@@ -129,6 +146,9 @@ function Workspace({ initialArticle }) {
           </main>
         </div>
       </div>
+
+      {showLogin && <LoginDialog onClose={() => setShowLogin(false)} onSession={onSession} />}
+      {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
 
       {/* Quick Source Search Modal during Writing */}
       {showSearchModal && (

@@ -39,6 +39,7 @@ export default function ArticleWriter({
   article, 
   setArticle, 
   onOpenSearch, 
+  onModels,
   saveStatus // 자동 저장은 App 에서(어느 화면에 있든 저장된다)
 }) {
   // 1. 화면 뷰 모드: 'editor' (에디터만) | 'split' (에디터+미리보기 나란히) | 'preview' (미리보기 전체)
@@ -746,6 +747,7 @@ export default function ArticleWriter({
             article={article}
             setArticle={setArticle}
             factCheck={factCheck}
+            onModels={onModels}
           />
         )}
 

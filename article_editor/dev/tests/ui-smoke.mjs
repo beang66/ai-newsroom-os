@@ -150,7 +150,7 @@ try {
   );
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.setDefaultTimeout(60_000); // 전체 파이썬 시험 직후처럼 PC 가 바쁠 때 30초 기본값을 넘는 경우가 있었다
-  page.on("console", (m) => m.type() === "error" && !/status of (503|422)/.test(m.text()) && problems.push("console: " + m.text()));
+  page.on("console", (m) => m.type() === "error" && !/status of (503|422|401)/.test(m.text()) && problems.push("console: " + m.text()));
   page.on("pageerror", (e) => problems.push("pageerror: " + e.message));
   page.on("response", async (r) => {
     // 503 = 모델·런타임 미설치(정상 상태) — 화면이 안내를 띄우는지는 단계에서 따로 본다; 422 = 깨진 자료 파일(4단계에서 일부러 올림)
@@ -164,9 +164,149 @@ try {
   const NAV = { "기사 작성": "Article Writer", "녹음 파일": "Interview & Audio", "플랫폼 변환": "Publish & Convert", "보관함": "Saved Archive" };
   const go = (title) => page.locator(`button[title="${NAV[title] || title}"]`).first().click();
 
+  // 로그인·모델 설치는 브라우저에서 고정 응답: 실제 인증·다운로드를 전혀 호출하지 않는다.
+  let session = { signedIn: false, email: null, userId: null, expiresIn: 0, supabase: true, backend: true,
+    autoLogin: { available: false, enabled: false, email: "", error: "" } };
+  let finishSignIn, onSignInStarted;
+  const reply = (route, data, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(data) });
+  await page.route("**/api/session", async (route) => {
+    if (route.request().method() === "POST") {
+      const { email, password } = route.request().postDataJSON();
+      await new Promise((resolve) => { finishSignIn = resolve; onSignInStarted(); }); // 응답 전에 busy·비밀번호 초기화 확인
+      if (password === "bad-password") return reply(route, { error: "이메일 또는 비밀번호를 확인해 주세요." }, 401);
+      session = { ...session, signedIn: true, email, userId: "smoke-user", expiresIn: 3600 };
+    }
+    return reply(route, session);
+  });
+  await page.route("**/api/session/**", (route) => {
+    if (route.request().url().endsWith("/auto")) {
+      const { enabled } = route.request().postDataJSON();
+      session = { ...session, signedIn: enabled, email: enabled ? "dev@example.test" : null,
+        autoLogin: { ...session.autoLogin, enabled } };
+    } else {
+      session = { ...session, signedIn: false, email: null, userId: null, expiresIn: 0 };
+    }
+    return reply(route, session);
+  });
+  const modelRows = [
+    { id: "judge", label: "팩트체크 판정기", kind: "factcheck", bytesTotal: 1048576, installed: false, files: 2, filesDone: 0, sourceConfigured: true },
+    { id: "embedding", label: "자료 검색 임베딩", kind: "embedding", bytesTotal: 2097152, installed: false, files: 2, filesDone: 0, sourceConfigured: true },
+  ];
+  let modelState = { models: modelRows, busy: false, progress: null, lastError: null };
+  let modelReads = 0, installCalls = 0, installPolls = 0, activeModel;
+  let installOutcome = "hold", cancelRequested = false, sourceError = true;
+  await page.route(/\/api\/models(?:\/.*)?$/, (route) => {
+    const url = route.request().url();
+    if (url.endsWith("/install")) {
+      installCalls += 1;
+      if (sourceError) {
+        sourceError = false;
+        return reply(route, { error: "모델 원본 주소가 없습니다." }, 503);
+      }
+      activeModel = modelRows.find((m) => m.id === route.request().postDataJSON().modelId);
+      assert.ok(activeModel, "설치 요청은 modelId 를 전달해야 합니다");
+      installPolls = 0;
+      cancelRequested = false;
+      modelState = { ...modelState, busy: true, lastError: null,
+        progress: { model: "", bytesDone: 0, bytesTotal: activeModel.bytesTotal, file: "model.onnx", startedAt: 1 } };
+    } else if (url.endsWith("/cancel")) {
+      cancelRequested = true; // core.cancel() 처럼 작업이 끝날 때까지 busy 유지
+    } else {
+      modelReads += 1;
+      if (modelState.busy) {
+        installPolls += 1;
+        if (cancelRequested || (installPolls >= 2 && installOutcome === "error")) {
+          modelState = { ...modelState, busy: false, progress: null,
+            lastError: cancelRequested ? null : { status: 504, message: "모델 서버에 연결하지 못했어요." } };
+        } else if (installPolls >= 2 && installOutcome === "complete") {
+          activeModel.installed = true;
+          activeModel.filesDone = activeModel.files;
+          modelState = { ...modelState, busy: false, progress: null };
+        } else {
+          modelState = { ...modelState, progress: { ...modelState.progress, bytesDone: activeModel.bytesTotal / 2 } };
+        }
+      }
+    }
+    return reply(route, modelState);
+  });
+
   await page.goto(BASE);
   // 1. 코어 연결 — UI 가 계약(web/src/api)으로 /api/status·/api/session 을 받아 헤더에 반영
   await see("코어 연결됨");
+  const login = page.getByTestId("login-dialog");
+  await login.waitFor();
+  assert.equal(await page.getByTestId("login-email").evaluate((el) => el === document.activeElement), true);
+  await login.getByRole("button", { name: "나중에", exact: true }).click();
+  await go("보관함");
+  await go("기사 작성");
+  assert.equal(await login.count(), 0, "시작 로그인 안내는 한 번만 열려야 합니다");
+  await page.getByRole("button", { name: "로그인", exact: true }).click();
+  await page.getByTestId("login-email").fill("reporter@example.test");
+  await page.getByTestId("login-password").fill("bad-password");
+  let signInStarted = new Promise((resolve) => { onSignInStarted = resolve; });
+  await page.getByTestId("login-submit").click();
+  await signInStarted;
+  await page.waitForFunction(() => document.querySelector('[data-testid="login-submit"]')?.disabled);
+  assert.equal(await page.getByTestId("login-password").inputValue(), "");
+  finishSignIn();
+  await page.getByTestId("login-error").getByText("이메일 또는 비밀번호를 확인해 주세요.").waitFor();
+  assert.equal(await page.getByTestId("login-error").getAttribute("role"), "alert");
+  await page.getByTestId("login-password").fill("valid-password");
+  signInStarted = new Promise((resolve) => { onSignInStarted = resolve; });
+  await page.getByTestId("login-submit").click();
+  await signInStarted;
+  assert.equal(await page.getByTestId("login-password").inputValue(), "");
+  finishSignIn();
+  await login.waitFor({ state: "detached" });
+  await page.locator("header").getByText("reporter@example.test", { exact: true }).waitFor();
+  await page.getByTestId("logout-button").click();
+  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).waitFor();
+  assert.equal(await login.count(), 0, "로그아웃 뒤에는 안내를 다시 강제로 열지 않습니다");
+  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).click();
+  assert.equal(await page.getByTestId("login-password").inputValue(), "", "성공한 로그인 뒤에도 비밀번호를 보관하지 않습니다");
+  await page.keyboard.press("Escape");
+  await login.waitFor({ state: "detached" });
+  // 나머지 기존 단계의 새로고침에서는 로그인한 상태로 유지한다.
+  session = { ...session, signedIn: true, email: "reporter@example.test" };
+
+  const models = page.getByTestId("models-dialog");
+  const noMorePolling = async () => {
+    const reads = modelReads;
+    await page.waitForTimeout(1300);
+    assert.equal(modelReads, reads, "설치가 끝나거나 창을 닫으면 폴링이 멈춰야 합니다");
+  };
+  await page.locator("header").getByRole("button", { name: "모델 설치", exact: true }).click();
+  await models.getByText("미설치 모델 전체 용량: 3.0 MB", { exact: true }).waitFor();
+  assert.equal(installCalls, 0, "모델 설치는 자동으로 시작하지 않습니다");
+  await noMorePolling();
+  await page.getByTestId("models-install").first().click();
+  await models.getByRole("alert").getByText("모델 원본 주소가 없습니다.").waitFor();
+  await page.getByTestId("models-install").first().click();
+  await page.getByTestId("models-progress").getByText(/50%/).waitFor();
+  assert.equal(await page.getByTestId("models-install").first().isDisabled(), true);
+  await page.getByTestId("models-cancel").click();
+  await page.getByTestId("models-progress").waitFor({ state: "detached" });
+  assert.equal(await models.getByText(/미설치 · 파일/).count(), 2);
+  await noMorePolling();
+  installOutcome = "error";
+  await page.getByTestId("models-install").first().click();
+  await models.getByRole("alert").getByText("모델 서버에 연결하지 못했어요.").waitFor();
+  await noMorePolling();
+  installOutcome = "hold";
+  await page.getByTestId("models-install").first().click();
+  await page.getByTestId("models-progress").waitFor();
+  await page.keyboard.press("Escape");
+  await models.waitFor({ state: "detached" });
+  await noMorePolling();
+  installOutcome = "complete";
+  await page.getByRole("button", { name: "모델 설치 설정", exact: true }).click();
+  await models.getByText("미설치 모델 전체 용량: 2.0 MB", { exact: true }).waitFor();
+  await page.getByTestId("models-install").click();
+  await models.getByText("모두 설치됨", { exact: true }).waitFor();
+  assert.equal(await page.getByTestId("models-install").count(), 0);
+  await noMorePolling();
+  await models.getByRole("button", { name: "닫기", exact: true }).click();
+
   // 목업 없이 빈 원고로 시작해야 한다
   const body = page.getByPlaceholder("기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다...");
   assert.equal(await body.inputValue(), "");
@@ -223,7 +363,12 @@ try {
   });
   // 판정 결과(일치/불일치/검토 필요)는 엔진 몫 — 화면은 문장별 카드가 나오는지만 본다
   if (factcheckReady) await page.getByText(/전체 [1-9][0-9]*개 문장 검증/).waitFor({ timeout: 180_000 });
-  else await page.getByTestId("factcheck-error").getByText("설치").waitFor();
+  else {
+    await page.getByTestId("factcheck-error").getByText("설치", { exact: false }).first().waitFor();
+    await page.getByTestId("factcheck-error").getByRole("button", { name: "모델 설치 열기" }).click();
+    await models.getByText("모두 설치됨", { exact: true }).waitFor();
+    await page.keyboard.press("Escape");
+  }
   // 이미 검증한 문장은 다시 보내지 않는다 — 문장 하나를 덧붙이면 그 문장만 코어로
   if (factcheckReady) {
     const next = page.waitForRequest((r) => r.url().endsWith("/api/factcheck/run"), { timeout: 15_000 });
@@ -311,10 +456,34 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value === "스모크 인스타그램 도입"), null, { timeout: 10_000 });
   await go("기사 작성");
   // 7. 좁은 화면에서도 첫 화면이 오류 없이 그려지는지
+  // 개발 계정 자동 로그인이 사용 가능하면 로그인 안내를 띄우지 않고 기존 토글도 동작한다.
+  session = { ...session, signedIn: false, email: null,
+    autoLogin: { available: true, enabled: false, email: "dev@example.test", error: "" } };
+  await page.reload();
+  const autoLogin = page.getByTestId("auto-login-toggle");
+  await autoLogin.waitFor();
+  assert.equal(await login.count(), 0);
+  await autoLogin.click();
+  await page.locator("header").getByText("dev@example.test", { exact: true }).waitFor();
+  await autoLogin.click();
+  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).waitFor();
+  assert.equal(await login.count(), 0);
+  session = { ...session, autoLogin: { ...session.autoLogin, enabled: true } };
+  await page.reload();
+  await autoLogin.getByText(/켜짐/).waitFor();
+  assert.equal(await login.count(), 0, "자동 로그인이 켜져 있으면 실패 상태여도 안내를 강제로 열지 않습니다");
+  session = { ...session, signedIn: true, email: "reporter@example.test",
+    autoLogin: { available: false, enabled: false, email: "", error: "" } };
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   // 좁은 화면에서는 상태 배지를 일부러 숨긴다(hidden sm:inline-flex) → 그려졌는지만 본다
   await page.getByText("코어 연결됨").first().waitFor({ state: "attached", timeout: 10_000 });
+  await page.locator("header").getByRole("button", { name: "모델 설치", exact: true }).click();
+  await models.getByText("모두 설치됨", { exact: true }).waitFor();
+  const modelsBounds = await models.boundingBox();
+  assert.ok(modelsBounds.x >= 0 && modelsBounds.x + modelsBounds.width <= 390);
+  assert.equal(await models.evaluate((el) => el.scrollWidth > el.clientWidth), false);
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "기사 팩트체크 & 근거자료", exact: true }).click();
   const drawer = page.getByRole("complementary", { name: "팩트체크 및 근거자료" });
   await drawer.waitFor();
@@ -330,7 +499,7 @@ try {
     assert.ok(stubCalls.includes(name), `코어가 백엔드로 ${name} 를 요청하지 않았습니다: ${stubCalls}`);
   assert.equal(savedIds.size, 1, "같은 원고는 화면을 오가도 한 파일에 저장돼야 합니다: " + [...savedIds]);
   assert.deepEqual(problems, [], "브라우저 오류:\n" + problems.join("\n"));
-  console.log("PASS ui-smoke: 코어 연결·제목/부제 추천·흐름 요약·자동 저장·사진 찾기·PhotoEditor·팩트체크 서랍·자료 검색·실제 platform-generator 경계·보관함·녹취 전사·모바일 폭");
+  console.log("PASS ui-smoke: 로그인·로그아웃·개발 자동 로그인·모델 설치/취소/오류/폴링·코어 연결·제목/부제 추천·흐름 요약·자동 저장·사진 찾기·PhotoEditor·팩트체크 서랍·자료 검색·실제 platform-generator 경계·보관함·녹취 전사·모바일 폭");
 } catch (error) {
   if (page) await page.screenshot({ path: new URL("temp/ui-smoke-failure.png", ROOT).pathname.slice(1) }).catch(() => {});
   console.error("FAIL ui-smoke:", error.message);

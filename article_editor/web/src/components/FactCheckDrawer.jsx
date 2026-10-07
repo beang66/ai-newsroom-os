@@ -35,7 +35,8 @@ export default function FactCheckDrawer({
   article,
   setArticle,
   // 팩트체크 실행·결과는 ArticleWriter(useFactCheck)가 맡는다 — 글쓰기가 멈추면 자동으로 돌고, 본문 하이라이트에도 쓴다
-  factCheck
+  factCheck,
+  onModels
 }) {
   const { results: evidenceList, busy: isAnalyzing, error: checkError, run: runCheck } = factCheck;
   // 등록된 취재자료는 기사(article.sources)에 둔다 — 서랍을 닫아도, 보관함에서도 보인다. 실패한 파일만 여기
@@ -261,7 +262,11 @@ export default function FactCheckDrawer({
                 <p className="text-[11px] text-slate-400 mt-0.5">
                   기사 문장과 업로드된 원문 문서를 AI가 자동 대조한 결과입니다
                 </p>
-                {checkError && <p className="text-[11px] text-rose-600 mt-1" data-testid="factcheck-error">{checkError}</p>}
+                {checkError && <div role="alert" className="text-[11px] text-rose-600 mt-1" data-testid="factcheck-error">
+                  <p>{checkError}</p>
+                  {/모델|설치/.test(checkError) && <button onClick={onModels}
+                    className="mt-1 px-3 py-1 text-[#23211F] bg-[#EFECE6] border border-[#DDD6CB] rounded-full font-bold cursor-pointer">모델 설치 열기</button>}
+                </div>}
               </div>
               <div className="flex items-center justify-end gap-2">
               {/* 임시(시험용): 로컬 판정기가 확정 못 한 문장만 OpenAI 로 재판정 */}

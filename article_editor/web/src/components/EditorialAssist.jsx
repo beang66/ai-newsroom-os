@@ -355,6 +355,9 @@ export function useAutosave(article, setArticle) {
       return;
     }
     setStatus("저장 대기…");
+    // TODO(debt: DEBT-006): 실행 중인 저장 요청은 clearTimeout으로 중단되지 않아 다음 저장과 겹칠 수 있다.
+    // 첫 ID 응답 전에는 새 기사 중복 생성, 응답 순서가 뒤집히면 오래된 본문/상태 덮어쓰기 가능성.
+    // 동일 기사 저장 요청을 직렬화하고 낡은 응답의 상태 갱신을 막을 것(실사용 재현은 후속).
     const timer = setTimeout(async () => {
       setStatus("자동 저장 중…");
       try {

@@ -305,7 +305,7 @@ export async function saveDraft(article, articleId) {
     photos,
     content: article.content || "", // 다시 열 때 그대로 복원(bodyHtml 은 발행·변환용)
     linkedSources: article.linkedSources || [],
-    sources: (article.sources || []).map(({ text, ...meta }) => meta), // 본문 텍스트는 sources/<id>/text.txt 에 있다
+    sources: (article.sources || []).map(({ text: _text, ...meta }) => meta), // 본문 텍스트는 sources/<id>/text.txt 에 있다
     status: article.status || "",
     createdAt: article.createdAt || "",
     platformDrafts: article.platformDrafts || {},
@@ -316,7 +316,7 @@ export async function saveDraft(article, articleId) {
 }
 
 /** 코어의 원고(draft) → 화면의 기사 객체. content 가 없는 옛 원고는 bodyHtml 에서 글자만 */
-export function articleFromDraft(draft, empty) {
+function articleFromDraft(draft, empty) {
   const content = draft.content ?? new DOMParser()
     .parseFromString((draft.bodyHtml || "").replace(/<br\s*\/?>/g, "\n").replace(/<\/p>/g, "\n\n"), "text/html")
     .body.textContent.trim();

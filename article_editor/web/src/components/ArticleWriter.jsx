@@ -9,7 +9,6 @@ import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummary
 import { 
   Sparkles, 
   Search, 
-  CheckCircle2, 
   Check, 
   RotateCcw, 
   History,
@@ -24,14 +23,8 @@ import {
   Image as ImageIcon,
   Upload,
   Send,
-  Download,
-  Info,
-  ExternalLink,
-  ChevronRight,
   Share2,
   Bookmark,
-  Heart,
-  MessageSquare,
   ShieldCheck
 } from "lucide-react";
 
@@ -83,7 +76,7 @@ export default function ArticleWriter({
   const [floatingToolbarPos, setFloatingToolbarPos] = useState(null);
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isGenerating] = useState(false); // ponytail: 초안 생성 AI 는 아직 코어 계약이 없어 항상 false — 연결할 때 setter 를 쓴다
 
   const editorRef = useRef(null);
   const photoInputRef = useRef(null);
@@ -742,7 +735,6 @@ export default function ArticleWriter({
         {/* [우측 컬럼]: 팩트체크 & 근거자료 검증 패널 (나란히 인라인 배치되어 절대 겹치지 않음) */}
         {isFactCheckDrawerOpen && (
           <FactCheckDrawer
-            isOpen={isFactCheckDrawerOpen}
             onClose={() => setIsFactCheckDrawerOpen(false)}
             article={article}
             setArticle={setArticle}

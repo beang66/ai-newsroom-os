@@ -12,9 +12,7 @@
   "dependencies": {
     "@ssabrojs/hwpxjs": "^0.4.0",
     "@tailwindcss/vite": "^4.3.3",
-    "autoprefixer": "^10.6.1",
     "lucide-react": "^1.49.0",
-    "postcss": "^8.5.28",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"

@@ -30,6 +30,7 @@
 |---|---|---|
 | `OPENAI_API_KEY` | ✅ | OpenAI 키 |
 | `UNSPLASH_ACCESS_KEY` | 사진 검색 | Unsplash Access Key |
+| `CF_ACCOUNT_ID`, `CF_API_TOKEN` | 임베딩 | Cloudflare 계정 id, Workers AI 토큰 |
 | `SUPABASE_URL` | JWT 검증 | `https://<ref>.supabase.co` |
 | `SUPABASE_ANON_KEY` | JWT 검증 | anon(publishable) 키 |
 | `AUTH_REQUIRED` | | 기본 `true`. `false`는 개발 전용(토큰 없이 허용) |
@@ -53,6 +54,7 @@ AI_BACKEND_URL=https://<render 서비스 주소>
 | GET | `/ai/health` | (자체 응답) 준비 상태 |
 | POST | `/ai/responses` | `{OPENAI_BASE}/responses` |
 | POST | `/ai/images/generations` | `{OPENAI_BASE}/images/generations` |
+| POST | `/ai/embeddings` | Cloudflare Workers AI `@cf/qwen/qwen3-embedding-0.6b` (모델은 서버 고정; 본문 그대로 중계) |
 | POST | `/ai/audio/transcriptions` | `{OPENAI_BASE}/audio/transcriptions` (multipart 그대로) |
 | GET | `/unsplash/search/photos` | `{UNSPLASH_BASE}/search/photos` |
 | GET | `/unsplash/photos/<id>` | `{UNSPLASH_BASE}/photos/<id>` |

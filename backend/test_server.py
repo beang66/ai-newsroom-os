@@ -67,6 +67,9 @@ def load_proxy(upstream_base: str):
             'SUPABASE_ANON_KEY': 'anon-test',
             'OPENAI_API_KEY': 'test-openai-key',
             'UNSPLASH_ACCESS_KEY': 'test-unsplash-key',
+            'CF_BASE_URL': upstream_base + '/cf',
+            'CF_ACCOUNT_ID': 'acct1',
+            'CF_API_TOKEN': 'test-cf-token',
             'AUTH_REQUIRED': 'true',
             'RATE_LIMIT_PER_MIN': '1000',
         }
@@ -131,6 +134,14 @@ class ProxyTests(unittest.TestCase):
         method, path, authorization = SEEN[-1]
         self.assertEqual((method, path), ('POST', '/openai/v1/responses'))
         self.assertEqual(authorization, 'Bearer test-openai-key')
+
+    def test_embeddings_forwards_with_server_token_and_fixed_model(self):
+        status, payload = self.call('/ai/embeddings', {'text': ['a']}, token='good-token')
+        self.assertEqual(status, 200)
+        method, path, authorization = SEEN[-1]
+        self.assertEqual((method, path), ('POST', '/cf/accounts/acct1/ai/run/@cf/qwen/qwen3-embedding-0.6b'))
+        self.assertEqual(authorization, 'Bearer test-cf-token')
+        self.assertEqual(self.call('/ai/embeddings', {'text': ['a']})[0], 401)
 
     def test_transcription_forwards_multipart_as_is(self):
         body = b'--b1\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n--b1--\r\n'

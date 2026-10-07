@@ -17,6 +17,10 @@ services:
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
+      - key: CF_ACCOUNT_ID
+        sync: false
+      - key: CF_API_TOKEN
+        sync: false
       - key: AUTH_REQUIRED
         value: "true"
       - key: RATE_LIMIT_PER_MIN

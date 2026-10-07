@@ -14,11 +14,15 @@
     OPENAI_BASE_URL       기본 https://api.openai.com/v1 (시험용 대체 가능)
     UNSPLASH_BASE_URL     기본 https://api.unsplash.com
     RATE_LIMIT_PER_MIN    기본 120 (사용자별)
+    CF_ACCOUNT_ID         임베딩(Cloudflare Workers AI) 계정 id
+    CF_API_TOKEN          임베딩용 Workers AI 토큰
+    CF_BASE_URL           기본 https://api.cloudflare.com/client/v4 (시험용 대체 가능)
 
 앱 계약
     GET  /ai/health
     POST /ai/responses | /ai/images/generations      (본문·응답을 그대로 중계)
     POST /ai/audio/transcriptions                    (녹음 전사, multipart 본문 그대로 중계)
+    POST /ai/embeddings                              (Cloudflare Workers AI qwen3-embedding-0.6b 로 본문 그대로 중계)
     GET  /unsplash/search/photos | /unsplash/photos/<id> | /unsplash/download/<...> | /unsplash/absolute?url=
 
 무저장: 요청·응답 본문을 로그나 디스크에 남기지 않는다(경로·상태·사용자만).
@@ -39,7 +43,9 @@ UNSPLASH_BASE = (os.environ.get('UNSPLASH_BASE_URL') or 'https://api.unsplash.co
 SUPABASE_URL = (os.environ.get('SUPABASE_URL') or '').rstrip('/')
 SUPABASE_ANON_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
 AUTH_REQUIRED = os.environ.get('AUTH_REQUIRED', 'true').lower() != 'false'
-ALLOWED_AI = {'responses', 'images/generations', 'audio/transcriptions'}
+ALLOWED_AI = {'responses', 'images/generations', 'audio/transcriptions', 'embeddings'}
+CF_BASE = (os.environ.get('CF_BASE_URL') or 'https://api.cloudflare.com/client/v4').rstrip('/')
+CF_EMBEDDING_MODEL = '@cf/qwen/qwen3-embedding-0.6b'  # 모델은 서버가 고정한다 — 앱이 다른 모델을 고르지 못하게
 RATE_LIMIT = int(os.environ.get('RATE_LIMIT_PER_MIN', '120'))
 TIMEOUT = 210
 
@@ -143,6 +149,7 @@ class Handler(BaseHTTPRequestHandler):
                 'authRequired': AUTH_REQUIRED,
                 'openai': bool(os.environ.get('OPENAI_API_KEY')),
                 'unsplash': bool(os.environ.get('UNSPLASH_ACCESS_KEY')),
+                'embeddings': bool(os.environ.get('CF_ACCOUNT_ID') and os.environ.get('CF_API_TOKEN')),
             })
         if self._guard() is None:
             return
@@ -175,6 +182,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         if len(body) > 40_000_000:
             return self._json(413, {'error': '요청이 너무 큽니다.'})
+        if sub == 'embeddings':
+            if len(body) > 2_000_000:
+                return self._json(413, {'error': '요청이 너무 큽니다.'})
+            account = os.environ.get('CF_ACCOUNT_ID', '')
+            status, mime, raw = forward(
+                f'{CF_BASE}/accounts/{account}/ai/run/{CF_EMBEDDING_MODEL}', body,
+                {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + os.environ.get('CF_API_TOKEN', '')},
+                method='POST')
+            return self._send(status, raw, mime)
         status, mime, raw = forward(
             OPENAI_BASE + '/' + sub,
             body,

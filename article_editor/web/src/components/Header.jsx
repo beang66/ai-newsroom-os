@@ -10,6 +10,7 @@ export default function Header({
   coreLabel = "",
   session = null,
   onSession = () => {},
+  saveStatus = "",
 }) {
   const [isLoggedIn, setIsLoggedIn] = useState(true);
   // 코어가 알려주는 세션이 있으면 그 값을 우선한다
@@ -66,7 +67,7 @@ export default function Header({
           </div>
 
           <span className="text-[11px] text-[#999999] flex-shrink-0">
-            방금 저장됨
+            {saveStatus}
           </span>
         </div>
 
@@ -78,7 +79,6 @@ export default function Header({
             title="알림"
           >
             <Bell className="w-4 h-4" />
-            <span className="absolute top-2.5 right-2.5 w-1.5 h-1.5 rounded-full bg-[#F4A940]" />
           </button>
 
           <AutoLoginToggle session={session} onSession={onSession} />

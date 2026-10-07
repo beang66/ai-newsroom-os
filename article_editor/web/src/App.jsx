@@ -118,6 +118,7 @@ function Workspace({ initialArticle }) {
         coreLabel={core.ok ? "코어 연결됨" : "코어 대기"}
         session={core.session}
         onSession={(session) => setCore((prev) => ({ ...prev, session }))}
+        saveStatus={saveStatus}
       />
 
       {/* 2. Main Workspace Layout: Floating Slim Sidebar & Warm Minimal Workspace */}
@@ -127,6 +128,7 @@ function Workspace({ initialArticle }) {
           setIsCollapsed={setIsSidebarCollapsed}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
+          session={core.session}
         />
 
         {/* Main Content Workspace */}

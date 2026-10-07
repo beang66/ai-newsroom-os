@@ -1,1075 +1,2091 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
-  Upload,
-  Sparkles,
+  Check,
+  Plus,
+  Trash2,
+  X,
+  ArrowRight,
+  Download,
+  Loader2,
   Image as ImageIcon,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Lock,
+  Unlock,
+  Sparkles,
+  ChevronUp,
+  ChevronDown,
+  Palette,
+  Wand2,
+  FileText,
+  BookOpen,
+  ChevronRight,
   Copy,
   Printer,
-  Download,
-  Send,
-  Check,
-  Sliders,
-  FileText,
-  Hash,
-  Share2,
-  Heart,
-  MessageCircle,
-  Repeat,
-  Bookmark,
-  MoreHorizontal,
-  Move,
-  RotateCcw
+  Move
 } from "lucide-react";
-import { initialArticles } from "../data/mockData";
+import { searchUnsplashPhotos } from "../services/unsplash";
 
-// 플랫폼 전용 인라인 커스텀 아이콘
-const InstagramIcon = ({ className = "w-5 h-5" }) => (
-  <svg viewBox="0 0 24 24" className={className} stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
-  </svg>
-);
-
-const ThreadsIcon = ({ className = "w-5 h-5" }) => (
-  <svg viewBox="0 0 24 24" className={className} stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="4" />
-    <path d="M16 12v1a3 3 0 0 1-6 0v-1a6 6 0 1 1 11.6 2.2" />
-  </svg>
-);
-
-const XTwitterIcon = ({ className = "w-4 h-4" }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="currentColor">
-    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-  </svg>
-);
-
-export default function FormatConverter() {
-  // 1. 변환 대상 기사
-  const [selectedArticle, setSelectedArticle] = useState(initialArticles[0]);
-
-  // 2. 플랫폼 다중 선택
-  const [selectedPlatforms, setSelectedPlatforms] = useState(["instagram"]);
-
-  // 3. 다중 선택 시 현재 작업 중인 플랫폼 탭
-  const [activePlatformTab, setActivePlatformTab] = useState("instagram");
-
-  // 추천 샘플 이미지 목록
-  const sampleImages = [
-    "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1677442136019-21780efad99a?q=80&w=800&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?q=80&w=800&auto=format&fit=crop"
-  ];
-
-  // 4. 플랫폼별 맞춤 데이터 상태 (이미지, 비율, 크기, 위치, 텍스트, 해시태그)
-  const [platformData, setPlatformData] = useState({
-    instagram: {
-      title: "AI 반도체 개척자들... 차세대 주도권 경쟁 🚀",
-      caption: "국내 주요 반도체 기업과 연구진이 NPU 및 PIM 기술을 통해 글로벌 빅테크 기업들과 차세대 반도체 패권 다툼을 시작합니다.",
-      text: `[단독] AI 반도체 개척자들... 초거대 AI 시대의 차세대 주도권 경쟁 🚀\n\n국내 주요 반도체 기업과 연구진이 NPU 및 PIM 기술을 통해 글로벌 빅테크 기업들과 차세대 반도체 패권 다툼을 시작합니다.\n\n전력 소비를 70% 이상 절감한 혁신적인 성과를 지금 확인해보세요.\n\n#AINewsroom #AI반도체 #NPU #PIM #빅테크 #기술혁신 #IT뉴스 #디지털인텔리전스`,
-      hashtags: ["#AI반도체", "#NPU", "#PIM", "#빅테크", "#IT뉴스"],
-      image: sampleImages[0],
-      aspectRatio: "1:1",
-      zoom: 100,
-      positionX: 50,
-      positionY: 50
-    },
-    threads: {
-      title: "AI 반도체 패권 경쟁 현장",
-      caption: "GPU 중심의 한계를 뛰어넘는 국내 AI 반도체 기술의 급부상 🧵",
-      text: `GPU 중심 연산의 한계를 뛰어넘는 국내 AI 반도체 기술의 급부상! 🧵\n\n기존 대비 전력 소비 70% 감소, 데이터 병목 현상을 해결한 초거대 AI 지원 반도체 현장을 취재했습니다.\n\n알고리즘 최적화와 함께 펼쳐지는 글로벌 패권 경쟁, 여러분의 의견은 어떠신가요?\n\n#ThreadsTech #AI반도체 #기술트렌드`,
-      hashtags: ["#ThreadsTech", "#AI반도체", "#기술트렌드"],
-      image: sampleImages[1],
-      aspectRatio: "16:9",
-      zoom: 100,
-      positionX: 50,
-      positionY: 50
-    },
-    twitter: {
-      title: "차세대 AI 반도체 패권",
-      caption: "⚡️ [속보] NPU/PIM 독자 기술 성과 발표",
-      text: `⚡️ [속보] AI 반도체 개척자들, 초거대 AI 시대 차세대 주도권 쟁탈전 개막!\n\n국내 개발진, NPU/PIM 독자 기술로 전력 70% 감소 성과 달성. 글로벌 빅테크와 대등한 경쟁 돌입.\n\n#AI반도체 #NPU #IT뉴스`,
-      hashtags: ["#AI반도체", "#NPU", "#IT뉴스"],
-      image: sampleImages[2],
-      aspectRatio: "16:9",
-      zoom: 100,
-      positionX: 50,
-      positionY: 50
-    }
+export default function FormatConverter({ currentArticle: _currentArticle }) {
+  // 현재 작성 중인 기사 데이터 연동 및 동기화
+  const [activeArticle, setActiveArticle] = useState(() => {
+    try {
+      const saved = localStorage.getItem("team01_article_draft_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ..._currentArticle,
+          title: parsed.title || _currentArticle?.title,
+          subtitle: parsed.subtitle || _currentArticle?.subtitle,
+          content: parsed.content || _currentArticle?.content,
+          category: parsed.category || _currentArticle?.category || "사회",
+          photos: parsed.photos || _currentArticle?.photos || [],
+          status: _currentArticle?.status || "작성 중"
+        };
+      }
+    } catch {}
+    return _currentArticle || {
+      title: "AI 반도체 개척자들... 초거대 AI 시대의 차세대 주도권 경쟁",
+      subtitle: "국내 주요 반도체 기업, NPU 및 PIM 기술로 글로벌 시장에 도전장",
+      content: "",
+      category: "사회",
+      status: "작성 중",
+      photos: []
+    };
   });
 
-  // 마우스 커서 기반 드래그 이동 상태
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0, posX: 50, posY: 50 });
+  useEffect(() => {
+    if (_currentArticle) {
+      setActiveArticle((prev) => ({
+        ...prev,
+        ..._currentArticle
+      }));
+    }
+  }, [_currentArticle]);
 
-  const fileInputRef = useRef(null);
-  const [copiedStatus, setCopiedStatus] = useState("");
-  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
-  const [isPublishing, setIsPublishing] = useState(false);
-  const [publishedTarget, setPublishedTarget] = useState("전체");
+  // ⭐ 기사 전문 보기 모달 상태 (사용자 요구: 플랫폼 변환 메인박스 왼쪽 상단 작성 중 기사 박스 및 전문 열람)
+  const [showFullArticleModal, setShowFullArticleModal] = useState(false);
+  const [fullArticleCopied, setFullArticleCopied] = useState(false);
 
-  // 플랫폼 정의
-  const platforms = [
+  // ESC 키로 전문 보기 모달 닫기
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && showFullArticleModal) {
+        setShowFullArticleModal(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showFullArticleModal]);
+
+  // 기사 전문 전체 복사 핸들러
+  const handleCopyFullArticle = () => {
+    const fullText = `${activeArticle.title || ""}\n\n${activeArticle.subtitle ? activeArticle.subtitle + "\n\n" : ""}${activeArticle.content || ""}`;
+    navigator.clipboard.writeText(fullText);
+    setFullArticleCopied(true);
+    setTimeout(() => setFullArticleCopied(false), 2000);
+  };
+
+  // 핵심 리드문 (첫 단락) 추출
+  const leadParagraph = activeArticle.content
+    ? activeArticle.content.split(/\n\n+/).filter(Boolean)[0]?.replace(/\[사진 삽입:.*?\]/g, "").trim()
+    : "";
+
+  // 1. 배포 플랫폼 선택 상태 (다중 선택 가능)
+  const [selectedPlatforms, setSelectedPlatforms] = useState(["instagram", "threads"]);
+  const togglePlatform = (id) => {
+    setSelectedPlatforms((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    );
+  };
+
+  // 2. 초기 카드 데이터 (필드별 서식 및 고정 기능 내장)
+  const defaultStyles = {
+    tag: {
+      fontSize: 13,
+      color: "#A1A1AA",
+      isBold: false,
+      isItalic: false,
+      isUnderline: false,
+      isStrike: false,
+      align: "left",
+      isLocked: false
+    },
+    title: {
+      fontSize: 28,
+      color: "#FFFFFF",
+      isBold: true,
+      isItalic: false,
+      isUnderline: false,
+      isStrike: false,
+      align: "left",
+      isLocked: false
+    },
+    body: {
+      fontSize: 14,
+      color: "#E4E4E7",
+      isBold: false,
+      isItalic: false,
+      isUnderline: false,
+      isStrike: false,
+      align: "left",
+      isLocked: false
+    }
+  };
+
+  const initialCards = [
     {
-      id: "instagram",
-      label: "Instagram",
-      desc: "이미지 중심 · 1:1 / 4:5 / 16:9 · 캡션 및 해시태그",
-      icon: InstagramIcon,
-      badge: "피드 포맷",
-      themeColor: "from-purple-500 to-pink-500"
+      id: 1,
+      role: "표지",
+      tag: "콘텐츠 제작",
+      title: "하나의 기사,\n여러 개의 이야기",
+      body: "사용자가 방향을 선택하고\nAI가 초안 제작을 돕습니다.",
+      bgImage: null,
+      fieldPositions: { tag: "top", title: "center", body: "bottom" },
+      positions: { tag: { x: 50, y: 16 }, title: { x: 50, y: 48 }, body: { x: 50, y: 80 } },
+      freePositions: { tag: { x: 50, y: 16 }, title: { x: 50, y: 48 }, body: { x: 50, y: 80 } },
+      styles: JSON.parse(JSON.stringify(defaultStyles))
     },
     {
-      id: "threads",
-      label: "Threads",
-      desc: "텍스트 중심 · 자유로운 토론 · 미디어 카드 첨부",
-      icon: ThreadsIcon,
-      badge: "스레드 포맷",
-      themeColor: "from-slate-800 to-slate-950"
+      id: 2,
+      role: "본문",
+      tag: "콘텐츠 제작",
+      title: "핵심 키워드는\n내가 직접 선택",
+      body: "클릭으로 방향을 선택하면\n생성된 3장 초안을 자유롭게 수정합니다.",
+      bgImage: null,
+      fieldPositions: { tag: "top", title: "center", body: "bottom" },
+      positions: { tag: { x: 50, y: 16 }, title: { x: 50, y: 48 }, body: { x: 50, y: 80 } },
+      freePositions: { tag: { x: 50, y: 16 }, title: { x: 50, y: 48 }, body: { x: 50, y: 80 } },
+      styles: JSON.parse(JSON.stringify(defaultStyles))
     },
     {
-      id: "twitter",
-      label: "X (Twitter)",
-      desc: "짧고 간결한 문구 · 신속한 뉴스 브리핑 · 미디어",
-      icon: XTwitterIcon,
-      badge: "트윗 포맷",
-      themeColor: "from-blue-500 to-slate-900"
+      id: 3,
+      role: "본문",
+      tag: "콘텐츠 제작",
+      title: "읽고, 고치고,\n완성하기",
+      body: "좋은 기사를 완성할 때,\n내가 원하는 속도로 완성합니다.",
+      bgImage: null,
+      fieldPositions: { tag: "top", title: "center", body: "bottom" },
+      positions: { tag: { x: 50, y: 16 }, title: { x: 50, y: 48 }, body: { x: 50, y: 80 } },
+      freePositions: { tag: { x: 50, y: 16 }, title: { x: 50, y: 48 }, body: { x: 50, y: 80 } },
+      styles: JSON.parse(JSON.stringify(defaultStyles))
     }
   ];
 
-  // 플랫폼 다중 토글 핸들러
-  const togglePlatform = (platformId) => {
-    setSelectedPlatforms((prev) => {
-      let next;
-      if (prev.includes(platformId)) {
-        next = prev.filter((p) => p !== platformId);
-      } else {
-        next = [...prev, platformId];
+  const [cards, setCards] = useState(initialCards);
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const activeCard = cards[activeCardIndex] || cards[0];
+
+  // 구간별 텍스트 포커스/선택 상태 ('tag' | 'title' | 'body' | null)
+  const [activeField, setActiveField] = useState("title");
+  const [hoveredField, setHoveredField] = useState(null);
+  const [focusedField, setFocusedField] = useState(null); // 실시간 텍스트 타이핑/수정 중인 필드
+  const [isMouseOverActiveZone, setIsMouseOverActiveZone] = useState(false); // 활성 텍스트 + 툴바 영역 마우스 오버 여부
+
+  // 자유 배치 모드 토글 상태
+  const [isFreeLayoutMode, setIsFreeLayoutMode] = useState(false);
+
+  // 인스타그램 스토리 스타일 자유 배치 중앙 가이드 스냅 상태
+  const [isSnappedX, setIsSnappedX] = useState(false);
+  const [isSnappedY, setIsSnappedY] = useState(false);
+  const [dragCurrentPos, setDragCurrentPos] = useState(null); // 실시간 드래그 좌표 { x, y }
+
+  // 마우스 드래그 추적 상태 (상중하 구역 스냅 & 자유 배치)
+  const cardRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [draggedField, setDraggedField] = useState(null); // 'tag' | 'title' | 'body'
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [dragTargetZone, setDragTargetZone] = useState(null); // 'top' | 'center' | 'bottom'
+
+  // 팔레트 팝오버 및 AI 메뉴 드롭다운 상태
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showAiMenu, setShowAiMenu] = useState(false);
+
+  // 저장 시간 상태 (LocalStorage 연동)
+  const [lastSavedTime, setLastSavedTime] = useState(() => {
+    try {
+      const saved = localStorage.getItem("team01_news_card_draft");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.savedAt || null;
       }
-      if (!next.includes(activePlatformTab) && next.length > 0) {
-        setActivePlatformTab(next[0]);
-      }
-      return next;
-    });
+    } catch {
+      return null;
+    }
+    return null;
+  });
+
+  // 배포 성공 모달 상태
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+
+  // 토스트 메시지 상태
+  const [toastMessage, setToastMessage] = useState("");
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(""), 2200);
   };
 
-  // 플랫폼 데이터 필드 업데이트
-  const updatePlatformField = (platform, field, value) => {
-    setPlatformData((prev) => ({
-      ...prev,
-      [platform]: {
-        ...prev[platform],
-        [field]: value
-      }
-    }));
+  // 내 사진 파일 업로드 ref
+  const fileInputRef = useRef(null);
+
+  // Unsplash 검색 모달 상태
+  const [showUnsplashModal, setShowUnsplashModal] = useState(false);
+  const [unsplashQuery, setUnsplashQuery] = useState("콘텐츠 제작");
+  const [unsplashResults, setUnsplashResults] = useState([]);
+  const [isUnsplashLoading, setIsUnsplashLoading] = useState(false);
+  const [unsplashError, setUnsplashError] = useState("");
+
+  // 현재 활성 카드의 속성 업데이트
+  const updateActiveCard = (field, value) => {
+    setCards((prev) =>
+      prev.map((c, idx) => (idx === activeCardIndex ? { ...c, [field]: value } : c))
+    );
   };
 
-  // 이미지 업로드
-  const handleImageUpload = (e, platform) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (uploadEvt) => {
-        if (uploadEvt.target?.result) {
-          updatePlatformField(platform, "image", uploadEvt.target.result);
+  // 현재 활성 카드의 특정 구간(tag/title/body) 스타일 업데이트
+  const updateFieldStyle = (field, key, value) => {
+    setCards((prev) =>
+      prev.map((c, idx) => {
+        if (idx !== activeCardIndex) return c;
+        const currentStyles = c.styles || JSON.parse(JSON.stringify(defaultStyles));
+        const fieldStyle = currentStyles[field] || defaultStyles[field];
+        return {
+          ...c,
+          styles: {
+            ...currentStyles,
+            [field]: {
+              ...fieldStyle,
+              [key]: value
+            }
+          }
+        };
+      })
+    );
+  };
+
+
+  // 잠금 (Lock/Unlock) 토글
+  const toggleFieldLock = (targetField) => {
+    const f = targetField || activeField;
+    const currentStyles = activeCard.styles || defaultStyles;
+    const isLocked = !!(currentStyles[f] || defaultStyles[f]).isLocked;
+    updateFieldStyle(f, "isLocked", !isLocked);
+    showToast(
+      !isLocked
+        ? `🔒 ${f === "tag" ? "상단" : f === "title" ? "중간" : "하단"} 영역이 잠겼습니다.`
+        : `🔓 잠금이 해제되었습니다.`
+    );
+  };
+
+  // ⭐ 통합 텍스트 좌표 조회 및 업데이트 (자유 배치 토글 시에도 위치가 변하지 않도록 일원화)
+  const getFieldPosition = (card, field) => {
+    if (card?.positions?.[field]) return card.positions[field];
+    if (card?.freePositions?.[field]) return card.freePositions[field];
+    if (field === "tag") return { x: 50, y: 16 };
+    if (field === "title") return { x: 50, y: 48 };
+    return { x: 50, y: 80 };
+  };
+
+  const updateFieldPosition = (field, newPos) => {
+    setCards((prev) =>
+      prev.map((card, idx) => {
+        if (idx !== activeCardIndex) return card;
+        const currentPositions = card.positions || {
+          tag: { x: 50, y: 16 },
+          title: { x: 50, y: 48 },
+          body: { x: 50, y: 80 }
+        };
+        return {
+          ...card,
+          positions: {
+            ...currentPositions,
+            [field]: newPos
+          },
+          freePositions: {
+            ...(card.freePositions || {}),
+            [field]: newPos
+          }
+        };
+      })
+    );
+  };
+
+  // ⭐ 개별 텍스트 구역 조회 및 업데이트
+  const getFieldZone = (field) => {
+    return activeCard.fieldPositions?.[field] || (field === "tag" ? "top" : field === "title" ? "center" : "bottom");
+  };
+
+  const updateFieldZone = (field, newZone) => {
+    setCards((prev) =>
+      prev.map((card, idx) => {
+        if (idx !== activeCardIndex) return card;
+        const currentPositions = card.fieldPositions || { tag: "top", title: "center", body: "bottom" };
+        return {
+          ...card,
+          fieldPositions: {
+            ...currentPositions,
+            [field]: newZone
+          }
+        };
+      })
+    );
+  };
+
+  // ⭐ 마우스 드래그를 통한 상·중·하 개별 이동 및 자유 이동 핸들러 (인스타그램 스토리 스타일 가이드 지원)
+  const handleStartFieldDrag = (e, field) => {
+    const fieldStyle = (activeCard.styles || defaultStyles)[field] || defaultStyles[field];
+    if (fieldStyle.isLocked) {
+      // 잠금 상태에서도 클릭하여 선택하고 툴바(잠금 해제 버튼)를 띄울 수 있도록 허용
+      setActiveField(field);
+      setIsMouseOverActiveZone(true);
+      return;
+    }
+
+    // 만약 이미 포커스되어 수정 중인 상태에서 input/textarea 내부를 클릭했다면 기본 타이핑 동작 허용
+    if (focusedField === field && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) {
+      return;
+    }
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let didDrag = false;
+
+    const handleMouseMove = (moveEvent) => {
+      const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+      if (distance > 4) {
+        if (!didDrag) {
+          didDrag = true;
+          setIsDragging(true);
+          setDraggedField(field);
         }
+        setMousePos({ x: moveEvent.clientX, y: moveEvent.clientY });
+
+        if (cardRef.current) {
+          const rect = cardRef.current.getBoundingClientRect();
+          if (isFreeLayoutMode) {
+            // 자유 배치 모드: 마우스 위치에 맞춰 실시간 좌표 계산 + 인스타그램 스토리 중앙 가이드라인 스냅
+            let relX = Math.max(12, Math.min(88, Math.round(((moveEvent.clientX - rect.left) / rect.width) * 100)));
+            let relY = Math.max(10, Math.min(90, Math.round(((moveEvent.clientY - rect.top) / rect.height) * 100)));
+
+            const snapThreshold = 3.5;
+            let snappedX = false;
+            let snappedY = false;
+
+            // X축 중앙 (50%) 스냅 감지
+            if (Math.abs(relX - 50) <= snapThreshold) {
+              relX = 50;
+              snappedX = true;
+            }
+            // Y축 중앙 (50%) 스냅 감지
+            if (Math.abs(relY - 50) <= snapThreshold) {
+              relY = 50;
+              snappedY = true;
+            }
+
+            setIsSnappedX(snappedX);
+            setIsSnappedY(snappedY);
+            setDragCurrentPos({ x: relX, y: relY });
+          } else {
+            // 틀 맞춤 (스냅) 모드
+            const relY = moveEvent.clientY - rect.top;
+            const height = rect.height;
+            if (relY < height * 0.35) {
+              setDragTargetZone("top");
+            } else if (relY < height * 0.68) {
+              setDragTargetZone("center");
+            } else {
+              setDragTargetZone("bottom");
+            }
+          }
+        }
+      }
+    };
+
+    const handleMouseUp = (upEvent) => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+
+      if (didDrag) {
+        if (cardRef.current) {
+          const rect = cardRef.current.getBoundingClientRect();
+          if (isFreeLayoutMode) {
+            let finalX = Math.max(12, Math.min(88, Math.round(((upEvent.clientX - rect.left) / rect.width) * 100)));
+            let finalY = Math.max(10, Math.min(90, Math.round(((upEvent.clientY - rect.top) / rect.height) * 100)));
+            if (Math.abs(finalX - 50) <= 3.5) finalX = 50;
+            if (Math.abs(finalY - 50) <= 3.5) finalY = 50;
+
+            updateFieldPosition(field, { x: finalX, y: finalY });
+            showToast(`✨ ${field === "tag" ? "태그" : field === "title" ? "제목" : "본문"}가 자유 위치로 이동되었습니다`);
+          } else {
+            const relY = upEvent.clientY - rect.top;
+            const height = rect.height;
+            const targetZone = relY < height * 0.35 ? "top" : relY < height * 0.68 ? "center" : "bottom";
+            const zoneY = targetZone === "top" ? 16 : targetZone === "center" ? 48 : 80;
+            updateFieldPosition(field, { x: 50, y: zoneY });
+            updateFieldZone(field, targetZone);
+            showToast(`📍 ${field === "tag" ? "태그" : field === "title" ? "제목" : "본문"}가 ${targetZone === "top" ? "상단" : targetZone === "center" ? "중간" : "하단"} 구역으로 이동되었습니다`);
+          }
+        }
+        setIsDragging(false);
+        setDraggedField(null);
+        setDragTargetZone(null);
+        setDragCurrentPos(null);
+        setIsSnappedX(false);
+        setIsSnappedY(false);
+      } else {
+        // 단순 클릭: 텍스트 박스 선택 및 포커스, 툴바 노출
+        setActiveField(field);
+        setFocusedField(field);
+        setIsMouseOverActiveZone(true);
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  };
+
+  // ⭐ 상단/중간/하단 틀 맞춤 및 문구 설정 프리셋
+  const handleApplyPlacementPreset = (pos) => {
+    updateActiveCard("contentPosition", pos);
+    let newPositions = {
+      tag: { x: 50, y: 16 },
+      title: { x: 50, y: 48 },
+      body: { x: 50, y: 80 }
+    };
+    if (pos === "top") {
+      newPositions = { tag: { x: 50, y: 14 }, title: { x: 50, y: 28 }, body: { x: 50, y: 44 } };
+    } else if (pos === "center") {
+      newPositions = { tag: { x: 50, y: 34 }, title: { x: 50, y: 48 }, body: { x: 50, y: 64 } };
+    } else if (pos === "bottom") {
+      newPositions = { tag: { x: 50, y: 56 }, title: { x: 50, y: 70 }, body: { x: 50, y: 84 } };
+    }
+
+    setCards((prev) =>
+      prev.map((c, idx) =>
+        idx === activeCardIndex
+          ? {
+              ...c,
+              contentPosition: pos,
+              fieldPositions: { tag: pos, title: pos, body: pos },
+              positions: newPositions,
+              freePositions: newPositions
+            }
+          : c
+      )
+    );
+    if (pos === "top") setActiveField("tag");
+    else if (pos === "center") setActiveField("title");
+    else if (pos === "bottom") setActiveField("body");
+    showToast(`📐 ${pos === "top" ? "상단" : pos === "center" ? "중간" : "하단"} 틀에 맞춰 정렬 및 설정되었습니다.`);
+  };
+
+  // AI 텍스트 다듬기 변환 프리셋 실행
+  const handleApplyAiPreset = (presetType) => {
+    const currentText = activeCard[activeField] || "";
+    let newText = currentText;
+
+    if (activeField === "title") {
+      switch (presetType) {
+        case "refine":
+          newText = "하나의 기사,\n무한한 인사이트의 시작";
+          break;
+        case "hook":
+          newText = "초거대 AI 시대,\n단 하나의 질문이 바꾼다";
+          break;
+        case "formal":
+          newText = "디지털 뉴스룸 혁신,\n차세대 콘텐츠 아키텍처";
+          break;
+        case "summarize":
+          newText = "기사 한 편으로\n완성하는 멀티 카드";
+          break;
+        default:
+          break;
+      }
+    } else if (activeField === "body") {
+      switch (presetType) {
+        case "refine":
+          newText = "방향만 정하면 인공지능이 최적의 흐름을 제안하고,\n원하는 스타일로 손쉽게 다듬을 수 있습니다.";
+          break;
+        case "hook":
+          newText = "기획부터 배포까지 걸리는 시간 단 3분,\n지금 바로 달라진 작업 방식을 경험해보세요.";
+          break;
+        case "formal":
+          newText = "정밀한 분석 알고리즘을 토대로\n고품질 카드 뉴스 초안을 체계적으로 생성합니다.";
+          break;
+        case "summarize":
+          newText = "핵심 키워드 추출과 초안 자동 생성을 통해\n신속한 배포를 지원합니다.";
+          break;
+        default:
+          break;
+      }
+    } else {
+      newText = presetType === "formal" ? "심층 기획 리포트" : "AI 트렌드 인사이트";
+    }
+
+    updateActiveCard(activeField, newText);
+    setShowAiMenu(false);
+    showToast("✨ AI가 텍스트를 최적화하여 다듬었습니다.");
+  };
+
+  // 새 카드 추가
+  const handleAddCard = () => {
+    const newId = Date.now();
+    const newCard = {
+      id: newId,
+      role: "본문",
+      tag: "콘텐츠 제작",
+      title: "새 카드 제목",
+      body: "내용을 입력하세요.",
+      bgImage: null,
+      fieldPositions: { tag: "top", title: "center", body: "bottom" },
+      positions: { tag: { x: 50, y: 16 }, title: { x: 50, y: 48 }, body: { x: 50, y: 80 } },
+      freePositions: { tag: { x: 50, y: 16 }, title: { x: 50, y: 48 }, body: { x: 50, y: 80 } },
+      styles: JSON.parse(JSON.stringify(defaultStyles))
+    };
+    setCards((prev) => [...prev, newCard]);
+    setActiveCardIndex(cards.length);
+    setActiveField("title");
+    showToast("새 카드가 추가되었습니다.");
+  };
+
+  // 카드 삭제
+  const handleDeleteCard = (idx, e) => {
+    e.stopPropagation();
+    if (cards.length <= 1) {
+      showToast("최소 1장의 카드는 유지되어야 합니다.");
+      return;
+    }
+    const newCards = cards.filter((_, i) => i !== idx);
+    setCards(newCards);
+    if (activeCardIndex >= newCards.length) {
+      setActiveCardIndex(newCards.length - 1);
+    }
+    showToast("카드가 삭제되었습니다.");
+  };
+
+  // 내 사진 업로드
+  const handleUploadLocalImage = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const imageUrl = uploadEvent.target?.result;
+      updateActiveCard("bgImage", imageUrl);
+      showToast("내 사진이 카드 배경으로 적용되었습니다.");
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  // 검정 배경으로 변경
+  const handleResetBlackBg = () => {
+    updateActiveCard("bgImage", null);
+    showToast("검정 배경으로 변경되었습니다.");
+  };
+
+  // Unsplash 사진 검색
+  const handleSearchUnsplash = async (queryToSearch) => {
+    const q = queryToSearch || unsplashQuery;
+    if (!q.trim()) return;
+    setIsUnsplashLoading(true);
+    setUnsplashError("");
+    try {
+      const data = await searchUnsplashPhotos(q, 1, 16);
+      setUnsplashResults(data.results || []);
+      if (!data.results || data.results.length === 0) {
+        setUnsplashError(`"${q}"에 대한 검색 결과가 없습니다.`);
+      }
+    } catch (err) {
+      setUnsplashError(err.message || "사진 검색 중 오류가 발생했습니다.");
+    } finally {
+      setIsUnsplashLoading(false);
+    }
+  };
+
+  // Unsplash 사진 선택 적용
+  const handleSelectUnsplashPhoto = (photoUrl) => {
+    updateActiveCard("bgImage", photoUrl);
+    setShowUnsplashModal(false);
+    showToast("Unsplash 사진이 카드 배경으로 적용되었습니다.");
+  };
+
+  // 저장하기 핸들러
+  const handleSave = () => {
+    try {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      setLastSavedTime(timeStr);
+      const draft = {
+        cards,
+        selectedPlatforms,
+        activeCardIndex,
+        savedAt: timeStr
       };
-      reader.readAsDataURL(file);
+      localStorage.setItem("team01_news_card_draft", JSON.stringify(draft));
+      showToast(`저장되었습니다. (${timeStr})`);
+    } catch {
+      showToast("저장에 실패했습니다.");
     }
   };
 
-  // 마우스 커서 기반 드래그 핸들러 (Pan)
-  const handleMouseDown = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-    setDragStart({
-      x: e.clientX,
-      y: e.clientY,
-      posX: platformData[activePlatformTab].positionX,
-      posY: platformData[activePlatformTab].positionY
-    });
+  // 배포하기 핸들러
+  const handlePublish = () => {
+    setIsPublishModalOpen(true);
   };
 
-  const handleMouseMove = (e) => {
-    if (!isDragging) return;
-    const deltaX = e.clientX - dragStart.x;
-    const deltaY = e.clientY - dragStart.y;
+  // 현재 카드 JPG 다운로드 (HTML Canvas 1080x1350)
+  const handleDownloadCard = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1080;
+    canvas.height = 1350;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-    // 감도 조절 (픽셀 이동을 % 이동으로 변환)
-    const newX = Math.min(100, Math.max(0, dragStart.posX - deltaX * 0.25));
-    const newY = Math.min(100, Math.max(0, dragStart.posY - deltaY * 0.25));
+    const currentStyles = activeCard.styles || defaultStyles;
+    const tagStyle = currentStyles.tag || defaultStyles.tag;
+    const titleStyle = currentStyles.title || defaultStyles.title;
+    const bodyStyle = currentStyles.body || defaultStyles.body;
 
-    updatePlatformField(activePlatformTab, "positionX", Math.round(newX));
-    updatePlatformField(activePlatformTab, "positionY", Math.round(newY));
-  };
+    const renderTextAndDownload = () => {
+      // 그라데이션 오버레이
+      const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      grad.addColorStop(0, "rgba(0, 0, 0, 0.45)");
+      grad.addColorStop(0.5, "rgba(0, 0, 0, 0.2)");
+      grad.addColorStop(1, "rgba(0, 0, 0, 0.85)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
+      // 태그 렌더링
+      ctx.fillStyle = tagStyle.color || "#A1A1AA";
+      ctx.font = `${tagStyle.isItalic ? "italic " : ""}${tagStyle.isBold ? "bold " : "normal "}${tagStyle.fontSize * 2.5}px sans-serif`;
+      ctx.textAlign = tagStyle.align || "left";
+      const tagX = tagStyle.align === "center" ? 540 : tagStyle.align === "right" ? 1000 : 80;
+      ctx.fillText(activeCard.tag || "콘텐츠 제작", tagX, 860);
 
-  // 마우스 휠로 Zoom 확대/축소
-  const handleWheel = (e) => {
-    e.preventDefault();
-    const currentZoom = platformData[activePlatformTab].zoom;
-    const zoomStep = e.deltaY < 0 ? 5 : -5;
-    const newZoom = Math.min(180, Math.max(80, currentZoom + zoomStep));
-    updatePlatformField(activePlatformTab, "zoom", newZoom);
-  };
+      // 제목 렌더링
+      ctx.fillStyle = titleStyle.color || "#FFFFFF";
+      ctx.font = `${titleStyle.isItalic ? "italic " : ""}${titleStyle.isBold ? "bold " : "normal "}${titleStyle.fontSize * 2.2}px sans-serif`;
+      ctx.textAlign = titleStyle.align || "left";
+      const titleX = titleStyle.align === "center" ? 540 : titleStyle.align === "right" ? 1000 : 80;
+      const titleLines = (activeCard.title || "").split("\n");
+      titleLines.forEach((line, idx) => {
+        ctx.fillText(line, titleX, 940 + idx * 76);
+      });
 
-  // 해시태그 추가
-  const addHashtag = (platform, tag) => {
-    const currentText = platformData[platform].text;
-    if (!currentText.includes(tag)) {
-      updatePlatformField(platform, "text", `${currentText} ${tag}`);
+      // 본문 렌더링
+      ctx.fillStyle = bodyStyle.color || "#E4E4E7";
+      ctx.font = `${bodyStyle.isItalic ? "italic " : ""}${bodyStyle.isBold ? "bold " : "normal "}${bodyStyle.fontSize * 2.4}px sans-serif`;
+      ctx.textAlign = bodyStyle.align || "left";
+      const bodyX = bodyStyle.align === "center" ? 540 : bodyStyle.align === "right" ? 1000 : 80;
+      const bodyLines = (activeCard.body || "").split("\n");
+      const startY = 940 + titleLines.length * 76 + 25;
+      bodyLines.forEach((line, idx) => {
+        ctx.fillText(line, bodyX, startY + idx * 48);
+      });
+
+      // 다운로드 링크 트리거
+      const link = document.createElement("a");
+      link.download = `news-card-${activeCardIndex + 1}.jpg`;
+      link.href = canvas.toDataURL("image/jpeg", 0.95);
+      link.click();
+      showToast(`${activeCardIndex + 1}번 카드가 다운로드되었습니다.`);
+    };
+
+    if (activeCard.bgImage) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const hRatio = canvas.width / img.width;
+        const vRatio = canvas.height / img.height;
+        const ratio = Math.max(hRatio, vRatio);
+        const centerShiftX = (canvas.width - img.width * ratio) / 2;
+        const centerShiftY = (canvas.height - img.height * ratio) / 2;
+        ctx.drawImage(
+          img,
+          0,
+          0,
+          img.width,
+          img.height,
+          centerShiftX,
+          centerShiftY,
+          img.width * ratio,
+          img.height * ratio
+        );
+        renderTextAndDownload();
+      };
+      img.onerror = () => {
+        ctx.fillStyle = "#18181B";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        renderTextAndDownload();
+      };
+      img.src = activeCard.bgImage;
+    } else {
+      ctx.fillStyle = "#18181B";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      renderTextAndDownload();
     }
   };
 
-  // 텍스트 복사
-  const handleCopyText = (platform) => {
-    navigator.clipboard.writeText(platformData[platform].text);
-    setCopiedStatus(platform);
-    setTimeout(() => setCopiedStatus(""), 2000);
+  // 컬러 팔레트 목록
+  const colorPalette = [
+    { label: "화이트", value: "#FFFFFF" },
+    { label: "웜 앰버", value: "#F4A940" },
+    { label: "라이트 골드", value: "#FDE68A" },
+    { label: "에메랄드", value: "#6EE7B7" },
+    { label: "스카이 블루", value: "#93C5FD" },
+    { label: "소프트 로즈", value: "#FCA5A5" },
+    { label: "실버 그레이", value: "#A1A1AA" }
+  ];
+
+  // ────────────────────────────────────────────────────────
+  // ⭐ 해당 텍스트 박스 바로 위에 뜨는 플로팅 텍스트 툴바 컴포넌트
+  // 텍스트 박스를 누르면 바가 올라오고, 마우스가 인터랙션 영역을 완전히 벗어나면 그라데이션으로 부드럽게 사라짐
+  // ────────────────────────────────────────────────────────
+  const renderFloatingToolbar = (field) => {
+    const isVisible = activeField === field && isMouseOverActiveZone;
+    const fStyle = (activeCard.styles || defaultStyles)[field] || defaultStyles[field];
+
+    return (
+      <div
+        className={`absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 ease-out select-none ${
+          isVisible
+            ? "opacity-100 translate-y-0 scale-100 pointer-events-auto filter-none"
+            : "opacity-0 translate-y-2 scale-95 pointer-events-none filter blur-[2px]"
+        }`}
+        onClick={(e) => e.stopPropagation()}
+        onMouseEnter={() => setIsMouseOverActiveZone(true)}
+      >
+        {/* 마우스가 텍스트 박스에서 툴바로 이동할 때 연결을 유지해주는 투명 히트 브릿지 */}
+        <div className="absolute inset-x-0 -bottom-3.5 h-4 pointer-events-auto" />
+        <div className="bg-gradient-to-r from-white/95 via-white/90 to-white/95 backdrop-blur-xl rounded-xl border border-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.18)] px-2.5 py-1 flex items-center gap-1.5 transition-all">
+          {/* 1. 폰트 크기 조절 (16 ↑↓) */}
+          <div className="flex items-center gap-1 pl-1">
+            <span className="text-[11px] font-bold font-mono text-[#292B2F] min-w-[18px] text-center">
+              {fStyle.fontSize}
+            </span>
+            <div className="flex flex-col">
+              <button
+                type="button"
+                onClick={() => updateFieldStyle(field, "fontSize", Math.min(64, fStyle.fontSize + 2))}
+                className="p-0.5 text-stone-500 hover:text-black cursor-pointer"
+                title="글자 크기 키우기"
+              >
+                <ChevronUp className="w-2.5 h-2.5 stroke-[2.5]" />
+              </button>
+              <button
+                type="button"
+                onClick={() => updateFieldStyle(field, "fontSize", Math.max(10, fStyle.fontSize - 2))}
+                className="p-0.5 text-stone-500 hover:text-black cursor-pointer"
+                title="글자 크기 줄이기"
+              >
+                <ChevronDown className="w-2.5 h-2.5 stroke-[2.5]" />
+              </button>
+            </div>
+          </div>
+
+          <div className="h-3.5 w-px bg-stone-200" />
+
+          {/* 2. 글자 색상 선택 (A & Palette) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowColorPicker(!showColorPicker)}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-stone-100 text-xs font-black cursor-pointer transition"
+              title="글자 색상 변경"
+              style={{ color: fStyle.color }}
+            >
+              <span className="underline decoration-2">A</span>
+              <Palette className="w-3 h-3 text-stone-500" />
+            </button>
+
+            {showColorPicker && (
+              <div className="absolute bottom-full mb-2 left-0 z-50 bg-white/95 backdrop-blur-xl rounded-2xl p-2 shadow-2xl border border-stone-200/80 flex gap-1.5 animate-smooth-pop">
+                {colorPalette.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => {
+                      updateFieldStyle(field, "color", item.value);
+                      setShowColorPicker(false);
+                    }}
+                    className="w-5 h-5 rounded-full border border-stone-300 shadow-2xs hover:scale-110 transition-transform cursor-pointer"
+                    style={{ backgroundColor: item.value }}
+                    title={item.label}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="h-3.5 w-px bg-stone-200" />
+
+          {/* 3. 서식: Bold, Italic, Underline, Strikethrough */}
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => updateFieldStyle(field, "isBold", !fStyle.isBold)}
+              className={`w-6 h-6 rounded flex items-center justify-center text-xs transition cursor-pointer ${
+                fStyle.isBold ? "bg-stone-900 text-white font-black" : "text-stone-700 hover:bg-stone-100"
+              }`}
+              title="굵게 (Bold)"
+            >
+              <Bold className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFieldStyle(field, "isItalic", !fStyle.isItalic)}
+              className={`w-6 h-6 rounded flex items-center justify-center text-xs transition cursor-pointer ${
+                fStyle.isItalic ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-100"
+              }`}
+              title="기울임 (Italic)"
+            >
+              <Italic className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFieldStyle(field, "isUnderline", !fStyle.isUnderline)}
+              className={`w-6 h-6 rounded flex items-center justify-center text-xs transition cursor-pointer ${
+                fStyle.isUnderline ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-100"
+              }`}
+              title="밑줄 (Underline)"
+            >
+              <Underline className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFieldStyle(field, "isStrike", !fStyle.isStrike)}
+              className={`w-6 h-6 rounded flex items-center justify-center text-xs transition cursor-pointer ${
+                fStyle.isStrike ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-100"
+              }`}
+              title="취소선 (Strikethrough)"
+            >
+              <Strikethrough className="w-3 h-3" />
+            </button>
+          </div>
+
+          <div className="h-3.5 w-px bg-stone-200" />
+
+          {/* 4. 텍스트 정렬 */}
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => updateFieldStyle(field, "align", "left")}
+              className={`w-6 h-6 rounded flex items-center justify-center text-xs transition cursor-pointer ${
+                fStyle.align === "left" ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-100"
+              }`}
+              title="왼쪽 정렬"
+            >
+              <AlignLeft className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFieldStyle(field, "align", "center")}
+              className={`w-6 h-6 rounded flex items-center justify-center text-xs transition cursor-pointer ${
+                fStyle.align === "center" ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-100"
+              }`}
+              title="가운데 정렬"
+            >
+              <AlignCenter className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFieldStyle(field, "align", "right")}
+              className={`w-6 h-6 rounded flex items-center justify-center text-xs transition cursor-pointer ${
+                fStyle.align === "right" ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-100"
+              }`}
+              title="오른쪽 정렬"
+            >
+              <AlignRight className="w-3 h-3" />
+            </button>
+          </div>
+
+          <div className="h-3.5 w-px bg-stone-200" />
+
+          {/* 5. AI 마법사 / 다듬기 버튼 (화이트 글씨 & 솔리드 블랙) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowAiMenu(!showAiMenu)}
+              className="bg-[#18181B] hover:bg-black text-white px-2 py-0.5 rounded-lg text-[11px] font-black flex items-center gap-1 shadow-xs cursor-pointer transition active:scale-95"
+              title="AI 문구 다듬기"
+            >
+              <Sparkles className="w-3 h-3 text-white" />
+              <span className="text-white">AI</span>
+            </button>
+
+            {/* AI 드롭다운 메뉴 */}
+            {showAiMenu && (
+              <div className="absolute bottom-full mb-2 right-0 z-50 bg-white/95 backdrop-blur-xl rounded-xl p-2 shadow-2xl border border-white/80 w-44 space-y-1 animate-smooth-pop">
+                <div className="text-[10px] font-mono text-stone-600 px-2 py-1 font-bold">
+                  AI 텍스트 최적화
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleApplyAiPreset("refine")}
+                  className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-stone-100 text-xs font-medium flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Wand2 className="w-3.5 h-3.5 text-stone-500" />
+                  <span>더 매력적으로 다듬기</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyAiPreset("hook")}
+                  className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-stone-100 text-xs font-medium flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span>헤드라인 강화</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyAiPreset("formal")}
+                  className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-stone-100 text-xs font-medium flex items-center gap-2 cursor-pointer transition"
+                >
+                  <Check className="w-3.5 h-3.5 text-stone-500" />
+                  <span>전문적인 어조</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyAiPreset("summarize")}
+                  className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-stone-100 text-xs font-medium flex items-center gap-2 cursor-pointer transition"
+                >
+                  <ArrowRight className="w-3.5 h-3.5 text-stone-500" />
+                  <span>핵심 요약</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="h-3.5 w-px bg-stone-200" />
+
+          {/* ⭐ 6. 잠금 및 잠금 해제 버튼: 오른쪽 맨 끝에 위치 */}
+          <button
+            type="button"
+            onClick={() => toggleFieldLock(field)}
+            className={`px-2 py-1 rounded-lg flex items-center gap-1 transition cursor-pointer text-xs font-bold ${
+              fStyle.isLocked
+                ? "bg-[#F4A940] hover:bg-[#E59830] text-white shadow-xs font-black ring-1 ring-[#E59830]"
+                : "text-stone-500 hover:text-black hover:bg-stone-100"
+            }`}
+            title={fStyle.isLocked ? "클릭하여 잠금 해제" : "영역 잠금"}
+          >
+            {fStyle.isLocked ? (
+              <>
+                <Lock className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span className="text-[11px] font-bold">잠금 해제</span>
+              </>
+            ) : (
+              <Unlock className="w-3.5 h-3.5 stroke-[2]" />
+            )}
+          </button>
+        </div>
+      </div>
+    );
   };
 
-  // 인쇄 기능
-  const handlePrint = () => {
-    window.print();
-  };
+  // ────────────────────────────────────────────────────────
+  // ⭐ 개별 텍스트 블록 렌더링 컴포넌트
+  // 텍스트가 있는 범위에만 테두리가 타이트하게 감싸지도록 (인스타그램 스토리 스티커 스타일)
+  // ────────────────────────────────────────────────────────
+  const renderField = (field) => {
+    const s = (activeCard.styles || defaultStyles)[field] || defaultStyles[field];
+    const isEditing = focusedField === field;
+    const isSelected = activeField === field;
+    const isBeingDragged = isDragging && draggedField === field;
 
-  // 배포 시뮬레이션
-  const handlePublish = (targetName = "전체") => {
-    setPublishedTarget(targetName);
-    setIsPublishing(true);
-    setTimeout(() => {
-      setIsPublishing(false);
-      setIsPublishModalOpen(true);
-    }, 1200);
-  };
+    return (
+      <div
+        key={field}
+        onMouseDown={(e) => handleStartFieldDrag(e, field)}
+        onClick={() => {
+          setActiveField(field);
+          setIsMouseOverActiveZone(true);
+        }}
+        onMouseEnter={() => {
+          setHoveredField(field);
+          if (activeField === field) {
+            setIsMouseOverActiveZone(true);
+          }
+        }}
+        onMouseLeave={(e) => {
+          // 커서가 텍스트 박스와 툴바 영역을 완전히 벗어났을 때만 바가 사라지도록 처리
+          if (!e.currentTarget.contains(e.relatedTarget)) {
+            setIsMouseOverActiveZone(false);
+            setShowColorPicker(false);
+            setShowAiMenu(false);
+          }
+        }}
+        className={`relative inline-flex flex-col items-center w-fit max-w-[92%] p-2 rounded-xl transition-all ${
+          s.isLocked
+            ? "cursor-pointer opacity-85 ring-1 ring-amber-400/50 bg-amber-500/5 hover:ring-amber-400"
+            : isBeingDragged
+            ? isFreeLayoutMode
+              ? "cursor-grabbing ring-2 ring-[#0095F6] border border-dashed border-[#0095F6] bg-[#0095F6]/15 shadow-xl scale-[1.03]"
+              : "cursor-grabbing ring-2 ring-[#F4A940] border border-dashed border-[#F4A940] bg-[#F4A940]/15 shadow-xl scale-[1.03]"
+            : isEditing
+            ? isFreeLayoutMode
+              ? "cursor-text ring-1 ring-[#0095F6] bg-white/10"
+              : "cursor-text ring-1 ring-white/60 bg-white/10"
+            : isSelected
+            ? isFreeLayoutMode
+              ? "cursor-grab active:cursor-grabbing ring-1.5 ring-[#0095F6] border border-dashed border-[#0095F6]/80 bg-[#0095F6]/5 shadow-md"
+              : "cursor-grab active:cursor-grabbing ring-1.5 ring-[#F4A940] border border-dashed border-[#F4A940]/60 bg-white/5 shadow-md"
+            : isFreeLayoutMode
+            ? "cursor-grab active:cursor-grabbing hover:ring-1 hover:ring-[#0095F6]/40 hover:bg-white/5"
+            : "cursor-grab active:cursor-grabbing hover:ring-1 hover:ring-white/25 hover:bg-white/5"
+        } ${isBeingDragged ? "z-40" : ""}`}
+      >
+        {/* 텍스트 박스 바로 위에 뜨는 툴바 */}
+        {renderFloatingToolbar(field)}
 
-  const currentPlatformInfo = platforms.find((p) => p.id === activePlatformTab);
-  const currentData = platformData[activePlatformTab];
+        {/* 필드별 입력 엘리먼트 (텍스트 길이에 딱 맞게 테두리가 감싸지도록 CSS Grid Auto-fit 적용) */}
+        {field === "tag" ? (
+          <div className="relative inline-grid items-center justify-center min-w-[50px] max-w-full">
+            {/* 텍스트 폭을 정확하게 측정해주는 고스트 엘리먼트 */}
+            <span
+              aria-hidden="true"
+              className="invisible col-start-1 row-start-1 px-2.5 py-0.5 whitespace-pre select-none pointer-events-none tracking-tight text-center"
+              style={{
+                fontSize: `${s.fontSize}px`,
+                fontWeight: s.isBold ? "bold" : "normal",
+                fontStyle: s.isItalic ? "italic" : "normal",
+                textAlign: s.align,
+                fontFamily: "inherit"
+              }}
+            >
+              {activeCard.tag || "콘텐츠 제작"}
+            </span>
+            <input
+              type="text"
+              disabled={s.isLocked}
+              value={activeCard.tag || ""}
+              onFocus={() => {
+                setActiveField("tag");
+                setFocusedField("tag");
+                setIsMouseOverActiveZone(true);
+              }}
+              onBlur={() => setFocusedField(null)}
+              onChange={(e) => updateActiveCard("tag", e.target.value)}
+              placeholder="콘텐츠 제작"
+              style={{
+                color: s.color,
+                fontSize: `${s.fontSize}px`,
+                fontWeight: s.isBold ? "bold" : "normal",
+                fontStyle: s.isItalic ? "italic" : "normal",
+                textDecoration: `${s.isUnderline ? "underline " : ""}${s.isStrike ? "line-through" : ""}`.trim() || "none",
+                textAlign: s.align
+              }}
+              className={`col-start-1 row-start-1 w-full bg-transparent outline-none px-2.5 py-0.5 tracking-tight text-center transition ${
+                s.isLocked ? "cursor-pointer" : isEditing ? "cursor-text select-text" : "cursor-grab"
+              }`}
+            />
+            {s.isLocked && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFieldLock(field);
+                }}
+                className="absolute -right-8 top-1/2 -translate-y-1/2 text-amber-300 hover:text-white bg-black/85 hover:bg-[#F4A940] transition-all px-1.5 py-0.5 rounded-full flex items-center gap-1 cursor-pointer shadow-md ring-1 ring-amber-400/60 text-[9px] font-bold z-20"
+                title="클릭하여 잠금 해제"
+              >
+                <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                <span>해제</span>
+              </button>
+            )}
+          </div>
+        ) : field === "title" ? (
+          <div className="relative inline-grid items-center justify-center min-w-[70px] max-w-full">
+            {/* 줄바꿈 및 글자 폭을 완벽하게 반영하는 고스트 엘리먼트 */}
+            <span
+              aria-hidden="true"
+              className="invisible col-start-1 row-start-1 px-2.5 py-1 whitespace-pre-wrap break-words select-none pointer-events-none leading-tight tracking-tight text-center"
+              style={{
+                fontSize: `${s.fontSize}px`,
+                fontWeight: s.isBold ? "bold" : "normal",
+                fontStyle: s.isItalic ? "italic" : "normal",
+                textAlign: s.align,
+                fontFamily: "inherit"
+              }}
+            >
+              {(activeCard.title || "하나의 기사,\n여러 개의 이야기") + " "}
+            </span>
+            <textarea
+              rows={activeCard.title ? activeCard.title.split("\n").length : 2}
+              disabled={s.isLocked}
+              value={activeCard.title || ""}
+              onFocus={() => {
+                setActiveField("title");
+                setFocusedField("title");
+                setIsMouseOverActiveZone(true);
+              }}
+              onBlur={() => setFocusedField(null)}
+              onChange={(e) => updateActiveCard("title", e.target.value)}
+              placeholder="하나의 기사,\n여러 개의 이야기"
+              style={{
+                color: s.color,
+                fontSize: `${s.fontSize}px`,
+                fontWeight: s.isBold ? "bold" : "normal",
+                fontStyle: s.isItalic ? "italic" : "normal",
+                textDecoration: `${s.isUnderline ? "underline " : ""}${s.isStrike ? "line-through" : ""}`.trim() || "none",
+                textAlign: s.align
+              }}
+              className={`col-start-1 row-start-1 w-full h-full bg-transparent outline-none resize-none px-2.5 py-1 leading-tight tracking-tight text-center transition ${
+                s.isLocked ? "cursor-pointer" : isEditing ? "cursor-text select-text" : "cursor-grab"
+              }`}
+            />
+            {s.isLocked && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFieldLock(field);
+                }}
+                className="absolute -top-3 -right-3 text-amber-300 hover:text-white bg-black/85 hover:bg-[#F4A940] transition-all px-2 py-0.5 rounded-full flex items-center gap-1 cursor-pointer shadow-md ring-1 ring-amber-400/60 text-[10px] font-bold z-20"
+                title="클릭하여 잠금 해제"
+              >
+                <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                <span>잠금 해제</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="relative inline-grid items-center justify-center min-w-[70px] max-w-full">
+            <span
+              aria-hidden="true"
+              className="invisible col-start-1 row-start-1 px-2.5 py-1 whitespace-pre-wrap break-words select-none pointer-events-none leading-relaxed tracking-tight text-center"
+              style={{
+                fontSize: `${s.fontSize}px`,
+                fontWeight: s.isBold ? "bold" : "normal",
+                fontStyle: s.isItalic ? "italic" : "normal",
+                textAlign: s.align,
+                fontFamily: "inherit"
+              }}
+            >
+              {(activeCard.body || "사용자가 방향을 선택하고\nAI가 초안 제작을 돕습니다.") + " "}
+            </span>
+            <textarea
+              rows={activeCard.body ? activeCard.body.split("\n").length : 3}
+              disabled={s.isLocked}
+              value={activeCard.body || ""}
+              onFocus={() => {
+                setActiveField("body");
+                setFocusedField("body");
+                setIsMouseOverActiveZone(true);
+              }}
+              onBlur={() => setFocusedField(null)}
+              onChange={(e) => updateActiveCard("body", e.target.value)}
+              placeholder="사용자가 방향을 선택하고\nAI가 초안 제작을 돕습니다."
+              style={{
+                color: s.color,
+                fontSize: `${s.fontSize}px`,
+                fontWeight: s.isBold ? "bold" : "normal",
+                fontStyle: s.isItalic ? "italic" : "normal",
+                textDecoration: `${s.isUnderline ? "underline " : ""}${s.isStrike ? "line-through" : ""}`.trim() || "none",
+                textAlign: s.align
+              }}
+              className={`col-start-1 row-start-1 w-full h-full bg-transparent outline-none resize-none px-2.5 py-1 leading-relaxed tracking-tight text-center transition ${
+                s.isLocked ? "cursor-pointer" : isEditing ? "cursor-text select-text" : "cursor-grab"
+              }`}
+            />
+            {s.isLocked && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFieldLock(field);
+                }}
+                className="absolute -top-3 -right-3 text-amber-300 hover:text-white bg-black/85 hover:bg-[#F4A940] transition-all px-2 py-0.5 rounded-full flex items-center gap-1 cursor-pointer shadow-md ring-1 ring-amber-400/60 text-[10px] font-bold z-20"
+                title="클릭하여 잠금 해제"
+              >
+                <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                <span>잠금 해제</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div 
-      className="w-full space-y-6 animate-float-in"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-    >
-
+    <div className="w-full space-y-5 animate-fade-in text-[#292B2F]">
       {/* ──────────────────────────────────────────
-          1. 상단: 전환 중인 기사 표시 & 콤팩트 기사 변경 셀렉터
-          (기존의 불필요한 큰 상단 바를 제거하고 시원하게 상향 정렬)
+          1. 최상단 헤더 바
+          [NEWSROOM / CONTENT STUDIO]
+          [뉴스 카드 편집실]
+          [우측: 저장 시간 + 저장하기 버튼 + 배포하기 버튼]
          ────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-[11px] font-extrabold px-3 py-1 bg-[#EFECE6] text-[#23211F] rounded-full border border-[#DDD6CB] flex-shrink-0">
-            전환 중인 기사
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E7E2D9]">
+        <div>
+          <span className="text-[11px] font-mono tracking-widest text-stone-600 block uppercase font-bold">
+            NEWSROOM / CONTENT STUDIO
           </span>
-          <h2 className="text-sm md:text-base font-black text-slate-900 truncate">
-            {selectedArticle.title}
+          <h2 className="text-xl md:text-2xl font-black text-[#292B2F] tracking-tight">
+            뉴스 카드 편집실
           </h2>
         </div>
 
-        {/* 기사 선택 기능 유지 (콤팩트 드롭다운) */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-[11px] text-slate-400 font-bold hidden md:inline">기사 변경:</span>
-          <select
-            value={selectedArticle.id}
-            onChange={(e) => {
-              const art = initialArticles.find((a) => a.id === parseInt(e.target.value));
-              if (art) setSelectedArticle(art);
-            }}
-            className="px-3.5 py-1.5 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] text-xs font-bold rounded-full border border-[#DDD6CB] outline-none cursor-pointer transition shadow-2xs"
+        {/* 저장 시간, 저장하기, 배포하기 버튼 그룹 */}
+        <div className="flex items-center gap-2.5 flex-wrap justify-end">
+          {/* 저장 시간 인디케이터 */}
+          {lastSavedTime ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-stone-200 text-[11px] font-mono font-medium text-stone-600 shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>저장 {lastSavedTime}</span>
+            </div>
+          ) : (
+            <div className="text-[11px] font-mono text-stone-600 hidden sm:block px-2">
+              저장 기록 없음
+            </div>
+          )}
+
+          {/* 저장하기 버튼 (White Pill 스타일) */}
+          <button
+            type="button"
+            onClick={handleSave}
+            className="btn-pill-white gap-3 text-xs"
+            title="현재 작업 내용을 저장합니다"
           >
-            {initialArticles.map((art) => (
-              <option key={art.id} value={art.id}>
-                {art.title.slice(0, 24)}...
-              </option>
-            ))}
-          </select>
+            <span>저장하기</span>
+            <span className="btn-pill-badge">
+              <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+            </span>
+          </button>
+
+          {/* 배포하기 버튼 (Dark Pill 스타일) */}
+          <button
+            type="button"
+            onClick={handlePublish}
+            className="btn-pill-dark gap-3 text-xs"
+            title="제작된 카드 뉴스를 최종 배포합니다"
+          >
+            <span>배포하기</span>
+            <span className="btn-pill-badge">
+              <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+            </span>
+          </button>
         </div>
       </div>
 
       {/* ──────────────────────────────────────────
-          2단 메인 레이아웃:
-          [왼쪽] 플랫폼 선택 패널 (w-full lg:w-72 xl:w-80)
-          [오른쪽] 실시간 피드 메인 편집 캔버스 (flex-1)
+          2. 3단 메인 작업 영역
          ────────────────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row items-start gap-6 w-full">
-
-        {/* ──────────────────────────────────────────
-            [왼쪽] 플랫폼 선택 & 컨트롤 패널
-           ────────────────────────────────────────── */}
-        <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* ──────── [좌측 패널 (lg:col-span-3)] ──────── */}
+        <div className="lg:col-span-3 bg-white/75 backdrop-blur-md rounded-2xl border border-white/80 p-5 shadow-[0_4px_24px_rgba(0,0,0,0.02)] space-y-4">
           
-          {/* 플랫폼 선택 카드 컨테이너 */}
-          <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900">배포 플랫폼 선택</h3>
-                <p className="text-[11px] text-slate-400 font-medium">다중 선택 가능 (체크박스)</p>
+          {/* ⭐ 1. 배포 플랫폼 선택 위: 기사 전문 보기 (박스 형태 없이 오픈형으로 배치) */}
+          <div className="pb-3.5 border-b border-stone-200/60 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-[#F4A940]" />
+                <span className="text-xs font-bold text-[#292929]">작성 중인 기사</span>
               </div>
-              <span className="text-[11px] font-extrabold px-2.5 py-1 bg-[#EFECE6] text-[#23211F] rounded-full border border-[#DDD6CB]">
-                {selectedPlatforms.length}개 선택됨
+              <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                연동 중
               </span>
             </div>
 
-            {/* 3개 플랫폼 체크박스 카드 리스트 */}
-            <div className="space-y-2.5">
-              {platforms.map((p) => {
-                const isSelected = selectedPlatforms.includes(p.id);
-                const Icon = p.icon;
+            <p className="text-xs font-extrabold text-[#292929] line-clamp-2 leading-snug">
+              {activeArticle.title || "제목 없는 기사"}
+            </p>
 
+            <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-[#666666]">
+              <span className="font-bold text-[#008285] bg-[#E6F4F4] px-1.5 py-0.5 rounded-md">
+                {activeArticle.category || "사회"}
+              </span>
+              <span>{activeArticle.content ? `${activeArticle.content.length.toLocaleString()}자` : "0자"}</span>
+              <span>· 약 {Math.max(1, Math.ceil((activeArticle.content?.length || 0) / 500))}분</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                window.scrollTo({ top: 0, behavior: "smooth" });
+                setShowFullArticleModal(true);
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#292929] hover:text-[#F4A940] transition-colors pt-0.5 cursor-pointer group"
+              title="클릭 시 기사 전문 열람"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-[#F4A940]" />
+              <span>기사 전문 보기</span>
+              <ArrowRight className="w-3.5 h-3.5 text-[#F4A940] group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          </div>
+
+          {/* 2. 배포 플랫폼 선택 */}
+          <div className="space-y-2 pb-3.5 border-b border-stone-200/60">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black text-[#292929]">배포 플랫폼 선택</h3>
+              <span className="text-[10px] text-[#666666] font-medium">다중 선택</span>
+            </div>
+
+            <div className="space-y-1.5">
+              {[
+                { id: "instagram", label: "Instagram" },
+                { id: "threads", label: "Threads" },
+                { id: "blog", label: "Blog" }
+              ].map((item) => {
+                const isChecked = selectedPlatforms.includes(item.id);
                 return (
-                  <div
-                    key={p.id}
-                    onClick={() => togglePlatform(p.id)}
-                    className={`p-3.5 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center justify-between group active:scale-98 ${
-                      isSelected
-                        ? "bg-[#23211F] text-[#FAF8F5] border-[#23211F] shadow-sm"
-                        : "bg-[#EFECE6]/50 hover:bg-[#EFECE6] text-[#23211F] border-[#DDD6CB]"
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => togglePlatform(item.id)}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-2.5 transition cursor-pointer select-none text-left ${
+                      isChecked
+                        ? "bg-white border-[#292929] text-[#292929] shadow-2xs"
+                        : "bg-white/60 border-stone-200/70 text-stone-600 hover:bg-white"
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      {/* 체크박스 UI */}
-                      <div className="flex-shrink-0">
-                        {isSelected ? (
-                          <div className="w-5 h-5 rounded-md bg-white text-[#23211F] flex items-center justify-center shadow-xs">
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          </div>
-                        ) : (
-                          <div className="w-5 h-5 rounded-md border-2 border-[#DDD6CB] bg-white group-hover:border-[#23211F] transition" />
-                        )}
-                      </div>
-
-                      {/* 플랫폼 아이콘 & 명칭 */}
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <Icon className={`w-4 h-4 ${isSelected ? "text-white" : "text-[#23211F]"}`} />
-                          <span className="text-sm font-extrabold tracking-tight">{p.label}</span>
-                        </div>
-                        <span className={`text-[11px] block mt-0.5 ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
-                          {p.badge}
-                        </span>
-                      </div>
+                    <div
+                      className={`w-4 h-4 rounded-md flex items-center justify-center border transition-all ${
+                        isChecked
+                          ? "bg-[#292929] border-[#292929] text-white"
+                          : "bg-white border-stone-300"
+                      }`}
+                    >
+                      {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                     </div>
-
-                    {isSelected && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-                    )}
-                  </div>
+                    <span>{item.label}</span>
+                  </button>
                 );
               })}
             </div>
 
-            {/* 안내 가이드 메시지 */}
-            <div className="p-3 bg-[#EFECE6]/60 rounded-2xl border border-[#DDD6CB] text-[11px] text-slate-600 leading-relaxed font-medium">
-              💡 플랫폼을 선택하면 오른쪽에 실제 포맷의 <strong className="text-slate-900">실시간 피드 편집 화면</strong>이 열리며, 이미지와 글을 화면 위에서 즉시 직접 수정할 수 있습니다.
+            <p className="text-[10px] text-[#999999] leading-relaxed pt-0.5">
+              Instagram 카드 규격으로 편집 중입니다.
+            </p>
+          </div>
+
+          {/* 3. 선택한 카드의 사진 */}
+          <div className="space-y-2 pb-3.5 border-b border-stone-200/60">
+            <h3 className="text-xs font-black text-[#292929]">선택한 카드의 사진</h3>
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUnsplashModal(true);
+                  if (unsplashResults.length === 0) {
+                    handleSearchUnsplash(unsplashQuery);
+                  }
+                }}
+                className="btn-pill-dark w-full text-xs"
+              >
+                <span>Unsplash 사진 검색</span>
+                <span className="btn-pill-badge">
+                  <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-pill-white w-full text-xs"
+              >
+                <span>내 사진 불러오기</span>
+                <span className="btn-pill-badge">
+                  <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                </span>
+              </button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handleUploadLocalImage}
+                className="hidden"
+              />
+
+              <button
+                type="button"
+                onClick={handleResetBlackBg}
+                className="w-full py-2 px-3 bg-[#18181B] hover:bg-black text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+              >
+                <span>검정 배경으로 변경</span>
+              </button>
             </div>
           </div>
 
-          {/* 배포 대기 채널 위젯 */}
-          {selectedPlatforms.length > 0 && (
-            <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-5 shadow-xs space-y-3 animate-float-in">
-              <span className="text-xs font-extrabold text-slate-900 block">배포 대기 채널</span>
-              <div className="space-y-1.5">
-                {selectedPlatforms.map((pid) => {
-                  const p = platforms.find((item) => item.id === pid);
-                  const isCurrent = activePlatformTab === pid;
+          {/* 4. 편집 안내 */}
+          <div className="space-y-1">
+            <h3 className="text-xs font-black text-[#292929]">편집 안내</h3>
+            <p className="text-[11px] text-[#666666] leading-relaxed">
+              수정할 텍스트를 누르면 플로팅 텍스트바가 열립니다. 서식 변경 및 <strong>고정(🔒)</strong>이 가능합니다.
+            </p>
+          </div>
+        </div>
+
+        {/* ──────── [중앙 패널 (lg:col-span-6)]: 카드 편집 캔버스 (스크롤 시 고정되어 따라오는 sticky 적용) ──────── */}
+        <div className="lg:col-span-6 sticky top-4 self-start bg-white/75 backdrop-blur-md rounded-2xl border border-white/80 p-5 md:p-6 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col justify-between space-y-4 relative z-10">
+          {/* 상단 바: N번 카드 편집 + 4:5 1080 x 1350 */}
+          {/* 상단 메타 바: 비율 & 상태 & 자유 배치 버튼 */}
+          <div className="flex items-center justify-between pb-3 border-b border-stone-200/60 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs md:text-sm font-black text-[#292929]">
+                {activeCardIndex + 1}번 카드 편집
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-medium">
+                수정 중: {activeField === "tag" ? "태그" : activeField === "title" ? "제목" : "본문"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* ⭐ 카드뉴스 편집기능 오른쪽 상단 '자유 배치 편집' 버튼 */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFreeLayoutMode(!isFreeLayoutMode);
+                  showToast(
+                    !isFreeLayoutMode
+                      ? "✨ 자유 배치 모드가 활성화되었습니다. 위치 변경 없이 자유롭게 드래그하세요."
+                      : "📐 틀 맞춤 모드로 전환되었습니다. 상·중·하 스냅으로 정렬됩니다."
+                  );
+                }}
+                className={`px-3 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+                  isFreeLayoutMode
+                    ? "bg-[#0095F6] text-white shadow-sm ring-1 ring-[#0081D6]"
+                    : "bg-white text-stone-700 hover:bg-stone-50 border border-stone-200 hover:text-black"
+                }`}
+                title={isFreeLayoutMode ? "상·중·하 틀 맞춤 모드로 전환" : "원하는 위치로 자유롭게 드래그하여 배치 (인스타그램 스토리 스타일)"}
+              >
+                <Move className="w-3.5 h-3.5" />
+                <span>{isFreeLayoutMode ? "자유 배치 중" : "자유 배치 편집"}</span>
+              </button>
+
+              <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-stone-500 bg-stone-100 px-2.5 py-1 rounded-xl border border-stone-200/70">
+                <span>4:5</span>
+                <span>1080 × 1350</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 중앙 카드 미리보기 (솔리드 블랙 4:5 비율 캔버스 - overflow-visible로 툴바 노출) */}
+          <div className="py-6 flex items-center justify-center relative">
+            <div
+              ref={cardRef}
+              className="w-full max-w-[430px] aspect-[4/5] rounded-2xl shadow-2xl relative select-none border border-zinc-900 transition-all overflow-visible"
+            >
+              {/* 내부 배경 및 그라데이션 레이어 (rounded & overflow-hidden) - 솔리드 블랙 유지 */}
+              <div
+                className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none"
+                style={{
+                  backgroundColor: activeCard.bgImage ? "transparent" : "#18181B",
+                  backgroundImage: activeCard.bgImage ? `url(${activeCard.bgImage})` : "none",
+                  backgroundSize: "cover",
+                  backgroundPosition: "center"
+                }}
+              >
+                <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/85" />
+              </div>
+
+              {/* ⭐ 인스타그램 스토리 스타일 파란색 점선 중앙 가이드라인 (자유 배치 모드 드래그 시) */}
+              {isFreeLayoutMode && isDragging && (
+                <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none z-20">
+                  {/* 수직 중앙선 (V-Center Line: 50%) */}
+                  <div
+                    className={`absolute top-0 bottom-0 left-1/2 -translate-x-1/2 border-l-2 border-dashed transition-all duration-150 ${
+                      isSnappedX
+                        ? "border-[#0095F6] shadow-[0_0_14px_rgba(0,149,246,0.95)] opacity-100"
+                        : "border-[#0095F6]/45 opacity-45"
+                    }`}
+                  />
+
+                  {/* 수평 중앙선 (H-Center Line: 50%) */}
+                  <div
+                    className={`absolute left-0 right-0 top-1/2 -translate-y-1/2 border-t-2 border-dashed transition-all duration-150 ${
+                      isSnappedY
+                        ? "border-[#0095F6] shadow-[0_0_14px_rgba(0,149,246,0.95)] opacity-100"
+                        : "border-[#0095F6]/45 opacity-45"
+                    }`}
+                  />
+
+                  {/* 인스타그램 스타일 중앙 스냅 뱃지 알림 */}
+                  {(isSnappedX || isSnappedY) && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-[#0095F6] text-white px-3 py-1 rounded-full text-[11px] font-black shadow-[0_4px_16px_rgba(0,149,246,0.5)] flex items-center gap-1.5 animate-smooth-pop">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                      <span>
+                        {isSnappedX && isSnappedY
+                          ? "정중앙 맞춤 (Instagram Center)"
+                          : isSnappedX
+                          ? "수직 중앙선 맞춤"
+                          : "수평 중앙선 맞춤"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ⭐ 틀 맞춤 모드 시 마우스 드래그 중 실시간으로 나타나는 점선 가이드 박스 */}
+              {!isFreeLayoutMode && (
+                <div
+                  className={`absolute inset-x-5 inset-y-5 pointer-events-none flex flex-col justify-between z-20 transition-all duration-300 ease-out ${
+                    isDragging
+                      ? "opacity-100 scale-100 pointer-events-none"
+                      : "opacity-0 scale-95 pointer-events-none"
+                  }`}
+                >
+                  <div
+                    className={`h-24 rounded-xl border-2 border-dashed transition-all duration-300 ease-out flex items-center justify-center text-xs font-black ${
+                      dragTargetZone === "top"
+                        ? "border-[#F4A940] bg-[#F4A940]/25 text-[#F4A940] shadow-lg scale-[1.02]"
+                        : "border-white/20 text-white/30"
+                    }`}
+                  >
+                    <span>상단 배치 영역</span>
+                  </div>
+                  <div
+                    className={`h-28 rounded-xl border-2 border-dashed transition-all duration-300 ease-out flex items-center justify-center text-xs font-black ${
+                      dragTargetZone === "center"
+                        ? "border-[#F4A940] bg-[#F4A940]/25 text-[#F4A940] shadow-lg scale-[1.02]"
+                        : "border-white/20 text-white/30"
+                    }`}
+                  >
+                    <span>중간 배치 영역</span>
+                  </div>
+                  <div
+                    className={`h-24 rounded-xl border-2 border-dashed transition-all duration-300 ease-out flex items-center justify-center text-xs font-black ${
+                      dragTargetZone === "bottom"
+                        ? "border-[#F4A940] bg-[#F4A940]/25 text-[#F4A940] shadow-lg scale-[1.02]"
+                        : "border-white/20 text-white/30"
+                    }`}
+                  >
+                    <span>하단 배치 영역</span>
+                  </div>
+                </div>
+              )}
+
+              {/* ⭐ 텍스트 배치 영역 (자유배치 토글 여부와 무관하게 동일한 절대 좌표 렌더링 -> 토글 시 위치 점프 0) */}
+              <div className="absolute inset-6 z-10 pointer-events-none">
+                {["tag", "title", "body"].map((f) => {
+                  const pos = getFieldPosition(activeCard, f);
+                  const isThisDragging = isDragging && draggedField === f;
+                  const currentPos = isThisDragging && dragCurrentPos ? dragCurrentPos : pos;
                   return (
                     <div
-                      key={pid}
-                      onClick={() => setActivePlatformTab(pid)}
-                      className={`flex items-center justify-between p-2.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                        isCurrent
-                          ? "bg-[#23211F] text-white border-[#23211F]"
-                          : "bg-[#EFECE6]/40 text-slate-700 border-[#DDD6CB] hover:bg-[#EFECE6]"
-                      }`}
+                      key={f}
+                      className="absolute transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex justify-center items-center"
+                      style={{
+                        left: `${currentPos.x}%`,
+                        top: `${currentPos.y}%`,
+                        zIndex: isThisDragging ? 40 : activeField === f ? 30 : 20
+                      }}
                     >
-                      <div className="flex items-center gap-2">
-                        {p && <p.icon className="w-3.5 h-3.5" />}
-                        <span>{p?.label}</span>
-                      </div>
-                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
-                        isCurrent ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
-                      }`}>
-                        {isCurrent ? "편집 중" : "준비됨"}
-                      </span>
+                      {renderField(f)}
                     </div>
                   );
                 })}
               </div>
+            </div>
+          </div>
 
-              {/* 일괄 배포 퀵 버튼 */}
+          {/* 카드 하단 바 */}
+          <div className="pt-3 border-t border-stone-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <span className="text-[11px] text-stone-600 font-medium">
+              수정됨 | 원문 재검수 필요 (검수 기능 연결 전)
+            </span>
+
+            <button
+              type="button"
+              onClick={handleDownloadCard}
+              className="btn-pill-dark text-xs gap-3"
+            >
+              <span>현재 카드 JPG 다운로드</span>
+              <span className="btn-pill-badge">
+                <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* ──────── [우측 패널 (lg:col-span-3)]: 전체 카드 ──────── */}
+        <div className="lg:col-span-3 bg-white/75 backdrop-blur-md rounded-2xl border border-white/80 p-4 shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex flex-col justify-between min-h-[520px]">
+          <div>
+            {/* 전체 카드 헤더 + 앰버 원형 (+) 버튼 */}
+            <div className="flex items-center justify-between pb-3 border-b border-stone-200/60 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-[#292929]">전체 카드</span>
+                <span className="text-[11px] font-mono font-bold px-2 py-0.5 bg-stone-100 text-stone-600 rounded-xl border border-stone-200/70">
+                  {cards.length}장
+                </span>
+              </div>
+
+              {/* 앰버 플러스 버튼 (+) */}
               <button
-                onClick={() => handlePublish("선택 플랫폼 전체")}
-                disabled={isPublishing}
-                className="w-full mt-2 py-2.5 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs rounded-full shadow-xs transition flex items-center justify-center gap-2 cursor-pointer active:scale-95 border border-[#23211F]"
+                type="button"
+                onClick={handleAddCard}
+                className="btn-circle-lemon"
+                title="새 카드 추가"
               >
-                <Send className="w-3.5 h-3.5" />
-                <span>선택된 {selectedPlatforms.length}개 채널 동시 배포</span>
+                <Plus className="w-4 h-4 stroke-[2.5]" />
               </button>
             </div>
-          )}
 
-        </div>
-
-        {/* ──────────────────────────────────────────
-            [오른쪽] 메인 실시간 플랫폼 피드 직접 편집 영역
-           ────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 w-full transition-all duration-300">
-          
-          {selectedPlatforms.length === 0 ? (
-            /* 플랫폼 미선택 시 안내 */
-            <div className="bg-white/95 rounded-3xl border border-slate-200/80 p-12 text-center space-y-4 shadow-xs">
-              <div className="w-16 h-16 rounded-3xl bg-[#EFECE6] text-[#23211F] flex items-center justify-center mx-auto border border-[#DDD6CB]">
-                <Sparkles className="w-8 h-8 text-[#23211F]" />
-              </div>
-              <div className="space-y-1 max-w-md mx-auto">
-                <h4 className="text-base md:text-lg font-black text-slate-900">
-                  변환할 소셜 플랫폼을 선택해주세요
-                </h4>
-                <p className="text-xs md:text-sm text-slate-500 leading-relaxed font-medium">
-                  왼쪽 목록에서 <strong>Instagram, Threads, X</strong> 중 원하는 플랫폼을 체크하면, 실제 해당 피드 화면이 열리며 화면 위에서 직접 수정할 수 있습니다.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-                {platforms.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => togglePlatform(p.id)}
-                    className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] border border-[#DDD6CB] text-[#23211F] text-xs font-bold rounded-full transition cursor-pointer flex items-center gap-1.5"
+            {/* 카드 썸네일 수직 스택 */}
+            <div className="space-y-3 max-h-[580px] overflow-y-auto pr-1">
+              {cards.map((c, idx) => {
+                const isCurrent = idx === activeCardIndex;
+                return (
+                  <div
+                    key={c.id || idx}
+                    onClick={() => setActiveCardIndex(idx)}
+                    className={`p-2 rounded-xl border transition-all select-none cursor-pointer flex flex-col gap-1.5 relative group ${
+                      isCurrent
+                        ? "bg-white/90 border-[#292929] ring-2 ring-[#292929]/20 shadow-xs"
+                        : "bg-white/60 border-stone-200/70 hover:border-stone-400 hover:bg-white"
+                    }`}
                   >
-                    <p.icon className="w-3.5 h-3.5" />
-                    <span>{p.label} 추가</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            /* 플랫폼 선택 시: 메인 실시간 피드 직접 편집 캔버스 */
-            <div className="space-y-4">
-
-              {/* 1. 상단 다중 플랫폼 전환 탭 (레퍼런스 이미지 스타일 알약 캡슐) */}
-              {selectedPlatforms.length > 1 && (
-                <div className="flex items-center justify-between bg-white/95 p-2 rounded-full border border-slate-200/80 shadow-2xs">
-                  <div className="flex items-center gap-2 pl-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-xs font-black text-slate-900">현재 편집 채널:</span>
-                  </div>
-
-                  <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-full border border-[#DDD6CB]">
-                    {selectedPlatforms.map((pid) => {
-                      const p = platforms.find((item) => item.id === pid);
-                      const isCurrent = activePlatformTab === pid;
-                      return (
-                        <button
-                          key={pid}
-                          onClick={() => setActivePlatformTab(pid)}
-                          className={`px-3.5 py-1.5 rounded-full text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-                            isCurrent
-                              ? "bg-white text-[#23211F] shadow-2xs scale-[1.02]"
-                              : "text-slate-600 hover:text-slate-900"
-                          }`}
-                        >
-                          {p && <p.icon className="w-3.5 h-3.5" />}
-                          <span>{p?.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* 2. 대형 실시간 플랫폼 피드 카드 (WYSIWYG 직접 편집 - 와이드 데스크톱 뷰) */}
-              {currentPlatformInfo && currentData && (
-                <div className="bg-white/95 rounded-3xl border border-slate-200/80 p-4 md:p-5 shadow-xs space-y-4 animate-float-in">
-                  
-                  {/* 상단 통합 미디어 컨트롤 바 (피드와 일체형) */}
-                  <div className="bg-[#EFECE6]/70 p-2.5 md:p-3 rounded-2xl border border-[#DDD6CB] flex flex-wrap items-center justify-between gap-3 shadow-2xs">
-                    
-                    {/* 이미지 비율 조절 알약 캡슐 */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-extrabold text-[#23211F] flex items-center gap-1">
-                        <ImageIcon className="w-3.5 h-3.5" />
-                        비율:
-                      </span>
-                      <div className="flex items-center gap-1 bg-white p-0.5 rounded-full border border-[#DDD6CB]">
-                        {["1:1", "4:5", "16:9"].map((ratio) => (
-                          <button
-                            key={ratio}
-                            onClick={() => updatePlatformField(activePlatformTab, "aspectRatio", ratio)}
-                            className={`px-3 py-1 text-xs font-black rounded-full transition cursor-pointer ${
-                              currentData.aspectRatio === ratio
-                                ? "bg-[#23211F] text-[#FAF8F5] shadow-2xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            {ratio}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 추천 이미지 교체 & PC 업로드 버튼 */}
-                    <div className="flex items-center gap-2">
-                      {/* 추천 갤러리 미니 썸네일 스트립 */}
-                      <div className="flex items-center gap-1.5 bg-white p-1 rounded-full border border-[#DDD6CB]">
-                        <span className="text-[10px] font-bold text-slate-400 pl-2">갤러리:</span>
-                        {sampleImages.map((imgUrl, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => updatePlatformField(activePlatformTab, "image", imgUrl)}
-                            className={`w-6 h-6 rounded-full overflow-hidden border-2 transition cursor-pointer ${
-                              currentData.image === imgUrl
-                                ? "border-[#23211F] scale-110"
-                                : "border-transparent opacity-70 hover:opacity-100"
-                            }`}
-                            title={`추천 이미지 ${idx + 1}`}
-                          >
-                            <img src={imgUrl} alt="thumb" className="w-full h-full object-cover" />
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* PC 파일 업로드 */}
+                    {/* 카드 삭제 버튼 (호버 시 표시) */}
+                    {cards.length > 1 && (
                       <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-1 px-3.5 py-1.5 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs font-bold transition cursor-pointer active:scale-95"
+                        type="button"
+                        onClick={(e) => handleDeleteCard(idx, e)}
+                        className="absolute top-2 right-2 z-10 w-6 h-6 rounded-lg bg-black/60 hover:bg-rose-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="카드 삭제"
                       >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>사진 변경</span>
+                        <Trash2 className="w-3 h-3" />
                       </button>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={(e) => handleImageUpload(e, activePlatformTab)}
-                        accept="image/*"
-                        className="hidden"
-                      />
-                    </div>
-
-                    {/* 마우스 줌 & 리셋 컨트롤 */}
-                    <div className="flex items-center gap-2 text-xs font-bold text-[#23211F]">
-                      <div className="flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-[#DDD6CB]">
-                        <Sliders className="w-3.5 h-3.5 text-slate-500" />
-                        <span>크기:</span>
-                        <input
-                          type="range"
-                          min="80"
-                          max="180"
-                          value={currentData.zoom}
-                          onChange={(e) => updatePlatformField(activePlatformTab, "zoom", parseInt(e.target.value))}
-                          className="w-20 accent-[#23211F] cursor-pointer"
-                        />
-                        <span className="text-[11px] font-black w-8">{currentData.zoom}%</span>
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          updatePlatformField(activePlatformTab, "zoom", 100);
-                          updatePlatformField(activePlatformTab, "positionX", 50);
-                          updatePlatformField(activePlatformTab, "positionY", 50);
-                        }}
-                        className="p-1.5 bg-white hover:bg-slate-100 text-slate-600 rounded-full border border-[#DDD6CB] transition cursor-pointer"
-                        title="위치 및 크기 초기화"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                  </div>
-
-                  {/* ──────────────────────────────────────────
-                      실제 소셜 피드 카드 (메인 작업 공간)
-                     ────────────────────────────────────────── */}
-                  <div className="w-full">
-                    
-                    {/* [A] INSTAGRAM 실시간 메인 피드 에디터 */}
-                    {activePlatformTab === "instagram" && (
-                      <div className="bg-white rounded-3xl shadow-md border border-slate-200/90 overflow-hidden w-full grid grid-cols-1 lg:grid-cols-12 min-h-[460px] lg:h-[530px] animate-float-in">
-                        {/* [좌측 7열] 대형 미디어 캔버스 (마우스 드래그 & 휠 줌) */}
-                        <div
-                          onMouseDown={handleMouseDown}
-                          onWheel={handleWheel}
-                          className={`lg:col-span-7 bg-slate-950 relative overflow-hidden flex items-center justify-center min-h-[340px] lg:min-h-0 select-none group ${
-                            isDragging ? "cursor-grabbing" : "cursor-grab"
-                          }`}
-                          title="마우스로 드래그하여 이미지 위치를 조절하고, 휠로 크기를 조절하세요"
-                        >
-                          <img
-                            src={currentData.image}
-                            alt="Instagram Preview"
-                            draggable={false}
-                            style={{
-                              transform: `scale(${currentData.zoom / 100})`,
-                              objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
-                            }}
-                            className="w-full h-full object-cover pointer-events-none transition-transform duration-75"
-                          />
-
-                          {/* 드래그 조작 가이드 안내 오버레이 (호버 시 표시) */}
-                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                            <div className="bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-md border border-white/20">
-                              <Move className="w-3.5 h-3.5" />
-                              <span>마우스로 드래그하여 위치 이동 (휠: 확대/축소)</span>
-                            </div>
-                          </div>
-
-                          {/* 비율 뱃지 */}
-                          <div className="absolute top-3 left-3 bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-[11px] font-bold px-2.5 py-1 rounded-full border border-white/20">
-                            Instagram · {currentData.aspectRatio}
-                          </div>
-                        </div>
-
-                        {/* [우측 5열] 인라인 텍스트 및 인터랙션 편집 패널 */}
-                        <div className="lg:col-span-5 flex flex-col justify-between bg-white border-t lg:border-t-0 lg:border-l border-slate-100 p-5 md:p-6 overflow-hidden">
-                          
-                          {/* 1. 인스타 헤더 */}
-                          <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-shrink-0">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 p-[1.5px]">
-                                <div className="w-full h-full rounded-full bg-white p-[1px]">
-                                  <div className="w-full h-full rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-bold">
-                                    AI
-                                  </div>
-                                </div>
-                              </div>
-                              <div>
-                                <span className="font-extrabold text-slate-900 text-xs">ai_newsroom_official</span>
-                                <span className="text-[10px] text-slate-400 block">스폰서 기사 · AI Newsroom</span>
-                              </div>
-                            </div>
-                            <MoreHorizontal className="w-4 h-4 text-slate-400" />
-                          </div>
-
-                          {/* 2. 본문 직접 편집 영역 & 해시태그 (유동 스크롤 지원) */}
-                          <div className="flex-1 py-3 space-y-3 overflow-y-auto pr-1">
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-extrabold text-[#23211F] flex items-center gap-1">
-                                  ✏️ 캡션 및 본문 직접 편집
-                                </span>
-                                <span className="text-[10px] text-slate-400 font-bold">
-                                  {currentData.text.length}자
-                                </span>
-                              </div>
-                              <textarea
-                                value={currentData.text}
-                                onChange={(e) => updatePlatformField("instagram", "text", e.target.value)}
-                                rows={5}
-                                className="w-full p-3 bg-slate-50 hover:bg-white focus:bg-white rounded-xl border border-slate-200 focus:border-[#23211F] text-xs text-slate-900 leading-relaxed outline-none transition font-sans resize-none shadow-2xs"
-                                placeholder="인스타그램 게시글 내용을 직접 수정하세요..."
-                              />
-                            </div>
-
-                            {/* 추천 해시태그 원클릭 삽입 */}
-                            <div className="space-y-1.5">
-                              <span className="text-[10px] font-bold text-slate-400 block">
-                                + 추천 해시태그 원클릭 삽입:
-                              </span>
-                              <div className="flex flex-wrap gap-1.5">
-                                {["#AI반도체", "#NPU", "#PIM", "#빅테크", "#IT뉴스", "#디지털인텔리전스"].map((tag) => (
-                                  <button
-                                    key={tag}
-                                    onClick={() => addHashtag("instagram", tag)}
-                                    className="px-2.5 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full text-[11px] font-bold transition border border-[#DDD6CB] cursor-pointer flex items-center gap-1 active:scale-95 shadow-2xs"
-                                  >
-                                    <Hash className="w-3 h-3 text-slate-400" />
-                                    <span>{tag.replace("#", "")}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* 3. 소셜 인터랙션 및 액션 바 */}
-                          <div className="pt-3 border-t border-slate-100 space-y-3 flex-shrink-0">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3.5 text-slate-700">
-                                <Heart className="w-5 h-5 text-red-500 fill-red-500" />
-                                <MessageCircle className="w-5 h-5" />
-                                <Share2 className="w-5 h-5" />
-                              </div>
-                              <Bookmark className="w-5 h-5 text-slate-600" />
-                            </div>
-                            <p className="font-bold text-xs text-slate-900">좋아요 1,428개</p>
-
-                            <div className="flex items-center gap-2 pt-1">
-                              <button
-                                onClick={() => handleCopyText("instagram")}
-                                className="flex-1 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] font-bold text-xs rounded-full border border-[#DDD6CB] transition cursor-pointer flex items-center justify-center gap-1.5"
-                              >
-                                {copiedStatus === "instagram" ? (
-                                  <>
-                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span className="text-emerald-700">복사 완료!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3.5 h-3.5 text-slate-600" />
-                                    <span>문구 복사</span>
-                                  </>
-                                )}
-                              </button>
-                              <button
-                                onClick={() => handlePublish("Instagram")}
-                                className="px-5 py-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs rounded-full transition cursor-pointer flex items-center gap-1.5 border border-[#23211F] active:scale-95"
-                              >
-                                <Send className="w-3.5 h-3.5" />
-                                <span>단독 배포</span>
-                              </button>
-                            </div>
-                          </div>
-
-                        </div>
-                      </div>
                     )}
 
-                    {/* [B] THREADS 실시간 메인 피드 에디터 */}
-                    {activePlatformTab === "threads" && (
-                      <div className="bg-white rounded-3xl shadow-md border border-slate-200/90 overflow-hidden w-full grid grid-cols-1 lg:grid-cols-12 min-h-[440px] lg:h-[500px] animate-float-in">
-                        {/* [스레드 프로필 헤더] */}
-                        <div className="flex items-start gap-3">
-                          <div className="w-9 h-9 rounded-full bg-[#23211F] text-white flex items-center justify-center font-extrabold text-sm flex-shrink-0">
-                            @
-                          </div>
-                          <div className="flex-1 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-extrabold text-slate-950 text-xs">ai_newsroom</span>
-                                <span className="text-[10px] text-slate-400">방금 전</span>
-                              </div>
-                              <MoreHorizontal className="w-4 h-4 text-slate-400" />
-                            </div>
-
-                            {/* 스레드 인라인 직접 텍스트 편집 */}
-                            <div className="space-y-1">
-                              <textarea
-                                value={currentData.text}
-                                onChange={(e) => updatePlatformField("threads", "text", e.target.value)}
-                                rows={4}
-                                className="w-full p-3 bg-slate-50 hover:bg-white focus:bg-white rounded-xl border border-slate-200 focus:border-[#23211F] text-xs text-slate-900 leading-relaxed outline-none transition font-sans resize-y"
-                                placeholder="스레드 내용을 직접 수정하세요..."
-                              />
-                            </div>
-
-                            {/* 인터랙티브 마우스 드래그 이미지 영역 */}
-                            <div
-                              onMouseDown={handleMouseDown}
-                              onWheel={handleWheel}
-                              className={`relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 select-none group ${
-                                isDragging ? "cursor-grabbing" : "cursor-grab"
-                              } ${
-                                currentData.aspectRatio === "1:1"
-                                  ? "aspect-square"
-                                  : currentData.aspectRatio === "4:5"
-                                  ? "aspect-[4/5]"
-                                  : "aspect-video"
-                              }`}
-                              title="마우스로 드래그하여 이미지 위치 조절 (휠: 확대/축소)"
-                            >
-                              <img
-                                src={currentData.image}
-                                alt="Threads Media"
-                                draggable={false}
-                                style={{
-                                  transform: `scale(${currentData.zoom / 100})`,
-                                  objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
-                                }}
-                                className="w-full h-full object-cover pointer-events-none transition-transform duration-75"
-                              />
-
-                              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                                <div className="bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-[11px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-md border border-white/20">
-                                  <Move className="w-3.5 h-3.5" />
-                                  <span>드래그로 위치 조절</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* 스레드 인터랙션 아이콘 */}
-                            <div className="flex items-center gap-4 text-slate-500 pt-1">
-                              <Heart className="w-4 h-4 hover:text-red-500 transition cursor-pointer" />
-                              <MessageCircle className="w-4 h-4" />
-                              <Repeat className="w-4 h-4" />
-                              <Share2 className="w-4 h-4" />
-                            </div>
-
-                            {/* 해시태그 추가 바 */}
-                            <div className="flex flex-wrap gap-1.5 pt-1">
-                              {["#ThreadsTech", "#AI반도체", "#기술트렌드"].map((tag) => (
-                                <button
-                                  key={tag}
-                                  onClick={() => addHashtag("threads", tag)}
-                                  className="px-2.5 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full text-[11px] font-bold transition border border-[#DDD6CB] cursor-pointer"
-                                >
-                                  {tag}
-                                </button>
-                              ))}
-                            </div>
-
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* [C] X (TWITTER) 실시간 메인 피드 에디터 */}
-                    {activePlatformTab === "twitter" && (
-                      <div className="bg-white rounded-3xl shadow-xl border border-slate-200/90 p-5 md:p-6 w-full max-w-md animate-float-in space-y-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-[#23211F] text-white flex items-center justify-center font-extrabold text-xs">
-                            𝕏
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-extrabold text-slate-950 text-xs">AI Newsroom</span>
-                              <span className="text-[11px] text-slate-400">@ainews</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 트위터 인라인 텍스트 편집 */}
-                        <div className="space-y-1">
-                          <textarea
-                            value={currentData.text}
-                            onChange={(e) => updatePlatformField("twitter", "text", e.target.value)}
-                            rows={3}
-                            className="w-full p-3 bg-slate-50 hover:bg-white focus:bg-white rounded-xl border border-slate-200 focus:border-[#23211F] text-xs text-slate-900 leading-relaxed outline-none transition font-sans resize-y"
-                            placeholder="트윗 내용을 직접 수정하세요..."
-                          />
-                        </div>
-
-                        {/* 인터랙티브 마우스 드래그 이미지 영역 */}
-                        <div
-                          onMouseDown={handleMouseDown}
-                          onWheel={handleWheel}
-                          className={`relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 select-none group ${
-                            isDragging ? "cursor-grabbing" : "cursor-grab"
-                          } ${
-                            currentData.aspectRatio === "1:1"
-                              ? "aspect-square"
-                              : currentData.aspectRatio === "4:5"
-                              ? "aspect-[4/5]"
-                              : "aspect-video"
-                          }`}
-                          title="마우스로 드래그하여 이미지 위치 조절 (휠: 확대/축소)"
-                        >
-                          <img
-                            src={currentData.image}
-                            alt="Twitter Media"
-                            draggable={false}
-                            style={{
-                              transform: `scale(${currentData.zoom / 100})`,
-                              objectPosition: `${currentData.positionX}% ${currentData.positionY}%`
-                            }}
-                            className="w-full h-full object-cover pointer-events-none transition-transform duration-75"
-                          />
-
-                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                            <div className="bg-[#23211F]/80 backdrop-blur-xs text-[#FAF8F5] text-[11px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-md border border-white/20">
-                              <Move className="w-3.5 h-3.5" />
-                              <span>드래그로 위치 조절</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-slate-400 text-[11px] pt-1 border-t border-slate-100">
-                          <span>오후 3:20 · 2026년 10월 2일</span>
-                          <div className="flex items-center gap-3.5">
-                            <MessageCircle className="w-3.5 h-3.5" />
-                            <Repeat className="w-3.5 h-3.5" />
-                            <Heart className="w-3.5 h-3.5 text-red-500" />
-                          </div>
-                        </div>
-
-                        {/* 해시태그 추가 */}
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {["#AI반도체", "#NPU", "#IT뉴스"].map((tag) => (
-                            <button
-                              key={tag}
-                              onClick={() => addHashtag("twitter", tag)}
-                              className="px-2.5 py-1 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full text-[11px] font-bold transition border border-[#DDD6CB] cursor-pointer"
-                            >
-                              {tag}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                  </div>
-
-                  {/* 피드 하단 퀵 액션 바 (문구 복사 & 단독 배포) */}
-                  <div className="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-slate-100">
-                    <button
-                      onClick={() => handleCopyText(activePlatformTab)}
-                      className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] font-bold text-xs rounded-full border border-[#DDD6CB] transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                    {/* 미니 썸네일 */}
+                    <div
+                      className="w-full aspect-[4/5] rounded-xl p-3 text-white flex flex-col justify-end overflow-hidden relative"
+                      style={{
+                        backgroundColor: c.bgImage ? "transparent" : "#18181B",
+                        backgroundImage: c.bgImage ? `url(${c.bgImage})` : "none",
+                        backgroundSize: "cover",
+                        backgroundPosition: "center"
+                      }}
                     >
-                      {copiedStatus === activePlatformTab ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-emerald-700">복사 완료!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5 text-slate-600" />
-                          <span>{currentPlatformInfo.label} 문구 복사</span>
-                        </>
+                      <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/80 pointer-events-none" />
+                      <div className="relative z-10 space-y-0.5">
+                        <p className="text-[9px] text-stone-400 font-medium truncate">
+                          {c.tag || "콘텐츠 제작"}
+                        </p>
+                        <p className="text-[11px] font-black leading-snug line-clamp-2">
+                          {c.title || "제목 없음"}
+                        </p>
+                        <p className="text-[9px] text-stone-300 leading-tight line-clamp-2">
+                          {c.body || ""}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 카드 라벨: N / 표지 or 본문 */}
+                    <div className="text-[11px] font-bold text-stone-600 px-1 pt-0.5 flex items-center justify-between">
+                      <span>{idx + 1} / {c.role || (idx === 0 ? "표지" : "본문")}</span>
+                      {Object.values(c.styles || {}).some((s) => s.isLocked) && (
+                        <Lock className="w-3 h-3 text-amber-500" title="고정된 텍스트 포함" />
                       )}
-                    </button>
-
-                    <button
-                      onClick={() => handlePublish(currentPlatformInfo.label)}
-                      className="px-5 py-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] font-extrabold text-xs rounded-full transition cursor-pointer flex items-center gap-1.5 border border-[#23211F] active:scale-95 shadow-xs"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>{currentPlatformInfo.label} 단독 배포</span>
-                    </button>
+                    </div>
                   </div>
-
-                </div>
-              )}
-
+                );
+              })}
             </div>
-          )}
+          </div>
 
+          {/* 하단: 카드 추가 버튼 (White Pill 스타일) */}
+          <div className="pt-3 border-t border-stone-100 mt-2">
+            <button
+              type="button"
+              onClick={handleAddCard}
+              className="btn-pill-white w-full text-xs"
+            >
+              <span>카드 추가하기</span>
+              <span className="btn-pill-badge">
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              </span>
+            </button>
+          </div>
         </div>
-
       </div>
 
       {/* ──────────────────────────────────────────
-          3. 최종 결과물 영역 (하단 멀티 배포 대시보드 - 기존 기능 유지)
+          3. Unsplash 사진 검색 모달
          ────────────────────────────────────────── */}
-      {selectedPlatforms.length > 0 && (
-        <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-5 md:p-7 shadow-xs space-y-5 animate-float-in">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="text-base md:text-lg font-black text-slate-950 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-slate-700" />
-                최종 결과물 및 멀티 배포 대시보드
-              </h3>
-              <p className="text-xs text-slate-500 font-medium">
-                작업이 완료된 플랫폼별 결과물을 한눈에 점검하고 파일 저장, 인쇄 또는 즉시 배포합니다.
-              </p>
+      {showUnsplashModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-smooth-in">
+          <div className="bg-white/95 backdrop-blur-xl rounded-2xl p-6 max-w-2xl w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col border border-white/80 animate-smooth-pop">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-stone-700" />
+                <h3 className="text-sm font-black text-[#292B2F]">Unsplash 사진 검색</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUnsplashModal(false)}
+                className="w-7 h-7 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <span className="text-xs font-extrabold px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200 self-start sm:self-auto">
-              {selectedPlatforms.length}개 플랫폼 배포 준비 완료
-            </span>
-          </div>
+            {/* 검색창 */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={unsplashQuery}
+                onChange={(e) => setUnsplashQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearchUnsplash()}
+                placeholder="검색할 키워드를 입력하세요 (예: 비즈니스, 기술, 미디어)"
+                className="flex-1 px-4 py-2 border border-stone-200 rounded-full text-xs outline-none focus:border-[#292B2F]"
+              />
+              <button
+                type="button"
+                onClick={() => handleSearchUnsplash()}
+                className="px-5 py-2 bg-[#292B2F] hover:bg-black text-white rounded-full text-xs font-bold transition cursor-pointer"
+              >
+                검색
+              </button>
+            </div>
 
-          {/* 최종 결과물 카드 요약 그리드 */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {selectedPlatforms.map((pid) => {
-              const pInfo = platforms.find((p) => p.id === pid);
-              const pData = platformData[pid];
-              return (
-                <div
-                  key={pid}
-                  className="bg-[#EFECE6]/40 p-4 rounded-2xl border border-[#DDD6CB] space-y-3 flex flex-col justify-between"
-                >
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs md:text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                        {pInfo && <pInfo.icon className="w-3.5 h-3.5" />}
-                        {pInfo?.label}
-                      </span>
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md">
-                        준비됨
-                      </span>
-                    </div>
-
-                    <div className="aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-200">
-                      <img src={pData.image} alt="final preview" className="w-full h-full object-cover" />
-                    </div>
-
-                    <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed font-sans">
-                      {pData.text}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      onClick={() => handleCopyText(pid)}
-                      className="flex-1 py-1.5 bg-white hover:bg-[#EFECE6] border border-[#DDD6CB] text-[#23211F] text-xs font-bold rounded-full transition cursor-pointer"
-                    >
-                      문구 복사
-                    </button>
-                    <button
-                      onClick={() => handlePublish(pInfo?.label)}
-                      className="px-3.5 py-1.5 bg-[#23211F] hover:bg-[#38332E] text-white text-xs font-bold rounded-full transition cursor-pointer border border-[#23211F]"
-                    >
-                      배포
-                    </button>
-                  </div>
+            {/* 검색 결과 그리드 */}
+            <div className="flex-1 overflow-y-auto min-h-[300px] border border-stone-100 rounded-2xl p-2">
+              {isUnsplashLoading ? (
+                <div className="flex flex-col items-center justify-center h-48 gap-2 text-stone-400">
+                  <Loader2 className="w-6 h-6 animate-spin text-stone-700" />
+                  <span className="text-xs">사진을 불러오는 중...</span>
                 </div>
-              );
-            })}
-          </div>
-
-          {/* 최종 액션 바 (인쇄, 데이터 저장, 일괄 배포) */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-2.5">
-              <button
-                onClick={handlePrint}
-                className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs font-extrabold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Printer className="w-3.5 h-3.5 text-slate-600" />
-                <span>결과물 인쇄 (PDF)</span>
-              </button>
-
-              <button
-                onClick={() => alert("선택된 플랫폼의 가공된 이미지 및 텍스트 데이터가 저장되었습니다.")}
-                className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs font-extrabold transition shadow-2xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5 text-slate-600" />
-                <span>이미지 및 데이터 저장</span>
-              </button>
-            </div>
-
-            <button
-              onClick={() => handlePublish("선택 플랫폼 전체")}
-              disabled={isPublishing}
-              className="px-6 py-2.5 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full text-xs md:text-sm font-extrabold transition shadow-sm cursor-pointer flex items-center gap-2 border border-[#23211F] active:scale-95"
-            >
-              {isPublishing ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>배포 처리 중...</span>
-                </>
+              ) : unsplashError ? (
+                <div className="flex flex-col items-center justify-center h-48 text-stone-400 text-xs">
+                  {unsplashError}
+                </div>
+              ) : unsplashResults.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-48 text-stone-400 text-xs">
+                  검색 결과가 없습니다. 다른 키워드를 입력해보세요.
+                </div>
               ) : (
-                <>
-                  <Send className="w-3.5 h-3.5 text-white" />
-                  <span>선택된 플랫폼 일괄 배포</span>
-                </>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {unsplashResults.map((photo) => (
+                    <button
+                      key={photo.id}
+                      type="button"
+                      onClick={() => handleSelectUnsplashPhoto(photo.urls?.regular || photo.urls?.small)}
+                      className="group relative aspect-[4/5] rounded-xl overflow-hidden border border-stone-200 hover:border-black transition-all cursor-pointer"
+                    >
+                      <img
+                        src={photo.urls?.small || photo.urls?.regular}
+                        alt={photo.alt_description || "사진"}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
+                        선택
+                      </div>
+                    </button>
+                  ))}
+                </div>
               )}
-            </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* 배포 성공 모달 팝업 */}
+      {/* ──────────────────────────────────────────
+          4. 배포 성공 알림 모달
+         ────────────────────────────────────────── */}
       {isPublishModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-2xl space-y-4 text-center animate-float-in border border-slate-100">
-            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white/95 backdrop-blur-xl rounded-2xl p-6 md:p-8 max-w-sm w-full shadow-2xl space-y-4 text-center border border-white/80 animate-float-in">
+            <div className="w-12 h-12 rounded-xl bg-[#F4A940] text-white flex items-center justify-center mx-auto shadow-xs">
               <Check className="w-6 h-6 stroke-[3]" />
             </div>
-            <h3 className="text-lg font-black text-slate-950">배포가 완료되었습니다</h3>
-            <p className="text-xs text-slate-600 leading-relaxed font-medium">
-              [{publishedTarget}] 대상 채널에 최적화된 콘텐츠 규격으로 전송이 성공적으로 완료되었습니다.
+            <h3 className="text-lg font-black text-[#292B2F]">배포가 완료되었습니다</h3>
+            <p className="text-xs text-stone-600 leading-relaxed font-medium">
+              선택한 플랫폼 규격({selectedPlatforms.join(", ")})에 맞춰 뉴스 카드 콘텐츠가 정상적으로 배포되었습니다.
             </p>
             <button
+              type="button"
               onClick={() => setIsPublishModalOpen(false)}
-              className="w-full py-2.5 bg-[#23211F] hover:bg-[#38332E] text-white font-extrabold text-xs rounded-full shadow-xs cursor-pointer transition border border-[#23211F]"
+              className="btn-pill-dark w-full justify-center text-xs"
             >
-              확인
+              <span>확인</span>
             </button>
           </div>
         </div>
       )}
 
+      {/* ──────────────────────────────────────────
+          ⭐ 6. 기사 전문 보기 모달 (사용자 요구: 가로 2단락 구성 박스 & 헤더 상단 기준 화면 정가운데 배치)
+         ────────────────────────────────────────── */}
+      {showFullArticleModal && (
+        <div
+          className="fixed inset-0 z-50 bg-[#292B2F]/55 backdrop-blur-xs flex items-center justify-center p-4 pt-[74px] md:pt-[70px] animate-smooth-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowFullArticleModal(false);
+          }}
+        >
+          <div
+            className="bg-[#FAF8F5]/95 backdrop-blur-xl border border-white/80 rounded-2xl shadow-[0_24px_60px_-15px_rgba(41,43,47,0.35)] max-w-5xl w-full flex flex-col overflow-hidden animate-smooth-pop max-h-[82vh]"
+          >
+            {/* [모달 상단 헤더 바] */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E7E2D9] bg-white/70 flex-shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#292B2F] text-[#FAF8F5] flex items-center justify-center shadow-2xs">
+                  <FileText className="w-4 h-4 text-[#F4A940]" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-[#292B2F]">작성 중인 기사 전문</h3>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      실시간 연동 중
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#8E8982]">
+                    가로 2단 구성 · [좌측] 기사 개요 및 메타 단락 · [우측] 기사 전문 본문 단락
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyFullArticle}
+                  className="px-3 py-1.5 bg-white hover:bg-[#F4F4F5] border border-[#E4E4E7] text-[#292B2F] rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="기사 전문 전체 복사"
+                >
+                  {fullArticleCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700">복사됨!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-[#71717A]" />
+                      <span>전문 복사</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="p-1.5 bg-white hover:bg-[#F4F4F5] border border-[#E4E4E7] text-[#52525B] hover:text-[#18181B] rounded-xl transition cursor-pointer shadow-2xs"
+                  title="인쇄하기"
+                >
+                  <Printer className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFullArticleModal(false)}
+                  className="p-1.5 hover:bg-[#E7E2D9] text-[#71717A] hover:text-[#18181B] rounded-xl transition cursor-pointer"
+                  title="닫기 (ESC)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* [⭐ 본체: 가로로 2가지 단락이 되어있는 박스 형태] */}
+            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[#E7E2D9] flex-1 overflow-hidden min-h-0">
+              {/* ───────────────────────────────────
+                  [가로 1번째 단락 - 좌측]: 내가 지금 어떤 기사를 작성중인지 (기사 개요, 메타데이터, 헤드라인, 사진, 리드문 요약)
+                 ─────────────────────────────────── */}
+              <div className="p-6 md:p-7 overflow-y-auto max-h-[calc(82vh-75px)] space-y-5 bg-[#FAF8F5]/80">
+                {/* 1. 기사 정보 뱃지 및 카테고리 */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-[#292B2F] text-[#FAF8F5]">
+                      {activeArticle.category || "사회"}
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                      {activeArticle.status || "작성 중"}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-[#8E8982]">
+                    {activeArticle.updatedAt || "방금 수정"}
+                  </span>
+                </div>
+
+                {/* 2. 기사 메인 헤드라인 제목 */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#8E8982]">
+                    헤드라인 (기사 제목)
+                  </span>
+                  <h2 className="text-xl md:text-2xl font-black text-[#292B2F] leading-snug tracking-tight">
+                    {activeArticle.title || "제목을 입력해주세요"}
+                  </h2>
+                  {activeArticle.subtitle && (
+                    <p className="text-xs md:text-sm font-semibold text-[#57514A] leading-relaxed pt-1">
+                      {activeArticle.subtitle}
+                    </p>
+                  )}
+                </div>
+
+                {/* 3. 대표 이미지 (있는 경우) */}
+                {activeArticle.photos && activeArticle.photos.length > 0 && activeArticle.photos[0]?.url && (
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#8E8982]">
+                      대표 보도사진
+                    </span>
+                    <div className="rounded-2xl overflow-hidden border border-[#E7E2D9] bg-white shadow-2xs">
+                      <img
+                        src={activeArticle.photos[0].url}
+                        alt={activeArticle.photos[0].caption || "기사 대표 사진"}
+                        className="w-full h-44 object-cover"
+                      />
+                      {activeArticle.photos[0].caption && (
+                        <p className="text-[11.5px] text-[#71717A] p-2.5 bg-white border-t border-[#F4F4F5] leading-normal font-medium">
+                          ▲ {activeArticle.photos[0].caption}
+                          {activeArticle.photos[0].source && ` (${activeArticle.photos[0].source})`}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. 기사 핵심 리드문 (1단락/도입부 발췌 요약) */}
+                <div className="bg-white p-4 rounded-2xl border border-[#E7E2D9] space-y-2 shadow-2xs">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-[#008285]">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>기사 핵심 리드문 (도입 단락 요약)</span>
+                  </div>
+                  <p className="text-xs text-[#57514A] leading-relaxed line-clamp-4">
+                    {leadParagraph || "본문 내용이 작성되면 첫 도입 단락이 자동으로 리드문으로 요약됩니다."}
+                  </p>
+                </div>
+
+                {/* 5. 기사 통계 지표 박스 */}
+                <div className="grid grid-cols-3 gap-2.5 pt-1">
+                  <div className="bg-white p-3 rounded-xl border border-[#E7E2D9] text-center shadow-2xs">
+                    <div className="text-[10.5px] font-bold text-[#8E8982]">전체 글자 수</div>
+                    <div className="text-base font-black text-[#292B2F] mt-0.5">
+                      {activeArticle.content ? activeArticle.content.length.toLocaleString() : 0}자
+                    </div>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-[#E7E2D9] text-center shadow-2xs">
+                    <div className="text-[10.5px] font-bold text-[#8E8982]">단락(문단) 수</div>
+                    <div className="text-base font-black text-[#292B2F] mt-0.5">
+                      {activeArticle.content ? activeArticle.content.split(/\n\n+/).filter(Boolean).length : 0}개
+                    </div>
+                  </div>
+                  <div className="bg-white p-3 rounded-xl border border-[#E7E2D9] text-center shadow-2xs">
+                    <div className="text-[10.5px] font-bold text-[#8E8982]">예상 읽기 시간</div>
+                    <div className="text-base font-black text-[#292B2F] mt-0.5">
+                      약 {Math.max(1, Math.ceil((activeArticle.content?.length || 0) / 500))}분
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6. 작성자 바이라인 & 연결 출처 */}
+                <div className="flex items-center justify-between text-xs text-[#8E8982] pt-2 border-t border-[#E7E2D9]/70">
+                  <span>작성: 김동아 기자 (디지털편집부)</span>
+                  <span>출처 연계: {activeArticle.linkedSources?.length || 0}건</span>
+                </div>
+              </div>
+
+              {/* ───────────────────────────────────
+                  [가로 2번째 단락 - 우측]: 기사 전문 전체 본문 (포털/동아 표준 규격)
+                 ─────────────────────────────────── */}
+              <div className="p-6 md:p-7 overflow-y-auto max-h-[calc(82vh-75px)] space-y-4 bg-white">
+                <div className="flex items-center justify-between pb-3 border-b border-[#F4F4F5]">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#008285]" />
+                    <h4 className="text-xs font-black text-[#292B2F] uppercase tracking-wider">
+                      기사 본문 전문 (Full Text)
+                    </h4>
+                  </div>
+                  <span className="text-[11px] text-[#8E8982] font-semibold">
+                    동아일보 기사 표준 규격
+                  </span>
+                </div>
+
+                <div className="text-[15.5px] leading-[1.88] text-[#27272A] space-y-4 font-sans">
+                  {activeArticle.content ? (
+                    activeArticle.content.split(/\n\n+/).map((paragraph, pIdx) => {
+                      const trimmed = paragraph.trim();
+                      if (!trimmed) return null;
+
+                      const photoMatch = trimmed.match(/^\[사진 삽입:\s*(.*?)(?:\s*\(출처:\s*(.*?)\))?\]$/);
+                      if (photoMatch) {
+                        const caption = (photoMatch[1] || "").trim();
+                        const matchedPhoto = activeArticle.photos?.find(p => p.caption === caption) || activeArticle.photos?.[0];
+                        return (
+                          <figure key={pIdx} className="my-5">
+                            <div className="overflow-hidden bg-transparent rounded-lg">
+                              {matchedPhoto?.url && (
+                                <img src={matchedPhoto.url} alt={caption} className="w-full h-auto max-h-[420px] object-cover rounded-lg" />
+                              )}
+                            </div>
+                            {caption && (
+                              <figcaption className="mt-1.5 text-xs text-[#767676] text-center font-sans">
+                                ▲ {caption}
+                              </figcaption>
+                            )}
+                          </figure>
+                        );
+                      }
+
+                      return (
+                        <p key={pIdx} className="font-normal text-[#27272A] tracking-[-0.2px] text-justify leading-[1.88]">
+                          {trimmed}
+                        </p>
+                      );
+                    })
+                  ) : (
+                    <p className="text-stone-400 italic text-center py-10">
+                      아직 작성된 본문 내용이 없습니다.
+                    </p>
+                  )}
+
+                  {/* 바이라인 */}
+                  {activeArticle.content && (
+                    <div className="pt-6 mt-6 border-t border-[#F4F4F5] text-xs text-[#71717A] font-medium">
+                      <p>김동아 기자 donga_reporter@donga.com</p>
+                      <p className="text-[11px] text-[#A1A1AA] mt-0.5">
+                        Copyright ⓒ 동아일보 & donga.com All rights reserved.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 하단 플랫폼 카드 편집 복귀 버튼 */}
+                <div className="pt-4 border-t border-[#F4F4F5] flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowFullArticleModal(false)}
+                    className="px-4 py-2 bg-[#292B2F] hover:bg-[#1F2124] text-[#FAF8F5] text-xs font-extrabold rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>플랫폼 카드 편집으로 돌아가기</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ 마우스 드래그 시 커서를 실시간으로 따라다니는 "위치 이동" 문구 뱃지 (드롭 시 깔끔하게 사라짐) */}
+      {isDragging && (
+        <div
+          className={`fixed z-[99999] pointer-events-none -translate-x-1/2 -translate-y-full mb-3 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-black shadow-2xl select-none animate-smooth-pop ${
+            isFreeLayoutMode
+              ? "bg-[#0095F6] text-white border border-white/60 shadow-[0_4px_20px_rgba(0,149,246,0.6)]"
+              : "bg-[#18181B] text-[#F4A940] border border-[#F4A940]/50"
+          }`}
+          style={{
+            left: mousePos.x,
+            top: mousePos.y
+          }}
+        >
+          <span className={`w-2 h-2 rounded-full ${isFreeLayoutMode ? "bg-white" : "bg-[#F4A940]"} animate-ping`} />
+          <span>{isFreeLayoutMode ? "✨ 자유 위치 이동" : "위치 이동"}</span>
+        </div>
+      )}
+
+      {/* ──────────────────────────────────────────
+          5. 플로팅 토스트 알림
+         ────────────────────────────────────────── */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#18181B] text-white px-5 py-2.5 rounded-full text-xs font-bold shadow-xl border border-zinc-700 animate-bounce">
+          {toastMessage}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,8 +1,16 @@
-// Mock Data for AI Newsroom Application
+// Mock Data aligned with AI-Newsroom OS Contract Specification v0.8
+// References:
+// - docs/architecture/ERD_v0.8.md
+// - docs/architecture/CONTRACT_ALIGNMENT_v0.8.md
+// - docs/architecture/fixtures/vertical-slice-v0.8.json
+
+export const DEFAULT_WORKSPACE_ID = "10000000-0000-4000-8000-000000000001";
 
 export const initialArticles = [
   {
     id: "art-1",
+    canonical_id: "20000000-0000-4000-8000-000000000001",
+    workspace_id: DEFAULT_WORKSPACE_ID,
     title: "AI 반도체 개척자들... 초거대 AI 시대의 차세대 주도권 경쟁",
     suggestedTitle: "AI 반도체 개척자들, 차세대 글로벌 주도권 쥐나",
     subtitle: "국내 주요 반도체 기업, NPU 및 PIM 기술로 글로벌 시장에 도전장",
@@ -14,15 +22,22 @@ export const initialArticles = [
     status: "작성 중", // 작성 중, 검증 완료, 발행 준비, 발행 완료
     createdAt: "2026-10-01 14:30",
     updatedAt: "2026-10-01 16:20",
+    current_revision_id: "21000000-0000-4000-8000-000000000001",
+    revision_no: 7,
     linkedSources: ["src-1", "src-3"],
     linkedInterviews: ["int-1"],
     photos: [
       {
         id: "img-1",
+        canonical_id: "60000000-0000-4000-8000-000000000001",
+        workspace_id: DEFAULT_WORKSPACE_ID,
+        kind: "image",
         url: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80",
         caption: "국내 연구진이 개발한 차세대 AI 반도체 웨이퍼 시제품",
         source: "한국반도체연구원",
         provider: "김철수 기자",
+        mime_type: "image/jpeg",
+        generated: false,
         ratios: ["16:9 (동아일보 대표)", "4:3 (본문)", "1:1 (모바일/SNS)"]
       }
     ],
@@ -34,6 +49,8 @@ export const initialArticles = [
   },
   {
     id: "art-2",
+    canonical_id: "20000000-0000-4000-8000-000000000002",
+    workspace_id: DEFAULT_WORKSPACE_ID,
     title: "기후 변화와 친환경 에너지 전환의 실효성 분석",
     suggestedTitle: "탄소중립 2030, 재생에너지 공급망 확충이 핵심",
     subtitle: "풍력 및 태양광 발전의 계통 연계 한계와 정책적 대안 모색",
@@ -43,6 +60,8 @@ export const initialArticles = [
     status: "발행본",
     createdAt: "2026-09-28 10:00",
     updatedAt: "2026-09-29 11:15",
+    current_revision_id: "21000000-0000-4000-8000-000000000002",
+    revision_no: 3,
     linkedSources: ["src-2"],
     linkedInterviews: [],
     photos: [],
@@ -54,33 +73,71 @@ export const initialArticles = [
 export const mockSources = [
   {
     id: "src-1",
+    canonical_id: "30000000-0000-4000-8000-000000000001",
+    workspace_id: DEFAULT_WORKSPACE_ID,
+    kind: "upload",
     title: "2026 차세대 반도체 산업 동향 보고서",
     category: "공식문서",
     date: "2026-09-15",
+    version: "2026-09",
     snippet: "NPU 시장은 향후 3년간 연평균 42% 성장할 것으로 전망되며, PIM 기술의 도입으로 저전력 임베디드 AI 칩 시장 확대 가속화.",
-    content: "산업통상자원부 발행 공식 보고서. 국내 반도체 관련 기술 수준 평가 및 글로벌 서플라이 체인 변화 분석 데이터 포함."
+    content: "산업통상자원부 발행 공식 보고서. 국내 반도체 관련 기술 수준 평가 및 글로벌 서플라이 체인 변화 분석 데이터 포함.",
+    chunks: [
+      {
+        id: "31000000-0000-4000-8000-000000000001",
+        ordinal: 1,
+        text: "NPU 시장은 향후 3년간 연평균 42% 성장할 것으로 전망되며, PIM 기술의 도입으로 저전력 임베디드 AI 칩 시장 확대 가속화.",
+        locator: { section: "산업분석", page: 4 }
+      }
+    ]
   },
   {
     id: "src-2",
+    canonical_id: "30000000-0000-4000-8000-000000000002",
+    workspace_id: DEFAULT_WORKSPACE_ID,
+    kind: "external",
     title: "전력망 확충 및 재생에너지 계통 연계 회의록",
     category: "회의록",
     date: "2026-09-20",
+    version: "2026-09",
     snippet: "동해안 및 호남 지역 송전선로 건설 지연에 따른 출력제어 손실액이 전년 대비 35% 증가.",
-    content: "전력거래소 간담회 녹취 요약. 지역별 송전 용량 한계 상황과 2027년까지의 보완 조치 계획."
+    content: "전력거래소 간담회 녹취 요약. 지역별 송전 용량 한계 상황과 2027년까지의 보완 조치 계획.",
+    chunks: [
+      {
+        id: "31000000-0000-4000-8000-000000000002",
+        ordinal: 1,
+        text: "동해안 및 호남 지역 송전선로 건설 지연에 따른 출력제어 손실액이 전년 대비 35% 증가.",
+        locator: { section: "회의요약", page: 2 }
+      }
+    ]
   },
   {
     id: "src-3",
+    canonical_id: "30000000-0000-4000-8000-000000000003",
+    workspace_id: DEFAULT_WORKSPACE_ID,
+    kind: "upload",
     title: "글로벌 AI 반도체 시장 점유율 통계 (2025-2026)",
     category: "통계",
     date: "2026-09-25",
+    version: "2026-09",
     snippet: "엔비디아 GPU 점유율 78%, 자체 개발 NPU 파급력 지속 상승 중.",
-    content: "Gartner 통계 데이터 인용. AI 추론 시장에서의 서버용 칩 세대교체 주기 단축 분석."
+    content: "Gartner 통계 데이터 인용. AI 추론 시장에서의 서버용 칩 세대교체 주기 단축 분석.",
+    chunks: [
+      {
+        id: "31000000-0000-4000-8000-000000000003",
+        ordinal: 1,
+        text: "엔비디아 GPU 점유율 78%, 자체 개발 NPU 파급력 지속 상승 중.",
+        locator: { section: "통계자료", page: 1 }
+      }
+    ]
   }
 ];
 
 export const mockInterviews = [
   {
     id: "int-1",
+    canonical_id: "32000000-0000-4000-8000-000000000001",
+    workspace_id: DEFAULT_WORKSPACE_ID,
     title: "AI 반도체 최고연구원 김성민 박사 인터뷰",
     date: "2026-09-29",
     audioDuration: "14:32",
@@ -97,6 +154,11 @@ export const mockInterviews = [
 export const mockFactCheckIssues = [
   {
     id: "fc-1",
+    claim_id: "40000000-0000-4000-8000-000000000001",
+    evidence_link_id: "41000000-0000-4000-8000-000000000001",
+    source_chunk_id: "31000000-0000-4000-8000-000000000001",
+    relation: "support",
+    retrieval_score: 0.93,
     targetText: "전력 소비를 최대 70% 감소시키는 성과를 얻어냈다.",
     type: "수치 정확성 검증 필요",
     reason: "취재자료(김성민 박사 인터뷰 및 산자부 보고서)에 따르면 전력 소비 감축 비율은 '최대 70%'가 아닌 '전력 효율 3배 향상(약 66.7% 절감)'입니다.",
@@ -106,6 +168,11 @@ export const mockFactCheckIssues = [
   },
   {
     id: "fc-2",
+    claim_id: "40000000-0000-4000-8000-000000000002",
+    evidence_link_id: "41000000-0000-4000-8000-000000000002",
+    source_chunk_id: "31000000-0000-4000-8000-000000000002",
+    relation: "context",
+    retrieval_score: 0.87,
     targetText: "정부 차원의 집중 지원과 실증 사업 확대가 시급한 시점이다.",
     type: "표현 제언",
     reason: "기사의 객관성을 높이기 위해 단순 주 주장보다 주어(전문가들, 업계)를 명확히 명시하는 것이 권장됩니다.",

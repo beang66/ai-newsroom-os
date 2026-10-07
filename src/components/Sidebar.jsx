@@ -1,195 +1,283 @@
 import React from "react";
-import { 
-  Sparkles, 
-  PenTool, 
-  Mic, 
-  FileCheck2, 
-  ChevronLeft, 
-  Minus,
-  Network,
+import {
+  PenTool,
+  Mic,
+  Send,
+  Settings,
+  FolderArchive,
+  ChevronsLeft,
+  ChevronRight
 } from "lucide-react";
 
+// 사용자 첨부 이미지와 100% 동일한 AI 스파클 별 아이콘 (4각 별 + 우측 상단 플러스 + 좌측 하단 점)
+function AiSparkleStarIcon({ className = "w-5 h-5", strokeWidth = 2.2 }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* 중앙 곡선 4각 별 */}
+      <path d="M12 3C12 7.5 8.5 11 4 11C8.5 11 12 14.5 12 19C12 14.5 15.5 11 20 11C15.5 11 12 7.5 12 3Z" />
+      {/* 우측 상단 작은 플러스 (+) */}
+      <path d="M19.5 3.5v3M18 5h3" />
+      {/* 좌측 하단 작은 원형 도트 (•) */}
+      <circle cx="5" cy="18" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 /**
- * 모던 레퍼런스 스타일 사이드바 컴포넌트
- * - 단일 컨테이너 구조로 접고 펼칠 때 아이콘(이모지)의 X/Y 위치가 완벽히 고정됨
- * - 접기/펼치기 화살표 버튼 위치 고정 및 제자리 회전(rotate-180) 애니메이션
- * - 상단: 기사 작성, 녹음 파일, 플랫폼 변환
- * - 세로선 아래 "나의 메뉴" 및 부속 메뉴 "나의 기사 모아보기"
+ * Modern Glassmorphism Slim & Expandable Sidebar
+ * - 상단: AI 스파클 아이콘 + AI Newsroom
+ * - 메뉴: 영문(English) 인터페이스 표기
+ * - 접힌 상태: 세로형 슬림 Glass 캡슐 패널 (w: ~76px)
+ * - 펼친 상태: 가로 확장 Glass Navigation Drawer (w: ~295px)
  */
 export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setActiveTab }) {
-  // 상단 메인 메뉴 그룹
-  const mainMenus = [
-    { id: "writer", label: "기사 작성", icon: PenTool },
-    { id: "interview", label: "녹음 파일", icon: Mic },
-    { id: "convert", label: "플랫폼 변환", icon: Sparkles },
-    { id: "datamap", label: "데이터맵", icon: Network },
+  // 펼침 상태: isCollapsed가 false이면 펼쳐진 상태
+  const isExpanded = !isCollapsed;
+
+  // 영문 네비게이션 아이템 리스트 (기존 탭 기능 100% 보존)
+  const navItems = [
+    { id: "writer", label: "Article Writer", icon: PenTool, isTab: true },
+    { id: "interview", label: "Interview & Audio", icon: Mic, isTab: true },
+    { id: "convert", label: "Publish & Convert", icon: Send, isTab: true },
+    { id: "archive", label: "Saved Archive", icon: FolderArchive, isTab: true },
   ];
 
   // 활성 탭 식별 함수
   const isTabActive = (tabId) => {
     if (tabId === "writer") {
-      return ["writer", "factcheck", "search"].includes(activeTab);
+      return ["writer", "factcheck"].includes(activeTab);
     }
     return activeTab === tabId;
   };
 
-  return (
-    <aside
-      className={`h-full z-20 select-none transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] flex flex-col ${
-        isCollapsed ? "w-16" : "w-64 md:w-72"
-      }`}
-    >
-      <div className="w-full h-full py-5 px-2.5 flex flex-col bg-[#F1F3F5]/75 backdrop-blur-xl backdrop-saturate-150 rounded-[28px] border border-white/80 shadow-[0_8px_32px_0_rgba(15,23,42,0.06)] relative overflow-hidden transition-all duration-300">
-        
-        {/* 1. 상단 브랜드 헤더: ✦ 심볼 + Menu 텍스트 (위치 고정) */}
-        <div className="flex items-center h-10 px-0.5 mb-4">
-          <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="w-11 h-11 flex-shrink-0 flex items-center justify-center text-slate-900 cursor-pointer hover:scale-105 transition-transform"
-            title={isCollapsed ? "사이드바 펼치기" : "사이드바 접기"}
-          >
-            <Sparkles className="w-5 h-5 fill-slate-900 text-slate-900" />
-          </button>
-          
-          <div
-            className={`overflow-hidden transition-all duration-300 whitespace-nowrap ${
-              isCollapsed ? "w-0 opacity-0 -translate-x-2" : "w-auto opacity-100 translate-x-0 ml-1.5"
-            }`}
-          >
-            <span className="text-lg font-bold text-slate-900 tracking-tight">Menu</span>
-          </div>
-        </div>
+  const handleToggleExpand = () => {
+    if (setIsCollapsed) {
+      setIsCollapsed(!isCollapsed);
+    }
+  };
 
-        {/* 2. 메인 메뉴 그룹: 기사 작성, 녹음 파일, 플랫폼 변환 */}
-        <div className="flex flex-col gap-2 w-full">
-          {mainMenus.map((menu) => {
-            const active = isTabActive(menu.id);
-            const Icon = menu.icon;
+  return (
+    <aside className="sticky top-4 self-start z-30 select-none flex flex-col items-center flex-shrink-0 transition-all duration-300 ease-out">
+      <div
+        className={`relative flex flex-col transition-all duration-300 ease-out ${isExpanded
+          ? "w-[285px] md:w-[300px] p-5"
+          : "w-[72px] md:w-[76px] py-5 px-3 items-center"
+          }`}
+        style={{
+          minHeight: "calc(100vh - 90px)",
+          background: isExpanded ? "rgba(255, 255, 255, 0.78)" : "rgba(255, 255, 255, 0.72)",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
+          border: "1px solid rgba(255, 255, 255, 0.8)",
+          boxShadow: isExpanded
+            ? "0 16px 40px rgba(40, 35, 25, 0.09)"
+            : "0 10px 32px rgba(40, 35, 25, 0.07)",
+          borderRadius: isExpanded ? "38px" : "42px"
+        }}
+      >
+
+        {/* ──────────────────────────────────────────
+            1. 상단 로고 및 펼치기/접기 헤더
+           ────────────────────────────────────────── */}
+        {isExpanded ? (
+          /* [펼친 상태 상단 헤더]: 배경 박스 없이 스파클 아이콘 + AI Newsroom + [« 접기 버튼] */
+          <div className="flex items-center justify-between w-full mb-6 pt-1 px-1">
+            <button
+              onClick={() => setActiveTab("writer")}
+              className="flex items-center gap-2.5 transition cursor-pointer group text-left"
+              title="menu"
+            >
+              <AiSparkleStarIcon className="w-6 h-6 text-[#F4A940] group-hover:scale-110 transition-transform" strokeWidth={2.4} />
+              <span
+                className="text-base font-extrabold text-[#292929] tracking-tight"
+                style={{ fontFamily: "'Plus Jakarta Sans', 'Pretendard', sans-serif" }}
+              >
+                menu
+              </span>
+            </button>
+
+            {/* 깔끔한 접기 버튼 («) */}
+            <button
+              onClick={handleToggleExpand}
+              className="w-8 h-8 rounded-full bg-white/70 hover:bg-white text-[#555] hover:text-[#222] border border-white/80 flex items-center justify-center transition shadow-2xs cursor-pointer active:scale-95"
+              title="Collapse Sidebar"
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          /* [접힌 상태 상단 심볼]: 클릭 시 사이드바 펼치기 */
+          <button
+            onClick={handleToggleExpand}
+            className="w-10 h-10 mb-4 rounded-full flex items-center justify-center text-[#F4A940] hover:bg-white/60 transition-all cursor-pointer group"
+            title="Expand Sidebar"
+          >
+            <AiSparkleStarIcon className="w-6 h-6 text-[#F4A940] group-hover:scale-110 transition-transform" strokeWidth={2.4} />
+          </button>
+        )}
+
+        {/* ──────────────────────────────────────────
+            3. 메인 네비게이션 메뉴 (영문 Contents 섹션)
+           ────────────────────────────────────────── */}
+        {isExpanded && (
+          <div className="w-full text-[11px] font-bold text-[#8E8982] px-2 mb-2 tracking-tight uppercase">
+            Contents
+          </div>
+        )}
+
+        <div className={`flex flex-col w-full ${isExpanded ? "gap-1.5" : "gap-3 items-center"}`}>
+          {navItems.map((item) => {
+            const active = item.isTab && isTabActive(item.id);
+            const Icon = item.icon;
 
             return (
               <button
-                key={menu.id}
-                onClick={() => setActiveTab(menu.id)}
-                title={menu.label}
-                className={`h-11 rounded-full flex items-center transition-all duration-300 cursor-pointer group relative ${
-                  isCollapsed ? "w-11 justify-center px-0" : "w-full px-1"
-                } ${
-                  active
-                    ? isCollapsed
-                      ? "bg-white text-slate-900 shadow-md border border-slate-200/80 scale-105"
-                      : "bg-[#23211F] text-white shadow-md shadow-slate-900/10"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-                }`}
-              >
-                {/* 아이콘 컨테이너: 항상 정확한 고정 좌표(44x44px)에 중앙 정렬 */}
-                <div className="w-11 h-11 flex-shrink-0 flex items-center justify-center">
-                  <Icon
-                    className={`w-4 h-4 transition-colors ${
-                      active
-                        ? isCollapsed
-                          ? "text-slate-900"
-                          : "text-white"
-                        : "text-slate-600 group-hover:text-slate-900"
-                    }`}
-                  />
-                </div>
-
-                {/* 메뉴 텍스트: 펼침 시 부드럽게 나타남 */}
-                <div
-                  className={`overflow-hidden transition-all duration-300 whitespace-nowrap flex items-center justify-between flex-1 ${
-                    isCollapsed ? "w-0 opacity-0 -translate-x-2" : "w-auto opacity-100 translate-x-0 mr-3"
+                key={item.id}
+                onClick={() => {
+                  if (item.isTab) {
+                    setActiveTab(item.id);
+                  } else if (item.onClick) {
+                    item.onClick();
+                  }
+                }}
+                title={!isExpanded ? item.label : undefined}
+                className={`transition-all duration-200 cursor-pointer relative group text-left ${isExpanded
+                  ? active
+                    ? "w-full bg-white/85 shadow-sm border border-white/90 rounded-[20px] p-2 pr-3.5 flex items-center justify-between"
+                    : "w-full hover:bg-white/50 rounded-[20px] p-2 pr-3.5 flex items-center gap-3 text-[#444444] hover:text-[#222222]"
+                  : active
+                    ? "w-11 h-11 rounded-full flex items-center justify-center bg-[#292929] text-[#F4A940] shadow-[0_4px_14px_rgba(41,41,41,0.16)] scale-105"
+                    : "w-11 h-11 rounded-full flex items-center justify-center text-[#555555] hover:text-[#222222] hover:bg-white/50"
                   }`}
-                >
-                  <span className="text-sm font-medium truncate">{menu.label}</span>
-                  {active && <Minus className="w-3.5 h-3.5 text-white/80 flex-shrink-0 ml-2" />}
-                </div>
+              >
+                {/* 펼친 상태의 아이콘 + 영문 텍스트 */}
+                {isExpanded ? (
+                  <>
+                    <div className="flex items-center gap-3 truncate">
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${active
+                        ? "bg-[#292929] text-[#F4A940] shadow-xs"
+                        : "text-[#555555] group-hover:text-[#222222]"
+                        }`}>
+                        <Icon className="w-4.5 h-4.5" />
+                      </div>
+                      <span className={`text-xs md:text-sm truncate ${active ? "font-bold text-[#222222]" : "font-medium text-[#444444] group-hover:text-[#222222]"
+                        }`}>
+                        {item.label}
+                      </span>
+                    </div>
+
+                    {active && (
+                      <ChevronRight className="w-4 h-4 text-[#8E8982] flex-shrink-0 ml-1" />
+                    )}
+                  </>
+                ) : (
+                  /* 접힌 상태의 단독 아이콘 + 영문 툴팁 */
+                  <>
+                    <Icon
+                      className={`w-4.5 h-4.5 transition-colors ${active ? "text-[#F4A940]" : "text-[#555555] group-hover:text-[#222222]"
+                        }`}
+                    />
+
+                    {/* 접힌 상태용 호버 툴팁 */}
+                    <div className="absolute left-[82px] bg-[#292929] text-white text-xs font-medium px-2.5 py-1 rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-md z-50">
+                      {item.label}
+                    </div>
+                  </>
+                )}
               </button>
             );
           })}
         </div>
 
-        {/* 3. 세로선 / 구분선 영역 */}
-        <div className="my-4 flex flex-col items-center w-full transition-all duration-300">
-          {isCollapsed ? (
-            // 접혔을 때: 레퍼런스 스타일 세로 가이드 라인 + 중앙 도트
-            <div className="flex flex-col items-center my-1">
-              <div className="w-px h-7 bg-slate-300" />
-              <div className="w-1.5 h-1.5 rounded-full bg-slate-400 my-1" />
-              <div className="w-px h-7 bg-slate-300" />
+        {/* ──────────────────────────────────────────
+            4. 구분선
+           ────────────────────────────────────────── */}
+        <div className={`h-[1px] bg-black/5 my-3.5 ${isExpanded ? "w-full px-1" : "w-8"}`} />
+
+        {/* ──────────────────────────────────────────
+            5. 설정 영역 (영문 Settings 섹션)
+           ────────────────────────────────────────── */}
+        {isExpanded && (
+          <div className="w-full text-[11px] font-bold text-[#8E8982] px-2 mb-2 tracking-tight uppercase">
+            Settings
+          </div>
+        )}
+
+        <button
+          onClick={() => alert("Settings panel.")}
+          title={!isExpanded ? "Settings" : undefined}
+          className={`transition-all duration-200 cursor-pointer relative group text-left ${isExpanded
+            ? "w-full hover:bg-white/50 rounded-[20px] p-2 pr-3.5 flex items-center gap-3 text-[#444444] hover:text-[#222222]"
+            : "w-11 h-11 rounded-full flex items-center justify-center text-[#555555] hover:text-[#222222] hover:bg-white/50"
+            }`}
+        >
+          {isExpanded ? (
+            <div className="flex items-center gap-3 truncate">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-[#555555] group-hover:text-[#222222]">
+                <Settings className="w-4.5 h-4.5" />
+              </div>
+              <span className="text-xs md:text-sm font-medium text-[#444444] group-hover:text-[#222222] truncate">
+                Settings
+              </span>
             </div>
           ) : (
-            // 펼쳐졌을 때: 얇은 가로 구분선과 "나의 메뉴" 라벨
-            <div className="w-full">
-              <div className="w-full h-px bg-slate-200/80 mb-3" />
-              <div className="px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                나의 메뉴
+            <>
+              <Settings className="w-4.5 h-4.5" />
+              <div className="absolute left-[82px] bg-[#292929] text-white text-xs font-medium px-2.5 py-1 rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-md z-50">
+                Settings
+              </div>
+            </>
+          )}
+        </button>
+
+        {/* ──────────────────────────────────────────
+            6. 최하단 사용자 프로필 영역
+           ────────────────────────────────────────── */}
+        <div className="mt-auto pt-4 w-full flex flex-col items-center">
+          {isExpanded ? (
+            /* [펼친 상태의 프로필 카드]: 사람 이모지 + Reporter Profile + [>] 화살표 */
+            <div
+              onClick={() => alert("Reporter Profile")}
+              className="w-full bg-white/65 hover:bg-white/85 border border-white/80 rounded-[22px] p-2.5 flex items-center justify-between transition cursor-pointer shadow-2xs group"
+              title="Reporter Profile"
+            >
+              <div className="flex items-center gap-2.5 truncate">
+                <div className="w-10 h-10 rounded-full bg-[#EFECE6] border border-[#E7E2D9] flex items-center justify-center text-lg flex-shrink-0 shadow-2xs">
+                  👤
+                </div>
+                <div className="truncate text-left">
+                  <div className="text-xs md:text-sm font-bold text-[#222222] truncate">
+                    Staff Reporter
+                  </div>
+                  <div className="text-[10px] text-[#8E8982] font-medium truncate">
+                    Premium Plan
+                  </div>
+                </div>
+              </div>
+
+              <ChevronRight className="w-4 h-4 text-[#8E8982] group-hover:text-[#222] group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+            </div>
+          ) : (
+            /* [접힌 상태의 프로필 원형 아바타]: 사람 이모지 */
+            <div
+              className="w-10 h-10 rounded-full bg-[#EFECE6] border border-[#E7E2D9] hover:border-[#F4A940] transition-colors cursor-pointer shadow-xs flex items-center justify-center text-lg group relative"
+              title="Reporter Profile"
+              onClick={() => alert("Reporter Profile")}
+            >
+              <span>👤</span>
+              <div className="absolute left-[82px] bg-[#292929] text-white text-xs font-medium px-2.5 py-1 rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-md z-50">
+                Reporter Profile
               </div>
             </div>
           )}
-        </div>
-
-        {/* 4. "나의 메뉴" 부속 메뉴: 나의 기사 모아보기 */}
-        <div className="w-full">
-          {/* 펼쳐졌을 때 서브트리 연결선 구조 (레퍼런스 이미지 Threads 하위 스타일) */}
-          <div className={`${!isCollapsed ? "ml-3.5 pl-2 border-l border-slate-300" : ""}`}>
-            <button
-              onClick={() => setActiveTab("archive")}
-              title="나의 기사 모아보기"
-              className={`h-11 rounded-full flex items-center transition-all duration-300 cursor-pointer group relative ${
-                isCollapsed ? "w-11 justify-center px-0" : "w-full px-1"
-              } ${
-                activeTab === "archive"
-                  ? isCollapsed
-                    ? "bg-white text-slate-900 shadow-md border border-slate-200/80 scale-105"
-                    : "bg-[#23211F] text-white shadow-md shadow-slate-900/10"
-                  : !isCollapsed
-                    ? "bg-white/80 text-slate-700 hover:bg-white hover:text-slate-900 shadow-sm border border-slate-200/60"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-              }`}
-            >
-              {/* 아이콘: 고정 위치 */}
-              <div className="w-11 h-11 flex-shrink-0 flex items-center justify-center">
-                <FileCheck2
-                  className={`w-4 h-4 transition-colors ${
-                    activeTab === "archive"
-                      ? isCollapsed
-                        ? "text-slate-900"
-                        : "text-white"
-                      : "text-slate-600 group-hover:text-slate-900"
-                  }`}
-                />
-              </div>
-
-              {/* 텍스트 라벨 */}
-              <div
-                className={`overflow-hidden transition-all duration-300 whitespace-nowrap flex items-center justify-between flex-1 ${
-                  isCollapsed ? "w-0 opacity-0 -translate-x-2" : "w-auto opacity-100 translate-x-0 mr-3"
-                }`}
-              >
-                <span className="text-sm font-medium truncate">나의 기사 모아보기</span>
-                {activeTab === "archive" && (
-                  <Minus className="w-3.5 h-3.5 text-white/80 flex-shrink-0 ml-2" />
-                )}
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* 5. 최하단: 접기/펼치기 화살표 버튼 (위치 완벽 고정 & 180도 회전) */}
-        <div className="mt-auto pt-3 flex items-center h-11 px-0.5">
-          <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="w-11 h-11 flex items-center justify-center flex-shrink-0 cursor-pointer group"
-            title={isCollapsed ? "사이드바 펼치기" : "사이드바 접기"}
-          >
-            <div className="w-9 h-9 rounded-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/80 shadow-sm flex items-center justify-center transition-all duration-200 group-hover:scale-105 active:scale-95">
-              <ChevronLeft
-                className={`w-4 h-4 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${
-                  isCollapsed ? "rotate-180" : "rotate-0"
-                }`}
-              />
-            </div>
-          </button>
         </div>
 
       </div>

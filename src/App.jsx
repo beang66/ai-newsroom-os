@@ -1,25 +1,20 @@
 import React, { useState } from "react";
 import Header from "./components/Header";
-import ProcessBar from "./components/ProcessBar";
 import Sidebar from "./components/Sidebar";
 import ArticleWriter from "./components/ArticleWriter";
 import SourceSearch from "./components/SourceSearch";
 import InterviewStudio from "./components/interview/InterviewStudio";
 import FormatConverter from "./components/FormatConverter";
 import ArchiveView from "./components/ArchiveView";
-import DataMap from "./features/data-map/DataMap";
 
 import { initialArticles, mockFactCheckIssues } from "./data/mockData";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("writer");
   const [article, setArticle] = useState(initialArticles[0]);
-  const [articleLocation, setArticleLocation] = useState(null);
-  // Explicit demo for this prototype. Production / Core integration defaults to API.
-  const dataMapMode = import.meta.env.VITE_DATA_MAP_MODE || (import.meta.env.DEV ? "demo" : "api");
 
-  // Sidebar collapse state
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.matchMedia("(max-width: 900px)").matches);
+  // Sidebar collapse state (기본 상태: 세로로 긴 Slim Sidebar 접힘 상태)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
   // Fact check sequential state
   const [factCheckActive, setFactCheckActive] = useState(false);
@@ -28,6 +23,9 @@ export default function App() {
 
   // Quick Source Search Modal inside Article Writer
   const [showSearchModal, setShowSearchModal] = useState(false);
+
+  // Right side tools tab collapse state
+  const [isToolsCollapsed, setIsToolsCollapsed] = useState(false);
 
   const handleRunFactCheck = () => {
     setFactCheckActive(true);
@@ -80,12 +78,12 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col font-sans selection:bg-slate-900 selection:text-white">
+    <div className="min-h-screen flex flex-col font-sans selection:bg-[#F4A940] selection:text-white bg-transparent text-[#292929]">
       {/* 1. Top Header */}
       <Header currentArticleTitle={article.title} status={article.status} />
 
-      {/* 2. Main Workspace Layout: Outer Big Glass Box Removed, Sidebar & Main Curvature preserved */}
-      <div className="flex flex-1 w-full relative overflow-x-hidden min-h-[calc(100vh-65px)] p-3 md:p-4 gap-3 md:gap-4">
+      {/* 2. Main Workspace Layout: Floating Slim Sidebar & Warm Minimal Workspace */}
+      <div className="flex flex-1 w-full relative min-h-[calc(100vh-70px)] pl-3 md:pl-5 pr-3 md:pr-6 py-2 gap-4 md:gap-5 items-start">
         {/* Left Sidebar attached to edge */}
         <Sidebar
           isCollapsed={isSidebarCollapsed}
@@ -94,75 +92,41 @@ export default function App() {
           setActiveTab={setActiveTab}
         />
 
-        {/* Main Content Wrapper with Top Binder Navigation */}
-        <div className="flex-1 flex flex-col min-w-0 transition-all z-20">
-          {/* Top Process Binder Navigation - 녹음 파일(interview) 화면에서는 숨김 */}
-          {activeTab !== "interview" && (
-            <ProcessBar 
-              activeTab={activeTab}
-              setActiveTab={(tab) => {
-                if (tab === "factcheck") {
-                  handleRunFactCheck();
-                } else {
-                  setActiveTab(tab);
-                }
-              }}
+        {/* Main Content Workspace (우측 여백 없이 전체 너비 자연스럽게 채움) */}
+        <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0">
+          {activeTab === "writer" || activeTab === "publish" ? (
+            <ArticleWriter
+              article={article}
+              setArticle={setArticle}
+              onOpenSearch={() => setShowSearchModal(true)}
+              onRunFactCheck={handleRunFactCheck}
+              factCheckActive={factCheckActive}
+              factCheckIssues={factCheckIssues}
+              activeFactIndex={activeFactIndex}
+              onApplyFactFix={handleApplyFactFix}
+              onSkipFactFix={handleSkipFactFix}
+              isToolsCollapsed={isToolsCollapsed}
+              setIsToolsCollapsed={setIsToolsCollapsed}
             />
-          )}
-
-          {/* Main Content Solid Box */}
-          <main className="main-curved-content flex-1 py-6 px-4 md:px-8 min-w-0 transition-all">
-            {activeTab === "writer" && (
-              <ArticleWriter
-                article={article}
-                locationRequest={articleLocation}
-                setArticle={setArticle}
-                onOpenSearch={() => setShowSearchModal(true)}
-                onRunFactCheck={handleRunFactCheck}
-                factCheckActive={factCheckActive}
-                factCheckIssues={factCheckIssues}
-                activeFactIndex={activeFactIndex}
-                onApplyFactFix={handleApplyFactFix}
-                onSkipFactFix={handleSkipFactFix}
-              />
-            )}
-
-            {activeTab === "search" && (
-              <SourceSearch onConnectToArticle={handleConnectSource} />
-            )}
-
-            {activeTab === "interview" && (
+          ) : activeTab === "interview" ? (
+            <main className="flex-1 py-7 px-5 md:px-10 min-w-0 transition-all z-20">
               <InterviewStudio onReturnToArticle={handleReturnFromInterview} />
-            )}
-
-            {/* 작성·검토 메인 화면 (미리보기 및 편집 통합) */}
-            {activeTab === "publish" && (
-              <ArticleWriter
-                article={article}
-                setArticle={setArticle}
-                onOpenSearch={() => setShowSearchModal(true)}
-                onRunFactCheck={handleRunFactCheck}
-                factCheckActive={factCheckActive}
-                factCheckIssues={factCheckIssues}
-                activeFactIndex={activeFactIndex}
-                onApplyFactFix={handleApplyFactFix}
-                onSkipFactFix={handleSkipFactFix}
-              />
-            )}
-
-            {activeTab === "convert" && (
-              <FormatConverter />
-            )}
-
-            {activeTab === "datamap" && (
-              <DataMap key={article.id} article={article} workspaceId={article.workspace_id || import.meta.env.VITE_WORKSPACE_ID}
-                mode={dataMapMode} onArticleLocation={request => { setArticleLocation({ ...request, nonce: Date.now() }); setActiveTab("writer"); }} />
-            )}
-
-            {activeTab === "archive" && (
+            </main>
+          ) : activeTab === "archive" ? (
+            <main className="flex-1 min-w-0 transition-all z-20 py-2">
               <ArchiveView />
-            )}
-          </main>
+            </main>
+          ) : (
+            <main className="main-warm-container flex-1 py-7 px-5 md:px-10 min-w-0 transition-all z-20">
+              {activeTab === "search" && (
+                <SourceSearch onConnectToArticle={handleConnectSource} />
+              )}
+
+              {activeTab === "convert" && (
+                <FormatConverter currentArticle={article} />
+              )}
+            </main>
+          )}
         </div>
       </div>
 
@@ -177,3 +141,4 @@ export default function App() {
     </div>
   );
 }
+

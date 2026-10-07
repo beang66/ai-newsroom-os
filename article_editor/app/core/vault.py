@@ -15,7 +15,7 @@ from app_paths import DB_PATH  # noqa: E402
 
 from .errors import RequestError
 
-SERVICE = 'AI Newsroom'
+SERVICE = os.environ.get('AI_NEWSROOM_KEY_SERVICE') or 'AI Newsroom'  # 테스트는 다른 이름을 써서 실제 기기 키를 건드리지 않는다
 ACCOUNT = 'device-key'
 WORKSPACE_ID = '10000000-0000-4000-8000-000000000001'  # 단일 워크스페이스(계약 ERD 의 workspace_id)
 

@@ -35,11 +35,12 @@ def cleanup_open():
 
 PHOTO_FIELDS = ('data', 'original')  # 사진 항목에서 base64 data URL 이 들어오는 필드
 MEDIA_REF = re.compile(r'media:([a-f0-9]{32})')
+SOURCE_ID = re.compile(r'[a-f0-9]{32}|[a-f0-9]{16}')  # 32자 = UUID(새 자료). 16자 = 옛 평문 폴더 가져오기(import_legacy_files)
 
 
 def _store_media(db, head, raw):
     """사진 바이트를 media 표에 한 번만 둔다(같은 바이트·머리글이면 같은 id). → 32자리 id"""
-    media_id = hashlib.sha256(head.encode() + b'\0' + raw).hexdigest()[:32]
+    media_id = ids.media_id(head, raw)
     db.execute('INSERT OR IGNORE INTO media VALUES (?, ?, ?, ?, ?)', (media_id, vault.WORKSPACE_ID, head, raw, _now()))
     return media_id
 
@@ -420,7 +421,7 @@ def list_snapshots(article_id):
 def save_source(filename, raw, text):
     """취재자료 원본과 추출 텍스트를 암호화 저장소에 둔다. 같은 파일(내용 해시)은 한 번만 저장된다.
     파일 이름은 사용자가 알아보도록 원래 이름을 쓴다(경로 문자만 걸러 낸다)."""
-    source_id = hashlib.sha1(raw).hexdigest()[:16]
+    source_id = ids.source_id(raw)
     safe = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', filename.replace('\\', '/').rsplit('/', 1)[-1]).strip(' .') or 'source'
     with SAVE_LOCK, vault.connect() as db:  # ponytail: 원본(최대 30MB)을 DB 안에 둔다. 커져서 느려지면 암호화 파일로 분리
         db.execute('INSERT INTO sources VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET text = excluded.text',
@@ -429,8 +430,8 @@ def save_source(filename, raw, text):
 
 
 def _original(source_id):
-    """보관한 취재자료 원본 (이름, 바이트). ID 는 16자 hex 만 받는다."""
-    if not isinstance(source_id, str) or not re.fullmatch(r'[a-f0-9]{16}', source_id):
+    """보관한 취재자료 원본 (이름, 바이트). ID 는 32자 hex(UUID). 16자 hex 는 옛 평문 폴더에서 가져온 자료용으로만 받는다."""
+    if not isinstance(source_id, str) or not SOURCE_ID.fullmatch(source_id):
         raise RequestError('잘못된 자료 ID입니다.')
     with vault.connect() as db:
         row = db.execute('SELECT name, original FROM sources WHERE id = ?', (source_id,)).fetchone()

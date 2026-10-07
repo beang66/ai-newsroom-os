@@ -160,6 +160,19 @@ class VaultTests(unittest.TestCase):
         with vault.connect() as db:
             self.assertTrue(db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='article_revisions_id'").fetchone())
 
+    def test_new_source_and_photo_ids_are_uuids_from_content(self):
+        import re as _re
+        from core import ids
+        sid, _ = storage.save_source('a.txt', b'content', 'text')
+        self.assertEqual(sid, ids.source_id(b'content'))
+        self.assertRegex(sid, r'^[0-9a-f]{32}$')
+        raw = b'PNG-bytes'
+        url = 'data:image/png;base64,' + __import__('base64').b64encode(raw).decode()
+        storage.save_article({'draft': {'bodyHtml': '<p>x</p>', 'photos': [{'id': 'p', 'data': url, 'original': url}]}})
+        with vault.connect() as db:
+            media_id = db.execute('SELECT id FROM media').fetchone()[0]
+        self.assertEqual(media_id, ids.media_id('data:image/png;base64', raw))
+
     def test_same_source_saved_once(self):
         a, _ = storage.save_source('a.txt', b'same', 'v1')
         b, _ = storage.save_source('b.txt', b'same', 'v2')

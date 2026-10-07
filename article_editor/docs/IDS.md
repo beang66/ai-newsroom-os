@@ -24,16 +24,23 @@ su4228 원본은 네임스페이스를 인자로 받고 없으면 거부했지�
 `uuid_text` 는 하이픈 UUID 와 32자리 hex 만 받아 소문자 하이픈 표준형으로 돌려준다(`{...}`, `urn:uuid:` 형태는 `IdError`).
 `to_legacy_hex` 는 UUID 를 하이픈 없는 32자리 hex 로 바꿀 뿐이다(su4228 `revision_to_draft` 의 `articleId` 규칙). v5 는 해시라 **원래 레거시 id 로 되돌릴 수 없다.**
 
-## 앱에 있는 레거시 id 모양 (app/core/vault.py SCHEMA · storage.py)
+## 새로 만드는 id 규칙 (2026-10-07 결정: 별칭 없이 처음부터 UUID)
 
-| 대상 | 테이블 | 모양 | 만드는 곳 |
-|---|---|---|---|
-| 원고 | `articles.id` | 32자리 hex | `storage.save_article` — `draft.articleId` 또는 `uuid.uuid4().hex` |
-| 원고 개정본 | `article_revisions` | **자체 id 없음** — 기본키가 `(article_id, revision_no)` 복합키 | `storage.save_article` |
-| 사진 | `media.id` | 32자리 hex (내용 SHA-256 앞 32자리) | `storage._pack` |
-| 취재자료 | `sources.id` | 16자리 hex (원본 SHA-1 앞 16자리) | `storage.save_source` |
+별칭(같은 대상이 id 두 개)을 만들지 않으려고, **새 id 는 처음부터 UUID 로 만든다.** 저장 형태는 하이픈 없는 32자리 hex(`uuid.hex`),
+계약·외부로 나갈 때만 `uuid_text()` 로 하이픈을 붙인다(같은 값, 변환일 뿐 별칭이 아님).
 
-개정본은 단일 레거시 id 가 없으므로 `revision` 엔티티의 legacy_id 로 무엇을 쓸지(예: su4228 은 프론트 버전 기록의 `versionId` 를 씀)는 DB 연결 단계에서 정한다.
+| 대상 | 저장 위치 | id 만드는 법 |
+|---|---|---|
+| 원고 | `articles.id` | 무작위 UUID v4 (`uuid4().hex`) — 예전부터 이 방식 |
+| 원고 개정본 | `article_revisions.id` | `revision_uuid(기사 id, 번호)` = UUID v5 (`app-core:revision:<기사 hex>:<번호>`) |
+| 취재자료 | `sources.id` | `source_id(원본 바이트)` = UUID v5 (`app-core:source:<sha256>`) — 같은 파일이면 같은 id(중복 저장 방지) |
+| 사진 | `media.id` | `media_id(머리글, 바이트)` = UUID v5 (`app-core:media:<sha256>`) — 같은 사진이면 같은 id |
+| 미디어 자산 | `media_assets.id` | 사진의 UUID 를 하이픈 표준형으로(`uuid_text(media.id)`) — 별도 계산 없음 |
+
+`legacy_uuid()` 는 **옛 id 를 UUID 로 바꿔야 할 때만** 쓰는 도구다(su4228 어댑터와 같은 값). 앱 자체 데이터에는 쓰지 않는다.
+옛 평문 폴더에서 가져온(`import_legacy_files`) 자료만 16자리 hex id 를 그대로 가지며, 조회 경로는 이 모양도 받는다. 계약용 UUID 는 없다.
+
+시험용으로 쌓였던 예전 기사·자료(옛 16자리 자료 id)는 이 규칙으로 바꿀 때 **옮기지 않고 비웠다**(사용자 결정: 모두 시험용 임시 데이터).
 
 ## 범위
 

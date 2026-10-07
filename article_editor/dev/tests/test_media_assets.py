@@ -28,7 +28,8 @@ class MediaAssetTests(unittest.TestCase):
         self.assertEqual((asset['kind'], asset['mime_type'], asset['filename'], asset['caption']), ('image', 'image/png', 'a.png', '현장 사진'))
         self.assertEqual((asset['byte_size'], asset['generated'], asset['workspace_id']), (len(RAW), False, vault.WORKSPACE_ID))
         self.assertTrue(asset['object_ref'].startswith('media:'))
-        self.assertEqual(asset['id'], ids.legacy_uuid('media_asset', asset['object_ref'][len('media:'):]))
+        self.assertEqual(asset['id'], ids.uuid_text(asset['object_ref'][len('media:'):]))  # 사진 자체가 UUID — 별칭 없음
+        self.assertEqual(asset['object_ref'][len('media:'):], ids.media_id('data:image/png;base64', RAW))
         self.assertEqual(asset['local_uri'], '/api/media-assets/%s/file' % asset['id'])
 
     def test_same_bytes_same_asset_and_stored_once(self):

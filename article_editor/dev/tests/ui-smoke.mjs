@@ -149,6 +149,7 @@ try {
       : { channel: process.env.PW_CHANNEL || "msedge" },
   );
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page.setDefaultTimeout(60_000); // 전체 파이썬 시험 직후처럼 PC 가 바쁠 때 30초 기본값을 넘는 경우가 있었다
   page.on("console", (m) => m.type() === "error" && !/status of (503|422)/.test(m.text()) && problems.push("console: " + m.text()));
   page.on("pageerror", (e) => problems.push("pageerror: " + e.message));
   page.on("response", async (r) => {

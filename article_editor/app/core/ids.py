@@ -3,6 +3,7 @@
 su4228 브랜치 integration/core_contract.py 의 uuid_text·legacy_uuid 를 옮겨 왔다.
 차이: 네임스페이스는 인자로 받지 않고 아래 TEAM_NAMESPACE 상수로 고정한다. 설명은 docs/IDS.md.
 """
+import hashlib
 import re
 import uuid
 
@@ -41,3 +42,16 @@ def revision_uuid(article_id, revision_no):
     if not isinstance(revision_no, int) or isinstance(revision_no, bool) or revision_no < 1:
         raise IdError('revision_no must be a positive integer')
     return legacy_uuid('revision', f'{article_id}:{revision_no}')
+
+
+# ── 새로 만드는 id 는 처음부터 UUID 로 만든다(별칭 없음). 저장 형태는 하이픈 없는 32자리 hex, 계약으로 나갈 때만 uuid_text() 로 하이픈을 붙인다.
+# 자료·사진은 내용에서 계산한다(같은 파일 = 같은 id → 중복 저장 방지가 그대로). 기사는 uuid4().hex, 개정본은 revision_uuid().
+
+def source_id(raw):
+    """취재자료 id: 원본 바이트의 SHA-256 으로 만든 UUID v5 (32자리 hex)."""
+    return uuid.uuid5(TEAM_NAMESPACE, 'app-core:source:' + hashlib.sha256(raw).hexdigest()).hex
+
+
+def media_id(head, raw):
+    """사진 id: 'data:image/png;base64' 같은 머리글과 바이트의 SHA-256 으로 만든 UUID v5 (32자리 hex)."""
+    return uuid.uuid5(TEAM_NAMESPACE, 'app-core:media:' + hashlib.sha256(head.encode() + b'\0' + raw).hexdigest()).hex

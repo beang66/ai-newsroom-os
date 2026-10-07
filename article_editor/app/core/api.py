@@ -70,7 +70,7 @@ class Handler(BaseHTTPRequestHandler):
                 result=unsplash_get('/search/photos?'+urllib.parse.urlencode({'query':q,'per_page':3,'page':page}))
                 return self.send(200,{'photos':result.get('results',[])[:3],'page':page,'totalPages':min(10000,result.get('total_pages',0)),'total':result.get('total',0)})
             except RequestError as e:return self.send(e.status,error_body(e))
-        match=re.fullmatch(r'/api/sources/([a-f0-9]{16})/file',path.path)
+        match=re.fullmatch(r'/api/sources/([a-f0-9]{32}|[a-f0-9]{16})/file',path.path)
         if match:
             try:return self.send(200,*CORE.storage.source_file(match.group(1)))
             except RequestError as e:return self.send(e.status,error_body(e))

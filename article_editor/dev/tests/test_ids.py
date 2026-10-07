@@ -1,6 +1,7 @@
 """팀 계약 id 규칙(core/ids.py): 레거시 hex id → UUID v5 가 네임스페이스·이름 형식째로 고정되어 있는지."""
 import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
+import hashlib
 import unittest
 import uuid
 from pathlib import Path
@@ -9,7 +10,7 @@ _APP = Path(__file__).resolve().parents[2] / 'app'
 if str(_APP) not in sys.path:
     sys.path.insert(0, str(_APP))
 
-from core.ids import IdError, TEAM_NAMESPACE, legacy_uuid, revision_uuid, to_legacy_hex, uuid_text  # noqa: E402
+from core.ids import IdError, TEAM_NAMESPACE, legacy_uuid, media_id, revision_uuid, source_id, to_legacy_hex, uuid_text  # noqa: E402
 
 # 한 번 계산해 박아 둔 값. 네임스페이스나 이름 형식('app-core:article:abc')이 바뀌면 여기서 깨진다.
 KNOWN_ARTICLE_ABC = '9faf10d9-0423-5bf9-97ce-806fc477f904'
@@ -83,6 +84,28 @@ class RevisionUuidTests(unittest.TestCase):
         for bad in (0, -1, '1', None, True, 1.5):
             with self.assertRaises(IdError):
                 revision_uuid('a' * 32, bad)
+
+
+class ContentIdTests(unittest.TestCase):
+    """자료·사진은 내용에서 UUID 를 계산한다: 같은 내용 = 같은 id(중복 저장 방지), 저장 형태는 32자리 hex(UUID)."""
+
+    def test_source_id_is_uuid_hex_and_deterministic(self):
+        value = source_id(b'abc')
+        self.assertEqual(value, source_id(b'abc'))
+        self.assertNotEqual(value, source_id(b'abd'))
+        self.assertRegex(value, r'^[0-9a-f]{32}$')
+        self.assertEqual(uuid.UUID(value).version, 5)
+        self.assertEqual(uuid_text(value), str(uuid.UUID(value)))
+
+    def test_source_id_fixed_vector(self):
+        # 이름 형식 'app-core:source:<sha256>' 과 네임스페이스가 바뀌면 이 값이 달라진다
+        self.assertEqual(source_id(b'abc'), uuid.uuid5(TEAM_NAMESPACE, 'app-core:source:' + hashlib.sha256(b'abc').hexdigest()).hex)
+
+    def test_media_id_depends_on_header_and_bytes(self):
+        self.assertEqual(media_id('data:image/png;base64', b'x'), media_id('data:image/png;base64', b'x'))
+        self.assertNotEqual(media_id('data:image/png;base64', b'x'), media_id('data:image/jpeg;base64', b'x'))
+        self.assertNotEqual(media_id('data:image/png;base64', b'x'), media_id('data:image/png;base64', b'y'))
+        self.assertEqual(uuid.UUID(media_id('data:image/png;base64', b'x')).version, 5)
 
 
 if __name__ == '__main__':

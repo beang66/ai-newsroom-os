@@ -1,7 +1,7 @@
 """MediaAsset(계약 v0.8): 사진 한 장의 공유 가능한 정체성(UUID)과 설명. 바이트는 기존 암호화 `media` 표에 한 번만 둔다.
 
-- registerMediaAsset: 이미지(data URL) 또는 이미 저장된 `media:<hex>` 를 받아 자산으로 등록한다. 같은 바이트면 같은 id(UUID v5)가 나오므로
-  여러 번 등록해도 하나이고, 설명(filename·caption·generated)만 갱신된다.
+- registerMediaAsset: 이미지(data URL) 또는 이미 저장된 `media:<hex>` 를 받아 자산으로 등록한다. 자산 id = 사진의 UUID 이므로 같은 바이트면
+  같은 id 이고, 여러 번 등록해도 하나이며 설명(filename·caption·generated)만 갱신된다.
 - getMediaAsset / media_asset_file: 자산 정보와 바이트(앱 안에서 보여 줄 때).
 지금은 이미지만 받는다(영상·오디오는 큰 파일을 DB 안에 두는 문제가 있어 따로 정한다).
 """
@@ -65,7 +65,7 @@ def register_media_asset(data):
             if row[0] != 'data:%s;base64' % mime:
                 raise RequestError('저장된 사진의 형식과 mime_type 이 맞지 않습니다.')
             media_id = found.group(1)
-        asset_id = ids.legacy_uuid('media_asset', media_id)
+        asset_id = ids.uuid_text(media_id)  # 사진 자체가 UUID 이므로 자산 id 도 같은 값(별칭 없음)
         db.execute('INSERT INTO media_assets (id, media_id, workspace_id, kind, mime_type, filename, caption, generated, created_at) '
                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET filename = excluded.filename, '
                    'caption = excluded.caption, generated = excluded.generated',

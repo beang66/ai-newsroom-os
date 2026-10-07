@@ -424,8 +424,14 @@ def save_source(filename, raw, text):
     source_id = ids.source_id(raw)
     safe = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', filename.replace('\\', '/').rsplit('/', 1)[-1]).strip(' .') or 'source'
     with SAVE_LOCK, vault.connect() as db:  # ponytail: 원본(최대 30MB)을 DB 안에 둔다. 커져서 느려지면 암호화 파일로 분리
+        previous = db.execute('SELECT text FROM sources WHERE id = ?', (source_id,)).fetchone()
         db.execute('INSERT INTO sources VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET text = excluded.text',
                    (source_id, vault.WORKSPACE_ID, safe, text, raw, _now()))
+        if previous and previous[0] != text:
+            db.execute("UPDATE source_index SET state = 'pending', chunk_count = 0, error_code = NULL, updated_at = ? "
+                       'WHERE source_id = ? AND workspace_id = ?', (_now(), source_id, vault.WORKSPACE_ID))
+            db.execute('DELETE FROM source_chunks WHERE source_id = ? AND workspace_id = ?',
+                       (source_id, vault.WORKSPACE_ID))
     return source_id, '암호화 저장소/' + safe
 
 

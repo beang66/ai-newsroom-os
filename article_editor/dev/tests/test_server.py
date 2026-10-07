@@ -279,6 +279,7 @@ class ServerTests(ApiTestCase):
     def test_short_body(self):
         self.assertEqual(self.request('/api/assist', {'kind': 'metadata', 'body': '짧음'})[0], 400)
 
+    # TODO(debt: DEBT-005): 업로드가 만든 색인 워커 종료 후 임시 vault를 정리하도록 fixture 보완 필요.
     def test_materials_extract(self):
         import base64
         use_temp_vault(self)

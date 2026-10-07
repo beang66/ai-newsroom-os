@@ -5,7 +5,6 @@ from collections import Counter
 from .paths import JUDGE_DIR, settings
 from .semantic_chunker_v3 import clean as _clean
 from .assertion import find_explicit_value_conflicts, find_near_copy_differences, shares_value, recipient_assertions
-from .chunker import chunk_document
 from .semantic_provider import OnnxJudgeProvider
 from .observability import record_factcheck_event
 from .retrieval import DEFAULT_K, RETRIEVAL_LABELS, ChunkIndex, rank_chunks, retrieval_mode
@@ -57,44 +56,8 @@ def _score(claim, chunk, linked=False):
 
 
 def _material_chunks(material):
-    content = _clean(material.get("content") or material.get("summary") or "")
-    if not content:
-        return []
-
-    meta = {
-        "source": "frontend",
-        "title": material.get("title"),
-        "date": material.get("date"),
-    }
-    units = chunk_document(content, meta)
-    rows = [
-        {
-            "text": u.text,
-            "kind": u.kind,
-            "field": u.field,
-            "material_id": material.get("id"),
-            "material_title": material.get("title") or "취재 자료",
-            "material_date": material.get("date"),
-            "speaker": material.get("speaker") or material.get("outletOrSpeaker") or "",
-        }
-        for u in units
-    ]
-
-    # Preserve source identity as a searchable unit without altering the original body.
-    title = _clean(material.get("title") or "")
-    speaker = _clean(material.get("speaker") or material.get("outletOrSpeaker") or "")
-    date = _clean(material.get("date") or "")
-    if title or speaker or date:
-        rows.insert(0, {
-            "text": f"자료명: {title}. 출처/화자: {speaker}. 날짜: {date}.",
-            "kind": "metadata",
-            "field": "source_identity",
-            "material_id": material.get("id"),
-            "material_title": title or "취재 자료",
-            "material_date": date or None,
-            "speaker": speaker,
-        })
-    return rows
+    from ...source_index import material_chunks
+    return material_chunks(material)
 
 
 def _match_key(text):

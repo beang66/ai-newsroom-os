@@ -16,6 +16,9 @@ TEST_KEY = 'ab' * 32
 def use_temp_vault(case):
     """case(TestCase) 동안 임시 DB 와 고정 키를 쓴다. 임시 폴더 경로를 돌려준다."""
     temp = tempfile.TemporaryDirectory()
+    # TODO(debt: DEBT-005): source_ingest 워커가 끝나기 전에 DB/키 패치 복구와 폴더 삭제가 실행된다.
+    # 서버 업로드 시험에서 database is locked / WinError 32 관찰. fixture 소유 워커를 먼저 기다리고,
+    # 추출/HTTP 시험은 실모델 색인을 분리할 것(실사용 데이터 손실로 확인된 것은 아님).
     case.addCleanup(temp.cleanup)
     root = Path(temp.name)
     for patcher in (mock.patch.object(vault, 'DB_PATH', root / 'vault.db'),

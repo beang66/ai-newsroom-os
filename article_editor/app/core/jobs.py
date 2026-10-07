@@ -220,6 +220,8 @@ def run_in_background(job_id, worker):
     def run():
         try:
             set_running(job_id)
+        # TODO(debt: DEBT-004): DB 잠금/OS 오류는 이 예외 처리에서 빠져 워커 스레드 밖으로 샌다.
+        # 시작/완료 기록 실패를 처리하고 다음 실행의 중단 작업 복구와 함께 확인할 것.
         except RequestError:
             return  # 시작 전에 취소됐거나 이미 끝난 작업
         try:
@@ -245,6 +247,7 @@ def run_in_background(job_id, worker):
                     fail(job_id, 'WORKER_ERROR', '작업 결과 형식이 올바르지 않습니다.', False)
             else:
                 fail(job_id, 'WORKER_ERROR', outcome[1], outcome[2])
+        # TODO(debt: DEBT-004): 완료/취소 상태 기록에서도 sqlite.Error/OSError가 처리되지 않는다.
         except RequestError:
             pass  # 저장소를 못 열었으면 다음 시작 때 recover_interrupted_jobs 가 정리한다
 

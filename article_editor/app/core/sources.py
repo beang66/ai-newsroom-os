@@ -36,26 +36,29 @@ def _usage(db):
 
 
 def _item(row, used):
-    source_id, name, created, size, chars = row
+    source_id, name, created, size, chars, state, chunks = row
     return {'id': source_id, 'name': name, 'format': os.path.splitext(name)[1].lstrip('.').lower(), 'size': size, 'chars': chars,
-            'createdAt': created, 'usedBy': used.get(source_id, [])}
+            'createdAt': created, 'usedBy': used.get(source_id, []),
+            'index': {'state': state or 'pending', 'chunks': chunks or 0}}
 
 
-_SELECT = 'SELECT id, name, created_at, length(original), length(text) FROM sources'
+_SELECT = ('SELECT s.id, s.name, s.created_at, length(s.original), length(s.text), i.state, i.chunk_count '
+           'FROM sources s LEFT JOIN source_index i ON i.source_id = s.id AND i.workspace_id = s.workspace_id')
 
 
 def list_sources():
     """저장된 취재자료(최신순)와 각각을 쓰는 기사."""
     with vault.connect() as db:
         used = _usage(db)
-        rows = db.execute(_SELECT + ' ORDER BY created_at DESC, id').fetchall()
+        rows = db.execute(_SELECT + ' WHERE s.workspace_id = ? ORDER BY s.created_at DESC, s.id',
+                          (vault.WORKSPACE_ID,)).fetchall()
     return {'sources': [_item(row, used) for row in rows]}
 
 
 def get_source(source_id):
     _check_id(source_id)
     with vault.connect() as db:
-        row = db.execute(_SELECT + ' WHERE id = ?', (source_id,)).fetchone()
+        row = db.execute(_SELECT + ' WHERE s.id = ? AND s.workspace_id = ?', (source_id, vault.WORKSPACE_ID)).fetchone()
         used = _usage(db)
     if not row:
         raise RequestError('자료를 찾지 못했습니다.', 404, code='NOT_FOUND')
@@ -73,5 +76,7 @@ def delete_source(source_id, force=False):
         used_by = _usage(db).get(source_id, [])
         if used_by and not force:
             raise RequestError('이 자료를 쓰는 기사가 있어요. 그래도 지울까요?', 409, code='SOURCE_IN_USE', details={'usedBy': used_by})
+        db.execute('DELETE FROM source_chunks WHERE source_id = ? AND workspace_id = ?', (source_id, vault.WORKSPACE_ID))
+        db.execute('DELETE FROM source_index WHERE source_id = ? AND workspace_id = ?', (source_id, vault.WORKSPACE_ID))
         db.execute('DELETE FROM sources WHERE id = ?', (source_id,))
     return {'deleted': True, 'id': source_id, 'wasUsedBy': used_by}

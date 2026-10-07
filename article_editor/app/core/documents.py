@@ -185,4 +185,8 @@ def extract_text(payload):
     if not text:
         raise RequestError('글자를 찾지 못했습니다. 스캔한 이미지 PDF 는 OCR 이 필요합니다.', 422)
     source_id, path = storage.save_source(name, raw, text)
-    return {'text': text, 'chars': len(text), 'format': fmt, 'sourceId': source_id, 'path': path}
+    from .source_index import start_indexing
+    # TODO(debt: DEBT-003): 원본/추출 텍스트 저장 후 색인 시작이 실패해도 업로드 전체가 오류 응답한다.
+    # 이미 저장된 자료를 실패로 오인해 재업로드할 수 있다. 색인 시작 실패는 pending으로 분리할 것.
+    index = start_indexing(source_id)
+    return {'text': text, 'chars': len(text), 'format': fmt, 'sourceId': source_id, 'path': path, **index}

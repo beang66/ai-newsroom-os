@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS factcheck_memo (
 CREATE TABLE IF NOT EXISTS sources (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL,
   text TEXT NOT NULL, original BLOB NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS source_chunks (
+  source_id TEXT NOT NULL, ordinal INTEGER NOT NULL, workspace_id TEXT NOT NULL,
+  text TEXT NOT NULL, meta_json TEXT NOT NULL, vector_key TEXT,
+  PRIMARY KEY (source_id, ordinal));
+CREATE TABLE IF NOT EXISTS source_index (
+  source_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, state TEXT NOT NULL,
+  text_sha256 TEXT NOT NULL, chunker_version TEXT NOT NULL, chunk_count INTEGER NOT NULL,
+  error_code TEXT, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS article_snapshots (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, article_id TEXT NOT NULL REFERENCES articles(id),
   revision_id TEXT NOT NULL, revision_no INTEGER NOT NULL, title TEXT NOT NULL, body_html TEXT NOT NULL,
@@ -82,6 +90,8 @@ def _device_key():
 @contextlib.contextmanager
 def connect():
     """암호화 DB 연결(호출마다 열고 닫는다). 정상 종료하면 커밋, 예외면 롤백."""
+    # TODO(debt: DEBT-001): 키/스키마 초기화가 동시 연결마다 실행된다. 업로드 시험에서 WAL 설정 시 잠금 오류 관찰.
+    # 초기화 직렬화·이미 WAL인 DB의 재설정 생략·마이그레이션 트랜잭션 조기 종료를 검토할 것.
     key = _device_key()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite.connect(str(DB_PATH))

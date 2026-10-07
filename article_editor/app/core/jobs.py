@@ -1,7 +1,7 @@
 """긴 작업(모델 설치·팩트체크·플랫폼 생성·전사 등)의 공통 작업 기록 — 팀 계약 v0.8 ProcessingJob.
 
 기록은 암호화 저장소(vault)의 processing_jobs 표에만 둔다. 평문 파일·다른 DB 는 쓰지 않는다.
-표는 이 모듈이 처음 쓸 때 CREATE TABLE IF NOT EXISTS 로 만든다(vault.SCHEMA 는 건드리지 않는다).
+표(processing_jobs)는 다른 표와 같이 vault.SCHEMA 에 있다.
 
 상태 흐름(LifecycleStatus):
   queued  → running | cancelled | failed
@@ -12,7 +12,6 @@
 작업자가 is_cancel_requested() 로 확인한 뒤 acknowledge_cancel() 로 끝낸다.
 작업의 입력·출력은 자원 참조(JobReference)만 담는다 — 원고 내용은 여기 저장하지도 로그에 남기지도 않는다.
 """
-import contextlib
 import datetime
 import threading
 import uuid
@@ -25,16 +24,6 @@ JOB_TYPES = ('source_ingest', 'verification', 'transcription', 'platform_generat
 RESOURCE_TYPES = ('source', 'snapshot', 'verification_run', 'transcript', 'platform_output', 'media_asset')
 TERMINAL = ('succeeded', 'failed', 'cancelled')
 
-TABLE = """
-CREATE TABLE IF NOT EXISTS processing_jobs (
-  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, type TEXT NOT NULL, status TEXT NOT NULL,
-  progress REAL NOT NULL DEFAULT 0,
-  input_resource_type TEXT NOT NULL, input_resource_id TEXT NOT NULL,
-  output_resource_type TEXT, output_resource_id TEXT,
-  error_code TEXT, error_message TEXT, retryable INTEGER,
-  cancel_requested INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT, finished_at TEXT)
-"""
 _COLUMNS = ('id, workspace_id, type, status, progress, input_resource_type, input_resource_id, output_resource_type, '
             'output_resource_id, error_code, error_message, retryable, cancel_requested, created_at, updated_at, '
             'started_at, finished_at')
@@ -50,13 +39,6 @@ class JobCancelled(Exception):
 
 def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
-
-
-@contextlib.contextmanager
-def _db():
-    with vault.connect() as db:
-        db.execute(TABLE)  # 매번 실행해도 싸고 안전하다(IF NOT EXISTS)
-        yield db
 
 
 def _job_id(job_id):
@@ -103,7 +85,7 @@ def _load(db, job_id):
 def _transition(job_id, allowed, **fields):
     """현재 상태가 allowed 안에 있을 때만 fields 로 바꾼다. 끝 상태면 409, 그 밖의 잘못된 전이도 409."""
     job_id = _job_id(job_id)
-    with _LOCK, _db() as db:
+    with _LOCK, vault.connect() as db:
         status = _load(db, job_id)[3]
         if status in TERMINAL:
             raise RequestError('이미 끝난 작업입니다.', 409)
@@ -123,7 +105,7 @@ def create_job(job_type, input_ref):
         raise RequestError('지원하지 않는 작업 종류입니다.', 400)
     in_type, in_id = _ref(input_ref, '입력')
     job_id, now = str(uuid.uuid4()), _now()
-    with _LOCK, _db() as db:
+    with _LOCK, vault.connect() as db:
         db.execute('INSERT INTO processing_jobs (id, workspace_id, type, status, progress, input_resource_type, '
                    'input_resource_id, cancel_requested, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, 0, ?, ?)',
                    (job_id, vault.WORKSPACE_ID, job_type, 'queued', in_type, in_id, now, now))
@@ -132,7 +114,7 @@ def create_job(job_type, input_ref):
 
 
 def get_job(job_id):
-    with _db() as db:
+    with vault.connect() as db:
         return _shape(_load(db, _job_id(job_id)))
 
 
@@ -171,7 +153,7 @@ def request_cancel(job_id):
 
 
 def is_cancel_requested(job_id):
-    with _db() as db:
+    with vault.connect() as db:
         return bool(_load(db, _job_id(job_id))[12])
 
 
@@ -187,7 +169,7 @@ def acknowledge_cancel(job_id):
 def recover_interrupted_jobs():
     """이전 프로세스가 queued/running 으로 남긴 작업 → failed(INTERRUPTED, 다시 시도 가능). 바꾼 개수를 돌려준다."""
     now = _now()
-    with _LOCK, _db() as db:
+    with _LOCK, vault.connect() as db:
         rows = db.execute("SELECT id FROM processing_jobs WHERE workspace_id = ? AND status IN ('queued', 'running')",
                           (vault.WORKSPACE_ID,)).fetchall()
         stale = [job_id for (job_id,) in rows if job_id not in _OWN]

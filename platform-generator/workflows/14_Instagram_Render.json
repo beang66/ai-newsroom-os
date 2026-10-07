@@ -1,0 +1,150 @@
+{
+  "name": "14_Instagram_Render",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\nreturn data.cards.map(card => ({\n  json: {\n    article_id: data.article_id,\n    platform: data.platform,\n\n    core_text: data.core_text,\n\n    recommended_card_count:\n      data.recommended_card_count,\n\n    card_count_reason:\n      data.card_count_reason,\n\n    card_id: card.card_id,\n    page: card.page,\n    role: card.role,\n\n    content: {\n      keyword: card.content?.keyword || '',\n      headline: card.content?.headline || '',\n      body: card.content?.body || ''\n    },\n\n    source_evidence:\n      Array.isArray(card.source_evidence)\n        ? card.source_evidence\n        : [],\n\n    image: {\n      editable: card.image?.editable !== false,\n      selected_image_url:\n        card.image?.selected_image_url || ''\n    }\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        -400
+      ],
+      "id": "6a8e99d5-a494-491c-a4b0-e245f7f4e7b3",
+      "name": "Split Cards for Render"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const card = item.json;\n\n  return {\n    json: {\n      article_id: card.article_id,\n\n      card_id: card.card_id,\n\n      page: card.page,\n\n      template: card.template,\n\n      size: {\n        width: 1080,\n        height: 1350\n      },\n\n      content: {\n        keyword: card.content?.keyword || '',\n        headline: card.content?.headline || '',\n        body: card.content?.body || ''\n      },\n\n      image: {\n        type: card.image?.type || 'none',\n        url: card.image?.url || ''\n      },\n\n      evidence: card.evidence || {}\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -400
+      ],
+      "id": "17021524-7f12-4f3b-8857-9a2fa5c5b784",
+      "name": "Build Render Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/render",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        176,
+        -400
+      ],
+      "id": "72be54b8-d4a3-43ee-a767-8e5b78dfc6af",
+      "name": "Render Cards"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "article_id"
+            },
+            {
+              "name": "platform"
+            },
+            {
+              "name": "status"
+            },
+            {
+              "name": "output",
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -592,
+        -400
+      ],
+      "id": "c4c1030b-b34d-4094-853d-672d0da41405",
+      "name": "Receive Render Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\n\nif (!data.article_id) {\n  throw new Error(\n    `article_id가 없습니다. 현재 입력: ${JSON.stringify(data)}`\n  );\n}\n\nif (!data.output) {\n  throw new Error(\n    `output이 없습니다. 현재 입력: ${JSON.stringify(data)}`\n  );\n}\n\nif (!Array.isArray(data.output.cards)) {\n  throw new Error(\n    `output.cards가 배열이 아닙니다. 현재 output: ${JSON.stringify(data.output)}`\n  );\n}\n\nif (data.output.cards.length === 0) {\n  throw new Error('렌더링할 카드가 없습니다.');\n}\n\nreturn [\n  {\n    json: {\n      article_id: data.article_id,\n\n      platform: data.platform || 'instagram',\n\n      status: data.status || 'ready_for_render',\n\n      core_text: data.output.core_text || {},\n\n      recommended_card_count:\n        data.output.recommended_card_count || data.output.cards.length,\n\n      card_count_reason:\n        data.output.card_count_reason || '',\n\n      cards: data.output.cards\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        -400
+      ],
+      "id": "0aa80b37-f877-4e07-b958-e048b408fe9c",
+      "name": "Normalize Render Input"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Split Cards for Render": {
+      "main": [
+        [
+          {
+            "node": "Build Render Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Render Payload": {
+      "main": [
+        [
+          {
+            "node": "Render Cards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receive Render Request": {
+      "main": [
+        [
+          {
+            "node": "Normalize Render Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Render Input": {
+      "main": [
+        [
+          {
+            "node": "Split Cards for Render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "34ff4258-496b-4fe0-abf0-40aecb0f1596",
+  "meta": {
+    "instanceId": "c1ceb0cb52463d833247b252381f9c18255416ee43df83b5dd15739bb68f96cb"
+  },
+  "nodeGroups": [],
+  "id": "aNaNEj76PHDVVjVA",
+  "tags": []
+}

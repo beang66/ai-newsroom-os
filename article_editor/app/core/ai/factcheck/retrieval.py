@@ -29,6 +29,15 @@ MODEL_PATH = EMBEDDING_DIR
 
 DEFAULT_K = 10
 MAX_K = 150
+RETRIEVAL_LABELS = {
+    "exact": "Qwen3-Embedding-0.6B exact",
+    "densefly-bm25-rrf": "DenseFly x2 (seed 101,307) + BM25 RRF",
+}
+
+
+def retrieval_mode() -> str:
+    """검색 방식의 단일 기준: 기본 densefly-bm25-rrf(버섯체 2개 + BM25 순위 융합), FACTCHECK_RETRIEVAL=exact 면 Qwen 코사인만."""
+    return "exact" if os.getenv("FACTCHECK_RETRIEVAL", "densefly-bm25-rrf") == "exact" else "densefly-bm25-rrf"
 
 
 def query_input(text: str) -> str:
@@ -225,7 +234,7 @@ def rank_chunks(
 
     scores = corpus_vectors @ query_vector
     engine = "qwen3-embedding-0.6b-exact"
-    if os.getenv("FACTCHECK_RETRIEVAL", "densefly-bm25-rrf") == "exact":
+    if retrieval_mode() == "exact":
         order = np.lexsort(
             (np.arange(len(chunks), dtype=np.int32), -scores)
         )

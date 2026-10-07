@@ -8,7 +8,7 @@ from .assertion import find_explicit_value_conflicts, find_near_copy_differences
 from .chunker import chunk_document
 from .semantic_provider import OnnxJudgeProvider
 from .observability import record_factcheck_event
-from .retrieval import DEFAULT_K, rank_chunks
+from .retrieval import DEFAULT_K, RETRIEVAL_LABELS, rank_chunks, retrieval_mode
 
 _provider = None
 
@@ -447,13 +447,13 @@ def review_workspace(nodes, materials):
         "success": True,
         "engine": (
             f"{settings.model_id} + semantic-chunker-v3 + "
-            "qwen3-embedding-0.6b-exact-top10 + early-stop"
+            f"qwen3-embedding-0.6b-{retrieval_mode()}-top{DEFAULT_K} + early-stop"
         ),
         "model": settings.model_id,
         "chunker": "semantic_chunker_v3+boundary-roberta-base-v3",
         "retrieval": (
             "linked-source scope + direct-span match + "
-            "Qwen3-Embedding-0.6B exact Top10"
+            f"{RETRIEVAL_LABELS[retrieval_mode()]} Top{DEFAULT_K}"
         ),
         "retrieval_k": DEFAULT_K,
         "counts": dict(counts),

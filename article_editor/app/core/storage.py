@@ -15,7 +15,7 @@ import uuid
 from . import config  # noqa: F401  — sys.path 에 app/ 를 올린다(app_paths)
 from app_paths import APP_DATA, ARTICLES_DIR, SOURCES_DIR  # noqa: E402
 
-from . import vault
+from . import ids, vault
 from .errors import RequestError
 
 SAVE_LOCK = threading.Lock()
@@ -145,7 +145,8 @@ def import_legacy_files():
                 continue
             body = json.dumps(_pack(db, dict(draft, articleId=identifier, savedAt=None)), ensure_ascii=False, sort_keys=True)
             db.execute('INSERT INTO articles VALUES (?, ?, ?, ?)', (identifier, vault.WORKSPACE_ID, when, when))
-            db.execute('INSERT INTO article_revisions VALUES (?, 1, ?, ?)', (identifier, body, when))
+            db.execute('INSERT INTO article_revisions (article_id, revision_no, draft_json, created_at, id) VALUES (?, 1, ?, ?, ?)',
+                       (identifier, body, when, ids.revision_uuid(identifier, 1)))
             report['articles'] += 1
         for folder in sorted(SOURCES_DIR.iterdir()) if SOURCES_DIR.is_dir() else []:
             files = [p for p in folder.glob('*') if p.is_file() and p.name != 'text.txt']
@@ -183,7 +184,8 @@ def save_article(data):
             revision = last[0]
         else:
             revision = (last[0] if last else 0) + 1
-            db.execute('INSERT INTO article_revisions VALUES (?, ?, ?, ?)', (identifier, revision, body, now))
+            db.execute('INSERT INTO article_revisions (article_id, revision_no, draft_json, created_at, id) VALUES (?, ?, ?, ?, ?)',
+                       (identifier, revision, body, now, ids.revision_uuid(identifier, revision)))
             db.execute('DELETE FROM article_revisions WHERE article_id = ? AND revision_no <= ?',
                        (identifier, revision - MAX_REVISIONS))
         db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, identifier))

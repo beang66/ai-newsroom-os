@@ -126,11 +126,39 @@ class VaultTests(unittest.TestCase):
         ident = 'd' * 32
         with vault.connect() as db:  # 예전 방식: 사진이 이력 안에 그대로
             db.execute('INSERT INTO articles VALUES (?, ?, ?, ?)', (ident, vault.WORKSPACE_ID, 't', 't'))
-            db.execute('INSERT INTO article_revisions VALUES (?, 1, ?, ?)',
+            db.execute('INSERT INTO article_revisions (article_id, revision_no, draft_json, created_at) VALUES (?, 1, ?, ?)',
                        (ident, json.dumps(dict(draft, articleId=ident, savedAt=None), ensure_ascii=False, sort_keys=True), 't'))
         self.assertEqual(storage.pack_existing_photos(), 1)
         self.assertEqual(storage.pack_existing_photos(), 0)
         self.assertEqual(storage.latest_article()['draft']['photos'][0]['data'], url)
+
+    def test_revision_ids_are_stable_uuid_v5(self):
+        from core import ids
+        first = storage.save_article({'draft': {'bodyHtml': '<p>1</p>'}})['articleId']
+        storage.save_article({'draft': {'articleId': first, 'bodyHtml': '<p>2</p>'}})
+        with vault.connect() as db:
+            rows = db.execute('SELECT revision_no, id FROM article_revisions WHERE article_id = ? ORDER BY revision_no', (first,)).fetchall()
+        self.assertEqual(rows, [(1, ids.revision_uuid(first, 1)), (2, ids.revision_uuid(first, 2))])
+        self.assertEqual(len({row[1] for row in rows}), 2)
+
+    def test_old_vault_without_id_column_is_migrated(self):
+        from core import ids
+        ident = 'e' * 32
+        with vault.connect() as db:  # 옛 모양(id 열 없음)으로 되돌린다
+            db.execute('DROP INDEX article_revisions_id')
+            db.execute('DROP TABLE article_revisions')
+            db.execute('CREATE TABLE article_revisions (article_id TEXT NOT NULL REFERENCES articles(id), revision_no INTEGER NOT NULL, '
+                       'draft_json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (article_id, revision_no))')
+            db.execute('INSERT INTO articles VALUES (?, ?, ?, ?)', (ident, vault.WORKSPACE_ID, 't', 't'))
+            for number in (1, 2, 3):
+                db.execute('INSERT INTO article_revisions VALUES (?, ?, ?, ?)', (ident, number, '{"bodyHtml": "<p>%d</p>"}' % number, 't'))
+        for _ in range(2):  # 두 번 열어도 같다
+            with vault.connect() as db:
+                rows = db.execute('SELECT revision_no, id, draft_json FROM article_revisions WHERE article_id = ? ORDER BY revision_no', (ident,)).fetchall()
+        self.assertEqual([row[:2] for row in rows], [(n, ids.revision_uuid(ident, n)) for n in (1, 2, 3)])
+        self.assertEqual(rows[2][2], '{"bodyHtml": "<p>3</p>"}')  # 내용은 그대로
+        with vault.connect() as db:
+            self.assertTrue(db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='article_revisions_id'").fetchone())
 
     def test_same_source_saved_once(self):
         a, _ = storage.save_source('a.txt', b'same', 'v1')

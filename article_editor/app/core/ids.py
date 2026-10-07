@@ -33,3 +33,11 @@ def legacy_uuid(entity, legacy_id, system='app-core'):
 def to_legacy_hex(uuid_str):
     """UUID → 하이픈 없는 32자리 hex(su4228 revision_to_draft 의 articleId 규칙). 레거시 원래 id 를 복원하지는 않는다."""
     return uuid.UUID(uuid_text(uuid_str)).hex
+
+
+def revision_uuid(article_id, revision_no):
+    """article_revisions 한 줄의 id. 줄의 옛 식별자 (article_id, revision_no)를 이름으로 UUID v5 를 만든다.
+    기사 id 가 나중에 UUID 로 바뀌어도 이름에는 옛 32자리 hex 를 계속 쓴다(그래야 id 가 안 바뀐다)."""
+    if not isinstance(revision_no, int) or isinstance(revision_no, bool) or revision_no < 1:
+        raise IdError('revision_no must be a positive integer')
+    return legacy_uuid('revision', f'{article_id}:{revision_no}')

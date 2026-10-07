@@ -14,6 +14,7 @@ from . import config  # noqa: F401  — sys.path 에 app/ 를 올린다(app_path
 from app_paths import DB_PATH  # noqa: E402
 
 from .errors import RequestError
+from .ids import revision_uuid
 
 SERVICE = os.environ.get('AI_NEWSROOM_KEY_SERVICE') or 'AI Newsroom'  # 테스트는 다른 이름을 써서 실제 기기 키를 건드리지 않는다
 ACCOUNT = 'device-key'
@@ -24,7 +25,7 @@ CREATE TABLE IF NOT EXISTS articles (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS article_revisions (
   article_id TEXT NOT NULL REFERENCES articles(id), revision_no INTEGER NOT NULL,
-  draft_json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (article_id, revision_no));
+  draft_json TEXT NOT NULL, created_at TEXT NOT NULL, id TEXT, PRIMARY KEY (article_id, revision_no));
 CREATE TABLE IF NOT EXISTS media (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, header TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS embedding_vectors (
@@ -35,6 +36,16 @@ CREATE TABLE IF NOT EXISTS sources (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL,
   text TEXT NOT NULL, original BLOB NOT NULL, created_at TEXT NOT NULL);
 """
+
+
+def _migrate(db):
+    """옛 저장소에 없는 열을 채운다(여러 번 불러도 안전). 새 DB 는 SCHEMA 에 이미 있다."""
+    if not any(row[1] == 'id' for row in db.execute('PRAGMA table_info(article_revisions)')):
+        db.execute('ALTER TABLE article_revisions ADD COLUMN id TEXT')
+    for article_id, revision_no in db.execute('SELECT article_id, revision_no FROM article_revisions WHERE id IS NULL').fetchall():
+        db.execute('UPDATE article_revisions SET id = ? WHERE article_id = ? AND revision_no = ?',
+                   (revision_uuid(article_id, revision_no), article_id, revision_no))
+    db.execute('CREATE UNIQUE INDEX IF NOT EXISTS article_revisions_id ON article_revisions(id)')
 
 
 def _device_key():
@@ -68,6 +79,7 @@ def connect():
             raise RequestError('암호화 저장소를 열 수 없습니다. 키가 맞지 않거나 파일이 손상됐습니다.', 500)
         db.execute('PRAGMA journal_mode = WAL')
         db.executescript(SCHEMA)
+        _migrate(db)
         yield db
         db.commit()
     except BaseException:

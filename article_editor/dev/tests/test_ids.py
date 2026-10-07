@@ -9,7 +9,7 @@ _APP = Path(__file__).resolve().parents[2] / 'app'
 if str(_APP) not in sys.path:
     sys.path.insert(0, str(_APP))
 
-from core.ids import IdError, TEAM_NAMESPACE, legacy_uuid, to_legacy_hex, uuid_text  # noqa: E402
+from core.ids import IdError, TEAM_NAMESPACE, legacy_uuid, revision_uuid, to_legacy_hex, uuid_text  # noqa: E402
 
 # 한 번 계산해 박아 둔 값. 네임스페이스나 이름 형식('app-core:article:abc')이 바뀌면 여기서 깨진다.
 KNOWN_ARTICLE_ABC = '9faf10d9-0423-5bf9-97ce-806fc477f904'
@@ -63,6 +63,26 @@ class UuidTextTests(unittest.TestCase):
         self.assertEqual(uuid_text(hex_id), self.CANON)
         with self.assertRaises(IdError):
             to_legacy_hex('not-a-uuid')
+
+
+class RevisionUuidTests(unittest.TestCase):
+    def test_name_uses_article_hex_and_number(self):
+        import uuid
+        from core.ids import TEAM_NAMESPACE
+        article = 'f' * 32
+        self.assertEqual(revision_uuid(article, 3), str(uuid.uuid5(TEAM_NAMESPACE, 'app-core:revision:' + article + ':3')))
+
+    def test_stable_and_distinct(self):
+        article = 'a' * 32
+        self.assertEqual(revision_uuid(article, 1), revision_uuid(article, 1))
+        self.assertNotEqual(revision_uuid(article, 1), revision_uuid(article, 2))
+        self.assertNotEqual(revision_uuid(article, 1), revision_uuid('b' * 32, 1))
+        self.assertNotEqual(revision_uuid(article, 1), legacy_uuid('article', article))
+
+    def test_rejects_bad_numbers(self):
+        for bad in (0, -1, '1', None, True, 1.5):
+            with self.assertRaises(IdError):
+                revision_uuid('a' * 32, bad)
 
 
 if __name__ == '__main__':

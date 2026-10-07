@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import uuid
+from html.parser import HTMLParser
 
 from . import config  # noqa: F401  — sys.path 에 app/ 를 올린다(app_paths)
 from app_paths import APP_DATA, ARTICLES_DIR, SOURCES_DIR  # noqa: E402
@@ -188,8 +189,18 @@ def save_article(data):
     identifier = draft.get('articleId') or uuid.uuid4().hex
     if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
         raise RequestError('잘못된 원고 ID입니다.')
+    # 낙관적 동시성(계약 expected_revision_no): 주면 지금 최신 이력 번호와 같아야 저장한다. 0 = 아직 없는 원고.
+    # 안 주면 예전처럼 그냥 저장한다(지금 화면은 보내지 않는다).
+    expected = data.get('expectedRevisionNo')
+    if expected is not None and (isinstance(expected, bool) or not isinstance(expected, int) or expected < 0):
+        raise RequestError('expectedRevisionNo 는 0 이상의 정수여야 합니다.')
     now = _now()
     with SAVE_LOCK, vault.connect() as db:
+        if expected is not None:
+            current = db.execute('SELECT max(revision_no) FROM article_revisions WHERE article_id = ?', (identifier,)).fetchone()[0] or 0
+            if current != expected:
+                raise RequestError(f'다른 곳에서 먼저 저장된 원고입니다(현재 {current}번 저장본). 최신 원고를 다시 불러온 뒤 저장해 주세요.',
+                                   409, code='REVISION_CONFLICT')
         body = json.dumps(_pack(db, dict(draft, articleId=identifier, savedAt=None)), ensure_ascii=False, sort_keys=True)
         db.execute('INSERT OR IGNORE INTO articles VALUES (?, ?, ?, ?)', (identifier, vault.WORKSPACE_ID, now, now))
         revision = _append_revision(db, identifier, body, now)
@@ -279,6 +290,126 @@ def restore_revision(article_id, revision_no):
         db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, article_id))
         draft = _full_draft(db, body, now)
     return {'restored': True, 'articleId': article_id, 'fromRevision': revision_no, 'revisionNo': latest, 'draft': draft}
+
+
+class _TextParser(HTMLParser):
+    """integration/core_contract.py 의 TextParser 를 옮긴 것: 취소선(s·del)·사진 설명(figure)·script·style 은 뺀다."""
+    SKIP = ('script', 'style', 's', 'del', 'figure')
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts, self.skip = [], 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.SKIP:
+            self.skip += 1
+        if not self.skip and tag in ('p', 'div', 'br', 'li'):
+            self.parts.append('\n')
+
+    def handle_endtag(self, tag):
+        if tag in self.SKIP and self.skip:
+            self.skip -= 1
+        elif not self.skip and tag in ('p', 'div', 'li'):
+            self.parts.append('\n')
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.parts.append(data)
+
+
+def _text_of(html):
+    """계약 body_text — bodyHtml 의 글자만(core_contract.text_of 와 같은 결과)."""
+    parser = _TextParser()
+    parser.feed(html or '')
+    return re.sub(r'\n{2,}', '\n', ''.join(parser.parts)).strip()
+
+
+def content_hash(title, body_html):
+    """스냅샷 내용 해시. **레시피를 바꾸지 말 것** — 나중 실행·다른 시스템이 같은 값을 재현해야 한다.
+
+        sha256( json.dumps({"body_html": body_html, "title": title},
+                           ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") ).hexdigest()
+
+    즉 키를 정렬한 공백 없는 JSON 객체(한글은 \\u 이스케이프 없이 그대로)를 UTF-8 로 인코딩해 SHA-256, 소문자 16진수 64자.
+    예: content_hash('제목', '<p>본문</p>') 은 '{"body_html":"<p>본문</p>","title":"제목"}' 의 SHA-256 이다."""
+    canonical = json.dumps({'body_html': body_html, 'title': title}, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
+SNAPSHOT_FIELDS = ('id', 'workspace_id', 'article_id', 'revision_id', 'revision_no', 'title', 'body_html', 'body_text',
+                   'content_hash', 'created_at')
+
+
+def _snapshot(row):
+    return dict(zip(SNAPSHOT_FIELDS, row))
+
+
+def _not_found(message):
+    return RequestError(message, 404, code='NOT_FOUND')
+
+
+def create_snapshot(article_id, revision_id=None):
+    """저장 이력 한 줄을 고정본(계약 ArticleSnapshot)으로 만든다. revision_id(UUID)를 안 주면 최신 이력.
+    제목·본문·본문 글자를 **복사해** 두므로 이력이 정리돼도 남는다. 고정본은 고칠 수 없다(트리거).
+    같은 (원고, 이력, 내용 해시) 고정본이 이미 있으면 새로 만들지 않고 그것을 돌려준다. → 고정본"""
+    article_id = _article_id(article_id)
+    if revision_id is not None:
+        try:
+            revision_id = ids.uuid_text(revision_id)
+        except ids.IdError:
+            raise RequestError('잘못된 저장 이력 ID입니다.')
+    with SAVE_LOCK, vault.connect() as db:
+        if revision_id is None:
+            row = db.execute('SELECT id, revision_no, draft_json FROM article_revisions WHERE article_id = ? '
+                             'ORDER BY revision_no DESC LIMIT 1', (article_id,)).fetchone()
+        else:  # 이력 ID 와 원고가 함께 맞아야 한다(다른 원고의 이력으로는 만들 수 없다)
+            row = db.execute('SELECT id, revision_no, draft_json FROM article_revisions WHERE id = ? AND article_id = ?',
+                             (revision_id, article_id)).fetchone()
+        if not row:
+            raise _not_found('고정본을 만들 저장 이력을 찾지 못했습니다. 오래된 이력은 자동으로 정리됩니다.')
+        draft = json.loads(row[2])
+        title = draft.get('title') if isinstance(draft.get('title'), str) else ''
+        body_html = draft.get('bodyHtml') if isinstance(draft.get('bodyHtml'), str) else ''
+        digest = content_hash(title, body_html)
+        query = 'SELECT ' + ', '.join(SNAPSHOT_FIELDS) + ' FROM article_snapshots '
+        existing = db.execute(query + 'WHERE article_id = ? AND revision_id = ? AND content_hash = ?',
+                              (article_id, row[0], digest)).fetchone()
+        if existing:
+            return _snapshot(existing)
+        values = (str(uuid.uuid4()), vault.WORKSPACE_ID, article_id, row[0], row[1], title, body_html, _text_of(body_html),
+                  digest, _now())
+        db.execute('INSERT INTO article_snapshots (' + ', '.join(SNAPSHOT_FIELDS) + ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                   values)
+    return _snapshot(values)
+
+
+def get_snapshot(snapshot_id):
+    """고정본 한 건(본문 포함). 읽기 전용."""
+    try:
+        snapshot_id = ids.uuid_text(snapshot_id)
+    except ids.IdError:
+        raise RequestError('잘못된 고정본 ID입니다.')
+    with vault.connect() as db:
+        row = db.execute('SELECT ' + ', '.join(SNAPSHOT_FIELDS) + ' FROM article_snapshots WHERE id = ?',
+                         (snapshot_id,)).fetchone()
+    if not row:
+        raise _not_found('해당 고정본을 찾지 못했습니다.')
+    return _snapshot(row)
+
+
+def list_snapshots(article_id):
+    """원고의 고정본 목록(최신이 위). 목록용 요약만 — 본문(body_html·body_text)은 싣지 않는다."""
+    article_id = _article_id(article_id)
+    with vault.connect() as db:
+        rows = db.execute('SELECT ' + ', '.join(SNAPSHOT_FIELDS) + ' FROM article_snapshots WHERE article_id = ? '
+                          'ORDER BY created_at DESC, revision_no DESC', (article_id,)).fetchall()
+    out = []
+    for row in rows:
+        snap = _snapshot(row)
+        text = snap.pop('body_text')
+        snap.pop('body_html')
+        out.append(dict(snap, excerpt=text[:120], chars=len(text)))
+    return {'articleId': article_id, 'snapshots': out}
 
 
 def save_source(filename, raw, text):

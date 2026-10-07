@@ -167,6 +167,29 @@ class ServerTests(ApiTestCase):
         self.assertEqual(self.request('/api/articles/%s/revisions/1/restore' % first, {}, origin='http://evil.example')[0], 403)
         self.assertEqual(self.request('/api/articles/not-an-id/revisions')[0], 404)
 
+    def test_snapshot_routes_and_revision_conflict(self):
+        use_temp_vault(self)
+        aid = json.loads(self.request('/api/articles/save', {'draft': {'bodyHtml': '<p>1</p>', 'title': '제목1'}, 'expectedRevisionNo': 0})[1])['articleId']
+        status, raw, _ = self.request('/api/articles/save', {'draft': {'articleId': aid, 'bodyHtml': '<p>낡음</p>', 'title': 'x'}, 'expectedRevisionNo': 0})
+        self.assertEqual((status, json.loads(raw)['code']), (409, 'REVISION_CONFLICT'))
+        self.assertIn('error', json.loads(raw))  # 화면이 읽는 문자열 키는 그대로
+        self.request('/api/articles/save', {'draft': {'articleId': aid, 'bodyHtml': '<p>2</p>', 'title': '제목2'}, 'expectedRevisionNo': 1})
+        status, raw, _ = self.request('/api/articles/%s/snapshots' % aid, {})
+        snap = json.loads(raw)
+        self.assertEqual((status, snap['revision_no'], snap['body_html']), (200, 2, '<p>2</p>'))
+        first_rev = json.loads(self.request('/api/articles/%s/revisions' % aid)[1])['revisions'][-1]['id']
+        older = json.loads(self.request('/api/articles/%s/snapshots' % aid, {'revisionId': first_rev})[1])
+        self.assertEqual(older['title'], '제목1')
+        listing = json.loads(self.request('/api/articles/%s/snapshots' % aid)[1])['snapshots']
+        self.assertEqual(sorted(s['id'] for s in listing), sorted([snap['id'], older['id']]))
+        self.assertEqual(json.loads(self.request('/api/snapshots/%s' % snap['id'])[1]), snap)
+        status, raw, _ = self.request('/api/snapshots/00000000-0000-4000-8000-000000000000')
+        self.assertEqual((status, json.loads(raw)['code']), (404, 'NOT_FOUND'))
+        status, raw, _ = self.request('/api/articles/%s/snapshots' % aid, {'revisionId': '00000000-0000-4000-8000-000000000000'})
+        self.assertEqual((status, json.loads(raw)['code']), (404, 'NOT_FOUND'))
+        self.assertEqual(self.request('/api/articles/%s/snapshots' % aid, {}, origin='http://evil.example')[0], 403)
+        self.assertNotIn('code', json.loads(self.request('/api/articles/%s/revisions/9' % aid)[1]))  # 기존 오류 경로는 그대로
+
     def test_latest_article_reopens_newest_with_source_text(self):
         use_temp_vault(self)
         self.assertEqual(json.loads(self.request("/api/articles/latest")[1]), {"draft": None})

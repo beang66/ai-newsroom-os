@@ -250,6 +250,20 @@ try {
   await sequence.getByText("스모크 불일치 사유").waitFor();
   await sequence.getByRole("button", { name: /다음|검사 종료/ }).click();
   await page.unroute("**/api/factcheck/run");
+  // 저장 이력: 목록 → 미리보기(읽기 전용) → 옛 저장본으로 복원(이력은 그대로 남는다)
+  await page.getByTestId("save-status").getByText("자동 저장됨").waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "저장 이력" }).click();
+  const history = page.getByTestId("version-history");
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="revision-list"] button').length >= 2);
+  const countBefore = await history.getByTestId("revision-list").locator("button").count();
+  await history.getByTestId("revision-list").locator("button").nth(1).click(); // 바로 앞 저장본(내용이 남아 있어 뒤 단계에 영향 없음)
+  await history.getByTestId("revision-preview").locator("h3").waitFor();
+  await history.getByTestId("revision-restore").click();
+  await history.getByTestId("revision-restore-confirm").click();
+  await see("선택한 저장본으로 복원했습니다.");
+  await page.getByRole("button", { name: "저장 이력" }).click();
+  await page.waitForFunction((n) => document.querySelectorAll('[data-testid="revision-list"] button').length > n, countBefore);
+  await page.getByTestId("version-history").getByRole("button", { name: "닫기" }).click();
   // 5. 취재자료 검색 창
   await page.getByText("취재자료 검색").first().click();
   await page.getByPlaceholder("자료 제목, 키워드, 내용 검색").waitFor();

@@ -167,6 +167,20 @@ def import_legacy_files():
     return report
 
 
+def _append_revision(db, identifier, body, now):
+    """이력에 새 줄을 더한다. 마지막 줄과 내용이 같으면 늘리지 않는다(자동저장이 잦다). → 최신 revision 번호"""
+    last = db.execute('SELECT revision_no, draft_json FROM article_revisions WHERE article_id = ? '
+                      'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone()
+    if last and last[1] == body:
+        return last[0]
+    revision = (last[0] if last else 0) + 1
+    db.execute('INSERT INTO article_revisions (article_id, revision_no, draft_json, created_at, id) VALUES (?, ?, ?, ?, ?)',
+               (identifier, revision, body, now, ids.revision_uuid(identifier, revision)))
+    db.execute('DELETE FROM article_revisions WHERE article_id = ? AND revision_no <= ?',
+               (identifier, revision - MAX_REVISIONS))
+    return revision
+
+
 def save_article(data):
     draft = data.get('draft')
     if not isinstance(draft, dict) or not isinstance(draft.get('bodyHtml'), str):
@@ -178,16 +192,7 @@ def save_article(data):
     with SAVE_LOCK, vault.connect() as db:
         body = json.dumps(_pack(db, dict(draft, articleId=identifier, savedAt=None)), ensure_ascii=False, sort_keys=True)
         db.execute('INSERT OR IGNORE INTO articles VALUES (?, ?, ?, ?)', (identifier, vault.WORKSPACE_ID, now, now))
-        last = db.execute('SELECT revision_no, draft_json FROM article_revisions WHERE article_id = ? '
-                          'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone()
-        if last and last[1] == body:  # 내용이 같으면 이력을 늘리지 않는다(자동저장이 잦다)
-            revision = last[0]
-        else:
-            revision = (last[0] if last else 0) + 1
-            db.execute('INSERT INTO article_revisions (article_id, revision_no, draft_json, created_at, id) VALUES (?, ?, ?, ?, ?)',
-                       (identifier, revision, body, now, ids.revision_uuid(identifier, revision)))
-            db.execute('DELETE FROM article_revisions WHERE article_id = ? AND revision_no <= ?',
-                       (identifier, revision - MAX_REVISIONS))
+        revision = _append_revision(db, identifier, body, now)
         db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, identifier))
     return {'saved': True, 'articleId': identifier, 'revisionNo': revision,
             'fileName': identifier + '.json', 'folder': '암호화 저장소'}  # fileName·folder 는 이전 응답과의 호환용 표시값
@@ -201,13 +206,79 @@ def latest_article():
                          'ORDER BY a.updated_at DESC LIMIT 1').fetchone()
         if not row:
             return {'draft': None}
-        draft = _unpack(db, dict(json.loads(row[0]), savedAt=row[1]))
-        for source in draft.get('sources') or []:
-            sid = source.get('id')
-            found = db.execute('SELECT text FROM sources WHERE id = ?', (sid,)).fetchone() if isinstance(sid, str) else None
-            if found:
-                source['text'] = found[0]
-        return {'draft': draft}
+        return {'draft': _full_draft(db, row[0], row[1])}
+
+
+def _full_draft(db, draft_json, saved_at):
+    """이력 한 줄 → 화면이 쓰는 원고(사진 되돌리기 + 취재자료 본문 붙이기)."""
+    draft = _unpack(db, dict(json.loads(draft_json), savedAt=saved_at))
+    for source in draft.get('sources') or []:
+        sid = source.get('id')
+        found = db.execute('SELECT text FROM sources WHERE id = ?', (sid,)).fetchone() if isinstance(sid, str) else None
+        if found:
+            source['text'] = found[0]
+    return draft
+
+
+def _article_id(value):
+    if not isinstance(value, str) or not re.fullmatch(r'[a-f0-9]{32}', value):
+        raise RequestError('잘못된 원고 ID입니다.')
+    return value
+
+
+def _plain(draft):
+    """미리보기용 본문 글자(content 가 없는 옛 원고는 bodyHtml 에서 태그만 걷어 낸다)."""
+    text = draft.get('content')
+    if not isinstance(text, str):
+        text = re.sub(r'<[^>]+>', '', (draft.get('bodyHtml') or '').replace('<br>', '\n').replace('</p>', '\n\n')).strip()
+    return text
+
+
+def list_revisions(article_id):
+    """원고의 저장 이력(최신이 위). 목록용 요약만 — 본문 전체와 사진은 싣지 않는다."""
+    article_id = _article_id(article_id)
+    with vault.connect() as db:
+        rows = db.execute('SELECT revision_no, id, created_at, draft_json FROM article_revisions WHERE article_id = ? '
+                          'ORDER BY revision_no DESC', (article_id,)).fetchall()
+    out = []
+    for number, uuid_, created, body in rows:
+        draft = json.loads(body)
+        text = _plain(draft)
+        out.append({'revisionNo': number, 'id': uuid_, 'createdAt': created, 'title': draft.get('title') or '',
+                    'subtitle': draft.get('subtitle') or '', 'excerpt': text[:120], 'chars': len(text),
+                    'photoCount': len(draft.get('photos') or []), 'sourceCount': len(draft.get('sources') or [])})
+    return {'articleId': article_id, 'revisions': out}
+
+
+def get_revision(article_id, revision_no):
+    """이력 한 줄의 미리보기(제목·부제·본문). 읽기 전용이며 아무것도 바꾸지 않는다."""
+    article_id = _article_id(article_id)
+    with vault.connect() as db:
+        row = db.execute('SELECT id, created_at, draft_json FROM article_revisions WHERE article_id = ? AND revision_no = ?',
+                         (article_id, revision_no)).fetchone()
+    if not row:
+        raise RequestError('해당 저장 이력을 찾지 못했습니다. 오래된 이력은 자동으로 정리됩니다.', 404)
+    draft = json.loads(row[2])
+    return {'revisionNo': revision_no, 'id': row[0], 'createdAt': row[1], 'title': draft.get('title') or '',
+            'subtitle': draft.get('subtitle') or '', 'content': _plain(draft),
+            'photoCount': len(draft.get('photos') or []), 'sourceCount': len(draft.get('sources') or [])}
+
+
+def restore_revision(article_id, revision_no):
+    """옛 저장본을 **새 최신 저장본**으로 다시 올린다. 이력은 지우지 않으므로 복원 직전 상태도 이력에 남는다.
+    이미 최신과 같은 내용이면 이력을 늘리지 않는다(같은 요청을 두 번 보내도 안전). → 복원된 원고"""
+    article_id = _article_id(article_id)
+    now = _now()
+    with SAVE_LOCK, vault.connect() as db:
+        row = db.execute('SELECT draft_json FROM article_revisions WHERE article_id = ? AND revision_no = ?',
+                         (article_id, revision_no)).fetchone()
+        if not row:
+            raise RequestError('해당 저장 이력을 찾지 못했습니다. 오래된 이력은 자동으로 정리됩니다.', 404)
+        body = json.dumps(dict(json.loads(row[0]), articleId=article_id, savedAt=None), ensure_ascii=False, sort_keys=True)
+        latest = _append_revision(db, article_id, body, now)
+        db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, article_id))
+        draft = _full_draft(db, body, now)
+    return {'restored': True, 'articleId': article_id, 'fromRevision': revision_no, 'revisionNo': latest, 'draft': draft}
 
 
 def save_source(filename, raw, text):

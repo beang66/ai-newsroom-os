@@ -17,6 +17,9 @@ export const ROUTES = Object.freeze({
   assist: "/api/assist",
   articlesSave: "/api/articles/save",
   articlesLatest: "/api/articles/latest",
+  articleRevisions: (id) => "/api/articles/" + encodeURIComponent(id) + "/revisions",
+  articleRevision: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no),
+  articleRestore: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no) + "/restore",
   factcheckStatus: "/api/factcheck/status",
   factcheckRun: "/api/factcheck/run",
   factcheckExternal: "/api/factcheck/external",
@@ -92,6 +95,12 @@ export function createCoreApi(transport) {
       transport.json(ROUTES.articlesSave, { draft }, signal),
     /** 가장 최근에 저장된 원고(앱을 열면 이어서 작업) → { draft | null } */
     latestArticle: (signal) => transport.json(ROUTES.articlesLatest, null, signal),
+    /** 원고의 저장 이력 목록(최신이 위) → { revisions: [{ revisionNo, id, createdAt, title, excerpt, chars, ... }] } */
+    listRevisions: (articleId, signal) => transport.json(ROUTES.articleRevisions(articleId), null, signal),
+    /** 저장 이력 한 건의 미리보기(읽기 전용) → { title, subtitle, content, ... } */
+    getRevision: (articleId, revisionNo, signal) => transport.json(ROUTES.articleRevision(articleId, revisionNo), null, signal),
+    /** 옛 저장본을 새 최신 저장본으로 복원(이력은 지우지 않음) → { draft, revisionNo, fromRevision } */
+    restoreRevision: (articleId, revisionNo, signal) => transport.json(ROUTES.articleRestore(articleId, revisionNo), {}, signal),
     /** Unsplash 사진 검색 (1페이지 3장) */
     searchPhotos: (query, page = 1, signal) =>
       transport.json(

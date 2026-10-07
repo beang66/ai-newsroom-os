@@ -1,6 +1,8 @@
 import React, { useState, useRef, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
 import PhotoEditor from "./PhotoEditor";
+import VersionHistory from "./VersionHistory";
+import { createEmptyArticle } from "../data/article";
 import { supportedClaimRanges } from "../api/claim-details.js";
 // 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
 import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useFactCheck } from "./EditorialAssist";
@@ -10,6 +12,7 @@ import {
   CheckCircle2, 
   Check, 
   RotateCcw, 
+  History,
   Bold, 
   Italic, 
   Quote, 
@@ -43,6 +46,7 @@ export default function ArticleWriter({
 
   // 팩트체크 & 근거자료 우측 슬라이더(Drawer) 열림 상태
   const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   // 팩트체크 — 글쓰기가 멈추면 자동 실행. 서랍을 닫아도 본문 하이라이트가 남도록 여기에 둔다
   const factCheck = useFactCheck(article);
   const issues = useMemo(() => factCheck.results.filter((r) => r.verdict !== "SUPPORTED").sort((a, b) => a.start - b.start), [factCheck.results]);
@@ -229,6 +233,16 @@ export default function ArticleWriter({
           >
             <Search className="w-4 h-4 text-[#57514A]" />
             <span>취재자료 검색</span>
+          </button>
+
+          <button
+            onClick={() => setShowHistory(true)}
+            disabled={!article.articleId}
+            title={article.articleId ? "저장된 이전 버전을 보고 복원합니다" : "저장된 원고가 있어야 이력을 볼 수 있습니다"}
+            className="px-4.5 py-2.5 bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-default"
+          >
+            <History className="w-4 h-4 text-[#57514A]" />
+            <span>저장 이력</span>
           </button>
 
           <button
@@ -741,6 +755,19 @@ export default function ArticleWriter({
       {/* ──────────────────────────────────────────
           3. 사진·미디어 관리 및 본문 삽입 모달
          ────────────────────────────────────────── */}
+      {showHistory && article.articleId && (
+        <VersionHistory
+          article={article}
+          emptyArticle={createEmptyArticle()}
+          onClose={() => setShowHistory(false)}
+          onRestored={(restored) => {
+            setArticle(restored);
+            setShowHistory(false);
+            setPhotoNotice("선택한 저장본으로 복원했습니다. 복원 직전 상태는 저장 이력에 남아 있습니다.");
+          }}
+        />
+      )}
+
       {showPhotoModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 md:p-8 max-w-xl w-full shadow-2xl space-y-5 animate-float-in border border-slate-100">

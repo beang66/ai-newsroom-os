@@ -150,6 +150,21 @@ class ServerTests(ApiTestCase):
         draft['articleId'] = '../../outside'
         self.assertEqual(self.request('/api/articles/save', {'draft': draft})[0], 400)
 
+    def test_revision_history_routes(self):
+        use_temp_vault(self)
+        first = json.loads(self.request('/api/articles/save', {'draft': {'bodyHtml': '<p>1</p>', 'content': '첫 본문', 'title': '제목1'}})[1])['articleId']
+        self.request('/api/articles/save', {'draft': {'articleId': first, 'bodyHtml': '<p>2</p>', 'content': '둘째 본문', 'title': '제목2'}})
+        listing = json.loads(self.request('/api/articles/%s/revisions' % first)[1])
+        self.assertEqual([r['revisionNo'] for r in listing['revisions']], [2, 1])
+        status, raw, _ = self.request('/api/articles/%s/revisions/1' % first)
+        self.assertEqual((status, json.loads(raw)['content']), (200, '첫 본문'))
+        self.assertEqual(self.request('/api/articles/%s/revisions/9' % first)[0], 404)
+        restored = json.loads(self.request('/api/articles/%s/revisions/1/restore' % first, {})[1])
+        self.assertEqual((restored['revisionNo'], restored['draft']['title']), (3, '제목1'))
+        self.assertEqual(json.loads(self.request('/api/articles/latest')[1])['draft']['title'], '제목1')
+        self.assertEqual(self.request('/api/articles/%s/revisions/1/restore' % first, {}, origin='http://evil.example')[0], 403)
+        self.assertEqual(self.request('/api/articles/not-an-id/revisions')[0], 404)
+
     def test_latest_article_reopens_newest_with_source_text(self):
         use_temp_vault(self)
         self.assertEqual(json.loads(self.request("/api/articles/latest")[1]), {"draft": None})

@@ -35,6 +35,10 @@ class Handler(BaseHTTPRequestHandler):
             try:return self.send(200,CORE.ai.factcheck_status())
             except RequestError as e:return self.send(e.status,{'error':e.message})
         if self.path=='/api/articles/latest':return self.send(200,CORE.storage.latest_article())
+        found=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions(?:/(\d{1,6}))?',self.path)
+        if found:
+            try:return self.send(200,CORE.storage.get_revision(found.group(1),int(found.group(2))) if found.group(2) else CORE.storage.list_revisions(found.group(1)))
+            except RequestError as e:return self.send(e.status,{'error':e.message})
         if self.path=='/api/models':
             try:return self.send(200,CORE.models.status())
             except RequestError as e:return self.send(e.status,{'error':e.message})
@@ -84,7 +88,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send(404,{'error':'찾을 수 없는 경로입니다.'})
     def do_POST(self):
         if not self.allowed() or self.headers.get('Origin') not in (f'http://localhost:{self.port()}',f'http://127.0.0.1:{self.port()}'):return self.send(403,{'error':'워크스페이스에서 요청해 주세요.'})
-        if self.path not in ('/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        restore=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions/(\d{1,6})/restore',self.path)
+        if not restore and self.path not in ('/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
@@ -97,6 +102,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/models/install':return self.send(200,CORE.models.start_install(data))
             if self.path=='/api/models/cancel':return self.send(200,CORE.models.cancel())
             if self.path=='/api/articles/save':return self.send(200,CORE.storage.save_article(data))
+            if restore:return self.send(200,CORE.storage.restore_revision(restore.group(1),int(restore.group(2))))
             if self.path=='/api/materials/extract':return self.send(200,extract_text(data))
             if self.path=='/api/sources/open':return self.send(200,CORE.storage.open_source(data))
             if not LIMIT.acquire(blocking=False):raise RequestError('다른 AI 작업이 진행 중이에요. 잠시 후 다시 시도하세요.',429)

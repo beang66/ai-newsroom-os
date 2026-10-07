@@ -308,10 +308,8 @@ export async function saveDraft(article, articleId) {
   return d.articleId;
 }
 
-/** 앱을 열 때 이어서 작업할 가장 최근 원고 → 기사 객체(없으면 null). content 가 없는 옛 원고는 bodyHtml 에서 글자만 */
-export async function loadLatestArticle(empty) {
-  const { draft } = await core.latestArticle();
-  if (!draft) return null;
+/** 코어의 원고(draft) → 화면의 기사 객체. content 가 없는 옛 원고는 bodyHtml 에서 글자만 */
+export function articleFromDraft(draft, empty) {
   const content = draft.content ?? new DOMParser()
     .parseFromString((draft.bodyHtml || "").replace(/<br\s*\/?>/g, "\n").replace(/<\/p>/g, "\n\n"), "text/html")
     .body.textContent.trim();
@@ -331,4 +329,24 @@ export async function loadLatestArticle(empty) {
     cardNews: draft.cardNews && !Array.isArray(draft.cardNews) ? draft.cardNews : null,
     platformGeneration: draft.platformGeneration || {},
   };
+}
+
+/** 앱을 열 때 이어서 작업할 가장 최근 원고 → 기사 객체(없으면 null) */
+export async function loadLatestArticle(empty) {
+  const { draft } = await core.latestArticle();
+  return draft ? articleFromDraft(draft, empty) : null;
+}
+
+/** 원고의 저장 이력(최신이 위) */
+export async function listRevisions(articleId) {
+  return (await core.listRevisions(articleId)).revisions || [];
+}
+
+/** 저장 이력 한 건의 미리보기(읽기 전용) */
+export const previewRevision = (articleId, revisionNo) => core.getRevision(articleId, revisionNo);
+
+/** 옛 저장본으로 복원 → 화면에 올릴 기사 객체. 이력은 지워지지 않고 복원본이 새 최신 저장본이 된다 */
+export async function restoreRevision(articleId, revisionNo, empty) {
+  const result = await core.restoreRevision(articleId, revisionNo);
+  return { article: articleFromDraft(result.draft, empty), revisionNo: result.revisionNo };
 }

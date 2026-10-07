@@ -1,4 +1,12 @@
-/* 오프라인 데스크톱 앱: 외부 CDN(Pretendard 웹폰트 등)을 쓰지 않는다. 폰트는 시스템 폰트로 렌더되고, 웹폰트는 로컬 번들로 추가한다. */
+/* 오프라인 데스크톱 앱: 외부 CDN을 쓰지 않는다. Pretendard(SIL OFL)는 src/assets/fonts 에 로컬 번들되어 있다. */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: local("Pretendard Variable"), url("./assets/fonts/PretendardVariable.woff2") format("woff2-variations");
+}
+
 @import "tailwindcss";
 
 @theme {

@@ -55,6 +55,20 @@ class SourceApiTests(unittest.TestCase):
             sources.get_source(self.a)
         self.assertEqual(storage.latest_article()['draft']['sources'][0]['id'], self.a)  # 기사 안 참조는 남는다("삭제된 자료"로 표시 가능)
 
+    def test_delete_removes_its_embedding_vectors_but_keeps_shared_ones(self):
+        from core import vault
+        with vault.connect() as db:
+            for key in ('only-a', 'shared', 'only-b', 'unrelated-cache'):
+                db.execute('INSERT INTO embedding_vectors VALUES (?, ?, ?)', (key, b'v', 'test'))
+            for source_id, ordinal, key in ((self.a, 0, 'only-a'), (self.a, 1, 'shared'), (self.b, 0, 'shared'), (self.b, 1, 'only-b')):
+                db.execute('INSERT INTO source_chunks VALUES (?, ?, ?, ?, ?, ?)', (source_id, ordinal, vault.WORKSPACE_ID, key, '{}', key))
+        sources.delete_source(self.a)
+        with vault.connect() as db:
+            left = {row[0] for row in db.execute('SELECT key FROM embedding_vectors')}
+            chunks = db.execute('SELECT count(*) FROM source_chunks WHERE source_id = ?', (self.a,)).fetchone()[0]
+        self.assertEqual(left, {'shared', 'only-b', 'unrelated-cache'})
+        self.assertEqual(chunks, 0)
+
     def test_bad_ids_and_force_type(self):
         for bad in ('x', 'A' * 32, '../' * 8):
             with self.assertRaises(RequestError):

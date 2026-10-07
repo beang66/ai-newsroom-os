@@ -10,9 +10,7 @@ import {
   Sparkles, 
   Trash2, 
   FileCheck, 
-  Search, 
   Plus, 
-  ArrowRight,
   ShieldCheck,
   RefreshCw
 } from "lucide-react";
@@ -49,6 +47,7 @@ export default function FactCheckDrawer({
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [viewing, setViewing] = useState(null); // 보고 있는 자료(SourceViewer)
+  const [citationNotice, setCitationNotice] = useState("");
   const fileInputRef = useRef(null);
 
   // 파일 업로드 처리 핸들러
@@ -92,7 +91,7 @@ export default function FactCheckDrawer({
       ...prev,
       content: prev.content + citation
     }));
-    alert(`"${ev.sourceDoc}" 근거자료 인용 주석이 본문 끝에 삽입되었습니다.`);
+    setCitationNotice(`“${ev.sourceDoc}” 근거 주석을 본문 끝에 삽입했습니다.`);
   };
 
   // 기사에서 자료 연결 해제(내 문서의 원본 파일은 지우지 않는다)
@@ -108,16 +107,17 @@ export default function FactCheckDrawer({
         (메인 기사 에디터와 나란히 인라인 배치되어 절대 겹치지 않음)
        ────────────────────────────────────────── */
     <aside 
-      className="w-full md:w-[410px] lg:w-[450px] xl:w-[470px] flex-shrink-0 bg-white/95 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col h-[calc(100vh-170px)] min-h-[640px] sticky top-4 overflow-hidden animate-float-in z-20"
+      aria-label="팩트체크 및 근거자료"
+      className="order-first lg:order-none w-full min-w-0 lg:w-[450px] xl:w-[470px] flex-shrink-0 bg-white/95 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col h-[calc(100vh-170px)] min-h-[640px] lg:sticky lg:top-4 overflow-hidden animate-float-in z-20"
     >
       {/* 상단 헤더 */}
       <div className="p-4 md:p-5 border-b border-slate-200/90 flex items-center justify-between bg-slate-50/70">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-[#23211F] text-white flex items-center justify-center shadow-xs">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 shrink-0 rounded-full bg-[#23211F] text-white flex items-center justify-center shadow-xs">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div>
-            <h2 className="text-sm md:text-base font-extrabold text-slate-900 flex items-center gap-2">
+            <h2 className="text-sm md:text-base font-extrabold text-slate-900 flex flex-wrap items-center gap-x-2 gap-y-1">
               <span>팩트체크 & 근거자료 검증</span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
                 실시간 연동
@@ -131,7 +131,7 @@ export default function FactCheckDrawer({
 
         <button
           onClick={onClose}
-          className="p-1.5 rounded-full text-slate-400 hover:text-[#23211F] hover:bg-[#EFECE6] transition cursor-pointer"
+          className="shrink-0 p-1.5 rounded-full text-slate-400 hover:text-[#23211F] hover:bg-[#EFECE6] transition cursor-pointer"
           title="검증창 닫기"
         >
           <X className="w-4 h-4" />
@@ -201,10 +201,10 @@ export default function FactCheckDrawer({
                   {fileRows.map((file) => (
                     <div
                       key={file.id}
-                      className="flex items-center justify-between p-2.5 bg-slate-100/70 hover:bg-slate-100 rounded-xl text-xs border border-slate-200/80 transition"
+                      className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-100/70 hover:bg-slate-100 rounded-xl text-xs border border-slate-200/80 transition"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      <div className="flex flex-1 items-center gap-2 min-w-0">
+                        {file.failed ? <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" /> : <FileCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />}
                         <div className="truncate">
                           {file.failed ? (
                             <p className="font-bold text-slate-900 truncate">{file.name}</p>
@@ -217,7 +217,7 @@ export default function FactCheckDrawer({
                               {file.name}
                             </button>
                           )}
-                          <p className="text-[10px] text-slate-400" title={file.path || ""}>
+                          <p className="text-[10px] text-slate-400 truncate" title={file.path || ""}>
                             {mb(file.size)}{file.addedAt ? ` · ${file.addedAt}` : ""}{file.text == null && !file.failed ? " · 본문 다시 불러오기 필요" : ""}
                           </p>
                         </div>
@@ -234,7 +234,7 @@ export default function FactCheckDrawer({
                         <button
                           onClick={() => handleDeleteFile(file.id)}
                           className="p-1 text-slate-400 hover:text-red-600 rounded transition cursor-pointer"
-                          title={file.failed ? "목록에서 지우기" : "기사에서 연결 해제(원본 파일은 내 문서에 남음)"}
+                          title={file.failed ? "목록에서 지우기" : "기사에서 연결 해제(보관된 원본 유지)"}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -252,8 +252,8 @@ export default function FactCheckDrawer({
               [B] 기사 문장 ↔ 원문 근거자료 대조 결과
              ───────────────────────────────────────── */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="space-y-2">
+              <div className="min-w-0">
                 <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                   실시간 팩트체크 및 근거자료 대조표 ({evidenceList.length}건)
@@ -263,12 +263,13 @@ export default function FactCheckDrawer({
                 </p>
                 {checkError && <p className="text-[11px] text-rose-600 mt-1" data-testid="factcheck-error">{checkError}</p>}
               </div>
+              <div className="flex items-center justify-end gap-2">
               {/* 임시(시험용): 로컬 판정기가 확정 못 한 문장만 OpenAI 로 재판정 */}
               <button
                 onClick={() => factCheck.recheck()}
                 disabled={!factCheck.recheckCount || factCheck.recheckBusy || isAnalyzing}
                 title="검토 필요·관련 근거가 있는 근거 부족 문장만 OpenAI 로 다시 판정(임시 시험 기능)"
-                className="ml-auto mr-1 px-2.5 py-1 text-[11px] font-bold rounded-full border border-violet-300 text-violet-700 hover:bg-violet-50 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                className="px-2.5 py-1 text-[11px] font-bold rounded-full border border-violet-300 text-violet-700 hover:bg-violet-50 cursor-pointer disabled:opacity-40 disabled:cursor-default"
               >
                 {factCheck.recheckBusy ? "AI 재판정 중…" : `AI 재판정 ${factCheck.recheckCount}건 (임시)`}
               </button>
@@ -280,10 +281,16 @@ export default function FactCheckDrawer({
               >
                 <RefreshCw className={`w-4 h-4 ${isAnalyzing ? "animate-spin" : ""}`} />
               </button>
+              </div>
             </div>
 
             {/* 근거 대조 카드 목록 */}
             <div className="space-y-3">
+              {!evidenceList.length && !isAnalyzing && !checkError && (
+                <p className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-xs leading-relaxed text-slate-500">
+                  {sources.length ? "본문을 작성하면 등록한 자료와 자동으로 대조합니다." : "취재자료를 등록하고 본문을 작성하면 문장별 검증 결과가 표시됩니다."}
+                </p>
+              )}
               {evidenceList.map((item) => (
                 <div
                   key={item.id}
@@ -292,7 +299,7 @@ export default function FactCheckDrawer({
                   className="p-4 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 shadow-2xs space-y-3 transition"
                 >
                   {/* 카드 헤더: 상태 및 일치율 */}
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${(VERDICT_BADGE[item.verdict] || REVIEW_BADGE)[1]}`}>
                       {item.status === "verified" ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
                       {(VERDICT_BADGE[item.verdict] || REVIEW_BADGE)[0]}
@@ -303,7 +310,7 @@ export default function FactCheckDrawer({
                       <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">AI 재판정</span>
                     )}
                     {item.sourceDoc && (
-                      <span className="text-[11px] font-bold text-slate-400">출처: {item.sourceDoc}</span>
+                      <span className="w-full min-w-0 break-words text-[11px] font-bold text-slate-400">출처: {item.sourceDoc}</span>
                     )}
                   </div>
 
@@ -312,7 +319,7 @@ export default function FactCheckDrawer({
                     <span className="text-[10px] font-black text-slate-400 block mb-0.5 uppercase tracking-wide">
                       기사 본문 대상 문장
                     </span>
-                    <p className="font-bold text-slate-800 leading-snug">
+                    <p className="font-bold text-slate-800 leading-snug break-words">
                       "<Marked text={item.claimText} spans={item.verdict === "SUPPORTED" ? supportedClaimRanges(item.claimText, item.details) : item.spans.map((s) => ({ start: s.start - item.start, end: s.end - item.start }))} ok={item.verdict === "SUPPORTED"} />"
                     </p>
                   </div>
@@ -323,7 +330,7 @@ export default function FactCheckDrawer({
                       <Sparkles className="w-3 h-3" />
                       원문 문서 발췌 근거
                     </span>
-                    <p className="text-slate-800 italic leading-relaxed" data-testid="evidence-quote">
+                    <p className="text-slate-800 italic leading-relaxed break-words" data-testid="evidence-quote">
                       "<Marked text={item.quote} spans={item.quoteSpans} sentence={item.verdict !== "SUPPORTED"} ok={item.verdict === "SUPPORTED"} />"
                     </p>
                     {item.verdict === "SUPPORTED" && !item.quoteSpans.length && (
@@ -345,14 +352,15 @@ export default function FactCheckDrawer({
 
                   {/* 3. AI 검증 해설 */}
                   <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
-                    💡 <strong>검증 의견:</strong> {item.comment}
+                    <strong>검증 의견:</strong> {item.comment}
                   </p>
 
                   {/* 4. 액션 버튼 */}
                   <div className="pt-1 flex items-center justify-end gap-2 border-t border-slate-100">
                     <button
                       onClick={() => handleInsertCitation(item)}
-                      className="px-3.5 py-1.5 text-xs font-bold text-[#23211F] bg-[#EFECE6] hover:bg-[#E4DFD7] border border-[#DDD6CB] rounded-full transition cursor-pointer flex items-center gap-1 active:scale-95"
+                      disabled={!item.sourceDoc || !item.quote}
+                      className="px-3.5 py-1.5 text-xs font-bold text-[#23211F] bg-[#EFECE6] hover:bg-[#E4DFD7] border border-[#DDD6CB] rounded-full transition cursor-pointer flex items-center gap-1 active:scale-95 disabled:opacity-40 disabled:cursor-default"
                     >
                       <Plus className="w-3 h-3" />
                       본문에 근거 주석 삽입
@@ -365,6 +373,7 @@ export default function FactCheckDrawer({
 
         </div>
 
+        {citationNotice && <p role="status" className="px-4 py-2 border-t border-slate-200 text-[11px] text-emerald-700">{citationNotice}</p>}
         {/* 하단 푸터 바 */}
         <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
           <span className="text-slate-500 font-medium">

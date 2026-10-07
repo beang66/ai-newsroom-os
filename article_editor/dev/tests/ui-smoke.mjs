@@ -214,6 +214,16 @@ try {
   await page.reload();
   // 좁은 화면에서는 상태 배지를 일부러 숨긴다(hidden sm:inline-flex) → 그려졌는지만 본다
   await page.getByText("코어 연결됨").first().waitFor({ state: "attached", timeout: 10_000 });
+  await page.getByRole("button", { name: "기사 팩트체크 & 근거자료", exact: true }).click();
+  const drawer = page.getByRole("complementary", { name: "팩트체크 및 근거자료" });
+  await drawer.waitFor();
+  const drawerBounds = await drawer.boundingBox();
+  assert.ok(drawerBounds.x >= 0 && drawerBounds.x + drawerBounds.width <= 390, "좁은 화면에서 검증 서랍이 화면 밖으로 밀렸습니다");
+  assert.equal(await drawer.evaluate((el) => el.scrollWidth > el.clientWidth), false, "검증 서랍 내용에 가로 넘침이 있습니다");
+  await drawer.getByRole("button", { name: "자료.txt", exact: true }).click();
+  await page.getByRole("dialog", { name: "취재자료 보기" }).getByText("스모크 테스트 본문입니다.").waitFor();
+  await page.getByRole("dialog", { name: "취재자료 보기" }).getByTitle("닫기").click();
+  await drawer.getByRole("button", { name: "확인 및 닫기" }).click();
 
   for (const name of ["headlines", "subtitles", "article_flow_summary", "photo_keywords", "search:stub wafer", "stt:multipart/form-data"])
     assert.ok(stubCalls.includes(name), `코어가 백엔드로 ${name} 를 요청하지 않았습니다: ${stubCalls}`);

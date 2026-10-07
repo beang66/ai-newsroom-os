@@ -313,10 +313,10 @@ export default function ArticleWriter({
       {/* ──────────────────────────────────────────
           2. 메인 작업 영역: [좌측 기사 작성/미리보기] + [우측 팩트체크 검증실] 나란히 배치
          ────────────────────────────────────────── */}
-      <div className="flex items-start gap-6 w-full min-w-0">
+      <div className="flex flex-col lg:flex-row items-start gap-6 w-full min-w-0">
 
         {/* [좌측 메인 컬럼]: 기사 에디터 / 미리보기 */}
-        <div className="flex-1 min-w-0 space-y-5">
+        <div className="w-full flex-1 min-w-0 space-y-5">
 
           {/* 팩트체크 진행 배너 */}
           {factCheckActive && factCheckIssues.length > 0 && (

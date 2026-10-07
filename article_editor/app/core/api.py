@@ -15,7 +15,7 @@ CORE = create_core()
 UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 def error_body(e):
     """오류 응답 본문. 화면은 "error" 문자열을 읽는다 — 기계용 code 가 있으면 함께 싣는다."""
-    return {'error':e.message,**({'code':e.code} if getattr(e,'code',None) else {})}
+    return {'error':e.message,**({'code':e.code} if getattr(e,'code',None) else {}),**({'details':e.details} if getattr(e,'details',None) else {})}
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_): pass  # Do not log manuscript content or API credentials.
     def send(self, status, payload, mime='application/json; charset=utf-8'):
@@ -70,6 +70,16 @@ class Handler(BaseHTTPRequestHandler):
                 result=unsplash_get('/search/photos?'+urllib.parse.urlencode({'query':q,'per_page':3,'page':page}))
                 return self.send(200,{'photos':result.get('results',[])[:3],'page':page,'totalPages':min(10000,result.get('total_pages',0)),'total':result.get('total',0)})
             except RequestError as e:return self.send(e.status,error_body(e))
+        if path.path in ('/api/articles','/api/knowledge-map'):
+            try:return self.send(200,CORE.storage.list_articles() if path.path=='/api/articles' else CORE.storage.knowledge_map())
+            except RequestError as e:return self.send(e.status,error_body(e))
+        if path.path=='/api/sources':
+            try:return self.send(200,CORE.storage.list_sources())
+            except RequestError as e:return self.send(e.status,error_body(e))
+        match=re.fullmatch(r'/api/sources/([a-f0-9]{32}|[a-f0-9]{16})',path.path)
+        if match:
+            try:return self.send(200,CORE.storage.get_source(match.group(1)))
+            except RequestError as e:return self.send(e.status,error_body(e))
         match=re.fullmatch(r'/api/sources/([a-f0-9]{32}|[a-f0-9]{16})/file',path.path)
         if match:
             try:return self.send(200,*CORE.storage.source_file(match.group(1)))
@@ -107,7 +117,8 @@ class Handler(BaseHTTPRequestHandler):
         restore=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions/(\d{1,6})/restore',self.path)
         snapshot=re.fullmatch(r'/api/articles/([a-f0-9]{32})/snapshots',self.path)
         job_cancel=re.fullmatch(r'/api/jobs/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/cancel',self.path)
-        if not restore and not snapshot and not job_cancel and self.path not in ('/api/media-assets','/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        source_delete=re.fullmatch(r'/api/sources/([a-f0-9]{32}|[a-f0-9]{16})/delete',self.path)
+        if not restore and not snapshot and not job_cancel and not source_delete and self.path not in ('/api/media-assets','/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
@@ -122,6 +133,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/articles/save':return self.send(200,CORE.storage.save_article(data))
             if job_cancel:return self.send(200,CORE.jobs.cancel(job_cancel.group(1)))
             if self.path=='/api/media-assets':return self.send(200,CORE.storage.register_media_asset(data))
+            if source_delete:return self.send(200,CORE.storage.delete_source(source_delete.group(1),data))
             if restore:return self.send(200,CORE.storage.restore_revision(restore.group(1),int(restore.group(2))))
             if snapshot:return self.send(200,CORE.storage.create_snapshot(snapshot.group(1),data))
             if self.path=='/api/materials/extract':return self.send(200,extract_text(data))

@@ -156,3 +156,19 @@ main의 FormatConverter는 화면 틀만 있고 생성 버튼이 없었습니다
 - 생성 전 점검 문구: 원본은 "키워드를 선택하세요", "기사 제목과 원문을 먼저 입력하세요", "진행 중인 요청이 끝난 뒤 실행하세요"를 버튼 옆에 보여 줬습니다. 현재는 화면 왼쪽 아래 메시지 한 줄로 보여 줍니다.
 
 참고: 원본 UI 코드는 `git show origin/feature/platform-generator:platform-generator/public/batch-generate-ui.js`, `generate-ui.js`, `text-editor-ui.js`(12장 "개별 생성 버튼")에서 볼 수 있습니다.
+
+## 9. 취재자료 삭제 UI — 경고 후 강제 삭제 (디자인 요청)
+
+코어에 취재자료 목록·삭제 API가 생겼습니다(화면은 아직 없음). 정책(사용자 결정 2026-10-07): **쓰는 기사가 있으면 먼저 경고하고, 사용자가 확인하면 강제로 지울 수 있다.**
+
+| 동작 | 코어 | 화면에서 해야 할 것 |
+|---|---|---|
+| 자료 목록 | `GET /api/sources` → `{sources:[{id, name, format, size, chars, createdAt, usedBy:[{articleId,title}]}]}` | 자료 목록(이름, 형식, 크기, 글자 수, 올린 날짜). "N개 기사에서 사용 중" 표시 |
+| 삭제 시도 | `POST /api/sources/<id>/delete` 본문 `{}` | 삭제 버튼. 쓰는 기사가 없으면 바로 지워짐(확인 한 번) |
+| 경고 | 쓰는 기사가 있으면 **409**, 본문 `{error, code:"SOURCE_IN_USE", details:{usedBy:[{articleId,title}]}}` | 경고 대화상자: "이 자료를 쓰는 기사가 있어요" + 기사 제목 목록 + [취소] [그래도 삭제] (파괴적 동작이라 색·문구로 구분) |
+| 강제 삭제 | `POST /api/sources/<id>/delete` 본문 `{"force": true}` | [그래도 삭제]를 누르면 이 요청. 성공하면 목록에서 제거 |
+| 삭제된 자료 표시 | 기사 안의 자료 참조는 남습니다. 원본·본문 요청은 404 | 기사의 자료 목록에서 지워진 자료를 "삭제된 자료"로 표시(원본 열기·팩트체크 근거 보기는 비활성) |
+
+주의: 팩트체크에 이미 쓴 판정 기록은 남지만, 근거 원본을 열 수 없게 됩니다. 이 점을 경고 문구에 한 줄로 알려 주세요.
+화면에서 쓰는 API 이름은 `web/src/api/core-api.js`에 코어와 1:1로 추가됩니다(`listSources`, `deleteSource(id, {force})`).
+

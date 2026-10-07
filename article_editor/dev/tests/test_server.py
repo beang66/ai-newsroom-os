@@ -152,6 +152,24 @@ class ServerTests(ApiTestCase):
         draft['articleId'] = '../../outside'
         self.assertEqual(self.request('/api/articles/save', {'draft': draft})[0], 400)
 
+    def test_source_and_read_model_routes(self):
+        use_temp_vault(self)
+        sid, _ = storage.save_source('보고서.txt', b'raw', '본문')
+        aid = json.loads(self.request('/api/articles/save', {'draft': {'bodyHtml': '<p>x</p>', 'title': '쓰는 기사', 'sources': [{'id': sid, 'name': '보고서.txt'}]}})[1])['articleId']
+        listing = json.loads(self.request('/api/sources')[1])
+        self.assertEqual([(i['id'], i['usedBy'][0]['articleId']) for i in listing['sources']], [(sid, aid)])
+        self.assertEqual(json.loads(self.request('/api/sources/' + sid)[1])['name'], '보고서.txt')
+        self.assertEqual(self.request('/api/sources/' + 'f' * 32)[0], 404)
+        status, raw, _ = self.request('/api/sources/%s/delete' % sid, {})
+        warning = json.loads(raw)
+        self.assertEqual((status, warning['code'], warning['details']['usedBy'][0]['articleId']), (409, 'SOURCE_IN_USE', aid))
+        self.assertEqual(self.request('/api/sources/%s/delete' % sid, {}, origin='http://evil.example')[0], 403)
+        graph = json.loads(self.request('/api/knowledge-map')[1])
+        self.assertEqual([e['relation'] for e in graph['edges']], ['uses_source'])
+        self.assertEqual(len(json.loads(self.request('/api/articles')[1])['articles']), 1)
+        self.assertEqual(json.loads(self.request('/api/sources/%s/delete' % sid, {'force': True})[1])['deleted'], True)
+        self.assertEqual(json.loads(self.request('/api/knowledge-map')[1])['edges'], [])
+
     def test_media_asset_routes(self):
         import base64
         use_temp_vault(self)

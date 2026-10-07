@@ -6,6 +6,8 @@ Planned: project files + attachments.
 """
 from ..diagnostics import guarded
 from ..media_assets import get_media_asset as _get_media_asset, media_asset_file as _media_asset_file, register_media_asset as _register_media_asset
+from ..read_models import knowledge_map as _knowledge_map, list_articles as _list_articles
+from ..sources import delete_source as _delete_source, get_source as _get_source, list_sources as _list_sources
 from ..storage import (create_snapshot as _create_snapshot, get_revision as _get_revision, get_snapshot as _get_snapshot,
                        latest_article as _latest_article, list_revisions as _list_revisions, list_snapshots as _list_snapshots,
                        open_source as _open_source, restore_revision as _restore_revision, save_article as _save_article,
@@ -64,3 +66,23 @@ class StorageManager:
     def media_asset_file(self, asset_id):
         """미디어 자산의 이미지 바이트 → (bytes, mime)."""
         return _media_asset_file(asset_id)
+
+    def list_sources(self):
+        """저장된 취재자료 목록과 각 자료를 쓰는 기사 ``{"sources": [...]}``."""
+        return _list_sources()
+
+    def get_source(self, source_id):
+        """취재자료 한 건 정보."""
+        return _get_source(source_id)
+
+    def delete_source(self, source_id, data):
+        """취재자료 삭제 ``{"force"?: bool}`` — 쓰는 기사가 있으면 force 없이는 409(SOURCE_IN_USE)로 경고만 한다."""
+        return guarded('source_delete', _delete_source, source_id, (data or {}).get('force', False))
+
+    def list_articles(self):
+        """기사 목록(최신 수정순) ``{"articles": [...]}``."""
+        return _list_articles()
+
+    def knowledge_map(self):
+        """기사·자료·고정본과 실제 근거 있는 연결의 읽기 전용 묶음(Data Map·보관함용)."""
+        return _knowledge_map()

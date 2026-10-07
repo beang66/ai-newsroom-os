@@ -85,6 +85,11 @@ class AIManager:
             if not isinstance(material, dict):
                 raise RequestError('materials 항목 형식을 확인해 주세요.')
             _text(material.get('content') or material.get('summary') or '', '자료 본문')
+        from ..source_index import indexing_ids
+        busy = sorted({str(m.get('id')) for m in materials} & indexing_ids())
+        if busy:  # 색인이 끝나기 전에 보내면 요청 안에서 다시 색인해 수 분이 걸린다 — 끝난 뒤에 다시 보내 달라고 돌려준다
+            raise RequestError('자료를 색인하는 중이에요. 끝난 뒤에 팩트체크가 자동으로 시작됩니다.', 409, code='SOURCE_INDEXING',
+                               details={'sourceIds': busy})
         # 이미 판정한 (문장, 자료) 조합은 암호화 저장소의 기록을 쓰고, 처음 보는 문장만 판정한다(memo)
         fingerprint, version = memo.fingerprint(materials), memo.model_version()
         keys = {i: memo.node_key(node, fingerprint, version) for i, node in enumerate(nodes) if memo.judged(node)}

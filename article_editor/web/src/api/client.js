@@ -16,7 +16,7 @@ export function createApi(base = "") {
       signal,
     });
     const data = await r.json();
-    if (!r.ok) throw Error(data.error || "요청을 완료하지 못했어요.");
+    if (!r.ok) throw Object.assign(Error(data.error || "요청을 완료하지 못했어요."), { status: r.status, code: data.code });
     return data;
   }
 

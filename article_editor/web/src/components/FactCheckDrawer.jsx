@@ -262,6 +262,7 @@ export default function FactCheckDrawer({
                 <p className="text-[11px] text-slate-400 mt-0.5">
                   기사 문장과 업로드된 원문 문서를 AI가 자동 대조한 결과입니다
                 </p>
+                {factCheck.indexing && <p className="text-[11px] text-slate-500 mt-1" data-testid="factcheck-indexing">자료를 색인하는 중이에요. 끝나면 팩트체크가 자동으로 시작됩니다.</p>}
                 {checkError && <div role="alert" className="text-[11px] text-rose-600 mt-1" data-testid="factcheck-error">
                   <p>{checkError}</p>
                   {/모델|설치/.test(checkError) && <button onClick={onModels}

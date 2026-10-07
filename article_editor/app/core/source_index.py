@@ -172,6 +172,14 @@ def material_chunks(material):
         return chunks
 
 
+def indexing_ids():
+    """지금 색인 작업(source_ingest)이 대기·실행 중인 자료 id(32자 hex) 집합."""
+    with jobs._db() as db:  # processing_jobs 는 jobs 가 처음 쓸 때 만든다
+        rows = db.execute("SELECT input_resource_id FROM processing_jobs WHERE type = 'source_ingest' "
+                          "AND status IN ('queued', 'running') AND workspace_id = ?", (vault.WORKSPACE_ID,)).fetchall()
+    return {row[0].replace('-', '') for row in rows if row[0]}
+
+
 def start_indexing(source_id):
     """Queue ingestion without importing/loading the ML runtime on the upload thread."""
     try:

@@ -17,6 +17,7 @@ import {
   externalRecheck,
   cachedExternalRecheck,
 } from "../api/editorial";
+import { core } from "../api/core.js";
 
 /** 외부 재판정 요청 항목 — 클릭 재검토와 저장된 판정 복원이 **똑같은 형식**이어야 코어가 저장된 기록을 찾는다 */
 const recheckItems = (todo) => todo.map(([text, r], i) => {
@@ -54,6 +55,7 @@ export function useFactCheck(article) {
   const [results, setResults] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [indexing, setIndexing] = useState(false);
   const latest = useRef(article);
   latest.current = article;
   const state = useRef({ running: false, again: false, cacheKey: "", cache: new Map(), tried: new Set() });
@@ -72,6 +74,18 @@ export function useFactCheck(article) {
       setResults([]);
       return setError("검증할 본문 문장이 없어요. 본문을 먼저 작성해 주세요.");
     }
+    // 색인(청킹·임베딩)이 끝나기 전에는 팩트체크를 보내지 않는다 — 끝나면 자동으로 이어서 돈다
+    try {
+      const { sources: stored = [] } = await core.listSources();
+      const ids = new Set(materials.map((s) => s.id));
+      if (stored.some((s) => ids.has(s.id) && s.index?.state === "indexing")) {
+        setIndexing(true);
+        clearTimeout(state.current.wait);
+        state.current.wait = setTimeout(() => run(), 3000);
+        return;
+      }
+    } catch { /* 목록을 못 읽으면 기존처럼 진행 — 코어도 색인 중이면 409 로 막는다 */ }
+    setIndexing(false);
     state.current.running = true;
     setBusy(true);
     setError("");
@@ -80,7 +94,10 @@ export function useFactCheck(article) {
       // 다시 열었을 때 이미 받은 AI 재판정을 붙인다 — 붙으면 기억에서 화면만 다시 그린다(코어 판정 없음)
       setResults((await restoreExternal(state.current, content)) ? await factcheckArticle(content, materials, state.current.cache) : items);
     } catch (e) {
-      setError(e?.message || String(e));
+      if (e?.code === "SOURCE_INDEXING") {
+        setIndexing(true);
+        state.current.wait = setTimeout(() => run(), 3000);
+      } else setError(e?.message || String(e));
     } finally {
       state.current.running = false;
       setBusy(false);
@@ -124,7 +141,7 @@ export function useFactCheck(article) {
   // 서랍의 '팩트 일치' 카드에 마우스를 올리는 동안 본문의 그 문장을 초록으로(focus = 결과 id)
   const [focus, setFocus] = useState(null);
 
-  return { results, busy, error, run, recheck, recheckBusy, recheckCount: results.filter((r) => r.needsRecheck).length, focus, setFocus };
+  return { results, busy, indexing, error, run, recheck, recheckBusy, recheckCount: results.filter((r) => r.needsRecheck).length, focus, setFocus };
 }
 
 const MIN_BODY = 20; // 코어 assist 하한(본문 20자)

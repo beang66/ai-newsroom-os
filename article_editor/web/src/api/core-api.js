@@ -26,6 +26,7 @@ export const ROUTES = Object.freeze({
   semanticParse: "/api/semantic/parse",
   transcribe: "/api/interview/transcribe",
   materialsExtract: "/api/materials/extract",
+  sources: "/api/sources",
   sourcesOpen: "/api/sources/open",
   sourceFile: (id) => "/api/sources/" + encodeURIComponent(id) + "/file",
   unsplashSearch: "/api/unsplash/search",
@@ -85,6 +86,8 @@ export function createCoreApi(transport) {
     /** 자료 파일(PDF·DOCX·HWP·HWPX·TXT) 텍스트 추출 → { text, chars, format } */
     extractText: (filename, data, signal) =>
       transport.json(ROUTES.materialsExtract, { filename, data }, signal),
+    /** 보관한 취재자료 목록 → { sources: [{ id, name, ..., index: { state: pending|indexing|ready|failed, chunks } }] } */
+    listSources: (signal) => transport.json(ROUTES.sources, null, signal),
     /** 보관한 취재자료 원본을 이 PC 의 기본 프로그램으로 열기 */
     openSource: (sourceId, signal) =>
       transport.json(ROUTES.sourcesOpen, { sourceId }, signal),

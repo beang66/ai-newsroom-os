@@ -11,6 +11,7 @@ from unittest import mock
 from vault_fixture import use_temp_vault
 from core import documents, ids, jobs, source_index, sources, storage, vault
 from core.ai.factcheck import chunker, material_chunks, retrieval, service
+from core.errors import RequestError
 from core.managers.ai_manager import AIManager
 import numpy as np
 
@@ -157,6 +158,12 @@ class SourceIndexTests(unittest.TestCase):
                 self.assertEqual(job['input_ref'], {'resource_type': 'source', 'resource_id': ids.uuid_text(result['sourceId'])})
                 self.assertEqual(job['type'], 'source_ingest')
                 self.assertEqual(job['status'], 'running')
+                # 색인 중에는 목록이 indexing 으로 보이고, 팩트체크는 409 로 막힌다(요청 안에서 다시 색인하지 않게)
+                self.assertEqual(sources.get_source(result['sourceId'])['index']['state'], 'indexing')
+                with self.assertRaises(RequestError) as blocked:
+                    AIManager().factcheck_run({'nodes': [{'id': 's1', 'type': 'TEXT', 'text': 'x'}],
+                                               'materials': [{'id': result['sourceId'], 'title': 'new.txt', 'content': 'New source.'}]})
+                self.assertEqual((blocked.exception.status, blocked.exception.code), (409, 'SOURCE_INDEXING'))
             finally:
                 release.set()
                 for thread in threads:

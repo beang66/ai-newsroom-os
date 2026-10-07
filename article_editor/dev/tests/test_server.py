@@ -165,6 +165,29 @@ class ServerTests(ApiTestCase):
         self.assertEqual(self.request('/api/articles/%s/revisions/1/restore' % first, {}, origin='http://evil.example')[0], 403)
         self.assertEqual(self.request('/api/articles/not-an-id/revisions')[0], 404)
 
+    def test_job_routes(self):
+        import uuid
+        from core import jobs
+        use_temp_vault(self)
+        ref = lambda: {'resource_type': 'source', 'resource_id': str(uuid.uuid4())}
+        queued, running = jobs.create_job('verification', ref())['id'], jobs.create_job('transcription', ref())['id']
+        jobs.set_running(running)
+        status, raw, _ = self.request('/api/jobs/%s' % queued)
+        self.assertEqual((status, json.loads(raw)['status'], json.loads(raw)['type']), (200, 'queued', 'verification'))
+        self.assertEqual(self.request('/api/jobs/%s/cancel' % queued, {}, origin='http://evil.example')[0], 403)
+        self.assertEqual(json.loads(self.request('/api/jobs/%s' % queued)[1])['status'], 'queued')
+        status, raw, _ = self.request('/api/jobs/%s/cancel' % queued, {})
+        self.assertEqual((status, json.loads(raw)['status']), (200, 'cancelled'))
+        status, raw, _ = self.request('/api/jobs/%s/cancel' % queued, {})
+        self.assertEqual(status, 409)
+        self.assertEqual(set(json.loads(raw)), {'error'})
+        self.assertEqual(json.loads(self.request('/api/jobs/%s/cancel' % running, {})[1])['status'], 'running')
+        self.assertTrue(jobs.is_cancel_requested(running))
+        missing = str(uuid.uuid4())
+        self.assertEqual(self.request('/api/jobs/%s' % missing)[0], 404)
+        self.assertEqual(self.request('/api/jobs/%s/cancel' % missing, {})[0], 404)
+        self.assertEqual(self.request('/api/jobs/not-a-uuid')[0], 404)
+
     def test_latest_article_reopens_newest_with_source_text(self):
         use_temp_vault(self)
         self.assertEqual(json.loads(self.request("/api/articles/latest")[1]), {"draft": None})

@@ -19,7 +19,9 @@ export default defineConfig({
       // 개발(`npm run dev`) 중에는 로컬 코어(창 모드 서버)로 /api 를 넘긴다.
       '/api': {
         target: 'http://127.0.0.1:8765',
-        changeOrigin: true
+        changeOrigin: true,
+        // 코어는 자기 주소에서 온 POST 만 받는다(Origin 검사). 개발 서버(5173)의 Origin 을 코어 주소로 바꿔야 저장·팩트체크가 된다
+        headers: { Origin: 'http://127.0.0.1:8765' }
       }
     }
   }

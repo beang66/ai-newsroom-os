@@ -93,7 +93,9 @@ class ServerTests(ApiTestCase):
             self.assertFalse(schema['additionalProperties'])
             field = schema['required'][0]
             self.assertIn(field, schema['properties'])
-            return {'output': [{'content': [{'type': 'output_text', 'text': json.dumps({field: ['후보1', '후보2', '후보3']})}]}]}
+            # su4228 v30: 부제는 최종 교열(subtitle_N 문자열)을 한 번 더 거치므로, 스키마가 요구하는 모양대로 채워 돌려준다
+            answer = {key: ('부제 문구' if spec['type'] == 'string' else ['후보가', '후보나', '후보다']) for key, spec in schema['properties'].items()}
+            return {'output': [{'content': [{'type': 'output_text', 'text': json.dumps(answer, ensure_ascii=False)}]}]}
         with patch.dict(os.environ, {'USE_LOCAL_MODELS': 'false'}), patch.object(ai_client, 'openai_call', side_effect=call):
             for kind, requested in [('metadata', 'headline'), ('metadata', 'subheadline'), ('photo_keywords', '')]:
                 status, raw, _ = self.request('/api/assist', {'kind': kind, 'requested': requested, 'body': '가' * 100})

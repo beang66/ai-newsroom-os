@@ -4,6 +4,7 @@ Frontend and AI modules must not touch file paths directly; they go through here
 Current implementation: encrypted SQLite (``core/storage.py`` on ``core/vault.py``, SQLCipher).
 Planned: project files + attachments.
 """
+from ..diagnostics import guarded
 from ..storage import (get_revision as _get_revision, latest_article as _latest_article, list_revisions as _list_revisions,
                        open_source as _open_source, restore_revision as _restore_revision, save_article as _save_article,
                        source_file as _source_file)
@@ -12,7 +13,7 @@ from ..storage import (get_revision as _get_revision, latest_article as _latest_
 class StorageManager:
     def save_article(self, data):
         """Persist a draft request ``{"draft": {...}}`` to local storage."""
-        return _save_article(data)
+        return guarded('article_save', _save_article, data)
 
     def open_source(self, data):
         """보관한 취재자료 원본을 기본 프로그램으로 연다 ``{"sourceId": ...}``."""
@@ -36,4 +37,4 @@ class StorageManager:
 
     def restore_revision(self, article_id, revision_no):
         """옛 저장본을 새 최신 저장본으로 복원한다(이력은 지우지 않음)."""
-        return _restore_revision(article_id, revision_no)
+        return guarded('version_restore', _restore_revision, article_id, revision_no)

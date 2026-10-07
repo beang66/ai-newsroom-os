@@ -25,6 +25,7 @@ const PIXEL = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 const AI = {
   headlines: { headline_candidates: ["스텁 제목 하나", "스텁 제목 둘", "스텁 제목 셋"] },
   subtitles: { subtitle_candidates: ["스텁 부제 하나", "스텁 부제 둘", "스텁 부제 셋"] },
+  subtitle_editorial_finish: { subtitle_1: "스텁 부제 하나", subtitle_2: "스텁 부제 둘", subtitle_3: "스텁 부제 셋" }, // su4228 v30 최종 교열 단계
   photo_keywords: { keywords: ["stub chip", "stub wafer", "stub lab"] },
   article_flow_summary: { paragraphs: ["스텁 흐름 하나", "스텁 흐름 둘", "스텁 흐름 셋"], advice: "" },
 };

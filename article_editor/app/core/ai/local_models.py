@@ -59,3 +59,8 @@ def generate_subtitle_drafts(facts):
     with SUBTITLE_LOCK:
         return _model('subtitle').generate([fact['model_input'] for fact in facts], max_new_tokens=58, min_new_tokens=10,
                                            num_beams=6, num_return_sequences=3, no_repeat_ngram_size=2, length_penalty=1.0)
+
+
+def model_info(kind, model_id):
+    """결과에 남기는 로컬 모델 출처 기록: 어떤 모델을 어떤 실행 방식으로, 설치돼 있었는지."""
+    return {'kind': kind, 'model': model_id, 'runtime': 'onnx', 'installed': _ready(kind)}

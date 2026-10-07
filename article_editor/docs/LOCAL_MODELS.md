@@ -138,7 +138,7 @@ python app/launcher.py --models
 |---|---|---|
 | 모델 파일(팩트체크 2.18 GB) | **`<설치 폴더>/models/`** (배포본은 exe 옆, 개발은 `article_editor/models/`) | `.env` 의 `MODELS_DIR` |
 | 매니페스트(읽기 전용, 앱에 동봉) | `_internal/models_manifest.json` | `MODELS_MANIFEST`(테스트용) |
-| 제목·부제 모델 캐시(허깅페이스) | **`<설치 폴더>/models/hf/`** | `.env` 의 `HF_HOME` / `HEADLINE_CACHE_DIR` |
+| 제목·부제 모델 캐시(허깅페이스) | **`<설치 폴더>/models/hf/`** | `.env` 의 `HF_HOME` |
 
 - 폴더째 복사하면 모델도 따라온다(포터블). `%LOCALAPPDATA%` 나 사용자 프로필(`.cache\huggingface`)에는 쓰지 않는다.
 - Program Files 처럼 쓰기 권한이 없는 곳에 두면 설치를 시작할 때 **2 GB 를 받기 전에** 안내하고 멈춘다(503):

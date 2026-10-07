@@ -33,9 +33,9 @@ class MediaAssetTests(unittest.TestCase):
         self.assertEqual(asset['local_uri'], '/api/media-assets/%s/file' % asset['id'])
 
     def test_same_bytes_same_asset_and_stored_once(self):
-        first, second = register(caption='처음'), register(caption='고친 설명', filename='b.png')
+        first, second = register(caption='처음', filename='a.png'), register(caption='다른 기사의 설명', filename='b.png')
         self.assertEqual(first['id'], second['id'])
-        self.assertEqual((second['caption'], second['filename']), ('고친 설명', 'b.png'))  # 설명만 갱신
+        self.assertEqual((second['caption'], second['filename']), ('처음', 'a.png'))  # 기본 설명은 덮어쓰지 않는다
         self.assertEqual(first['created_at'], second['created_at'])
         with vault.connect() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM media').fetchone()[0], 1)
@@ -51,6 +51,31 @@ class MediaAssetTests(unittest.TestCase):
         with vault.connect() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM media').fetchone()[0], 1)
         self.assertTrue(saved['articleId'])
+
+    def test_empty_default_caption_is_filled_once(self):
+        register()
+        self.assertEqual((register(caption='나중 설명', filename='c.png')['caption']), '나중 설명')
+        self.assertEqual(register(caption='또 다른 설명')['caption'], '나중 설명')
+
+    def test_generated_flag_never_turns_off(self):
+        self.assertFalse(register(generated=False)['generated'])
+        self.assertTrue(register(generated=True)['generated'])
+        self.assertTrue(register(generated=False)['generated'])  # 다시 등록해도 AI 생성 표시는 남는다
+        self.assertTrue(register()['generated'])
+
+    def test_usages_carry_each_articles_own_caption_from_the_latest_revision(self):
+        photo = lambda caption: [{'id': 'p1', 'data': URL, 'original': URL, 'caption': caption}]
+        first = storage.save_article({'draft': {'bodyHtml': '<p>x</p>', 'title': '기사 A', 'photos': photo('시청 앞 집회')}})['articleId']
+        second = storage.save_article({'draft': {'bodyHtml': '<p>y</p>', 'title': '기사 B', 'photos': photo('자료 사진')}})['articleId']
+        storage.save_article({'draft': {'articleId': first, 'bodyHtml': '<p>x2</p>', 'title': '기사 A', 'photos': photo('집회 현장(수정)')}})
+        storage.save_article({'draft': {'bodyHtml': '<p>z</p>', 'title': '사진 없는 기사'}})
+        asset = register(caption='기본 설명')
+        usages = sorted((u['articleId'], u['title'], u['photoId'], u['caption']) for u in asset['usages'])
+        self.assertEqual(usages, sorted([(first, '기사 A', 'p1', '집회 현장(수정)'), (second, '기사 B', 'p1', '자료 사진')]))
+        self.assertEqual(asset['caption'], '기본 설명')
+        self.assertEqual(media_assets.get_media_asset(asset['id'])['usages'], asset['usages'])
+        storage.save_article({'draft': {'articleId': second, 'bodyHtml': '<p>y2</p>', 'title': '기사 B'}})  # 최신본에서 사진을 뺌
+        self.assertEqual([u['articleId'] for u in media_assets.get_media_asset(asset['id'])['usages']], [first])
 
     def test_get_and_file(self):
         asset = register()

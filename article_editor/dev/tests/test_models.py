@@ -86,10 +86,8 @@ class PathDefaultsTests(unittest.TestCase):
         if not (self._configured('MODELS_DIR') or os.environ.get('MODELS_DIR')):
             # 예전 위치를 옮기지 못한 PC(다른 드라이브 등)에서는 예전 위치를 그대로 쓴다(config._models_dir)
             self.assertIn(config.MODELS_DIR, (config.APP_DATA / 'models', config.APP_ROOT / 'models'))
-        if not (self._configured('HF_HOME') or self._configured('HEADLINE_CACHE_DIR')):
-            expected = str(config.MODELS_DIR / 'hf')
-            self.assertEqual(config.HF_HOME, expected)
-            self.assertEqual(config.HEADLINE_CACHE, expected)
+        if not self._configured('HF_HOME'):
+            self.assertEqual(config.HF_HOME, str(config.MODELS_DIR / 'hf'))
 
 
 class ModelInstallTests(unittest.TestCase):

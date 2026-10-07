@@ -117,17 +117,21 @@ class SourceIndexTests(unittest.TestCase):
             self.assertTrue(self.status()[3].startswith('future-chunker:'))
         self.assertEqual(self.chunk.call_count, 3)
 
-    def test_delete_removes_index_but_preserves_shared_vectors(self):
+    def test_delete_removes_index_and_own_vectors_but_preserves_shared_ones(self):
         source_index.index_source(self.sid)
         other, _ = storage.save_source('other.txt', b'other', self.material['content'])
         source_index.index_source(other)
+        keys = lambda sid: {row[0] for row in db.execute('SELECT vector_key FROM source_chunks WHERE source_id = ?', (sid,))}
         with vault.connect() as db:
-            count = db.execute('SELECT count(*) FROM embedding_vectors').fetchone()[0]
+            mine, theirs = keys(self.sid), keys(other)
+        self.assertTrue(mine & theirs)  # 같은 본문이라 대부분의 벡터를 함께 쓴다
         sources.delete_source(self.sid)
         self.assertIsNone(self.status())
         self.assertEqual(self.stored_chunks(), [])
         with vault.connect() as db:
-            self.assertEqual(db.execute('SELECT count(*) FROM embedding_vectors').fetchone()[0], count)
+            left = {row[0] for row in db.execute('SELECT key FROM embedding_vectors')}
+        self.assertTrue(theirs <= left)  # 다른 자료가 쓰는 벡터는 남는다
+        self.assertFalse((mine - theirs) & left)  # 지운 자료만 쓰던 벡터는 사라진다
         self.assertEqual(source_index.index_source(other), 'ready')
 
     def test_upload_returns_job_without_waiting_and_job_finishes(self):

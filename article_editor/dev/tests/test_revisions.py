@@ -55,6 +55,11 @@ class RevisionHistoryTests(unittest.TestCase):
         self.assertEqual(again['revisionNo'], 4)
         self.assertEqual(len(storage.list_revisions(self.aid)['revisions']), 4)
 
+    def test_preview_of_old_draft_without_content_uses_snapshot_text_rule(self):
+        aid = storage.save_article({'draft': {'bodyHtml': '<p>가 &amp; 나</p><p><s>지운 말</s>다</p>', 'title': '옛 원고'}})['articleId']
+        self.assertEqual(storage.get_revision(aid, 1)['content'], '가 & 나\n다')
+        self.assertEqual(storage.get_revision(aid, 1)['content'], storage.create_snapshot(aid)['body_text'])
+
     def test_restoring_the_latest_changes_nothing(self):
         self.assertEqual(storage.restore_revision(self.aid, 3)['revisionNo'], 3)
         self.assertEqual(len(storage.list_revisions(self.aid)['revisions']), 3)

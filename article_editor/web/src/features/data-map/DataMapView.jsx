@@ -20,6 +20,7 @@ import {
 import { dataMapApi } from "../../api/datamap.js";
 import { TYPES } from "./constants.js";
 import { FILE_KINDS } from "./domain/files.js";
+import { articleUuid } from "./domain/coreProjection.js";
 import {
   filterNodes,
   getContext,
@@ -35,7 +36,7 @@ import "./data-map.css";
 
 // Data Map — 보관함 화면의 data-map-slot 안에 들어가는 기능 화면.
 // datamap/src/App.jsx 에서 독립 실행용 껍데기(가짜 헤더·사이드바·탭, 데모 데이터, 파일 추가/삭제)를 걷어 냈다.
-// 데이터는 api(기본: web/src/api/datamap.js, 코어 latestArticle)로만 받는다.
+// 데이터는 api(기본: web/src/api/datamap.js, 코어 읽기 모델 knowledge-map)로만 받는다.
 export default function DataMapView({ api = dataMapApi, workspaceId, articleId }) {
   const searchInput = useRef(null);
   useEffect(() => {
@@ -161,8 +162,8 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
         )}
         {graph && (
           <p>
-            아직 저장된 기사가 없습니다. 기사 작성 화면에서 기사를 저장하면
-            그 기사와 연결된 취재자료가 여기 관계망으로 표시됩니다.
+            아직 저장된 기사나 취재자료가 없습니다. 기사 작성 화면에서 기사를
+            저장하면 기사와 연결된 취재자료가 여기 관계망으로 표시됩니다.
           </p>
         )}
       </div>
@@ -171,7 +172,7 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
   const panelWidth = selected ? contextWidth : overviewWidth;
   const setPanelWidth = selected ? setContextWidth : setOverviewWidth;
   const hasFilter = project !== "all" || kind !== "all" || query;
-  const shownArticleId = graph.nodes.find((n) => n.kind === "article")?.id;
+  const currentSaved = Boolean(articleId) && index.byId.has(articleUuid(articleId));
   const articles = graph.nodes.filter(
     (n) =>
       n.kind === "article" && (project === "all" || n.projectId === project),
@@ -183,9 +184,9 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
     >
       <div className="map-workspace">
         <MapViews view={view} onView={navigate} count={visits.length} />
-        {shownArticleId !== articleId && (
+        {!currentSaved && (
           <p className="dm-scope-note" role="note">
-            가장 최근에 저장된 기사 기준입니다. 지금 기사를 저장하면 관계망에
+            지금 쓰는 기사는 아직 저장되지 않아 관계망에 없습니다. 저장하면
             반영됩니다.
           </p>
         )}

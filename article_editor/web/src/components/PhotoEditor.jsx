@@ -256,11 +256,6 @@ export default function PhotoEditor({
     }
   };
 
-  const handleMouseLeave = () => {
-    setCursorPos((prev) => ({ ...prev, visible: false }));
-    handleMouseUp();
-  };
-
   // 단계별 되돌리기 (Undo)
   const handleUndo = () => {
     if (historyIndex > 0) {

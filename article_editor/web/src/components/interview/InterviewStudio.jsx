@@ -10,11 +10,9 @@ import {
   Check,
   Download,
   Search,
-  Volume2,
   FileText,
   Users,
   Clock,
-  Sparkles,
   AlignLeft,
   MessageSquare,
   FileAudio,
@@ -36,7 +34,6 @@ function formatDuration(seconds) {
 
 export default function InterviewStudio({ onReturnToArticle }) {
   // 1. 녹음 파일 및 인터뷰 상태
-  const [audioFile, setAudioFile] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
   const [fileName, setFileName] = useState("");
   const [dialogues, setDialogues] = useState([]);
@@ -62,7 +59,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
   // 가상 오디오 타이머 및 실제 Audio element ref
   const audioRef = useRef(null);
   const fileInputRef = useRef(null);
-  const timelineRef = useRef(null);
 
   // 오디오 객체 재생/시간 제어
   useEffect(() => {
@@ -93,7 +89,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
-      setAudioFile(file);
       setFileName(file.name);
       const url = URL.createObjectURL(file);
       setAudioUrl(url);

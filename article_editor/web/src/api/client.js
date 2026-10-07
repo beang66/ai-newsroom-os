@@ -26,7 +26,7 @@ export function createApi(base = "") {
       let data = {};
       try {
         data = await r.json();
-      } catch (_) {
+      } catch {
         /* non-JSON error body */
       }
       throw Error(data.error || "요청을 완료하지 못했어요.");

@@ -30,7 +30,6 @@ const REVIEW_BADGE = ["검토 필요", "bg-slate-100 text-slate-700 border-slate
  * 팩트체크 및 근거자료 검증 우측 슬라이더(Drawer) 컴포넌트
  */
 export default function FactCheckDrawer({
-  isOpen,
   onClose,
   article,
   setArticle,

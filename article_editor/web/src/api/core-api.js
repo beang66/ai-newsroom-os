@@ -27,6 +27,7 @@ export const ROUTES = Object.freeze({
   transcribe: "/api/interview/transcribe",
   materialsExtract: "/api/materials/extract",
   sources: "/api/sources",
+  knowledgeMap: "/api/knowledge-map",
   sourcesOpen: "/api/sources/open",
   sourceFile: (id) => "/api/sources/" + encodeURIComponent(id) + "/file",
   unsplashSearch: "/api/unsplash/search",
@@ -86,8 +87,10 @@ export function createCoreApi(transport) {
     /** 자료 파일(PDF·DOCX·HWP·HWPX·TXT) 텍스트 추출 → { text, chars, format } */
     extractText: (filename, data, signal) =>
       transport.json(ROUTES.materialsExtract, { filename, data }, signal),
-    /** 보관한 취재자료 목록 → { sources: [{ id, name, ..., index: { state: pending|indexing|ready|failed, chunks } }] } */
+    /** 저장된 취재자료 목록(최신순) → { sources: [{ id, name, format, size, chars, createdAt, usedBy:[{articleId,title}], index }] } */
     listSources: (signal) => transport.json(ROUTES.sources, null, signal),
+    /** 기사·자료·고정본과 실제 연결(읽기 모델) → { articles, sources, snapshots, entities, edges:[{source,target,relation}] } */
+    knowledgeMap: (signal) => transport.json(ROUTES.knowledgeMap, null, signal),
     /** 보관한 취재자료 원본을 이 PC 의 기본 프로그램으로 열기 */
     openSource: (sourceId, signal) =>
       transport.json(ROUTES.sourcesOpen, { sourceId }, signal),

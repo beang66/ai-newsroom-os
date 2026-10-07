@@ -55,6 +55,14 @@ CREATE TRIGGER IF NOT EXISTS article_snapshots_no_update BEFORE UPDATE ON articl
 BEGIN SELECT RAISE(ABORT, 'article_snapshots are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS article_snapshots_no_delete BEFORE DELETE ON article_snapshots
 BEGIN SELECT RAISE(ABORT, 'article_snapshots are immutable'); END;
+CREATE TABLE IF NOT EXISTS processing_jobs (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, type TEXT NOT NULL, status TEXT NOT NULL,
+  progress REAL NOT NULL DEFAULT 0,
+  input_resource_type TEXT NOT NULL, input_resource_id TEXT NOT NULL,
+  output_resource_type TEXT, output_resource_id TEXT,
+  error_code TEXT, error_message TEXT, retryable INTEGER,
+  cancel_requested INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT, finished_at TEXT);
 """
 # article_snapshots: 검증·변환용 고정본(계약 ArticleSnapshot). 이력 줄을 참조하지 않고 내용을 **복사해** 둔다 —
 # 이력이 MAX_REVISIONS 로 정리돼도 남는다. 두 트리거 때문에 한 번 쓴 줄은 고치거나 지울 수 없다(코드 실수로도).

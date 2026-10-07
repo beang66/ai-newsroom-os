@@ -59,7 +59,7 @@ HTTP 방식 Windows EXE에서 팀 계정으로 로그인하고, 기사 한 건�
 | DEBT-005 | `dev/tests/vault_fixture.py:use_temp_vault`, `test_server.py:test_materials_extract` | 워커 종료 전 임시 DB/키 복구·삭제; 잠금/WinError 32 관찰 |
 | DEBT-006 | `web/src/components/EditorialAssist.jsx:useAutosave` | 저장 요청 중첩·첫 ID 재사용·응답 순서 위험(실사용 재현 후속) |
 | DEBT-007 | `web/src/App.jsx:App` | 최근 원고 조회 실패를 빈 저장소로 취급 |
-| DEBT-008 | `app/core/api.py:Handler.do_GET` | latestArticle의 RequestError를 JSON 오류로 변환하지 않음 |
+| ~~DEBT-008~~ | `app/core/api.py:Handler.do_GET` | ~~latestArticle의 RequestError를 JSON 오류로 변환하지 않음~~ — 해결: 다른 GET 처럼 오류 본문(JSON)으로 응답 |
 
 새 테스트를 실행하지 않는다. 직전 작성한 회귀 시나리오는 자동 수집에서 제외하고
 ignored `temp/deferred-basic-storage-flow.py`에 보관했다. 실제 수정 때 필요한 사례만 다시 가져온다.

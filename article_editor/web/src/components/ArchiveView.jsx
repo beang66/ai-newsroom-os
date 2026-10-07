@@ -46,8 +46,8 @@ export default function ArchiveView({ article }) {
            ══════════════════════════════════════════════════════════ */}
         <div className="lg:col-span-8 flex flex-col">
 
-          {/* 1. 상단 메인 작업 공간 (와이드 상단 바디) */}
-          <div className="w-full min-h-[380px] lg:min-h-[420px] bg-white/80 backdrop-blur-xl rounded-t-[36px] rounded-tr-[36px] rounded-br-[32px] border-t border-x border-white/90 shadow-[6px_10px_24px_rgba(40,35,25,0.08),0_2px_8px_rgba(40,35,25,0.04)] relative overflow-visible">
+          {/* 1. 상단 메인 작업 공간 (와이드 상단 바디) — 여기가 Data Map 이 들어갈 자리다(2026-10-07 확정, 화면 이식은 M5) */}
+          <div data-testid="data-map-slot" className="w-full min-h-[380px] lg:min-h-[420px] bg-white/80 backdrop-blur-xl rounded-t-[36px] rounded-tr-[36px] rounded-br-[32px] border-t border-x border-white/90 shadow-[6px_10px_24px_rgba(40,35,25,0.08),0_2px_8px_rgba(40,35,25,0.04)] relative overflow-visible">
             {/* 우측 하단 미디어 패널 상단부와 맞닿는 바닥 보더 (우측 바닥 그림자 라인) */}
             <div className="absolute bottom-0 right-0 w-[58%] md:w-[58%] h-[1px] bg-white/90 shadow-[0_4px_12px_rgba(40,35,25,0.08)]" />
           </div>

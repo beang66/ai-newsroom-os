@@ -37,10 +37,14 @@ class AIManager:
         """팩트체크에 필요한 모델·런타임 준비 상태."""
         from ..ai.factcheck import paths
         deps = {name: importlib.util.find_spec(name) is not None
-                for name in ('torch', 'transformers', 'onnxruntime', 'tokenizers', 'numpy')}
+                for name in paths.embedding_dependencies()}
+        embedding_ready = False
+        if deps['numpy']:
+            from ..ai.factcheck.retrieval import create_encoder
+            embedding_ready = create_encoder().available()
         models = {
             'judge': (paths.JUDGE_DIR / 'model.onnx').is_file() and (paths.JUDGE_DIR / 'judge.json').is_file(),
-            'embedding': (paths.EMBEDDING_DIR / 'model.safetensors').is_file(),
+            'embedding': embedding_ready,
             'boundary': (paths.BOUNDARY_DIR / 'model.onnx').is_file(),  # 없으면 규칙만으로 청킹
         }
         return {'ready': all(deps.values()) and models['judge'] and models['embedding'],

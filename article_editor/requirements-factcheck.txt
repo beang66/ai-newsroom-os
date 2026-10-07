@@ -1,12 +1,8 @@
-# 팩트체크·의미 청킹 (app/core/ai/factcheck) — 2026-10-05: 판정기는 ONNX(onnxruntime+tokenizers), torch·transformers 는 임베딩용
-# Qwen3(판정·임베딩)은 transformers>=4.51 이 필요하다. 제목·부제는 ONNX 로 옮겨 transformers 를 쓰지 않으므로
-# requirements-headline.txt(==4.46.2) 와 같은 환경에 설치해도 된다(2026-10-02 해결).
+# Fact-check judge, embedding and semantic boundaries use ONNX Runtime.
+# torch/transformers are needed only for dev/tools conversion/reference checks.
 numpy>=2.0
-torch>=2.8
-transformers>=4.51
 onnxruntime>=1.20
 tokenizers>=0.21
-safetensors>=0.4
 # 자료 파일 텍스트 추출(core/documents.py): PDF·옛 HWP. DOCX·HWPX 는 표준 라이브러리
 pypdf>=5.0
 olefile>=0.47

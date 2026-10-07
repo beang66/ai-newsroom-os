@@ -1,5 +1,9 @@
 # 로컬 모델 — 앱 동봉/다운로드 설계 (초안)
 
+> **모델 호스팅 완료(2026-10-07):** 사용자 업로드 완료, `app/models_manifest.json`의 5개 모델 `base`가 Hugging Face 주소로 연결되어 있다. 아래 옛 호스팅 미정 설명은 과거 기록이다. 실제 다운로드 검증은 EXE 빌드 후로 유예한다.
+
+> **2026-10-07 현재:** 임베딩도 ONNX FP32로 연결했다. 제품 추론은 ONNX Runtime + tokenizers + NumPy를 사용한다. 아래 과거 크기·torch 의존성 표는 당시 기록이며 현재 임베딩은 [EMBEDDING_ONNX.md](./EMBEDDING_ONNX.md)를 따른다. 사용자 요청으로 추가 검증은 후속 작업이다.
+
 - 상태: **확정(2026-10-02) — B안 구현 완료** (§3·§7). 남은 결정은 §6
 - 관련: `../packaging/README.md`, `docs/IPC_MIGRATION.md`, `../ARCHITECTURE.md`(model_versions·Update Manager)
 - **2026-10-05 변경:** 팩트체크 판정기를 `Qwen3-0.6B + v10 LoRA(torch·peft)`에서 **`factcheck-judge-0.6b-v2`(ONNX, LoRA 병합본 2.4 GB)**로 교체.

@@ -10,9 +10,20 @@ from app_paths import WORKSPACE
 from ... import config
 
 JUDGE_DIR = Path(os.environ.get('FACTCHECK_JUDGE_DIR') or config.MODELS_DIR / 'factcheck-judge-0.6b-v3')  # ONNX 판정기
-EMBEDDING_DIR = Path(os.environ.get('ARCHIVE_EMBEDDING_MODEL_PATH') or config.MODELS_DIR / 'embedding-qwen3-0.6b')
+EMBEDDING_DIR = Path(os.environ.get('ARCHIVE_EMBEDDING_MODEL_PATH') or config.MODELS_DIR / 'embedding-qwen3-0.6b-onnx')
+TORCH_EMBEDDING_DIR = config.MODELS_DIR / 'embedding-qwen3-0.6b'
 BOUNDARY_DIR = Path(os.environ.get('BOUNDARY_MODEL_DIR') or config.MODELS_DIR / 'boundary-roberta-base-v3')
 RUNTIME_DIR = WORKSPACE / 'factcheck'  # 임베딩 캐시·라우팅 로그
+
+
+def embedding_runtime():
+    """ONNX in production; torch is an explicit development override."""
+    return 'torch' if os.getenv('FACTCHECK_EMBEDDING_RUNTIME') == 'torch' else 'onnx'
+
+
+def embedding_dependencies():
+    names = ('onnxruntime', 'tokenizers', 'numpy')
+    return names + ('torch', 'transformers') if embedding_runtime() == 'torch' else names
 
 
 class _Settings:

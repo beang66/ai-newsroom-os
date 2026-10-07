@@ -20,12 +20,12 @@ from typing import Iterable
 import numpy as np
 
 from ... import vault
-from .paths import EMBEDDING_DIR
+from . import paths
 MODEL = "Qwen/Qwen3-Embedding-0.6B"
 REVISION = "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
 TASK = "Given a web search query, retrieve relevant passages that answer the query"
 MODEL_ID = f"{MODEL}@{REVISION}:last-token:l2:1024:8192:{TASK}"
-MODEL_PATH = EMBEDDING_DIR
+MODEL_PATH = paths.TORCH_EMBEDDING_DIR
 
 DEFAULT_K = 10
 MAX_K = 150
@@ -123,11 +123,19 @@ class QwenEncoder:
         return np.concatenate(result, axis=0)
 
 
+def create_encoder():
+    """Preserve the embedding space/cache keys; select only the inference runtime."""
+    if paths.embedding_runtime() == 'torch':
+        return QwenEncoder()
+    from .onnx_embedding import OnnxQwenEncoder
+    return OnnxQwenEncoder(paths.EMBEDDING_DIR, query_input)
+
+
 class VectorCache:
     """Persistent model/role/text keyed embedding cache — 암호화 저장소(vault)의 embedding_vectors 테이블."""
 
     def __init__(self, encoder: QwenEncoder | None = None):
-        self.encoder = encoder or QwenEncoder()
+        self.encoder = encoder if encoder is not None else create_encoder()
         self.lock = threading.RLock()
 
     @staticmethod
@@ -152,6 +160,9 @@ class VectorCache:
             raise ValueError(f"Unknown embedding role: {role}")
 
         keys = [vector_key(text, role) for text in texts]
+        # TODO(debt: DEBT-002): 캐시 미스의 모델 추론 동안 DB 연결도 열린 채로 유지된다.
+        # _migrate가 UPDATE를 수행한 연결이면 긴 추론 동안 쓰기 잠금까지 유지할 수 있다.
+        # 캐시 읽기/연결 해제 → 모델 계산 → 짧은 저장 트랜잭션으로 분리할 것.
         with self.lock, vault.connect() as db:
             found: dict[str, np.ndarray] = {}
             for key in dict.fromkeys(keys):

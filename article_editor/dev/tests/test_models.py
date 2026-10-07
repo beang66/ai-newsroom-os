@@ -187,6 +187,32 @@ class ModelInstallTests(unittest.TestCase):
         result = ModelManager().install(source=str(source))
         self.assertTrue(result['models'][0]['installed'])
 
+    def test_start_install_runs_in_background_and_finishes(self):
+        # 화면이 쓰는 경로(start_install → 스레드 → install). 예전에는 start_install 이 먼저 _busy 를 세워 install 이 429 로 자기 자신을 거절했다
+        import time
+        source = self.root / 'src'
+        for name, data in FILES.items():
+            path = source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        manager = ModelManager()
+        manager.start_install({'modelId': 'stub-model', 'from': str(source)})
+        for _ in range(100):
+            if not manager.status()['busy']:
+                break
+            time.sleep(0.05)
+        status = manager.status()
+        self.assertFalse(status['busy'])
+        self.assertIsNone(status.get('lastError'))
+        self.assertTrue(status['models'][0]['installed'])
+
+    def test_second_start_while_installing_is_refused(self):
+        manager = ModelManager()
+        manager._busy = True
+        with self.assertRaises(RequestError) as caught:
+            manager.start_install({'modelId': 'stub-model'})
+        self.assertEqual(caught.exception.status, 429)
+
     def test_missing_source_reports(self):
         self.write_manifest(base='')
         with self.assertRaises(RequestError) as caught:

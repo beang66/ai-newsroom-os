@@ -207,16 +207,17 @@ class ModelManager:
 
     def _run(self, model_id: str, source: str) -> None:
         try:
-            self.install(model_id=model_id, source=source)
+            self.install(model_id=model_id, source=source, _claimed=True)  # start_install 이 이미 설치 중 표시를 해 두었다
         except RequestError as error:
             with self._lock:
                 self._last_error = {'status': error.status, 'message': error.message}
             self._busy = False
 
-    def install(self, model_id: str = '', source: str = '', on_progress=None) -> dict:
-        """모델을 설치한다. `source` 는 URL 또는 로컬/UNC 폴더(매니페스트 base 보다 우선)."""
+    def install(self, model_id: str = '', source: str = '', on_progress=None, _claimed: bool = False) -> dict:
+        """모델을 설치한다. `source` 는 URL 또는 로컬/UNC 폴더(매니페스트 base 보다 우선).
+        _claimed: start_install 이 이미 설치 중(_busy)으로 표시하고 넘긴 경우 — 다시 검사하면 자기 자신을 거절한다."""
         with self._lock:
-            if self._busy:
+            if self._busy and not _claimed:
                 raise RequestError('이미 모델을 받는 중입니다.', 429)
             self._busy = True
 

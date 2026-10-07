@@ -1,4 +1,5 @@
 """저장 위치 이전(app_paths.migrate_legacy): 기사는 내 문서로, 나머지는 앱 데이터로, 이미 있는 파일은 덮어쓰지 않는다."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 import tempfile
 import unittest

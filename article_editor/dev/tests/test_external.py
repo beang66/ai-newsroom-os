@@ -1,4 +1,5 @@
 """외부 재판정(임시): 숫자 표기 정규화·관련 근거 신호, 그리고 OpenAI 로 무엇을 보내는지(가짜 호출로 확인)."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 import unittest
 from pathlib import Path

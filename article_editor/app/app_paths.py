@@ -67,6 +67,8 @@ ENV_DIRS = [APP_DATA, APP_ROOT, *list(APP_ROOT.parents)[:3]]
 
 def env_lines():
     """``.env`` 파일들을 가까운 순서대로 읽어 줄 단위로 돌려준다."""
+    if os.environ.get('AI_NEWSROOM_SKIP_DOTENV') == '1':  # 테스트: 개발자의 실제 키·테스트 계정을 읽지 않는다
+        return
     for folder in ENV_DIRS:
         path = folder / '.env'
         if path.is_file():

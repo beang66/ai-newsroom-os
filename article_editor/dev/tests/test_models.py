@@ -5,6 +5,7 @@
     python -m unittest discover -s dev/tests -p 'test_*.py'
 """
 from __future__ import annotations
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 
 import hashlib
 import json

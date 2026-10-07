@@ -1,4 +1,5 @@
 """팩트체크 기록(core/factcheck_memo.py + AIManager): 이미 판정한 (문장, 자료)는 다시 돌리지 않고 기록을 쓴다."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 import types
 import unittest

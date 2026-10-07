@@ -1,5 +1,6 @@
 """공용 테스트 계정 자동 로그인: 켜져 있으면 상태 조회·토큰 요청 때 로그인, 끄면 공용 계정 세션은 로그아웃,
 배포본·계정 미설정이면 쓰지 않는다. 비밀번호·토큰은 상태에 나오지 않는다. (Supabase 는 가짜)"""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 import tempfile
 import unittest

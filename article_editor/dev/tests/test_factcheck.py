@@ -3,6 +3,7 @@
 모델이 없어도 도는 계약 검사 + 모델이 설치돼 있을 때만 도는 실제 판정 검사.
 모델 설치: ModelManager.install(model_id=..., source=<폴더>) — docs/LOCAL_MODELS.md
 """
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import json
 import unittest
 from pathlib import Path

@@ -1,4 +1,5 @@
 """화면 강조 위치: 여러 문장짜리 근거 청크 안에서 주장과 맞닿은 구간만 비교해 달라진 단어를 찾는다(window=True)."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 import unittest
 from pathlib import Path

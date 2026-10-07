@@ -5,6 +5,7 @@ Behaviour and assertions are preserved from the original single-file suite.
 
 실행 코드는 app/ 아래에 있으므로 여기서 sys.path 를 채운다 (dev/tests → ../../app).
 """
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 from pathlib import Path
 
@@ -75,14 +76,14 @@ class ServerTests(ApiTestCase):
         self.assertEqual(self.request('/api/assist', {'kind': 'flow', 'body': 'a' * 90}, 'https://other.example')[0], 403)
 
     def test_missing_unsplash_key(self):
-        with patch.dict(os.environ, {'UNSPLASH_ACCESS_KEY': ''}):
+        with patch.dict(os.environ, {'UNSPLASH_ACCESS_KEY': ''}), patch.object(core_config, 'AI_BACKEND', 'local'):  # 'local' 로 고정: 기본값(remote)이면 실제 백엔드로 나간다
             self.assertEqual(self.request('/api/unsplash/search?q=test')[0], 503)
 
     def test_search_validates_empty_query(self):
         self.assertEqual(self.request('/api/unsplash/search?q=')[0], 400)
 
     def test_missing_openai_key(self):
-        with patch.dict(os.environ, {'OPENAI_API_KEY': '', 'USE_LOCAL_MODELS': 'false'}):
+        with patch.dict(os.environ, {'OPENAI_API_KEY': '', 'USE_LOCAL_MODELS': 'false'}), patch.object(core_config, 'AI_BACKEND', 'local'):
             self.assertEqual(self.request('/api/assist', {'kind': 'metadata', 'requested': 'headline', 'body': '가' * 100})[0], 503)
 
     def test_structured_schemas(self):

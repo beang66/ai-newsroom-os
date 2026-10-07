@@ -1,4 +1,5 @@
 """긴 문장 안 제출 대상의 오류: 관계 분해, 판정 합치기, 대응 위치 회귀 검사."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 import unittest
 from pathlib import Path

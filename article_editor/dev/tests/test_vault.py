@@ -1,4 +1,5 @@
 """암호화 로컬 저장소(core/vault.py): 평문이 파일에 없고, 틀린 키·없는 키로는 열리지 않는다."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 import unittest
 from pathlib import Path

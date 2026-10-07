@@ -1,4 +1,5 @@
 """자료 파일 텍스트 추출(core/documents.py): DOCX·HWPX·HWP·PDF·텍스트와 오류 처리."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import base64
 import io
 import struct

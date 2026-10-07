@@ -1,4 +1,5 @@
 """녹음 전사: 문장 합치기·화자 교대 규칙과, 외부 호출이 multipart 로 providers 경로를 타는지."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import base64
 import sys
 import unittest

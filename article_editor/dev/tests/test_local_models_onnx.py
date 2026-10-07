@@ -1,4 +1,5 @@
 """제목·부제 ONNX 경로가 transformers 4.46.2 원본과 같은 후보를 내는지 (변환본이 설치된 PC에서만)."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import json
 import sys
 import unittest

@@ -1,4 +1,5 @@
 """임베딩 캐시: 암호화 저장소(embedding_vectors)에 저장하고, 예전 평문 캐시는 옮긴 뒤 지운다."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sqlite3
 import sys
 import unittest

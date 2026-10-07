@@ -1,4 +1,5 @@
 """팩트체크 라우팅 로그: 기본은 평문 파일을 만들지 않는다(주장·근거 발췌 보호)."""
+import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import os
 import sys
 import tempfile

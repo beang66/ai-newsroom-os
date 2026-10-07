@@ -2,6 +2,7 @@
 // stdin JSON -> stdout JSON. 브라우저/UI는 이 파일을 직접 호출하지 않습니다.
 const registerGenerateRoutes = require("./generate-routes");
 const { suggestKeywords } = require("./ai-client");
+const { readInput } = require("./core-bridge");
 
 function getGenerateHandler() {
   let handler = null;
@@ -39,9 +40,8 @@ async function generate(platform, payload) {
 }
 
 async function main() {
-  const chunks = [];
-  for await (const chunk of process.stdin) chunks.push(chunk);
-  const input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  // 첫 줄이 작업 입력. stdin 은 닫지 않는다(코어가 외부 AI 응답을 같은 통로로 돌려준다)
+  const input = JSON.parse((await readInput()) || "{}");
 
   if (input.action === "keywords") {
     const candidates = await suggestKeywords(input.article || {});
@@ -56,13 +56,12 @@ async function main() {
 
 main()
   .then((result) => {
-    process.stdout.write(JSON.stringify({ ok: true, result }));
+    process.stdout.write(JSON.stringify({ ok: true, result }) + "\n", () => process.exit(0));
   })
   .catch((error) => {
     process.stdout.write(JSON.stringify({
       ok: false,
       error: error?.message || "platform-generator 실행에 실패했습니다.",
       status: Number(error?.status) || 500,
-    }));
-    process.exitCode = 1;
+    }) + "\n", () => process.exit(1));
   });

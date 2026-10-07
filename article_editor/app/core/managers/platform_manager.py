@@ -2,6 +2,11 @@
 
 FormatConverter의 실제 생성 로직은 platform-generator에만 둔다.
 App Core는 Node 구현을 모르도록 이 매니저를 통해 결과만 전달한다.
+
+통신은 stdin/stdout 줄 단위 JSON이다. 코어가 첫 줄에 작업을 보내면 Node 는 외부 AI 가 필요할 때
+{"type":"ai","id":N,"request":{OpenAI Responses 요청}} 줄을 내보내고, 코어가 기존 AI 경로(`ai.client.openai_call`,
+AI_BACKEND=remote 면 백엔드 프록시)로 호출해 {"type":"ai_result","id":N,"ok":true,"response":{...}} 줄로 돌려준다.
+Node 프로세스에는 OpenAI/Gemini 키를 넘기지 않는다.
 """
 from __future__ import annotations
 
@@ -9,9 +14,13 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 from ..errors import RequestError
+
+# Node 프로세스에 넘기지 않는 값(외부 AI 호출은 코어가 대신한다)
+_WITHHELD_ENV = ("OPENAI_API_KEY", "GEMINI_API_KEY", "AI_PROVIDER", "OPENAI_MODEL", "GEMINI_MODEL")
 
 
 class PlatformManager:
@@ -26,6 +35,26 @@ class PlatformManager:
         # article_editor/app/core/managers -> repository root
         return Path(__file__).resolve().parents[4] / "platform-generator"
 
+    @staticmethod
+    def _ai(request):
+        """Node 가 요청한 OpenAI Responses 호출 하나를 코어의 AI 경로로 보낸다(모델은 코어 설정을 따른다)."""
+        from .. import config
+        from ..ai.client import openai_call
+
+        if not isinstance(request, dict):
+            raise RequestError("AI 요청 형식이 올바르지 않습니다.", 400)
+        return openai_call("responses", {**request, "model": config.TEXT_MODEL, "store": False})
+
+    def _answer(self, proc, message):
+        try:
+            reply = {"type": "ai_result", "id": message.get("id"), "ok": True, "response": self._ai(message.get("request"))}
+        except RequestError as error:
+            reply = {"type": "ai_result", "id": message.get("id"), "ok": False, "error": str(error), "status": error.status}
+        except Exception:
+            reply = {"type": "ai_result", "id": message.get("id"), "ok": False, "error": "AI 요청을 처리하지 못했습니다.", "status": 502}
+        proc.stdin.write(json.dumps(reply, ensure_ascii=False) + "\n")
+        proc.stdin.flush()
+
     def _call(self, payload: dict):
         node = shutil.which("node")
         if not node:
@@ -36,29 +65,67 @@ class PlatformManager:
         if not adapter.is_file():
             raise RequestError("platform-generator 어댑터를 찾지 못했습니다.", 503)
 
+        env = {key: value for key, value in os.environ.items() if key not in _WITHHELD_ENV}
+        env["PLATFORM_AI_BRIDGE"] = "core"
         try:
-            completed = subprocess.run(
+            proc = subprocess.Popen(
                 [node, str(adapter)],
-                input=json.dumps(payload, ensure_ascii=False),
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
                 encoding="utf-8",
                 cwd=str(root),
-                timeout=self._timeout,
-                check=False,
+                env=env,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-        except subprocess.TimeoutExpired:
-            raise RequestError("플랫폼 원고 생성 시간이 초과되었습니다.", 504)
         except OSError:
             raise RequestError("플랫폼 변환 엔진을 시작하지 못했습니다.", 503)
 
-        try:
-            response = json.loads((completed.stdout or "").strip())
-        except json.JSONDecodeError:
-            raise RequestError("플랫폼 변환 엔진의 응답을 읽지 못했습니다.", 502)
+        timed_out = threading.Event()
 
+        def expire():
+            timed_out.set()
+            proc.kill()
+
+        timer = threading.Timer(self._timeout, expire)
+        timer.start()
+        response = None
+        try:
+            try:
+                proc.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                proc.stdin.flush()
+                for line in proc.stdout:
+                    try:
+                        message = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue  # Node 가 흘린 로그 줄은 건너뛴다
+                    if not isinstance(message, dict):
+                        continue
+                    if message.get("type") == "ai":
+                        self._answer(proc, message)
+                    elif "ok" in message:
+                        response = message
+                        break
+            except (BrokenPipeError, OSError, ValueError):
+                pass  # 프로세스가 먼저 끝났거나 시간이 지나 종료됨 — 아래에서 판정
+        finally:
+            timer.cancel()
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            proc.stdout.close()
+
+        if timed_out.is_set():
+            raise RequestError("플랫폼 원고 생성 시간이 초과되었습니다.", 504)
+        if response is None:
+            raise RequestError("플랫폼 변환 엔진의 응답을 읽지 못했습니다.", 502)
         if not response.get("ok"):
             status = int(response.get("status") or 502)
             if status < 400 or status > 599:

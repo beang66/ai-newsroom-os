@@ -66,10 +66,9 @@ await new Promise((r) => stub.listen(0, "127.0.0.1", r));
 const SMOKE_DOCS = fs.mkdtempSync(path.join(os.tmpdir(), "ainews-smoke-"));
 const PLATFORM_STUB = fs.mkdtempSync(path.join(os.tmpdir(), "ainews-platform-"));
 fs.writeFileSync(path.join(PLATFORM_STUB, "core-adapter.js"), `
-const chunks = [];
-process.stdin.on("data", (chunk) => chunks.push(chunk));
-process.stdin.on("end", () => {
-  const input = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+// 코어는 첫 줄에 작업을 보내고 stdin 을 닫지 않는다(외부 AI 응답용 통로) — 첫 줄만 읽는다
+require("readline").createInterface({ input: process.stdin }).once("line", (line) => {
+  const input = JSON.parse(line || "{}");
   let result;
   if (input.action === "keywords") {
     result = { candidates: [
@@ -105,10 +104,10 @@ process.stdin.on("end", () => {
       }))
     }};
   } else {
-    process.stdout.write(JSON.stringify({ ok: false, status: 400, error: "unknown action" }));
+    process.stdout.write(JSON.stringify({ ok: false, status: 400, error: "unknown action" }) + "\\n", () => process.exit(0));
     return;
   }
-  process.stdout.write(JSON.stringify({ ok: true, result }));
+  process.stdout.write(JSON.stringify({ ok: true, result }) + "\\n", () => process.exit(0));
 });
 `, "utf8");
 

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import Header from "./components/Header";
-import ProcessBar from "./components/ProcessBar";
 import Sidebar from "./components/Sidebar";
 import ArticleWriter from "./components/ArticleWriter";
 import SourceSearch from "./components/SourceSearch";
@@ -48,8 +47,8 @@ function Workspace({ initialArticle }) {
     };
   }, []);
 
-  // Sidebar collapse state
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  // Sidebar collapse state (main 디자인: 기본은 세로로 긴 슬림 사이드바 접힘)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
   // Fact check sequential state
   const [factCheckActive, setFactCheckActive] = useState(false);
@@ -110,7 +109,7 @@ function Workspace({ initialArticle }) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col font-sans selection:bg-slate-900 selection:text-white">
+    <div className="min-h-screen flex flex-col font-sans selection:bg-[#F4A940] selection:text-white bg-transparent text-[#292929]">
       {/* 1. Top Header */}
       <Header
         currentArticleTitle={article.title}
@@ -121,9 +120,8 @@ function Workspace({ initialArticle }) {
         onSession={(session) => setCore((prev) => ({ ...prev, session }))}
       />
 
-      {/* 2. Main Workspace Layout: Outer Big Glass Box Removed, Sidebar & Main Curvature preserved */}
-      <div className="flex flex-1 w-full relative overflow-x-hidden min-h-[calc(100vh-65px)] p-3 md:p-4 gap-3 md:gap-4">
-        {/* Left Sidebar attached to edge */}
+      {/* 2. Main Workspace Layout: Floating Slim Sidebar & Warm Minimal Workspace */}
+      <div className="flex flex-1 w-full relative min-h-[calc(100vh-70px)] pl-3 md:pl-5 pr-3 md:pr-6 py-2 gap-4 md:gap-5 items-start">
         <Sidebar
           isCollapsed={isSidebarCollapsed}
           setIsCollapsed={setIsSidebarCollapsed}
@@ -131,25 +129,10 @@ function Workspace({ initialArticle }) {
           setActiveTab={setActiveTab}
         />
 
-        {/* Main Content Wrapper with Top Binder Navigation */}
-        <div className="flex-1 flex flex-col min-w-0 transition-all z-20">
-          {/* Top Process Binder Navigation - 녹음 파일(interview) 화면에서는 숨김 */}
-          {activeTab !== "interview" && (
-            <ProcessBar 
-              activeTab={activeTab}
-              setActiveTab={(tab) => {
-                if (tab === "factcheck") {
-                  handleRunFactCheck();
-                } else {
-                  setActiveTab(tab);
-                }
-              }}
-            />
-          )}
-
-          {/* Main Content Solid Box */}
-          <main className="main-curved-content flex-1 py-6 px-4 md:px-8 min-w-0 transition-all">
-            {activeTab === "writer" && (
+        {/* Main Content Workspace */}
+        <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0">
+          <main className="main-warm-container flex-1 py-6 px-4 md:px-8 min-w-0 transition-all">
+            {(activeTab === "writer" || activeTab === "publish") && (
               <ArticleWriter
                 article={article}
                 setArticle={setArticle}
@@ -170,22 +153,6 @@ function Workspace({ initialArticle }) {
 
             {activeTab === "interview" && (
               <InterviewStudio onReturnToArticle={handleReturnFromInterview} />
-            )}
-
-            {/* 작성·검토 메인 화면 (미리보기 및 편집 통합) */}
-            {activeTab === "publish" && (
-              <ArticleWriter
-                article={article}
-                setArticle={setArticle}
-                onOpenSearch={() => setShowSearchModal(true)}
-                onRunFactCheck={handleRunFactCheck}
-                factCheckActive={factCheckActive}
-                factCheckIssues={factCheckIssues}
-                activeFactIndex={activeFactIndex}
-                onApplyFactFix={handleApplyFactFix}
-                onSkipFactFix={handleSkipFactFix}
-                saveStatus={saveStatus}
-              />
             )}
 
             {activeTab === "convert" && (

@@ -69,8 +69,10 @@ const server = spawn(process.env.PYTHON || "python", ["app/server.py"], {
   env: {
     ...process.env,
     PORT,
-    // 원고·취재자료는 임시 폴더에 — 실제 내 문서\AI Newsroom 을 더럽히지 않는다
+    // 원고·취재자료(암호화 저장소 vault.db 포함)는 임시 폴더에 — 실제 데이터와 키 저장소 항목 외에는 건드리지 않는다
     AI_NEWSROOM_DOCUMENTS: SMOKE_DOCS,
+    AI_NEWSROOM_APPDATA: path.join(SMOKE_DOCS, "appdata"),
+    AI_NEWSROOM_SKIP_DOTENV: "1", // 개발자의 실제 키·테스트 계정을 읽지 않는다
     USE_LOCAL_MODELS: "false",
     PYTHONIOENCODING: "utf-8",
     AI_BACKEND: "remote",
@@ -108,7 +110,9 @@ try {
   page.on("dialog", (d) => d.dismiss()); // 화면의 alert 가 테스트를 멈추지 않게
 
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
-  const go = (title) => page.locator(`button[title="${title}"]`).first().click();
+  // 사이드바(main 디자인)의 메뉴 이름 — 접힌 상태에서는 버튼 title 로 보인다
+  const NAV = { "기사 작성": "Article Writer", "녹음 파일": "Interview & Audio", "플랫폼 변환": "Publish & Convert", "보관함": "Saved Archive" };
+  const go = (title) => page.locator(`button[title="${NAV[title] || title}"]`).first().click();
 
   await page.goto(BASE);
   // 1. 코어 연결 — UI 가 계약(web/src/api)으로 /api/status·/api/session 을 받아 헤더에 반영

@@ -1,0 +1,410 @@
+{
+  "name": "11_Instagram_Generate",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const data = item.json;\n\n  const rules = {\n    instagram: {\n      output_type: 'card_news',\n\n      default_card_count: {\n        min: 3,\n        max: 5\n      },\n\n      card_count_adjustable: true,\n\n      first_card_role: 'cover',\n      middle_card_role: 'body',\n      last_card_role: 'closing',\n\n      black_card_default: true,\n\n      image_auto_insert: false,\n      image_user_selectable: true,\n\n      core_text_required: true,\n\n      one_message_per_card: true,\n\n      evidence_required: true\n    },\n\n    threads: {\n      output_type: 'short_post',\n      concise: true,\n      paragraph_style: 'short',\n      evidence_required: true\n    },\n\n    blog: {\n      output_type: 'long_form',\n      use_sections: true,\n      intro_required: true,\n      conclusion_required: true,\n      evidence_required: true\n    }\n  };\n\n  const selectedRule = rules[data.platform];\n\n  if (!selectedRule) {\n    throw new Error(\n      `지원하지 않는 플랫폼입니다: ${data.platform}`\n    );\n  }\n\n  return {\n    json: {\n      ...data,\n      platform_rules: selectedRule\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        0
+      ],
+      "id": "c3a02d26-df67-4dcf-939c-f57e808af031",
+      "name": "Platform Rules"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "GPT-5"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=당신은 뉴스 콘텐츠 편집 보조 AI입니다.\n\n사용자를 대신해 편집 방향을 임의로 결정하지 마세요.\n\n기사 원문,\n사용자가 선택한 키워드,\n사용자의 추가 요구사항,\nInstagram 작성 규칙을 기준으로\nInstagram용 Editable Draft를 생성하세요.\n\n\n[절대 규칙]\n\n1. 기사 원문에 없는 새로운 사실을 만들지 마세요.\n\n2. 기사 원문에 없는 숫자, 인물, 기관, 인용을 추가하지 마세요.\n\n3. 인과관계를 과장하거나 원문의 의미를 바꾸지 마세요.\n\n4. 사용자가 선택한 키워드는 반드시 결과에 반영하세요.\n\n5. 사용자의 요구사항을 반드시 반영하세요.\n\n\n[Instagram 결과 구성]\n\nInstagram 결과는 반드시 두 부분으로 생성합니다.\n\nA. core_text\nB. cards\n\n\n[A. core_text]\n\ncore_text는 카드뉴스와 별도로 사용할 수 있는\n기사 핵심 텍스트 축약본입니다.\n\n카드 내용을 단순히 연결해서 만들지 마세요.\n\n기사 전체에서 가장 중요한 내용을\n짧고 자연스러운 텍스트로 별도로 요약하세요.\n\ncore_text에는:\n\nheadline\nsummary\nsource_evidence\n\n가 포함되어야 합니다.\n\n\n[B. cards]\n\n카드뉴스는 기본적으로 3~5장을 권장합니다.\n\n기사 내용이 짧거나 길어서 다른 카드 수가 필요하거나,\n사용자가 카드 수를 명확하게 요구한 경우에는\n카드 수를 조정할 수 있습니다.\n\nAI가 정한 카드 수는\nrecommended_card_count에 숫자로 기록하세요.\n\n왜 그 카드 수가 적절한지도\ncard_count_reason에 작성하세요.\n\n\n[카드 역할 규칙]\n\n첫 번째 카드는 반드시:\n\nrole = \"cover\"\n\n입니다.\n\n마지막 카드는 반드시:\n\nrole = \"closing\"\n\n입니다.\n\n그 사이의 카드는 모두:\n\nrole = \"body\"\n\n입니다.\n\n\n[cover]\n\n기사 전체를 대표하는 첫 화면입니다.\n\n핵심 키워드와\n기사의 핵심을 전달하는 제목을 작성하세요.\n\n불필요하게 긴 본문은 넣지 마세요.\n\n\n[body]\n\n한 카드에는 하나의 핵심 메시지만 담으세요.\n\nheadline과 body가 같은 내용을 반복하지 않게 하세요.\n\n\n[closing]\n\n새로운 사실을 추가하면 안 됩니다.\n\n앞에서 전달한 내용을 바탕으로\n기사의 핵심 의미나 내용을 자연스럽게 정리하세요.\n\n\n[이미지 규칙]\n\n모든 카드는 기본 Black Card입니다.\n\nAI가 사진을 선택하지 마세요.\n\nAI가 Unsplash를 검색하지 마세요.\n\nAI가 이미지 URL을 생성하지 마세요.\n\n모든 카드의:\n\nselected_image_url\n\n값은 반드시 빈 문자열로 출력하세요.\n\n사진은 이후 사용자가 직접 검색하고 선택합니다.\n\n\n[근거 규칙]\n\ncore_text와 각 카드에는\nsource_evidence가 있어야 합니다.\n\nsource_evidence에는 반드시\n기사 원문에 실제 존재하는 문장 또는 구절만 넣으세요.\n\n근거 문장을 새롭게 바꾸어 쓰지 마세요.\n\n\n[입력 기사]\n\narticle_id:\n{{ $json.article_id }}\n\ntitle:\n{{ $json.title }}\n\ncontent:\n{{ $json.content }}\n\n\n[사용자가 선택한 키워드]\n\n{{ JSON.stringify($json.selected_keywords) }}\n\n\n[사용자 요구사항]\n\n{{ $json.requirements }}\n\n\n[Instagram 규칙]\n\n{{ JSON.stringify($json.platform_rules) }}\n\n\n[출력]\n\n설명문이나 Markdown을 출력하지 말고\n반드시 JSON만 출력하세요.\n\n{\n  \"article_id\": \"\",\n  \"platform\": \"instagram\",\n\n  \"recommended_card_count\": 0,\n  \"card_count_reason\": \"\",\n\n  \"core_text\": {\n    \"headline\": \"\",\n    \"summary\": \"\",\n    \"source_evidence\": []\n  },\n\n  \"cards\": [\n    {\n      \"card_id\": \"C1\",\n      \"page\": 1,\n      \"role\": \"cover\",\n\n      \"content\": {\n        \"keyword\": \"\",\n        \"headline\": \"\",\n        \"body\": \"\"\n      },\n\n      \"source_evidence\": [],\n\n      \"image\": {\n        \"editable\": true,\n        \"selected_image_url\": \"\"\n      }\n    }\n  ]\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        1344,
+        0
+      ],
+      "id": "b12b3e5b-203a-411a-b5d7-75bfe9a284d0",
+      "name": "Content Transformer",
+      "credentials": {
+        "openAiApi": {
+          "id": "TF7BLaco4hChl1xQ",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const raw = item.json.output[0].content[0].text;\n\n  const cleaned = raw\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/```$/i, '')\n    .trim();\n\n  const parsed = JSON.parse(cleaned);\n\n  return {\n    json: parsed\n  };\nreturn items.map(item => {\n  const raw = item.json.output[0].content[0].text;\n\n  const cleaned = raw\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/```$/i, '')\n    .trim();\n\n  const parsed = JSON.parse(cleaned);\n\n  return {\n    json: parsed\n  };\n});});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        0
+      ],
+      "id": "dc100340-32b9-4e13-8cce-785eb8e60592",
+      "name": "Parse Draft"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "GPT-5"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=당신은 뉴스 콘텐츠 Fact Validator입니다.\n\nInstagram Draft와 기사 원문을 비교하여\nDraft에 원문과 일치하지 않는 내용이 있는지 검사하세요.\n\nDraft를 수정하지 마세요.\n검사 결과만 JSON으로 출력하세요.\n\n\n[검사 대상]\n\n1. core_text.headline\n2. core_text.summary\n3. 모든 card의 headline\n4. 모든 card의 body\n5. 모든 source_evidence\n\n\n[검사 내용]\n\n- 원문에 없는 주장\n- 숫자 불일치\n- 인물명 불일치\n- 기관명 불일치\n- 인용문 불일치\n- 인과관계 왜곡\n- 의미 과장\n- source_evidence가 실제 원문에 존재하는지\n\n\n[기사 원문]\n\n{{ $('Normalize Instagram Input').item.json.content }}\n\n\n[Instagram Draft]\n\n{{ JSON.stringify($('Parse Draft').item.json) }}\n\n\n[출력]\n\n반드시 JSON만 출력하세요.\n\n{\n  \"validator\": \"fact_check\",\n\n  \"pass\": true,\n\n  \"unsupported_claims\": [],\n  \"number_mismatches\": [],\n  \"name_mismatches\": [],\n  \"quote_mismatches\": [],\n  \"evidence_mismatches\": [],\n  \"distortion_warnings\": [],\n\n  \"core_text_result\": {\n    \"verified\": true,\n    \"warnings\": []\n  },\n\n  \"card_results\": [\n    {\n      \"card_id\": \"C1\",\n      \"verified\": true,\n      \"warnings\": []\n    }\n  ]\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        1888,
+        0
+      ],
+      "id": "4f9ae7dc-95c9-433b-93ee-e5a1c591eebe",
+      "name": "Validator 1 - Fact Check",
+      "credentials": {
+        "openAiApi": {
+          "id": "TF7BLaco4hChl1xQ",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const raw = item.json.output[0].content[0].text;\n\n  const cleaned = raw\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/```$/i, '')\n    .trim();\n\n  const parsed = JSON.parse(cleaned);\n\n  return {\n    json: parsed\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2176,
+        0
+      ],
+      "id": "c7b6b046-5626-4687-8817-beb07acdb6dc",
+      "name": "Parse Validator 1"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "GPT-5"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=당신은 Instagram 콘텐츠 요구사항 Validator입니다.\n\nInstagram Draft가\n사용자가 선택한 키워드,\n사용자의 요구사항,\nInstagram 작성 규칙을 지켰는지 검사하세요.\n\nDraft를 수정하지 마세요.\n\n검사 결과만 JSON으로 출력하세요.\n\n\n[Instagram Draft]\n\n{{ JSON.stringify($('Parse Draft').item.json) }}\n\n\n[선택 키워드]\n\n{{ JSON.stringify($('Normalize Instagram Input').item.json.selected_keywords) }}\n\n\n[사용자 요구사항]\n\n{{ $('Normalize Instagram Input').item.json.requirements }}\n\n\n[플랫폼 규칙]\n\n{{ JSON.stringify($('Platform Rules').item.json.platform_rules) }}\n\n\n[반드시 검사할 것]\n\n1. core_text가 존재하는가\n\n2. recommended_card_count와 실제 cards 개수가 일치하는가\n\n3. 기본 카드 수가 3~5장 범위인지 확인한다.\n\n단,\n기사 내용 또는 사용자의 명시적인 요구로\n범위를 벗어난 경우에는 무조건 오류로 판단하지 말고\ncard_count_reason이 타당한지 확인한다.\n\n4. 첫 번째 카드의 role이 cover인가\n\n5. 마지막 카드의 role이 closing인가\n\n6. 첫 번째와 마지막 사이의 카드가 모두 body인가\n\n7. 사용자가 선택한 키워드가 반영되었는가\n\n8. 사용자의 요구사항이 누락되지 않았는가\n\n9. closing 카드가 새로운 사실을 추가하지 않았는가\n\n10. 모든 카드의 selected_image_url이 빈 문자열인가\n\n11. AI가 이미지를 자동으로 선택하지 않았는가\n\n12. 카드 하나에 너무 많은 핵심 내용을 넣지 않았는가\n\n\n[출력]\n\n반드시 JSON만 출력하세요.\n\n{\n  \"validator\": \"requirement_check\",\n\n  \"pass\": true,\n\n  \"missing_keywords\": [],\n  \"requirement_omissions\": [],\n  \"platform_rule_violations\": [],\n  \"important_omissions\": [],\n\n  \"structure_check\": {\n    \"core_text_exists\": true,\n    \"card_count_valid\": true,\n    \"first_card_is_cover\": true,\n    \"last_card_is_closing\": true,\n    \"middle_cards_are_body\": true,\n    \"images_empty_by_default\": true\n  },\n\n  \"card_results\": [\n    {\n      \"card_id\": \"C1\",\n      \"requirement_match\": true,\n      \"warnings\": []\n    }\n  ]\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        2416,
+        0
+      ],
+      "id": "19d240d5-bfba-4004-a8bc-a04ddbf37af0",
+      "name": "Validator 2 - Requirement Check",
+      "credentials": {
+        "openAiApi": {
+          "id": "TF7BLaco4hChl1xQ",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const raw = item.json.output[0].content[0].text;\n\n  const cleaned = raw\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/```$/i, '')\n    .trim();\n\n  const parsed = JSON.parse(cleaned);\n\n  return {\n    json: parsed\n  };\n});;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        0
+      ],
+      "id": "8ef4651d-41f3-49b8-a6c2-a8fadc90b0e4",
+      "name": "Parse Validator 2"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        752,
+        0
+      ],
+      "id": "303ddece-e6e5-485a-a66b-2003645f3bb4",
+      "name": "Receive Instagram Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json;\n\n// 혹시 데이터가 body 안에 들어오는 경우까지 대응\nconst data = raw.body || raw;\n\n// 필수값 확인\nif (!data.article_id) {\n  throw new Error(\n    `article_id가 없습니다. 현재 입력값: ${JSON.stringify(data)}`\n  );\n}\n\nif (!data.title) {\n  throw new Error(\n    `기사 title이 없습니다. 현재 입력값: ${JSON.stringify(data)}`\n  );\n}\n\nif (!data.content) {\n  throw new Error(\n    `기사 content가 없습니다. 현재 입력값: ${JSON.stringify(data)}`\n  );\n}\n\n// 키워드 처리\nconst selectedKeywords =\n  Array.isArray(data.selected_keywords)\n    ? data.selected_keywords\n    : [];\n\n// Instagram 전용 Workflow이므로\n// platform은 여기서 고정\nreturn [\n  {\n    json: {\n      article_id: data.article_id,\n      title: data.title,\n      content: data.content,\n\n      selected_keywords: selectedKeywords,\n\n      requirements: data.requirements || '',\n\n      platform: 'instagram'\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        0
+      ],
+      "id": "e7d608b2-a0a7-4b00-8b51-8bf63bd77ba8",
+      "name": "Normalize Instagram Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "const draft = $('Parse Draft').item.json;\nconst factCheck = $('Parse Validator 1').item.json;\nconst requirementCheck = $('Parse Validator 2').item.json;\n\nconst overallPass =\n  factCheck.pass === true &&\n  requirementCheck.pass === true;\n\nreturn [\n  {\n    json: {\n      article_id: draft.article_id,\n\n      platform: 'instagram',\n\n      status: overallPass\n        ? 'ready_for_user_review'\n        : 'needs_review',\n\n      output: {\n        core_text: draft.core_text || {\n          headline: '',\n          summary: '',\n          source_evidence: []\n        },\n\n        recommended_card_count:\n          draft.recommended_card_count || 0,\n\n        card_count_reason:\n          draft.card_count_reason || '',\n\n        cards: Array.isArray(draft.cards)\n          ? draft.cards\n          : []\n      },\n\n      validation: {\n        fact_check: factCheck,\n\n        requirement_check: requirementCheck,\n\n        summary: {\n          overall_pass: overallPass,\n\n          unsupported_claims:\n            factCheck.unsupported_claims?.length || 0,\n\n          number_mismatches:\n            factCheck.number_mismatches?.length || 0,\n\n          quote_mismatches:\n            factCheck.quote_mismatches?.length || 0,\n\n          evidence_mismatches:\n            factCheck.evidence_mismatches?.length || 0,\n\n          missing_keywords:\n            requirementCheck.missing_keywords?.length || 0,\n\n          requirement_omissions:\n            requirementCheck.requirement_omissions?.length || 0,\n\n          platform_rule_violations:\n            requirementCheck.platform_rule_violations?.length || 0\n        }\n      },\n\n      ui_state: {\n        editable: true,\n        evidence_visible: true,\n\n        photo_search_available: true,\n        photo_auto_insert: false,\n\n        black_card_default: true,\n\n        ready_for_render: overallPass\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2896,
+        0
+      ],
+      "id": "d2571d6e-f681-4e5d-ab44-06861969c474",
+      "name": "Build Instagram Result"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "aNaNEj76PHDVVjVA",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/aNaNEj76PHDVVjVA",
+          "cachedResultName": "14_Instagram_Render"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "article_id": "={{ $json.article_id }}",
+            "platform": "={{ $json.platform }}",
+            "status": "={{ $json.status }}",
+            "output": "={{ $json.output }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "article_id",
+              "displayName": "article_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "output",
+              "displayName": "output",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        3072,
+        0
+      ],
+      "id": "a0439953-02fb-4f9a-98e4-3e53e003d743",
+      "name": "Run Instagram Renderer"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Platform Rules": {
+      "main": [
+        [
+          {
+            "node": "Content Transformer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Transformer": {
+      "main": [
+        [
+          {
+            "node": "Parse Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Draft": {
+      "main": [
+        [
+          {
+            "node": "Validator 1 - Fact Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validator 1 - Fact Check": {
+      "main": [
+        [
+          {
+            "node": "Parse Validator 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Validator 1": {
+      "main": [
+        [
+          {
+            "node": "Validator 2 - Requirement Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validator 2 - Requirement Check": {
+      "main": [
+        [
+          {
+            "node": "Parse Validator 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Validator 2": {
+      "main": [
+        [
+          {
+            "node": "Build Instagram Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receive Instagram Request": {
+      "main": [
+        [
+          {
+            "node": "Normalize Instagram Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Instagram Input": {
+      "main": [
+        [
+          {
+            "node": "Platform Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Instagram Result": {
+      "main": [
+        [
+          {
+            "node": "Run Instagram Renderer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "09bfc365-693d-49e6-ac63-9f609c8bacf2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c1ceb0cb52463d833247b252381f9c18255416ee43df83b5dd15739bb68f96cb"
+  },
+  "nodeGroups": [
+    {
+      "id": "42fa59d7-1f10-4502-be69-9e21bbeb90ac",
+      "name": "사용자의 요구사항 반영 검수",
+      "nodeIds": [
+        "19d240d5-bfba-4004-a8bc-a04ddbf37af0",
+        "8ef4651d-41f3-49b8-a6c2-a8fadc90b0e4"
+      ]
+    },
+    {
+      "id": "66a7b8dd-25ca-4c39-a385-f39c2e91aca9",
+      "name": "원문 기사의 왜곡 여부 검수",
+      "nodeIds": [
+        "4f9ae7dc-95c9-433b-93ee-e5a1c591eebe",
+        "c7b6b046-5626-4687-8817-beb07acdb6dc"
+      ]
+    }
+  ],
+  "id": "wcNHT4v636Y5u6y2",
+  "tags": []
+}

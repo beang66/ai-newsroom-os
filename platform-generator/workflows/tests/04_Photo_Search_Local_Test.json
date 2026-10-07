@@ -1,0 +1,282 @@
+{
+  "name": "04_Photo_Search_Local_Test",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "fc4e2b70-fb5b-4df4-a793-5a6dd4f883ab",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "605e5bab-db0e-4cbd-9cf9-188784b35afd",
+              "name": "query",
+              "value": "classroom",
+              "type": "string"
+            },
+            {
+              "id": "ba9625ef-345d-4b83-ae45-82c6fc60442d",
+              "name": "orientation",
+              "value": "portrait",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        176,
+        0
+      ],
+      "id": "0734b3f2-f11b-4eb6-995d-b40220bba896",
+      "name": "Photo Search Query"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f372cb9f-5605-4265-b965-32806a83de8d",
+              "name": "query",
+              "value": "Korean education classroom",
+              "type": "string"
+            },
+            {
+              "id": "91df53ea-4987-4455-9c69-d0a5b95769b0",
+              "name": "orientation",
+              "value": "portrait",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        336,
+        0
+      ],
+      "id": "17f70cd8-c2c1-41d1-8da9-9a7eb193b49b",
+      "name": "Korean education classroom"
+    },
+    {
+      "parameters": {
+        "url": "https://api.unsplash.com/search/photos",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "{{ $json.query }}"
+            },
+            {
+              "name": "per_page",
+              "value": "=10"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        496,
+        0
+      ],
+      "id": "2493c6a7-7598-4c2a-85fb-efebe088325e",
+      "name": "Unsplash Photo Search",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "YNqWKxpfWavOVlAq",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const photos = $json.results || [];\n\nreturn [{\n  json: {\n    query: $('Photo Search Query').item.json.query,\n\n    results: photos.map(photo => ({\n      photo_id: photo.id || '',\n\n      thumbnail_url:\n        photo.urls?.small || '',\n\n      image_url:\n        photo.urls?.regular || '',\n\n      full_image_url:\n        photo.urls?.full || '',\n\n      width:\n        photo.width || null,\n\n      height:\n        photo.height || null,\n\n      photographer:\n        photo.user?.name || '',\n\n      photographer_profile:\n        photo.user?.links?.html || '',\n\n      source_url:\n        photo.links?.html || '',\n\n      download_location:\n        photo.links?.download_location || '',\n\n      description:\n        photo.description ||\n        photo.alt_description ||\n        '',\n\n      source: 'unsplash'\n    }))\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "35614b03-0d5c-47e6-a4cb-15a17c26c9f1",
+      "name": "Build Photo Results"
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = $json.results || [];\n\nif (results.length === 0) {\n  throw new Error('검색된 사진이 없습니다.');\n}\n\nconst selected = results[0];\n\nreturn [\n  {\n    json: {\n      card_id: 'C2',\n      selected_photo: selected\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        0
+      ],
+      "id": "1cd0f3e0-4674-4f1f-8f98-819558fe33c2",
+      "name": "Select Photo Test"
+    },
+    {
+      "parameters": {
+        "jsCode": "const photo = $json.selected_photo;\n\nreturn [\n  {\n    json: {\n      card_id: $json.card_id,\n\n      template: 'photo_body',\n\n      size: {\n        width: 1080,\n        height: 1350\n      },\n\n      content: {\n        keyword: '대치동 현장 취재',\n        headline: '직접 찾아간 대치동 학원가',\n        body: '작가는 여러 차례 현장을 방문하며 실제 교육 환경을 취재했다.'\n      },\n\n      image: {\n        url: photo.image_url,\n        photographer: photo.photographer,\n        source_url: photo.source_url,\n        download_location: photo.download_location\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        0
+      ],
+      "id": "9e3cf3a9-9b42-4661-8f74-d65034f3055e",
+      "name": "Build Render Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/render",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1168,
+        0
+      ],
+      "id": "dc15e03f-91b9-4ccb-8809-0f7ab06e5b8e",
+      "name": "Render Card"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const data = item.json;\n\n  return {\n    json: {\n      card_id: data.card_id || '',\n      render_status: data.success === true ? 'success' : 'error',\n      rendered_image_url: data.image_url || '',\n      file_name: data.file_name || '',\n      file_path: data.file_path || ''\n    }\n  };\n});;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        0
+      ],
+      "id": "ae79f20b-a12b-41ab-b141-b4b7fe201435",
+      "name": "Build Render Result"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Photo Search Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Photo Search Query": {
+      "main": [
+        [
+          {
+            "node": "Korean education classroom",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Korean education classroom": {
+      "main": [
+        [
+          {
+            "node": "Unsplash Photo Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsplash Photo Search": {
+      "main": [
+        [
+          {
+            "node": "Build Photo Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Photo Results": {
+      "main": [
+        [
+          {
+            "node": "Select Photo Test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Photo Test": {
+      "main": [
+        [
+          {
+            "node": "Build Render Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Render Payload": {
+      "main": [
+        [
+          {
+            "node": "Render Card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Card": {
+      "main": [
+        [
+          {
+            "node": "Build Render Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "803b3960-54e6-4fcc-ad26-de529aa274d8",
+  "meta": {
+    "instanceId": "c1ceb0cb52463d833247b252381f9c18255416ee43df83b5dd15739bb68f96cb"
+  },
+  "nodeGroups": [],
+  "id": "ToNHZfzV9EORiF6Q",
+  "tags": []
+}

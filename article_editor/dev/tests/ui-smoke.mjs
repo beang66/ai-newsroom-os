@@ -188,7 +188,7 @@ try {
   await go("플랫폼 변환");
   await see("전환 중인 기사");
   await go("보관함");
-  await see("기사 중심 통합 보관함");
+  await see("미디어 & 변환 자산");
   // 팩트체크 서랍에 올린 자료가 기사 취재자료로 남아 보관함에 보여야 한다(깨진 파일은 빠짐)
   await page.getByText("취재자료 (1건)").waitFor();
   await page.getByText("• 자료.txt").waitFor();
@@ -204,7 +204,7 @@ try {
   await go("보관함");
   await page.waitForTimeout(2500);
   await page.reload();
-  await see("기사 중심 통합 보관함");
+  await see("미디어 & 변환 자산");
   await page.getByText("취재자료 (1건)").waitFor();
   await go("기사 작성");
   assert.equal(await page.getByPlaceholder("기사 제목을 입력하거나 AI 추천을 확인하세요").inputValue(), "스텁 제목 둘");

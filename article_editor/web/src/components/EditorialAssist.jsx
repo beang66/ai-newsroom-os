@@ -12,8 +12,6 @@ import {
   saveDraft,
   factcheckArticle,
   splitSentences,
-  isDevMode,
-  bodyChunks,
   needsRecheck,
   recheckEvidence,
   externalRecheck,
@@ -96,7 +94,7 @@ export function useFactCheck(article) {
   const sourceKey = (article.sources || []).map((s) => s.id).join();
   useEffect(() => {
     if (!(article.sources || []).some((s) => s.text != null) || !splitSentences(article.content).length) return;
-    const timer = setTimeout(run, 1500);
+    const timer = setTimeout(run, 1000);
     return () => clearTimeout(timer);
   }, [article.content, sourceKey, run]);
 
@@ -127,32 +125,6 @@ export function useFactCheck(article) {
   const [focus, setFocus] = useState(null);
 
   return { results, busy, error, run, recheck, recheckBusy, recheckCount: results.filter((r) => r.needsRecheck).length, focus, setFocus };
-}
-
-/** 본문 청크 밑줄(개발 실행에서만) — 켜 두면 본문이 바뀌고 0.8초 뒤 청킹 모델로 다시 나눈다.
- *  → { dev, show, setShow, chunks([{start,end,kind,field}] | null), error } */
-export function useBodyChunks(content) {
-  const [dev, setDev] = useState(false);
-  const [show, setShow] = useState(false);
-  const [chunks, setChunks] = useState(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    isDevMode().then(setDev).catch(() => setDev(false));
-  }, []);
-  useEffect(() => {
-    if (!show) return setChunks(null);
-    let alive = true;
-    const timer = setTimeout(() => {
-      bodyChunks(content)
-        .then((c) => alive && (setChunks(c), setError("")))
-        .catch((e) => alive && setError(e?.message || String(e)));
-    }, 800);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [show, content]);
-  return { dev, show, setShow, chunks, error };
 }
 
 const MIN_BODY = 20; // 코어 assist 하한(본문 20자)

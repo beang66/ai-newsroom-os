@@ -238,6 +238,19 @@ try {
   await page.getByRole("dialog", { name: "취재자료 보기" }).getByTitle("닫기").click();
   // 검증 결과는 본문 뒤 하이라이트 층에 칠해진다(판정은 엔진 몫이라 층이 있는지만 본다)
   await page.getByTestId("fact-highlight").waitFor({ state: "attached" });
+  // 순서형 검사: 코어가 불일치로 판정한 문장이 있으면 한 건씩 보여 준다(엔진 결과에 기대지 않도록 응답을 고정한다)
+  await page.route("**/api/factcheck/run", (route) => {
+    const nodes = JSON.parse(route.request().postData()).nodes;
+    route.fulfill({ contentType: "application/json", body: JSON.stringify({ results: nodes.map((n) => ({
+      node_id: n.id, status: "CONFLICT", claim: n.text, reason: "스모크 불일치 사유", evidence: { text: "스모크 근거 문장", material_title: "자료.txt" },
+    })) }) });
+  });
+  await body.fill((await body.inputValue()) + " 순서형 검사용 새 문장을 하나 더 씁니다.");
+  const sequence = page.getByTestId("fact-sequence");
+  await sequence.getByText("문제 문장:").waitFor({ timeout: 15_000 });
+  await sequence.getByText("스모크 불일치 사유").waitFor();
+  await sequence.getByRole("button", { name: /다음|검사 종료/ }).click();
+  await page.unroute("**/api/factcheck/run");
   // 5. 취재자료 검색 창
   await page.getByText("취재자료 검색").first().click();
   await page.getByPlaceholder("자료 제목, 키워드, 내용 검색").waitFor();

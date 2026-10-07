@@ -50,44 +50,8 @@ function Workspace({ initialArticle }) {
   // Sidebar collapse state (main 디자인: 기본은 세로로 긴 슬림 사이드바 접힘)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
-  // Fact check sequential state
-  const [factCheckActive, setFactCheckActive] = useState(false);
-  const [factCheckIssues, setFactCheckIssues] = useState([]);
-  const [activeFactIndex, setActiveFactIndex] = useState(0);
-
   // Quick Source Search Modal inside Article Writer
   const [showSearchModal, setShowSearchModal] = useState(false);
-
-  const handleRunFactCheck = () => {
-    setFactCheckActive(true);
-    setActiveFactIndex(0);
-    setActiveTab("writer");
-  };
-
-  const handleApplyFactFix = () => {
-    const currentIssue = factCheckIssues[activeFactIndex];
-    if (currentIssue) {
-      const updatedContent = article.content.replace(currentIssue.targetText, currentIssue.suggestion);
-      setArticle({ ...article, content: updatedContent });
-    }
-
-    if (activeFactIndex + 1 < factCheckIssues.length) {
-      setActiveFactIndex(activeFactIndex + 1);
-    } else {
-      alert("모든 팩트체크 검증 항목이 수정 또는 처리 완료되었습니다.");
-      setFactCheckActive(false);
-      setArticle((prev) => ({ ...prev, status: "검증 완료" }));
-    }
-  };
-
-  const handleSkipFactFix = () => {
-    if (activeFactIndex + 1 < factCheckIssues.length) {
-      setActiveFactIndex(activeFactIndex + 1);
-    } else {
-      alert("팩트체크 순서형 검사가 종료되었습니다.");
-      setFactCheckActive(false);
-    }
-  };
 
   const handleConnectSource = (source) => {
     const citation = `\n\n[출처 참고: ${source.title} (${source.category})]`;
@@ -143,12 +107,6 @@ function Workspace({ initialArticle }) {
                 article={article}
                 setArticle={setArticle}
                 onOpenSearch={() => setShowSearchModal(true)}
-                onRunFactCheck={handleRunFactCheck}
-                factCheckActive={factCheckActive}
-                factCheckIssues={factCheckIssues}
-                activeFactIndex={activeFactIndex}
-                onApplyFactFix={handleApplyFactFix}
-                onSkipFactFix={handleSkipFactFix}
                 saveStatus={saveStatus}
               />
             )}

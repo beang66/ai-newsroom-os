@@ -96,33 +96,22 @@ export async function sourcePreview(source) {
 /** 개발 실행(파이썬)인지 — 청크 보기 같은 개발용 화면만 켠다 */
 export const isDevMode = async () => Boolean((await core.status()).dev);
 
+const nonSpaceCount = (text, upTo) => text.slice(0, upTo).replace(/\s/g, "").length;
+/** text 에서 공백 아닌 글자를 k 개 지난 위치 — 시작 위치는 다음 글자 앞(공백 건너뜀), 끝 위치(end)는 k 번째 글자 바로 뒤 */
+function respacedAt(text, k, end) {
+  let seen = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    if (/\s/.test(text[i])) continue;
+    if (!end && seen === k) return i;
+    seen += 1;
+    if (end && seen === k) return i + 1;
+  }
+  return text.length;
+}
+
 /** 팩트체크와 똑같이 자료를 청크로 나눈다(공백 정리 → 의미 청킹) → [{text, kind, field}] */
 export async function sourceChunks(text) {
   return (await core.semanticParse((text || "").replace(/\s+/g, " ").trim())).units || [];
-}
-
-/** 기사 본문을 같은 청킹 모델로 나눠 원문 위치로 → [{start, end, kind, field}] (개발 모드 밑줄용).
- *  청크 글자는 공백 정리본 기준이라, 정리본 → 원문 위치 표로 되돌린다. 원문에서 못 찾은 청크는 건너뛴다 */
-export async function bodyChunks(content) {
-  let clean = "";
-  const map = [];
-  for (let i = 0; i < (content || "").length; i += 1) {
-    if (/\s/.test(content[i])) {
-      if (!clean || clean.endsWith(" ")) continue;
-      clean += " ";
-    } else clean += content[i];
-    map.push(i);
-  }
-  const units = await sourceChunks(content);
-  const out = [];
-  let cursor = 0;
-  for (const u of units) {
-    const at = clean.indexOf(u.text, cursor);
-    if (at < 0 || !u.text) continue;
-    out.push({ start: map[at], end: map[at + u.text.length - 1] + 1, kind: u.kind, field: u.field });
-    cursor = at + u.text.length;
-  }
-  return out;
 }
 
 const VERDICT = { SUPPORTED: "verified", CONFLICT: "conflict" };
@@ -182,6 +171,10 @@ export async function factcheckArticle(content, files, cache = new Map()) {
   // 문장마다 본문 위치를 기억해 두면 결과를 원고에 하이라이트할 수 있다(위치는 매번 새로 — 앞 문장이 바뀌면 밀린다)
   const nodes = splitSentences(content).slice(0, 200).map((s, i) => ({ ...s, id: `s${i + 1}` }));
   if (!nodes.length) throw Error("검증할 본문 문장이 없어요. 본문을 먼저 작성해 주세요.");
+  // 띄어쓰기만 바뀐 문장은 이전 판정을 그대로 쓴다(공백을 모두 뺀 글자가 같으면 같은 문장). 위치 정보(claim)는 달라져 문장 전체로 표시된다
+  const squash = (t) => t.replace(/\s+/g, "");
+  const bySquash = new Map([...cache].map(([t, r]) => [squash(t), r]));
+  for (const n of nodes) if (!cache.has(n.text) && bySquash.has(squash(n.text))) cache.set(n.text, bySquash.get(squash(n.text)));
   const todo = [...new Map(nodes.filter((n) => !cache.has(n.text)).map((n) => [n.text, n])).values()];
   if (todo.length) {
     const materials = files.map((f) => ({ id: f.id, title: f.name, content: f.text }));
@@ -193,7 +186,11 @@ export async function factcheckArticle(content, files, cache = new Map()) {
     const r = cache.get(node.text);
     if (r.external) return externalItem(node, r, files);
     // 틀린 값 위치(코어 conflict_spans/focus_spans, 공백 정리된 문장 기준) → 원문 위치로 되돌린다
-    const pairs = (r.status !== "SUPPORTED" && node.text === r.claim ? (r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || []) : [])
+    // 띄어쓰기만 바뀐 문장(r.claim 과 글자는 같고 공백만 다름)은 공백 아닌 글자 수로 위치를 옮겨 온다
+    const respaced = node.text !== r.claim && r.claim && squash(r.claim) === squash(node.text);
+    const moved = (spans) => spans.map((x) => ({ ...x, claim_start: respacedAt(node.text, nonSpaceCount(r.claim, x.claim_start), false), claim_end: respacedAt(node.text, nonSpaceCount(r.claim, x.claim_end), true) }));
+    const found = r.status !== "SUPPORTED" && (node.text === r.claim || respaced) ? (r.conflict_spans?.length ? r.conflict_spans : r.focus_spans || []) : [];
+    const pairs = (respaced ? moved(found) : found)
       .filter((x) => x.claim_end > x.claim_start && x.claim_end <= node.map.length);
     const spans = pairs.map((x) => ({ start: node.map[x.claim_start], end: node.map[x.claim_end - 1] + 1 }));
     // 같은 짝의 근거 쪽 위치(근거 발췌 quote 기준) — 서랍 카드에서 본문 하이라이트와 짝을 맞춰 표시

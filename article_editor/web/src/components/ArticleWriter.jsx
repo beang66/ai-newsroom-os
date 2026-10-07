@@ -3,7 +3,7 @@ import FactCheckDrawer from "./FactCheckDrawer";
 import PhotoEditor from "./PhotoEditor";
 import { supportedClaimRanges } from "../api/claim-details.js";
 // 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
-import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useFactCheck, useBodyChunks } from "./EditorialAssist";
+import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useFactCheck } from "./EditorialAssist";
 import { 
   Sparkles, 
   Search, 
@@ -36,12 +36,6 @@ export default function ArticleWriter({
   article, 
   setArticle, 
   onOpenSearch, 
-  onRunFactCheck,
-  factCheckActive,
-  factCheckIssues,
-  activeFactIndex,
-  onApplyFactFix,
-  onSkipFactFix,
   saveStatus // 자동 저장은 App 에서(어느 화면에 있든 저장된다)
 }) {
   // 1. 화면 뷰 모드: 'editor' (에디터만) | 'split' (에디터+미리보기 나란히) | 'preview' (미리보기 전체)
@@ -51,9 +45,13 @@ export default function ArticleWriter({
   const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(false);
   // 팩트체크 — 글쓰기가 멈추면 자동 실행. 서랍을 닫아도 본문 하이라이트가 남도록 여기에 둔다
   const factCheck = useFactCheck(article);
-  const factIssues = factCheck.results.filter((r) => r.verdict !== "SUPPORTED").length;
-  // 본문 청크 밑줄(개발 실행에서만 버튼이 보인다) — 청킹 모델이 본문을 어떻게 나누는지 확인용
-  const bodyChunks = useBodyChunks(article.content);
+  const issues = useMemo(() => factCheck.results.filter((r) => r.verdict !== "SUPPORTED").sort((a, b) => a.start - b.start), [factCheck.results]);
+  const factIssues = issues.length;
+  // 순서형 검사: 버튼을 누르면 켜지고, 문제 문장을 한 건씩 넘겨 본다. 문장이 고쳐져 줄어들면 순서를 맞춘다
+  const [review, setReview] = useState(false);
+  const [reviewIdx, setReviewIdx] = useState(0);
+  const reviewAt = Math.min(reviewIdx, Math.max(0, issues.length - 1));
+  const current = issues[reviewAt];
 
   // 2. 미리보기 플랫폼 탭: 'donga' (동아일보 공식 웹) | 'naver' (네이버 뉴스 포털)
   const [previewPlatform, setPreviewPlatform] = useState("donga");
@@ -236,16 +234,17 @@ export default function ArticleWriter({
           <button
             onClick={() => {
               setIsFactCheckDrawerOpen(true);
-              if (onRunFactCheck) onRunFactCheck();
+              setReview(true);
+              setReviewIdx(0);
             }}
             className={`px-4.5 py-2.5 rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95 ${
-              factCheckActive || isFactCheckDrawerOpen
+              review || isFactCheckDrawerOpen
                 ? "bg-[#23211F] text-[#FAF8F5] border border-[#23211F] shadow-xs"
                 : "bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB]"
             }`}
             title="취재파일 업로드 및 원문 근거자료 검증 패널을 엽니다"
           >
-            <ShieldCheck className={`w-4 h-4 ${factCheckActive || isFactCheckDrawerOpen ? "text-emerald-400" : "text-emerald-600"}`} />
+            <ShieldCheck className={`w-4 h-4 ${review || isFactCheckDrawerOpen ? "text-emerald-400" : "text-emerald-600"}`} />
             <span>기사 팩트체크 & 근거자료</span>
           </button>
 
@@ -265,15 +264,6 @@ export default function ArticleWriter({
             <span className={`text-[11px] font-bold ${factIssues ? "text-rose-600" : "text-emerald-600"}`} data-testid="factcheck-status">
               {factCheck.busy ? "팩트체크 중…" : factIssues ? `확인 필요 ${factIssues}문장` : "팩트체크 통과"}
             </span>
-          )}
-          {bodyChunks.dev && (
-            <button
-              onClick={() => bodyChunks.setShow(!bodyChunks.show)}
-              title={bodyChunks.error || "청킹 모델이 본문을 나눈 단위를 청크마다 다른 색 밑줄로 표시(개발 모드)"}
-              className={`text-[11px] font-bold px-2.5 py-1 rounded-full border cursor-pointer ${bodyChunks.show ? "bg-blue-600 text-white border-blue-600" : "text-slate-500 border-slate-300"}`}
-            >
-              청크 밑줄{bodyChunks.show && bodyChunks.chunks ? ` ${bodyChunks.chunks.length}개` : ""}
-            </button>
           )}
           {/* 뷰 모드 전환 탭 (레퍼런스 이미지 스타일 알약 캡슐) */}
           <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-full border border-[#DDD6CB]/80 shadow-inner">
@@ -348,51 +338,54 @@ export default function ArticleWriter({
         {/* [좌측 메인 컬럼]: 기사 에디터 / 미리보기 */}
         <div className="w-full flex-1 min-w-0 space-y-5">
 
-          {/* 팩트체크 진행 배너 */}
-          {factCheckActive && factCheckIssues.length > 0 && (
-            <div className={`bg-amber-50/90 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3 animate-float-in ${
+          {/* 팩트체크 순서형 검사 — 코어가 짚은 문제 문장을 한 건씩 보여 준다(본문 하이라이트는 그대로, 지금 보는 문장만 진한 윤곽) */}
+          {review && current && (
+            <div data-testid="fact-sequence" className={`bg-amber-50/90 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3 animate-float-in ${
               !isFactCheckDrawerOpen && viewMode === "editor" ? "w-full max-w-4xl mx-auto" : "w-full"
             }`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm md:text-base">
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
-              <span>AI 팩트체크 순서형 검사 ({activeFactIndex + 1} / {factCheckIssues.length})</span>
-            </div>
-            <span className="text-xs font-bold px-2.5 py-1 bg-amber-200/80 text-amber-950 rounded-lg">
-              {factCheckIssues[activeFactIndex]?.type}
-            </span>
-          </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm md:text-base">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  <span>AI 팩트체크 순서형 검사 ({reviewAt + 1} / {issues.length})</span>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 bg-amber-200/80 text-amber-950 rounded-lg">
+                  {MARK_LABEL[current.verdict] || current.verdict}
+                </span>
+              </div>
 
-          <div className="bg-white p-4 rounded-xl border border-amber-200/80 space-y-2 text-xs md:text-sm">
-            <p className="font-semibold text-slate-800">
-              문제 문장: <span className="underline decoration-red-500 decoration-2 text-red-700 bg-red-50 px-1 rounded">{factCheckIssues[activeFactIndex]?.targetText}</span>
-            </p>
-            <p className="text-slate-600">
-              <strong className="text-slate-900">발생 이유:</strong> {factCheckIssues[activeFactIndex]?.reason}
-            </p>
-            <div className="text-slate-900 bg-emerald-50/90 p-2.5 rounded-xl border border-emerald-200 flex items-center gap-2">
-              <Wand2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <span><strong>AI 수정안 제안:</strong> "{factCheckIssues[activeFactIndex]?.suggestion}"</span>
-            </div>
-          </div>
+              <div className="bg-white p-4 rounded-xl border border-amber-200/80 space-y-2 text-xs md:text-sm">
+                <p className="font-semibold text-slate-800">
+                  문제 문장: <span className="underline decoration-red-500 decoration-2 text-red-700 bg-red-50 px-1 rounded">{current.claimText}</span>
+                </p>
+                {current.comment && (
+                  <p className="text-slate-600">
+                    <strong className="text-slate-900">발생 이유:</strong> {current.comment}
+                  </p>
+                )}
+                {current.quote && (
+                  <p className="text-slate-600 line-clamp-3">
+                    <strong className="text-slate-900">근거{current.sourceDoc ? ` (${current.sourceDoc})` : ""}:</strong> {current.quote}
+                  </p>
+                )}
+              </div>
 
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button
-              onClick={onSkipFactFix}
-              className="px-4 py-1.5 text-xs font-bold bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full border border-[#DDD6CB] transition cursor-pointer"
-            >
-              건너뛰기
-            </button>
-            <button
-              onClick={onApplyFactFix}
-              className="px-4 py-1.5 text-xs font-extrabold bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full transition shadow-xs cursor-pointer flex items-center gap-1 border border-[#23211F]"
-            >
-              <Check className="w-3.5 h-3.5" />
-              수정 적용
-            </button>
-          </div>
-        </div>
-      )}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  onClick={() => setReviewIdx(Math.max(0, reviewAt - 1))}
+                  disabled={reviewAt === 0}
+                  className="px-4 py-1.5 text-xs font-bold bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full border border-[#DDD6CB] transition cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                >
+                  이전
+                </button>
+                <button
+                  onClick={() => (reviewAt + 1 < issues.length ? setReviewIdx(reviewAt + 1) : setReview(false))}
+                  className="px-4 py-1.5 text-xs font-extrabold bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full transition shadow-xs cursor-pointer border border-[#23211F]"
+                >
+                  {reviewAt + 1 < issues.length ? "다음" : "검사 종료"}
+                </button>
+              </div>
+            </div>
+          )}
 
       {/* ──────────────────────────────────────────
           2. 메인 작업 영역: [에디터] / [나란히 보기] / [미리보기]
@@ -569,9 +562,9 @@ export default function ArticleWriter({
                 value={article.content}
                 onChange={(content) => setArticle({ ...article, content })}
                 results={factCheck.results}
-                chunks={bodyChunks.chunks}
                 onRecheck={factCheck.recheck}
                 focus={factCheck.focus}
+                activeId={review && current ? current.id : null}
                 recheckBusy={factCheck.recheckBusy}
               />
             </div>
@@ -1026,10 +1019,7 @@ const MARK = {
 const OUTLINE = { CONFLICT: "#9f1239", EVIDENCE_GAP: "#b45309", REVIEW: "#6d28d9", EXTERNAL_REQUIRED: "#6d28d9" }; // 하이라이트색의 진한 판(마우스 올린 문장)
 const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요", EXTERNAL_REQUIRED: "검토 필요" };
 
-// 청크 밑줄(개발 모드) — 이웃 청크끼리 색이 겹치지 않게 돌려 쓴다
-const CHUNK_COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2"];
-
-function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, recheckBusy, focus = null }) {
+function HighlightedBody({ value, onChange, results, onRecheck, recheckBusy, focus = null, activeId = null }) {
   const layer = useRef(null);
   const [hover, setHover] = useState(null); // { key, x, y } — 하이라이트 위 마우스(textarea 가 위를 덮어 마크가 이벤트를 못 받으니 좌표로 찾는다)
 
@@ -1038,7 +1028,7 @@ function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, r
       .map((r) => (r.verdict === "SUPPORTED" && r.id === focus ? { ...r, verdict: "FOCUS", spans: supportedClaimRanges(r.claimText, r.details).map((s) => ({ ...s, start: s.start + r.start, end: s.end + r.start })) } : r))
       .filter((r) => MARK[r.verdict] && r.start >= 0 && value.slice(r.start, r.start + r.claimText.length) === r.claimText)
       .flatMap((r) => (r.spans.length ? r.spans : [{ start: r.start, end: r.start + r.claimText.length }])
-        .map((x) => ({ ...x, verdict: r.verdict === "FOCUS" && x.detail ? "DETAIL" : r.verdict, key: r.judgedBy === "external" ? "" : r.key })))
+        .map((x) => ({ ...x, verdict: r.verdict === "FOCUS" && x.detail ? "DETAIL" : r.verdict, key: r.judgedBy === "external" ? "" : r.key, rid: r.id })))
       .sort((a, b) => a.start - b.start);
     return out.filter((x, i) => i === 0 || x.start >= out[i - 1].end); // 겹치면 앞의 것만
   }, [results, value, focus]);
@@ -1048,7 +1038,7 @@ function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, r
   ranges.forEach((x, i) => {
     parts.push(value.slice(cursor, x.start));
     parts.push(<mark key={i} data-key={x.key} className={`${MARK[x.verdict]} text-transparent rounded-sm`}
-      style={x.key && hover?.key === x.key ? { outline: `2px solid ${OUTLINE[x.verdict]}`, outlineOffset: 1 } : undefined} title={x.title || MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
+      style={(x.key && hover?.key === x.key) || (activeId && x.rid === activeId) ? { outline: `2px solid ${OUTLINE[x.verdict]}`, outlineOffset: 1 } : undefined} title={x.title || MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
     cursor = x.end;
   });
   parts.push(value.slice(cursor) + "\n"); // 마지막 줄바꿈도 높이를 맞춘다
@@ -1072,21 +1062,6 @@ function HighlightedBody({ value, onChange, results, chunks = null, onRecheck, r
       <div ref={layer} aria-hidden="true" data-testid="fact-highlight" className={`${box} text-transparent border-transparent pointer-events-none`}>
         {parts}
       </div>
-      {chunks && (
-        <div aria-hidden="true" data-testid="chunk-underline" className={`${box} absolute inset-0 text-transparent border-transparent pointer-events-none`}>
-          {chunks.filter((c) => c.end <= value.length).reduce((acc, c, i, list) => {
-            const prev = i ? list[i - 1].end : 0;
-            acc.push(value.slice(prev, c.start));
-            acc.push(
-              <span key={i} style={{ textDecoration: `underline 2px ${CHUNK_COLORS[i % CHUNK_COLORS.length]}`, textUnderlineOffset: "5px" }}>
-                {value.slice(c.start, c.end)}
-              </span>
-            );
-            if (i === list.length - 1) acc.push(value.slice(c.end));
-            return acc;
-          }, [])}
-        </div>
-      )}
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}

@@ -6,7 +6,6 @@
 지금은 이미지만 받는다(영상·오디오는 큰 파일을 DB 안에 두는 문제가 있어 따로 정한다).
 """
 import base64
-import re
 
 from . import ids, storage, vault
 from .errors import RequestError
@@ -14,7 +13,6 @@ from .errors import RequestError
 KINDS = ('image',)
 IMAGE_MIME = ('image/jpeg', 'image/png', 'image/webp', 'image/gif')
 MAX_BYTES = 25 * 1024 * 1024
-MEDIA_REF = re.compile(r'media:([a-f0-9]{32})')
 
 _COLUMNS = 'a.id, a.media_id, a.kind, a.mime_type, a.filename, a.caption, a.generated, a.created_at, length(m.data)'
 
@@ -58,7 +56,7 @@ def register_media_asset(data):
                 raise RequestError('이미지는 25MB 이하로 올려 주세요.', 413)
             media_id = storage._store_media(db, head, raw)
         else:  # 이미 암호화 저장소에 있는 사진을 가리키는 경우
-            found = MEDIA_REF.fullmatch(ref) if isinstance(ref, str) else None
+            found = storage.MEDIA_REF.fullmatch(ref) if isinstance(ref, str) else None
             row = db.execute('SELECT header FROM media WHERE id = ?', (found.group(1),)).fetchone() if found else None
             if not row:
                 raise RequestError('이미지 데이터(data) 또는 저장된 사진(object_ref=media:<id>)이 필요합니다.')

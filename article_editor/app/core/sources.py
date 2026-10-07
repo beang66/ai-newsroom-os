@@ -23,15 +23,10 @@ def _check_id(source_id):
 def _usage(db):
     """자료 id → 그 자료를 쓰는 기사 [{articleId, title}] (각 기사의 최신 저장본 기준)."""
     used = {}
-    rows = db.execute('SELECT r.article_id, r.draft_json FROM article_revisions r WHERE r.revision_no = '
-                      '(SELECT max(revision_no) FROM article_revisions WHERE article_id = r.article_id)').fetchall()
-    for article_id, body in rows:
+    for article_id, _created, _updated, _revision, body in storage.latest_revisions(db):
         draft = json.loads(body)
-        ids = {s.get('id') for s in draft.get('sources') or [] if isinstance(s, dict)}
-        ids |= {i for i in draft.get('linkedSources') or [] if isinstance(i, str)}
-        for source_id in ids:
-            if isinstance(source_id, str):
-                used.setdefault(source_id, []).append({'articleId': article_id, 'title': draft.get('title') or ''})
+        for source_id in storage.draft_source_ids(draft):
+            used.setdefault(source_id, []).append({'articleId': article_id, 'title': draft.get('title') or ''})
     return used
 
 

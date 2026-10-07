@@ -12,6 +12,10 @@ from .documents import extract_text
 # App Core (managers). The handler routes through it instead of calling
 # implementations directly (see APP_CORE_ARCHITECTURE.md §4).
 CORE = create_core()
+UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+def error_body(e):
+    """오류 응답 본문. 화면은 "error" 문자열을 읽는다 — 기계용 code 가 있으면 함께 싣는다."""
+    return {'error':e.message,**({'code':e.code} if getattr(e,'code',None) else {})}
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_): pass  # Do not log manuscript content or API credentials.
     def send(self, status, payload, mime='application/json; charset=utf-8'):
@@ -30,18 +34,22 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/status':return self.send(200,{'ready':bool(os.environ.get('OPENAI_API_KEY')),'headline_ready':headline_dependencies_ready(),'headline_model':HEADLINE_MODEL,'subtitle_model':SUBTITLE_MODEL,'pipeline_version':PIPELINE_VERSION,'unsplash_ready':bool(os.environ.get('UNSPLASH_ACCESS_KEY')),'workspace_version':'3.0.0','dev':not getattr(sys,'frozen',False)})
         if self.path=='/api/session':
             try:return self.send(200,CORE.session.status())
-            except RequestError as e:return self.send(e.status,{'error':e.message})
+            except RequestError as e:return self.send(e.status,error_body(e))
         if self.path=='/api/factcheck/status':
             try:return self.send(200,CORE.ai.factcheck_status())
-            except RequestError as e:return self.send(e.status,{'error':e.message})
+            except RequestError as e:return self.send(e.status,error_body(e))
         if self.path=='/api/articles/latest':return self.send(200,CORE.storage.latest_article())
         found=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions(?:/(\d{1,6}))?',self.path)
         if found:
             try:return self.send(200,CORE.storage.get_revision(found.group(1),int(found.group(2))) if found.group(2) else CORE.storage.list_revisions(found.group(1)))
-            except RequestError as e:return self.send(e.status,{'error':e.message})
+            except RequestError as e:return self.send(e.status,error_body(e))
+        found=re.fullmatch(r'/api/articles/([a-f0-9]{32})/snapshots',self.path) or re.fullmatch(r'/api/snapshots/('+UUID+')',self.path)
+        if found:
+            try:return self.send(200,CORE.storage.list_snapshots(found.group(1)) if self.path.startswith('/api/articles/') else CORE.storage.get_snapshot(found.group(1)))
+            except RequestError as e:return self.send(e.status,error_body(e))
         if self.path=='/api/models':
             try:return self.send(200,CORE.models.status())
-            except RequestError as e:return self.send(e.status,{'error':e.message})
+            except RequestError as e:return self.send(e.status,error_body(e))
         path=urllib.parse.urlsplit(self.path)
         if path.path=='/api/unsplash/search':
             try:
@@ -53,11 +61,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not 1<=page<=10000:raise RequestError('올바른 사진 페이지를 선택해 주세요.')
                 result=unsplash_get('/search/photos?'+urllib.parse.urlencode({'query':q,'per_page':3,'page':page}))
                 return self.send(200,{'photos':result.get('results',[])[:3],'page':page,'totalPages':min(10000,result.get('total_pages',0)),'total':result.get('total',0)})
-            except RequestError as e:return self.send(e.status,{'error':e.message})
+            except RequestError as e:return self.send(e.status,error_body(e))
         match=re.fullmatch(r'/api/sources/([a-f0-9]{16})/file',path.path)
         if match:
             try:return self.send(200,*CORE.storage.source_file(match.group(1)))
-            except RequestError as e:return self.send(e.status,{'error':e.message})
+            except RequestError as e:return self.send(e.status,error_body(e))
         match=re.fullmatch(r'/api/unsplash/photo/([A-Za-z0-9_-]{1,80})(/track)?',path.path)
         if match:
             try:
@@ -70,7 +78,7 @@ class Handler(BaseHTTPRequestHandler):
                     raw=r.read(15*1024*1024+1);mime=r.headers.get_content_type()
                     if len(raw)>15*1024*1024 or mime not in ('image/jpeg','image/png','image/webp'):raise RequestError('지원하지 않는 사진입니다.',413)
                     return self.send(200,raw,mime)
-            except RequestError as e:return self.send(e.status,{'error':e.message})
+            except RequestError as e:return self.send(e.status,error_body(e))
             except Exception:return self.send(502,{'error':'사진을 가져오지 못했어요. 다시 시도해 주세요.'})
         if path.path.startswith('/assets/') or path.path.startswith('/src/') or path.path.startswith('/public/'):
             # 빌드된 React 앱(Vite)도 여기서 서빙한다 — 정적 파일은 frontend/ 안으로 제한한다.
@@ -89,7 +97,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.allowed() or self.headers.get('Origin') not in (f'http://localhost:{self.port()}',f'http://127.0.0.1:{self.port()}'):return self.send(403,{'error':'워크스페이스에서 요청해 주세요.'})
         restore=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions/(\d{1,6})/restore',self.path)
-        if not restore and self.path not in ('/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        snapshot=re.fullmatch(r'/api/articles/([a-f0-9]{32})/snapshots',self.path)
+        if not restore and not snapshot and self.path not in ('/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
@@ -103,6 +112,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/models/cancel':return self.send(200,CORE.models.cancel())
             if self.path=='/api/articles/save':return self.send(200,CORE.storage.save_article(data))
             if restore:return self.send(200,CORE.storage.restore_revision(restore.group(1),int(restore.group(2))))
+            if snapshot:return self.send(200,CORE.storage.create_snapshot(snapshot.group(1),data))
             if self.path=='/api/materials/extract':return self.send(200,extract_text(data))
             if self.path=='/api/sources/open':return self.send(200,CORE.storage.open_source(data))
             if not LIMIT.acquire(blocking=False):raise RequestError('다른 AI 작업이 진행 중이에요. 잠시 후 다시 시도하세요.',429)
@@ -116,6 +126,6 @@ class Handler(BaseHTTPRequestHandler):
                 else:result=CORE.ai.assist(data)
             finally:LIMIT.release()
             self.send(200,result)
-        except RequestError as e:self.send(e.status,{'error':e.message})
+        except RequestError as e:self.send(e.status,error_body(e))
         except (ValueError,TypeError):self.send(400,{'error':'요청 형식을 확인해 주세요.'})
         except Exception:self.send(500,{'error':'처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'})

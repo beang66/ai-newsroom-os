@@ -55,7 +55,7 @@
     }
 
     if (!response.ok || (checkSuccess && !result.success)) {
-      throw new Error(result.error || errorMessage);
+      throw Object.assign(new Error(result.error || errorMessage), { status: response.status });
     }
 
     return result;

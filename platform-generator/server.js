@@ -8,7 +8,7 @@ const app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// 내 문서 저장 기능과 JPG 보관 연결은 기존 생성 경로보다 먼저 등록합니다.
+// 기본은 저장 경로의 410 안내만 등록합니다. PLATFORM_LOCAL_STORAGE=1은 개발 전용입니다.
 require("./local-storage-routes")(app);
 
 // 공개 기사 URL에서 제목과 본문을 가져오는 입력 경로

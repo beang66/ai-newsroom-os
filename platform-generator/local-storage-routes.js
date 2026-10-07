@@ -7,6 +7,17 @@ const { randomUUID } = require('crypto');
 const { PATHS, STORAGE_FOLDERS, getStorageRoot } = require('./public/api');
 
 module.exports = function registerLocalStorage(app, options = {}) {
+  // 개발 환경에서 명시적으로 켠 경우에만 평문 파일 저장과 JPG 보관을 연결합니다.
+  if (process.env.PLATFORM_LOCAL_STORAGE !== '1') {
+    app.use([PATHS.storageInfo, PATHS.drafts, PATHS.images], (_req, res) => {
+      res.status(410).json({
+        success: false,
+        error: '로컬 파일 저장이 비활성화되어 있습니다. 초안은 후속 마일스톤에서 App Core의 암호화 저장소에 저장될 예정입니다.',
+      });
+    });
+    return;
+  }
+
   const root = options.rootDir || getStorageRoot();
   const draftsDir = path.join(root, STORAGE_FOLDERS.drafts);
   const imagesDir = path.join(root, STORAGE_FOLDERS.images);

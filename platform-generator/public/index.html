@@ -680,7 +680,7 @@
         const result = await NewsApi.saveLocalDraft(snapshot);
         tell('저장 완료: ' + result.file_path);
       } catch (error) {
-        tell('저장 실패: ' + error.message);
+        tell(error.status === 410 ? error.message : '저장 실패: ' + error.message);
       } finally {
         button.disabled = false;
       }
@@ -789,7 +789,7 @@
         if (revision !== before) throw new Error('불러오는 중 편집 내용이 바뀌었습니다. 다시 실행해주세요.');
         applySavedDraft(loaded.draft);
       } catch (error) {
-        tell('불러오기 실패: ' + error.message);
+        tell(error.status === 410 ? error.message : '불러오기 실패: ' + error.message);
       } finally {
         localLoadButton.disabled = false;
       }

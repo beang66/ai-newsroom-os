@@ -16,6 +16,38 @@ import {
 } from "lucide-react";
 import { registerSource, openSourceFile, sourcePreview, sourceChunks, isDevMode } from "../api/editorial";
 import { supportedClaimRanges } from "../api/claim-details.js";
+import { core } from "../api/core.js";
+
+/** 자료별 색인 상태 — 색인 중인 자료가 있는 동안만 2초마다 코어에 물어본다. → { [sourceId]: { state, progress? } } */
+function useSourceIndex(ids) {
+  const [map, setMap] = useState({});
+  const key = ids.join();
+  useEffect(() => {
+    if (!ids.length) return undefined;
+    let stop = false;
+    let timer;
+    const tick = async () => {
+      try {
+        const { sources = [] } = await core.listSources();
+        if (stop) return;
+        setMap(Object.fromEntries(sources.map((s) => [s.id, s.index || {}])));
+        if (sources.some((s) => ids.includes(s.id) && s.index?.state === "indexing")) timer = setTimeout(tick, 2000);
+      } catch { /* 상태를 못 읽으면 '등록됨'으로 둔다 */ }
+    };
+    tick();
+    return () => { stop = true; clearTimeout(timer); };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return map;
+}
+
+// 색인 상태 → [표시 글, 색, 설명]
+const indexBadge = (index) => {
+  if (!index?.state) return ["등록됨", "bg-emerald-100 text-emerald-800", ""];
+  if (index.state === "indexing") return [`색인 중 ${Math.round((index.progress ?? 0) * 100)}%`, "bg-blue-100 text-blue-800", "자료를 검색용으로 분석하는 중입니다. 끝나면 팩트체크에 쓰입니다."];
+  if (index.state === "ready") return ["색인 완료", "bg-emerald-100 text-emerald-800", `검색용 조각 ${index.chunks}개로 준비됨`];
+  if (index.state === "failed") return ["색인 실패", "bg-red-100 text-red-800", "색인에 실패했습니다. 팩트체크 때 다시 시도합니다."];
+  return ["색인 안 됨", "bg-slate-200 text-slate-700", "아직 색인되지 않았습니다(모델 미설치 등). 팩트체크 때 한 번에 처리합니다."];
+};
 
 // 모든 자료는 코어(/api/materials/extract)가 텍스트를 뽑고 원본을 내 문서에 보관한다 → 기사 sources 에 등록
 const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -41,6 +73,7 @@ export default function FactCheckDrawer({
   // 등록된 취재자료는 기사(article.sources)에 둔다 — 서랍을 닫아도, 보관함에서도 보인다. 실패한 파일만 여기
   const [failedFiles, setFailedFiles] = useState([]);
   const sources = article.sources || [];
+  const indexes = useSourceIndex(sources.map((s) => s.id));
   const { setFocus } = factCheck;
   useEffect(() => () => setFocus(null), [setFocus]); // 카드에 마우스를 둔 채 서랍을 닫아도 본문 초록 표시가 남지 않게
 
@@ -224,13 +257,14 @@ export default function FactCheckDrawer({
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <span title={file.error || file.path} className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md max-w-[160px] truncate ${
-                          file.failed
-                            ? "bg-red-100 text-red-800"
-                            : "bg-emerald-100 text-emerald-800"
-                        }`}>
-                          {file.failed ? file.error : "등록됨"}
-                        </span>
+                        {(() => {
+                          const [label, color, hint] = file.failed ? [file.error, "bg-red-100 text-red-800", file.error] : indexBadge(indexes[file.id]);
+                          return (
+                            <span title={hint || file.path} data-testid="source-index-badge" className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md max-w-[160px] truncate ${color}`}>
+                              {label}
+                            </span>
+                          );
+                        })()}
                         <button
                           onClick={() => handleDeleteFile(file.id)}
                           className="p-1 text-slate-400 hover:text-red-600 rounded transition cursor-pointer"

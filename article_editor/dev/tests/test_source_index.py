@@ -276,6 +276,13 @@ class SourceIndexTests(unittest.TestCase):
         with vault.connect() as db:
             self.assertEqual(db.execute('SELECT state FROM source_index WHERE source_id = ?', (sid2,)).fetchone()[0], 'pending')
 
+    def test_backend_unavailable_keeps_index_pending_not_failed(self):
+        self.chunk.side_effect = fake_chunker
+        with mock.patch.object(self.encoder, 'encode', side_effect=RequestError('서버 연결 실패', 504)):
+            self.assertEqual(source_index.index_source(self.sid), 'pending')
+        self.assertEqual((self.status()[0], self.status()[4]), ('pending', None))  # 실패 코드를 남기지 않는다
+        self.assertEqual(source_index.index_source(self.sid), 'ready')  # 서버가 돌아오면 다시 색인된다
+
     def test_deleted_or_changed_during_encoding_does_not_publish_stale_rows(self):
         real_encode = self.encoder.encode
 
@@ -336,6 +343,12 @@ class SourceIndexTests(unittest.TestCase):
 class RealSourceIndexTest(unittest.TestCase):
     def setUp(self):
         use_temp_vault(self)
+        # 설치된 실제 로컬 모델로 검증한다(기본 임베딩은 원격이라 로그인 없는 테스트에선 쓸 수 없다)
+        patcher = mock.patch.dict('os.environ', {'FACTCHECK_EMBEDDING_RUNTIME': 'onnx'})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        retrieval._cache = None  # 다른 인코더로 만든 캐시를 쓰지 않게
+        self.addCleanup(setattr, retrieval, '_cache', None)
 
     def test_real_vectors_factcheck_parity_and_five_page_timing(self):
         if not AIManager().factcheck_status()['ready']:

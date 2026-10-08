@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "dev/checks/make_model_manifest.py 로 생성. base 를 호스팅 주소로 채우면 앱이 자동 다운로드한다.",
+  "note": "dev/checks/make_model_manifest.py 로 생성. base 를 호스팅 주소로 채우면 앱이 자동 다운로드한다. | 2026-10-08: 로컬 임베딩 모델(embedding-qwen3-0.6b-onnx)은 잠정 폐기 — 임베딩은 백엔드(/ai/embeddings)로만 한다.",
   "models": [
     {
       "id": "factcheck-judge-0.6b-v3",
@@ -33,35 +33,6 @@
           "path": "tokenizer_config.json",
           "size": 835,
           "sha256": "75480b08d3715c7d92a81e6a6030277eef4ffc2797c7f36ef5164c0bbb4638c7"
-        }
-      ]
-    },
-    {
-      "id": "embedding-qwen3-0.6b-onnx",
-      "label": "자료 검색 임베딩 (Qwen3-Embedding-0.6B, ONNX FP32)",
-      "kind": "embedding",
-      "dir": "embedding-qwen3-0.6b-onnx",
-      "base": "https://huggingface.co/Tig0w0/embedding-qwen3-0.6b-onnx/resolve/main",
-      "files": [
-        {
-          "path": "embedding.json",
-          "size": 624,
-          "sha256": "2194f7704855e917963574522449a048c8293f4a951cc0f384198c3a9c87ba16"
-        },
-        {
-          "path": "embedding.onnx",
-          "size": 1354467,
-          "sha256": "7bdc1d9f93e876dd628a6bc93a79e8299e374a28c7bc6d3128e128ecad9b89b9"
-        },
-        {
-          "path": "embedding.onnx.data",
-          "size": 2383077376,
-          "sha256": "7c7569e58783ee0ad8c5fb797d7944aa4f5928af53fb4c1f626f71885af22969"
-        },
-        {
-          "path": "tokenizer.json",
-          "size": 11423967,
-          "sha256": "b7bf3dcfda6570b1c4ad393348452cefb6a317f4087bdb8128bdd7c76e3ca700"
         }
       ]
     },

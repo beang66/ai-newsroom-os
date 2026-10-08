@@ -119,7 +119,13 @@ class OnnxEmbeddingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 onnx_embedding.OnnxQwenEncoder(folder, retrieval.query_input)._load()
 
-    def test_factory_onnx_default_and_torch_explicit(self):
+    def test_factory_remote_default_and_onnx_torch_explicit(self):
+        from core.ai.factcheck import remote_embedding
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('FACTCHECK_EMBEDDING_RUNTIME', None)
+            self.assertIsInstance(retrieval.create_encoder(), remote_embedding.RemoteQwenEncoder)
+            self.assertIsNone(retrieval.create_encoder().fallback)  # 로컬 폴백 없음
+            self.assertIn('onnxruntime', paths.embedding_dependencies())  # 판정기·경계 모델용
         with mock.patch.dict(os.environ, {'FACTCHECK_EMBEDDING_RUNTIME': 'onnx'}):
             self.assertIsInstance(retrieval.VectorCache().encoder, onnx_embedding.OnnxQwenEncoder)
             self.assertNotIn('torch', paths.embedding_dependencies())

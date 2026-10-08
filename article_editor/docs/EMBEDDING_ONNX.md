@@ -1,3 +1,8 @@
+> **2026-10-08 — 로컬 임베딩 잠정 폐기.** 임베딩은 이제 백엔드(`/ai/embeddings` → Cloudflare Workers AI `qwen3-embedding-0.6b`)로만 한다.
+> 기본 런타임이 원격이고 로컬 폴백은 없다(오프라인이면 색인·팩트체크 불가, 색인은 `pending`으로 보류했다가 연결되면 다시 한다).
+> 이 문서의 ONNX 인코더(`onnx_embedding.py`)와 변환·검증 도구는 개발·재검증용으로만 남기며 `FACTCHECK_EMBEDDING_RUNTIME=onnx`로 명시할 때만 쓴다.
+> 모델 설치 목록(`models_manifest.json`)에서도 뺐다. 판정기·경계·제목·부제 모델은 계속 로컬이다.
+
 # 임베딩 ONNX (2026-10-07)
 
 상태: 코드 연결과 로컬 모델 설치 완료. 사용자 요청으로 추가 검증 중단, 전체 검증은 후속 작업.

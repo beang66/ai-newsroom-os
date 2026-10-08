@@ -127,12 +127,11 @@ def create_encoder():
     """Preserve the embedding space/cache keys; select only the inference runtime."""
     if paths.embedding_runtime() == 'torch':
         return QwenEncoder()
-    from .onnx_embedding import OnnxQwenEncoder
-    local = OnnxQwenEncoder(paths.EMBEDDING_DIR, query_input)
-    if paths.embedding_runtime() == 'remote':
-        from .remote_embedding import RemoteQwenEncoder
-        return RemoteQwenEncoder(TASK, fallback=local)
-    return local
+    if paths.embedding_runtime() == 'onnx':  # 개발·검증용(명시 설정일 때만)
+        from .onnx_embedding import OnnxQwenEncoder
+        return OnnxQwenEncoder(paths.EMBEDDING_DIR, query_input)
+    from .remote_embedding import RemoteQwenEncoder
+    return RemoteQwenEncoder(TASK)  # 오프라인이면 색인·팩트체크가 안 된다(로컬 폴백 없음)
 
 
 class VectorCache:

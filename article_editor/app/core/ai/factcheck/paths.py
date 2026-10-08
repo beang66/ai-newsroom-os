@@ -17,17 +17,16 @@ RUNTIME_DIR = WORKSPACE / 'factcheck'  # 임베딩 캐시·라우팅 로그
 
 
 def embedding_runtime():
-    """ONNX in production; torch is an explicit development override."""
+    """원격(백엔드→Cloudflare) 임베딩이 기본이다(2026-10-08 로컬 임베딩 잠정 폐기).
+    FACTCHECK_EMBEDDING_RUNTIME=onnx|torch 는 개발·검증용 명시 설정으로만 로컬 모델을 쓴다."""
     value = os.getenv('FACTCHECK_EMBEDDING_RUNTIME')
-    return value if value in ('torch', 'remote') else 'onnx'
+    return value if value in ('torch', 'onnx') else 'remote'
 
 
 def embedding_dependencies():
-    runtime = embedding_runtime()
-    if runtime == 'remote':
-        return ('numpy',)  # 모델 계산은 서버가 한다
+    # 임베딩이 원격이어도 판정기·청킹 경계 모델은 로컬 ONNX 라 onnxruntime·tokenizers 가 필요하다
     names = ('onnxruntime', 'tokenizers', 'numpy')
-    return names + ('torch', 'transformers') if runtime == 'torch' else names
+    return names + ('torch', 'transformers') if embedding_runtime() == 'torch' else names
 
 
 class _Settings:

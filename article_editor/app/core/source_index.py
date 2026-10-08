@@ -6,6 +6,7 @@ import json
 import threading
 
 from . import ids, jobs, storage, vault
+from .errors import RequestError
 
 CHUNKER_VERSION = 'semantic_chunker_v3+boundary-roberta-base-v3:material-v1'
 # ponytail: serialize indexing in this process; per-source locks if throughput requires it.
@@ -117,6 +118,9 @@ def _encode_and_persist(source_id, text, version, chunks, cache, on_progress=Non
     except jobs.JobCancelled:
         _mark(source_id, text, version, 'pending')  # 이미 만든 벡터는 캐시에 남아 다음 색인이 이어서 빠르다
         raise
+    except RequestError:
+        _mark(source_id, text, version, 'pending')  # 서버 연결·로그인 문제는 일시적이다 — 실패로 굳히지 않고 나중에 다시 한다
+        return 'pending'
     except Exception:
         _mark(source_id, text, version, 'failed', 'ENCODER_ERROR')
         return 'failed'

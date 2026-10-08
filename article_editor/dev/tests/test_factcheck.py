@@ -47,6 +47,15 @@ class FactcheckModelTests(ApiTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # 설치된 실제 로컬 모델로 검증한다(기본 임베딩은 원격이라 로그인 없는 테스트에선 쓸 수 없다)
+        import os
+        from unittest import mock
+        from core.ai.factcheck import retrieval
+        patcher = mock.patch.dict(os.environ, {'FACTCHECK_EMBEDDING_RUNTIME': 'onnx'})
+        patcher.start()
+        cls.addClassCleanup(patcher.stop)
+        retrieval._cache = None
+        cls.addClassCleanup(setattr, retrieval, '_cache', None)
         status, raw, _ = cls.request(cls, '/api/factcheck/status')
         if not json.loads(raw)['ready']:
             cls.tearDownClass()

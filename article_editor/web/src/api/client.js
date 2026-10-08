@@ -5,10 +5,12 @@
 // UI 코드는 이 모듈을 직접 import 하지 말고 createAppApi()(index.js)를 쓴다.
 // (경계 검사: scripts/check-api-boundary.mjs)
 
+import { askLogin } from "./auth-gate.js";
+
 export function createApi(base = "") {
   const url = (path) => base + path;
 
-  async function json(path, payload, signal) {
+  async function json(path, payload, signal, retried = false) {
     const r = await fetch(url(path), {
       method: payload ? "POST" : "GET",
       headers: payload ? { "Content-Type": "application/json" } : {},
@@ -16,7 +18,11 @@ export function createApi(base = "") {
       signal,
     });
     const data = await r.json();
-    if (!r.ok) throw Object.assign(Error(data.error || "요청을 완료하지 못했어요."), { status: r.status, code: data.code });
+    if (!r.ok) {
+      // 로그인이 필요하면 로그인 창을 열고, 로그인에 성공하면 같은 요청을 한 번만 다시 보낸다
+      if (data.code === "AUTH_REQUIRED" && !retried && (await askLogin())) return json(path, payload, signal, true);
+      throw Object.assign(Error(data.error || "요청을 완료하지 못했어요."), { status: r.status, code: data.code });
+    }
     return data;
   }
 

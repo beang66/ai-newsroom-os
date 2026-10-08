@@ -69,7 +69,8 @@ def _fail(error: urllib.error.HTTPError):
         429: '사용 한도 또는 요청 한도에 도달했어요. 잠시 후 다시 시도해 주세요.',
     }
     raise RequestError(
-        messages.get(error.code, '백엔드 요청이 실패했습니다. 잠시 후 다시 시도해 주세요.'), 502
+        messages.get(error.code, '백엔드 요청이 실패했습니다. 잠시 후 다시 시도해 주세요.'), 502,
+        code='AUTH_REQUIRED' if error.code == 401 else None,  # 화면이 로그인 창을 열고 다시 시도하게
     ) from None
 
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import ArticleWriter from "./components/ArticleWriter";
@@ -7,6 +7,7 @@ import InterviewStudio from "./components/interview/InterviewStudio";
 import FormatConverter from "./components/FormatConverter";
 import ArchiveView from "./components/ArchiveView";
 import LoginDialog from "./components/LoginDialog";
+import { setLoginHandler } from "./api/auth-gate";
 import ModelsDialog from "./components/ModelsDialog";
 
 import { createEmptyArticle } from "./data/article";
@@ -50,7 +51,25 @@ function Workspace({ initialArticle }) {
   const [showLogin, setShowLogin] = useState(false);
   const [showLoginHint, setShowLoginHint] = useState(false);
   const [showModels, setShowModels] = useState(false);
-  const onSession = (session) => setCore((prev) => ({ ...prev, session }));
+  const loginWait = useRef([]); // 로그인 창 결과를 기다리는 요청들(AUTH_REQUIRED 로 멈춘 것)
+  const loggedIn = useRef(false);
+  useEffect(() => {
+    setLoginHandler(() => new Promise((resolve) => {
+      loginWait.current.push(resolve);
+      setShowLogin(true);
+    }));
+    return () => setLoginHandler(null);
+  }, []);
+  const onSession = (session) => {
+    loggedIn.current = Boolean(session?.signedIn);
+    setCore((prev) => ({ ...prev, session }));
+  };
+  const closeLogin = () => {
+    setShowLogin(false);
+    const ok = loggedIn.current;
+    loggedIn.current = false;
+    loginWait.current.splice(0).forEach((resolve) => resolve(ok));
+  };
   useEffect(() => {
     if (loading) return; // 원고를 불러온 뒤 한 번만(작업 영역을 새로 열 때 다시 묻지 않게)
     let alive = true;
@@ -170,7 +189,7 @@ function Workspace({ initialArticle }) {
         </div>
       </div>
 
-      {showLogin && <LoginDialog onClose={() => setShowLogin(false)} onSession={onSession} />}
+      {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} />}
       {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
 
       {/* Quick Source Search Modal during Writing */}

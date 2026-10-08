@@ -234,13 +234,18 @@ try {
   // 1. 코어 연결 — UI 가 계약(web/src/api)으로 /api/status·/api/session 을 받아 헤더에 반영
   await see("코어 연결됨");
   const login = page.getByTestId("login-dialog");
+  // 시작할 때 로그인 창으로 가로막지 않고, 작업을 막지 않는 안내 띠만 보인다(포커스를 빼앗지 않음)
+  const loginHint = page.getByTestId("login-hint");
+  await loginHint.waitFor();
+  assert.equal(await login.count(), 0, "시작할 때 로그인 창이 작업을 가로막지 않아야 합니다");
+  await loginHint.getByRole("button", { name: "로그인", exact: true }).click();
   await login.waitFor();
   assert.equal(await page.getByTestId("login-email").evaluate((el) => el === document.activeElement), true);
   await login.getByRole("button", { name: "나중에", exact: true }).click();
   await go("보관함");
   await go("기사 작성");
-  assert.equal(await login.count(), 0, "시작 로그인 안내는 한 번만 열려야 합니다");
-  await page.getByRole("button", { name: "로그인", exact: true }).click();
+  assert.equal(await login.count(), 0, "닫은 로그인 창이 다시 열리지 않아야 합니다");
+  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).click();
   await page.getByTestId("login-email").fill("reporter@example.test");
   await page.getByTestId("login-password").fill("bad-password");
   let signInStarted = new Promise((resolve) => { onSignInStarted = resolve; });
@@ -413,9 +418,11 @@ try {
   await page.getByTestId("version-history").getByRole("button", { name: "닫기" }).click();
   // 5. 취재자료 검색 창
   await page.getByText("취재자료 검색").first().click();
-  await page.getByPlaceholder("자료 제목, 키워드, 내용 검색").waitFor();
+  await page.getByPlaceholder("자료 이름 검색").waitFor();
+  // 앞에서 올린 자료가 코어 저장소(GET /api/sources)에서 목록으로 보인다
+  await page.getByRole("heading", { name: "자료.txt", exact: true }).waitFor();
   await page.getByRole("button", { name: "×" }).click(); // 창 닫기(Escape 는 지원 안 함)
-  await page.getByPlaceholder("자료 제목, 키워드, 내용 검색").waitFor({ state: "detached" });
+  await page.getByPlaceholder("자료 이름 검색").waitFor({ state: "detached" });
   // 6. 플랫폼 변환: FormatConverter UI -> App Core -> platform-generator 어댑터
   await go("플랫폼 변환");
   const converter = page.getByTestId("format-converter");

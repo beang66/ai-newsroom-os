@@ -38,7 +38,7 @@ function AiSparkleStarIcon({ className = "w-5 h-5", strokeWidth = 2.2 }) {
  * - 접힌 상태: 세로형 슬림 Glass 캡슐 패널 (w: ~76px)
  * - 펼친 상태: 가로 확장 Glass Navigation Drawer (w: ~295px)
  */
-export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setActiveTab, session = null }) {
+export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setActiveTab, session = null, onModels }) {
   // 프로필 칸은 코어가 알려주는 세션 상태를 보여 준다(가짜 이름·요금제 없음).
   const email = session?.email || "";
   const profileName = session?.signedIn ? (email || "로그인됨") : "로그인하지 않음";
@@ -216,8 +216,9 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
         )}
 
         <button
-          title={!isExpanded ? "Settings" : undefined}
-          aria-label="Settings"
+          onClick={onModels}
+          title={!isExpanded ? "모델 설치 설정" : undefined}
+          aria-label="모델 설치 설정"
           className={`transition-all duration-200 cursor-pointer relative group text-left ${isExpanded
             ? "w-full hover:bg-white/50 rounded-[20px] p-2 pr-3.5 flex items-center gap-3 text-[#444444] hover:text-[#222222]"
             : "w-11 h-11 rounded-full flex items-center justify-center text-[#555555] hover:text-[#222222] hover:bg-white/50"

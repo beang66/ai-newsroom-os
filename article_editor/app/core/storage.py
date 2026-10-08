@@ -231,18 +231,34 @@ def draft_source_ids(draft):
     return {i for i in found if isinstance(i, str)}
 
 
-def latest_article():
-    """가장 최근에 저장된 원고(앱을 열면 이어서 작업). 취재자료 본문은 sources 테이블에서 다시 붙인다."""
+def latest_article(photo_refs=False):
+    """가장 최근에 저장된 원고(앱을 열면 이어서 작업). 취재자료 본문은 sources 테이블에서 다시 붙인다.
+    photo_refs=True 면 사진을 data URL 로 되돌리지 않고 'media:<id>' 참조 그대로 준다 — 화면이 사진 바이트를
+    media_file 로 따로 받는다(사진 몇 장이면 응답이 수십 MB 가 되던 것을 피한다)."""
     with vault.connect() as db:
         rows = latest_revisions(db, limit=1)
         if not rows:
             return {'draft': None}
-        return {'draft': _full_draft(db, rows[0][4], rows[0][2])}
+        return {'draft': _full_draft(db, rows[0][4], rows[0][2], unpack_photos=not photo_refs)}
 
 
-def _full_draft(db, draft_json, saved_at):
+def media_file(media_id):
+    """암호화 저장소의 사진 바이트 → (bytes, mime). 원고 사진의 'media:<id>' 참조를 화면이 그릴 때 쓴다."""
+    if not isinstance(media_id, str) or not re.fullmatch(r'[a-f0-9]{32}', media_id):
+        raise RequestError('잘못된 사진 ID입니다.')
+    with vault.connect() as db:
+        row = db.execute('SELECT header, data FROM media WHERE id = ?', (media_id,)).fetchone()
+    if not row:
+        raise RequestError('사진을 찾지 못했습니다.', 404, code='NOT_FOUND')
+    mime = re.fullmatch(r'data:([\w.+-]+/[\w.+-]+)(?:;[^,]*)?', row[0])
+    return bytes(row[1]), mime.group(1) if mime else 'application/octet-stream'
+
+
+def _full_draft(db, draft_json, saved_at, unpack_photos=True):
     """이력 한 줄 → 화면이 쓰는 원고(사진 되돌리기 + 취재자료 본문 붙이기)."""
-    draft = _unpack(db, dict(json.loads(draft_json), savedAt=saved_at))
+    draft = dict(json.loads(draft_json), savedAt=saved_at)
+    if unpack_photos:
+        draft = _unpack(db, draft)
     for source in draft.get('sources') or []:
         sid = source.get('id')
         found = db.execute('SELECT text FROM sources WHERE id = ?', (sid,)).fetchone() if isinstance(sid, str) else None

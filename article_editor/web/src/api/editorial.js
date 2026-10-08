@@ -284,6 +284,40 @@ export async function flowSummary(body) {
   return clean(((await core.assist({ kind: "flow", body })).paragraphs || []).map((v) => v.replace(/^\s*\d+[.)]\s*/, "")));
 }
 
+// 사진은 저장할 때마다 원본(base64)을 보내지 않는다 — 처음 한 번 코어에 올리고(registerMediaAsset) 받은
+// "media:<id>" 참조만 원고에 싣는다. 화면 상태의 사진(url·original)은 그대로 data URL 이라 컴포넌트는 바뀌지 않는다.
+const mediaRefs = new Map(); // data URL → "media:<id>"
+const MEDIA_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]); // 코어가 자산으로 받는 형식
+
+async function toMediaRef(value) {
+  if (typeof value !== "string" || !value.startsWith("data:")) return value;
+  const known = mediaRefs.get(value);
+  if (known) return known;
+  const mime = /^data:([^;,]+);base64,/.exec(value)?.[1];
+  if (!MEDIA_MIME.has(mime)) return value; // 그 밖의 형식은 예전처럼 원고에 실어 보낸다(코어가 저장소로 옮긴다)
+  try {
+    const { object_ref: ref } = await core.registerMediaAsset({ kind: "image", mime_type: mime, data: value });
+    mediaRefs.set(value, ref);
+    return ref;
+  } catch {
+    return value; // 등록이 안 되면 이번 저장은 예전 방식으로
+  }
+}
+
+/** "media:<id>" → data URL(코어에서 바이트를 받아). 같은 참조는 한 번만 받는다 */
+async function fromMediaRef(value, loaded) {
+  const id = /^media:([a-f0-9]{32})$/.exec(value || "")?.[1];
+  if (!id) return value;
+  if (!loaded.has(id)) loaded.set(id, core.mediaBytes(id).then(readDataUrl));
+  try {
+    const url = await loaded.get(id);
+    mediaRefs.set(url, value);
+    return url;
+  } catch {
+    return ""; // 사진을 못 읽으면 비워 둔다(원고 안의 참조는 그대로 남는다)
+  }
+}
+
 const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 /** 원고 저장. 사진은 코어의 data/original 필드로 보내 암호화 media 저장소에서 중복 없이 보관한다. */
@@ -292,11 +326,12 @@ export async function saveDraft(article, articleId) {
     .split(/\n{2,}/)
     .map((p) => `<p>${escapeHtml(p.trim()).replace(/\n/g, "<br>")}</p>`)
     .join("");
-  const photos = (article.photos || []).map(({ url, ...meta }) => ({
+  const photos = await Promise.all((article.photos || []).map(async ({ url, ...meta }) => ({
     ...meta,
-    data: url?.startsWith("data:") ? url : meta.data,
+    data: await toMediaRef(url?.startsWith("data:") ? url : meta.data),
+    original: await toMediaRef(meta.original),
     url: url?.startsWith("data:") ? "" : url,
-  }));
+  })));
   const d = await core.saveArticle({
     ...(articleId ? { articleId } : {}),
     title: article.title || "",
@@ -338,10 +373,17 @@ function articleFromDraft(draft, empty) {
   };
 }
 
-/** 앱을 열 때 이어서 작업할 가장 최근 원고 → 기사 객체(없으면 null) */
+/** 앱을 열 때 이어서 작업할 가장 최근 원고 → 기사 객체(없으면 null). 사진은 참조로 받아 바이트를 따로(병렬) 받는다 */
 export async function loadLatestArticle(empty) {
   const { draft } = await core.latestArticle();
-  return draft ? articleFromDraft(draft, empty) : null;
+  if (!draft) return null;
+  const loaded = new Map();
+  const photos = await Promise.all((draft.photos || []).map(async (photo) => ({
+    ...photo,
+    data: await fromMediaRef(photo.data, loaded),
+    original: await fromMediaRef(photo.original, loaded),
+  })));
+  return articleFromDraft({ ...draft, photos }, empty);
 }
 
 /** 원고의 저장 이력(최신이 위) */

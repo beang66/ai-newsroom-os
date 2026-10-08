@@ -9,7 +9,7 @@ from ..media_assets import get_media_asset as _get_media_asset, media_asset_file
 from ..read_models import knowledge_map as _knowledge_map, list_articles as _list_articles
 from ..sources import delete_source as _delete_source, get_source as _get_source, list_sources as _list_sources
 from ..storage import (create_snapshot as _create_snapshot, get_revision as _get_revision, get_snapshot as _get_snapshot,
-                       latest_article as _latest_article, list_revisions as _list_revisions, list_snapshots as _list_snapshots,
+                       latest_article as _latest_article, media_file as _media_file, list_revisions as _list_revisions, list_snapshots as _list_snapshots,
                        open_source as _open_source, restore_revision as _restore_revision, save_article as _save_article,
                        source_file as _source_file)
 
@@ -27,9 +27,13 @@ class StorageManager:
         """앱 안 뷰어용 취재자료 원본 → (bytes, mime)."""
         return _source_file(source_id)
 
-    def latest_article(self):
-        """가장 최근에 저장된 원고 ``{"draft": {...} | None}``."""
-        return _latest_article()
+    def latest_article(self, photo_refs=False):
+        """가장 최근에 저장된 원고 ``{"draft": {...} | None}``. photo_refs=True 면 사진은 'media:<id>' 참조로."""
+        return _latest_article(photo_refs)
+
+    def media_file(self, media_id):
+        """원고 사진('media:<id>')의 바이트 → (bytes, mime)."""
+        return _media_file(media_id)
 
     def list_revisions(self, article_id):
         """원고의 저장 이력 목록 ``{"revisions": [...]}`` (최신이 위)."""

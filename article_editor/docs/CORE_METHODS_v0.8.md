@@ -39,6 +39,8 @@
 
 ### getArticle
 - `GET /api/articles/latest` → `{draft}`(가장 최근 저장한 기사), `GET /api/articles` → 목록(`id`, 제목, 상태, 저장 횟수, 쓰는 자료 id).
+  - `?photos=ref` 를 붙이면 사진(`photos[].data`·`original`)을 data URL 로 풀지 않고 `media:<32hex>` 참조로 준다. 바이트는 `GET /api/media/<32hex>`(→ 이미지 바이트, 형식은 Content-Type). 앱 화면은 이 방식으로 받는다(사진 몇 장이면 응답이 수십 MB 가 되던 것을 피함).
+  - 저장(`POST /api/articles/save`)도 사진 자리에 `media:<id>` 참조를 받는다 — 앱 화면은 새 사진을 `registerMediaAsset` 로 한 번 올린 뒤 참조만 보낸다.
 - 개정본: `GET /api/articles/<id>/revisions` (목록), `.../<n>` (미리보기). 개정본의 `id`는 `revision_uuid(기사 hex, 번호)`(UUID v5).
 
 ### createSnapshot

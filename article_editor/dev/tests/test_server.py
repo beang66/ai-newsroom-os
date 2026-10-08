@@ -246,8 +246,23 @@ class ServerTests(ApiTestCase):
         self.assertEqual(self.request('/api/jobs/%s/cancel' % missing, {})[0], 404)
         self.assertEqual(self.request('/api/jobs/not-a-uuid')[0], 404)
 
+    def test_latest_article_photo_refs_and_media_bytes(self):
+        import base64
+        use_temp_vault(self)
+        raw = b'\x89PNG\r\n\x1a\nphoto-bytes'
+        url = 'data:image/png;base64,' + base64.b64encode(raw).decode()
+        self.request('/api/articles/save', {'draft': {'bodyHtml': '<p>x</p>', 'title': '사진 기사', 'photos': [{'id': 'p1', 'data': url, 'original': url}]}})
+        self.assertEqual(json.loads(self.request('/api/articles/latest')[1])['draft']['photos'][0]['data'], url)  # 기본: 예전처럼 data URL
+        photo = json.loads(self.request('/api/articles/latest?photos=ref')[1])['draft']['photos'][0]
+        self.assertTrue(photo['data'].startswith('media:') and photo['original'] == photo['data'])
+        status, body, headers = self.request('/api/media/' + photo['data'][len('media:'):])
+        self.assertEqual((status, body, headers['Content-Type']), (200, raw, 'image/png'))
+        status, raw_err, _ = self.request('/api/media/' + '0' * 32)
+        self.assertEqual((status, json.loads(raw_err)['code']), (404, 'NOT_FOUND'))
+        self.assertEqual(self.request('/api/media/not-an-id')[0], 404)
+
     def test_latest_article_storage_error_is_a_json_error(self):
-        def broken():
+        def broken(**_):
             raise storage.RequestError('암호화 저장소를 열 수 없습니다.', 500)
         with patch.object(api.CORE.storage, 'latest_article', broken):
             status, raw, _ = self.request('/api/articles/latest')

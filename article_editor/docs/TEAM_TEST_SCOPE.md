@@ -56,7 +56,7 @@ HTTP 방식 Windows EXE에서 팀 계정으로 로그인하고, 기사 한 건�
 | DEBT-002 | `app/core/ai/factcheck/retrieval.py:VectorCache.encode` | 모델 계산 중 열린 DB 연결/마이그레이션 쓰기 잠금 수명 |
 | DEBT-003 | `app/core/documents.py:extract_text` | 자료가 저장된 뒤 색인 시작 실패를 업로드 전체 실패로 응답 |
 | DEBT-004 | `app/core/jobs.py:run_in_background` | 시작·완료 상태 기록의 SQL/OS 오류가 워커 밖으로 전파 |
-| DEBT-005 | `dev/tests/vault_fixture.py:use_temp_vault`, `test_server.py:test_materials_extract` | 워커 종료 전 임시 DB/키 복구·삭제; 잠금/WinError 32 관찰 |
+| ~~DEBT-005~~ | `dev/tests/vault_fixture.py:use_temp_vault`, `test_server.py:test_materials_extract` | ~~워커 종료 전 임시 DB/키 복구·삭제; 잠금/WinError 32 관찰~~ — 해결: `use_temp_vault` 가 정리 전에 백그라운드 작업(job-*) 스레드를 기다린다 |
 | DEBT-006 | `web/src/components/EditorialAssist.jsx:useAutosave` | 저장 요청 중첩·첫 ID 재사용·응답 순서 위험(실사용 재현 후속) |
 | DEBT-007 | `web/src/App.jsx:App` | 최근 원고 조회 실패를 빈 저장소로 취급 |
 | ~~DEBT-008~~ | `app/core/api.py:Handler.do_GET` | ~~latestArticle의 RequestError를 JSON 오류로 변환하지 않음~~ — 해결: 다른 GET 처럼 오류 본문(JSON)으로 응답 |

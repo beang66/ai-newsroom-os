@@ -6,17 +6,23 @@ FACTCHECK_EMBEDDING_RUNTIME=remote 로 켠다(기본은 로컬 ONNX — dev/tool
 """
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 
 from ... import backend_proxy
 from ...errors import RequestError
 
 DIMENSION = 1024
-MAX_ITEMS = 32  # Cloudflare 한 요청 상한
+MAX_ITEMS = 8  # 요청 하나에 실을 문장 수(Cloudflare 상한은 32 — 작게 나눠 병렬로 보낸다)
+WORKERS = max(1, int(os.environ.get('FACTCHECK_REMOTE_PARALLEL', '4') or 4))
 MAX_CHARS = 60_000  # 요청 하나에 실을 글자 수(백엔드 본문 한도 2MB 아래로)
 
 
 class RemoteQwenEncoder:
+    slice_size = MAX_ITEMS * WORKERS  # 색인이 한 번에 맡길 조각 수 — 병렬 요청 수만큼 한꺼번에
+
     def __init__(self, task: str, fallback=None):
         self.task = task
         self.fallback = fallback  # 오프라인일 때 쓸 로컬 인코더(없으면 None)
@@ -55,7 +61,11 @@ class RemoteQwenEncoder:
                 return self.fallback.encode(texts, role)
             raise RequestError('임베딩 서버가 설정되어 있지 않습니다(AI_BACKEND=remote).', 503)
         try:
-            return np.concatenate([self._request(batch, role) for batch in self._batches(list(texts))])
+            batches = list(self._batches(list(texts)))
+            if len(batches) == 1:
+                return self._request(batches[0], role)
+            with ThreadPoolExecutor(max_workers=min(WORKERS, len(batches))) as pool:  # map 은 순서를 유지한다
+                return np.concatenate(list(pool.map(lambda batch: self._request(batch, role), batches)))
         except RequestError:
             if self.fallback and self.fallback.available():
                 return self.fallback.encode(texts, role)

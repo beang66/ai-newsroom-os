@@ -65,10 +65,26 @@ def rate_ok(user: str) -> bool:
     return True
 
 
+_VERIFIED: dict[str, tuple[float, dict]] = {}
+VERIFY_TTL = 60  # 같은 토큰을 매 요청마다 Supabase 에 묻지 않는다(임베딩처럼 요청이 잦은 경로). 폐기된 토큰은 최대 60초 더 통한다
+
+
 def verify_user(token: str):
-    """Supabase 에 토큰을 물어 신원을 확인한다(무상태). 실패하면 None."""
+    """Supabase 에 토큰을 물어 신원을 확인한다(60초 캐시). 실패하면 None."""
     if not token or not SUPABASE_URL:
         return None
+    hit = _VERIFIED.get(token)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    user = _verify_remote(token)
+    if user:
+        if len(_VERIFIED) > 500:
+            _VERIFIED.clear()
+        _VERIFIED[token] = (time.time() + VERIFY_TTL, user)
+    return user
+
+
+def _verify_remote(token: str):
     request = urllib.request.Request(
         SUPABASE_URL + '/auth/v1/user',
         headers={'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token},

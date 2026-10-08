@@ -320,6 +320,13 @@ def review_workspace(nodes, materials):
     counts = Counter()
     indexes = {}  # 같은 후보 집합은 주장마다 다시 읽고 색인하지 않는다(retrieval.ChunkIndex)
 
+    try:  # 모든 문장의 질의 벡터를 한 번에 만들어 캐시에 둔다(원격 임베딩은 문장마다 왕복하면 느리다). 실패하면 문장별로 만든다
+        from .retrieval import get_vector_cache
+        get_vector_cache().encode(
+            [c for c in (_clean(n.get("text") or "") for n in nodes or [] if n.get("type") != "IMAGE") if c], "query")
+    except Exception:
+        pass
+
     for node in nodes or []:
         node_id = str(node.get("id") or "")
         node_type = node.get("type")

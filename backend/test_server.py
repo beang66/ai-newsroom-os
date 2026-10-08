@@ -143,6 +143,14 @@ class ProxyTests(unittest.TestCase):
         self.assertEqual(authorization, 'Bearer test-cf-token')
         self.assertEqual(self.call('/ai/embeddings', {'text': ['a']})[0], 401)
 
+    def test_verified_token_is_cached_for_a_minute(self):
+        self.call('/ai/embeddings', {'text': ['a']}, token='good-token')
+        before = sum(1 for m, path, _ in SEEN if path.startswith('/auth/v1/user'))
+        self.call('/ai/embeddings', {'text': ['b']}, token='good-token')
+        after = sum(1 for m, path, _ in SEEN if path.startswith('/auth/v1/user'))
+        self.assertEqual(before, after)  # 두 번째 요청은 Supabase 에 다시 묻지 않는다
+        self.assertEqual(self.call('/ai/embeddings', {'text': ['b']}, token='bad-token')[0], 401)  # 나쁜 토큰은 캐시되지 않는다
+
     def test_transcription_forwards_multipart_as_is(self):
         body = b'--b1\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n--b1--\r\n'
         request = urllib.request.Request(self.base + '/ai/audio/transcriptions', data=body, headers={

@@ -108,11 +108,12 @@ def _encode_and_persist(source_id, text, version, chunks, cache, on_progress=Non
         _mark(source_id, text, version, 'pending')
         return 'pending'
     texts = [chunk['text'] for chunk in chunks]
+    size = getattr(cache.encoder, 'slice_size', None) or SLICE  # 원격 인코더는 병렬 요청 수만큼 크게
     try:
-        for start in range(0, len(texts), SLICE):
-            cache.encode(texts[start:start + SLICE], 'document')
+        for start in range(0, len(texts), size):
+            cache.encode(texts[start:start + size], 'document')
             if on_progress:
-                on_progress(min(1.0, (start + SLICE) / len(texts)))
+                on_progress(min(1.0, (start + size) / len(texts)))
     except jobs.JobCancelled:
         _mark(source_id, text, version, 'pending')  # 이미 만든 벡터는 캐시에 남아 다음 색인이 이어서 빠르다
         raise

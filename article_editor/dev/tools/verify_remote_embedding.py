@@ -3,7 +3,8 @@
 필요: .env 의 AI_BACKEND=remote, AI_BACKEND_URL, 로그인 세션(앱에서 로그인했거나 APP_TOKEN), 로컬 ONNX 모델 설치.
 기준(로컬 ONNX)과 원격을 같은 문장으로 인코딩해 비교한다 — 문서·질문 역할 각각의 코사인 유사도(최소/평균)와
 질문 하나당 문서 순위 상위 10 겹침. 통과 기준: 코사인 최소 0.99 이상, 상위 10 겹침 평균 0.95 이상.
-사용: python dev/tools/verify_remote_embedding.py [문장 수=40]
+사용: AI_BACKEND=remote AI_BACKEND_URL=<백엔드 주소> python dev/tools/verify_remote_embedding.py [문장 수=40]
+로그인 세션이 없으면 이메일·비밀번호를 물어본다.
 """
 import os
 import sys
@@ -20,6 +21,13 @@ from verify_embedding_onnx import corpus  # noqa: E402
 from core.ai.factcheck import paths, retrieval  # noqa: E402
 from core.ai.factcheck.onnx_embedding import OnnxQwenEncoder  # noqa: E402
 from core.ai.factcheck.remote_embedding import RemoteQwenEncoder  # noqa: E402
+
+from core import backend_proxy  # noqa: E402
+
+if not backend_proxy.token():  # 앱 밖에서 돌리므로 직접 로그인한다(입력은 화면에 남지 않고 어디에도 저장하지 않는다)
+    import getpass
+    from core.managers.session_manager import SessionManager
+    SessionManager().sign_in({'email': input('이메일: ').strip(), 'password': getpass.getpass('비밀번호: ')})
 
 count = int(sys.argv[1]) if len(sys.argv) > 1 else 40
 texts = [t for t in corpus(count) if len(t) <= 1500][:count]

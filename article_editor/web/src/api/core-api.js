@@ -16,7 +16,9 @@ export const ROUTES = Object.freeze({
   modelsCancel: "/api/models/cancel",
   assist: "/api/assist",
   articlesSave: "/api/articles/save",
-  articlesLatest: "/api/articles/latest",
+  articlesLatest: "/api/articles/latest?photos=ref", // 사진은 'media:<id>' 참조로 받고 바이트는 mediaBytes 로 따로
+  media: (id) => "/api/media/" + encodeURIComponent(id),
+  mediaAssets: "/api/media-assets",
   articleRevisions: (id) => "/api/articles/" + encodeURIComponent(id) + "/revisions",
   articleRevision: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no),
   articleRestore: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no) + "/restore",
@@ -99,7 +101,7 @@ export function createCoreApi(transport) {
     /** 원고 디스크 저장 (파일: 내 문서/AI Newsroom/articles) */
     saveArticle: (draft, signal) =>
       transport.json(ROUTES.articlesSave, { draft }, signal),
-    /** 가장 최근에 저장된 원고(앱을 열면 이어서 작업) → { draft | null } */
+    /** 가장 최근에 저장된 원고(앱을 열면 이어서 작업) → { draft | null }. 사진(data/original)은 "media:<id>" 참조 */
     latestArticle: (signal) => transport.json(ROUTES.articlesLatest, null, signal),
     /** 원고의 저장 이력 목록(최신이 위) → { revisions: [{ revisionNo, id, createdAt, title, excerpt, chars, ... }] } */
     listRevisions: (articleId, signal) => transport.json(ROUTES.articleRevisions(articleId), null, signal),
@@ -116,6 +118,10 @@ export function createCoreApi(transport) {
       ),
     /** 사진 원본 바이트 (Unsplash 키는 코어가 보유) */
     photoBytes: (id, signal) => transport.bytes(ROUTES.photo(id), signal),
+    /** 원고 사진("media:<id>")의 바이트 → Blob */
+    mediaBytes: (mediaId, signal) => transport.bytes(ROUTES.media(mediaId), signal),
+    /** 사진을 암호화 저장소에 한 번 올리고 자산으로 등록 → { id, object_ref: "media:<id>", ... } */
+    registerMediaAsset: (payload, signal) => transport.json(ROUTES.mediaAssets, payload, signal),
     /** 다운로드 추적(Unsplash 가이드라인) */
     trackPhoto: (id, signal) => transport.json(ROUTES.photoTrack(id), null, signal),
     /** 플랫폼 콘텐츠용 핵심 키워드 후보 */

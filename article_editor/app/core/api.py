@@ -37,8 +37,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/factcheck/status':
             try:return self.send(200,CORE.ai.factcheck_status())
             except RequestError as e:return self.send(e.status,error_body(e))
-        if self.path=='/api/articles/latest':
-            try:return self.send(200,CORE.storage.latest_article())
+        if self.path in ('/api/articles/latest','/api/articles/latest?photos=ref'):
+            try:return self.send(200,CORE.storage.latest_article(photo_refs=self.path.endswith('?photos=ref')))
+            except RequestError as e:return self.send(e.status,error_body(e))
+        found=re.fullmatch(r'/api/media/([a-f0-9]{32})',self.path)
+        if found:
+            try:return self.send(200,*CORE.storage.media_file(found.group(1)))
             except RequestError as e:return self.send(e.status,error_body(e))
         found=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions(?:/(\d{1,6}))?',self.path)
         if found:

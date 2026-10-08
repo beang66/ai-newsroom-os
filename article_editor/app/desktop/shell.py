@@ -61,8 +61,8 @@ def webview2_version():
     return versions[-1] if versions else None
 
 
-def run_window(url: str, *, debug: bool = False, on_ready=None) -> None:
-    """url 을 네이티브 창으로 연다. 창을 닫으면 반환한다."""
+def run_window(url: str, *, debug: bool = False, on_ready=None, on_closed=None) -> None:
+    """url 을 네이티브 창으로 연다. 창을 닫으면 반환한다. on_closed: 창이 닫힐 때 한 번 부른다(종료 정리용)."""
     import webview
 
     store = storage_dir()
@@ -75,6 +75,8 @@ def run_window(url: str, *, debug: bool = False, on_ready=None) -> None:
         min_size=MIN_SIZE,
         text_select=True,
     )
+    if on_closed:
+        window.events.closed += on_closed
     webview.start(
         func=on_ready,
         args=(window,) if on_ready else None,

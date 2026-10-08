@@ -109,6 +109,7 @@ class PlatformManager:
             proc.kill()
 
         timer = threading.Timer(self._timeout, expire)
+        timer.daemon = True  # 생성 중에 앱을 닫아도 타이머 때문에 프로세스가 남지 않게
         timer.start()
         response = None
         try:

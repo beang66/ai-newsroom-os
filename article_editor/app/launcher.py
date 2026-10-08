@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import webbrowser
 from pathlib import Path
 
@@ -217,7 +218,25 @@ def main():
                     print('데스크톱 셸(pywebview)을 찾지 못해 브라우저 모드로 엽니다. 설치: pip install pywebview', flush=True)
                 else:
                     print('데스크톱 셸(pywebview) 창 모드 — 창을 닫으면 종료됩니다.', flush=True)
-                    shell.run_window(url, debug='--debug' in args)
+                    # 창을 닫아도 pywebview/.NET(WebView2) 종료 단계에서 프로세스가 남는 경우가 있어(창 없이 파이썬·WebView2 가 메모리에
+                    # 남음) 정리를 마친 뒤 직접 끝낸다. 정상 종료든 닫힘 이벤트든 먼저 오는 쪽이 한 번만 실행한다.
+                    quit_once = threading.Lock()
+
+                    def quit_now(*_):
+                        if not quit_once.acquire(blocking=False):
+                            return
+                        watchdog = threading.Timer(8, lambda: os._exit(0))  # 정리가 멈춰도 8초 뒤에는 끝낸다
+                        watchdog.daemon = True
+                        watchdog.start()
+                        try:
+                            server.stop()
+                        finally:
+                            if log is not None:
+                                log.close()
+                            os._exit(0)
+
+                    shell.run_window(url, debug='--debug' in args, on_closed=quit_now)
+                    quit_now()
                     return 0
             webbrowser.open(url)
             server.serve_forever()

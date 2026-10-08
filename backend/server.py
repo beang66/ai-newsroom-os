@@ -173,7 +173,12 @@ class Handler(BaseHTTPRequestHandler):
             target = (urllib.parse.parse_qs(path.query).get('url') or [''])[0]
             if urllib.parse.urlsplit(target).hostname != 'api.unsplash.com':
                 return self._json(400, {'error': '허용되지 않은 사진 주소입니다.'})
-            status, mime, raw = forward(target, None, {'Accept': 'application/json', 'User-Agent': 'AINewsroomProxy/1.0'})
+            status, mime, raw = forward(target, None, {
+                'Authorization': 'Client-ID ' + os.environ.get('UNSPLASH_ACCESS_KEY', ''),  # 키 없이는 Unsplash 가 401 로 거절한다
+                'Accept-Version': 'v1',
+                'Accept': 'application/json',
+                'User-Agent': 'AINewsroomProxy/1.0',
+            })
             return self._send(status, raw, mime)
         if path.path.startswith('/unsplash/'):
             target = UNSPLASH_BASE + path.path[len('/unsplash'):] + (('?' + path.query) if path.query else '')

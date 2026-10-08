@@ -54,7 +54,8 @@ def _headers() -> dict:
 
 
 def _fail(error: urllib.error.HTTPError):
-    # 백엔드는 OpenAI 응답 코드를 그대로 넘긴다 — 401 이 '로그인 필요'가 아니라 백엔드의 OpenAI 키 거절일 수 있다
+    # 백엔드는 업스트림(OpenAI·Unsplash) 응답 코드를 그대로 넘긴다 — 401 이 '로그인 필요'가 아니라 업스트림 키 거절일 수 있다.
+    # 백엔드 자신의 로그인 거절만 AUTH_REQUIRED(화면이 로그인 창을 연다)로 알린다.
     if error.code == 401:
         try:
             body = error.read().decode('utf-8', 'replace')
@@ -62,16 +63,15 @@ def _fail(error: urllib.error.HTTPError):
             body = ''
         if 'api key' in body.lower() or 'invalid_api_key' in body:
             raise RequestError('백엔드(Render)의 OpenAI 키가 거절됐어요. Render 의 OPENAI_API_KEY 를 확인해 주세요.', 502) from None
+        if '로그인이 필요' in body:
+            raise RequestError('백엔드 인증이 필요합니다. 다시 로그인해 주세요.', 502, code='AUTH_REQUIRED') from None
+        raise RequestError('백엔드가 외부 서비스(사진·AI) 요청을 거절했어요. 백엔드의 키 설정을 확인해 주세요.', 502) from None
     messages = {
-        401: '백엔드 인증이 필요합니다. 다시 로그인해 주세요.',
         403: '이 작업을 수행할 권한이 없습니다.',
         404: '백엔드에 아직 이 기능이 없습니다(백엔드 수정이 필요합니다).',
         429: '사용 한도 또는 요청 한도에 도달했어요. 잠시 후 다시 시도해 주세요.',
     }
-    raise RequestError(
-        messages.get(error.code, '백엔드 요청이 실패했습니다. 잠시 후 다시 시도해 주세요.'), 502,
-        code='AUTH_REQUIRED' if error.code == 401 else None,  # 화면이 로그인 창을 열고 다시 시도하게
-    ) from None
+    raise RequestError(messages.get(error.code, '백엔드 요청이 실패했습니다. 잠시 후 다시 시도해 주세요.'), 502) from None
 
 
 def post(path: str, payload, timeout: int = TIMEOUT, content_type: str = 'application/json') -> dict:

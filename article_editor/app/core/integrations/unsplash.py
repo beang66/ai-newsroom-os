@@ -39,5 +39,8 @@ def selected_unsplash(photo_id):
     photo=unsplash_get('/photos/'+photo_id)
     location=photo.get('links',{}).get('download_location','')
     if not location:raise RequestError('사진 다운로드 정보를 확인하지 못했어요.',502)
-    unsplash_get(location)
+    try:
+        unsplash_get(location)  # 다운로드 집계(Unsplash 가이드라인). 실패해도 사진 넣기는 막지 않는다
+    except RequestError:
+        pass
     return photo

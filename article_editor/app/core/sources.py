@@ -12,7 +12,7 @@ import json
 import os
 
 from . import storage, vault
-from .source_index import indexing_ids
+from .source_index import indexing_progress
 from .errors import RequestError
 
 
@@ -32,13 +32,15 @@ def _usage(db):
     return used
 
 
-def _item(row, used, active=()):
+def _item(row, used, active=None):
     source_id, name, created, size, chars, state, chunks = row
+    active = active or {}
     if source_id in active:
         state = 'indexing'  # 색인 작업이 도는 중 — 끝나기 전에는 팩트체크를 보내지 않는다
     return {'id': source_id, 'name': name, 'format': os.path.splitext(name)[1].lstrip('.').lower(), 'size': size, 'chars': chars,
             'createdAt': created, 'usedBy': used.get(source_id, []),
-            'index': {'state': state or 'pending', 'chunks': chunks or 0}}
+            'index': {'state': state or 'pending', 'chunks': chunks or 0,
+                      **({'progress': round(active[source_id], 3)} if source_id in active else {})}}
 
 
 _SELECT = ('SELECT s.id, s.name, s.created_at, length(s.original), length(s.text), i.state, i.chunk_count '
@@ -51,7 +53,7 @@ def list_sources():
         used = _usage(db)
         rows = db.execute(_SELECT + ' WHERE s.workspace_id = ? ORDER BY s.created_at DESC, s.id',
                           (vault.WORKSPACE_ID,)).fetchall()
-    active = indexing_ids()
+    active = indexing_progress()
     return {'sources': [_item(row, used, active) for row in rows]}
 
 
@@ -62,7 +64,7 @@ def get_source(source_id):
         used = _usage(db)
     if not row:
         raise RequestError('자료를 찾지 못했습니다.', 404, code='NOT_FOUND')
-    return _item(row, used, indexing_ids())
+    return _item(row, used, indexing_progress())
 
 
 def delete_source(source_id, force=False):

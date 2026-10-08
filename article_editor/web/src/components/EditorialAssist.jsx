@@ -55,7 +55,7 @@ export function useFactCheck(article) {
   const [results, setResults] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [indexing, setIndexing] = useState(false);
+  const [indexing, setIndexing] = useState(false); // false | { percent: 0~1 }
   const latest = useRef(article);
   latest.current = article;
   const state = useRef({ running: false, again: false, cacheKey: "", cache: new Map(), tried: new Set() });
@@ -78,8 +78,9 @@ export function useFactCheck(article) {
     try {
       const { sources: stored = [] } = await core.listSources();
       const ids = new Set(materials.map((s) => s.id));
-      if (stored.some((s) => ids.has(s.id) && s.index?.state === "indexing")) {
-        setIndexing(true);
+      const active = stored.filter((s) => ids.has(s.id) && s.index?.state === "indexing");
+      if (active.length) {
+        setIndexing({ percent: Math.min(...active.map((s) => s.index.progress ?? 0)) }); // 가장 덜 끝난 자료 기준
         clearTimeout(state.current.wait);
         state.current.wait = setTimeout(() => run(), 3000);
         return;
@@ -95,7 +96,7 @@ export function useFactCheck(article) {
       setResults((await restoreExternal(state.current, content)) ? await factcheckArticle(content, materials, state.current.cache) : items);
     } catch (e) {
       if (e?.code === "SOURCE_INDEXING") {
-        setIndexing(true);
+        setIndexing({ percent: 0 });
         state.current.wait = setTimeout(() => run(), 3000);
       } else setError(e?.message || String(e));
     } finally {

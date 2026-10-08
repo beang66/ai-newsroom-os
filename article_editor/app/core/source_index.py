@@ -99,19 +99,30 @@ def _mark(source_id, text, version, state, error=None):
             _write_status(db, source_id, text, version, state, error=error)
 
 
-def _encode_and_persist(source_id, text, version, chunks, cache):
+SLICE = 8  # 진행률을 보고하고 취소를 확인하는 단위(조각 수)
+
+
+def _encode_and_persist(source_id, text, version, chunks, cache, on_progress=None):
+    """on_progress(0~1): 조각을 SLICE 개씩 인코딩할 때마다 부른다. 거기서 JobCancelled 를 던지면 멈춘다."""
     if not _models_available(cache):
         _mark(source_id, text, version, 'pending')
         return 'pending'
+    texts = [chunk['text'] for chunk in chunks]
     try:
-        cache.encode([chunk['text'] for chunk in chunks], 'document')
+        for start in range(0, len(texts), SLICE):
+            cache.encode(texts[start:start + SLICE], 'document')
+            if on_progress:
+                on_progress(min(1.0, (start + SLICE) / len(texts)))
+    except jobs.JobCancelled:
+        _mark(source_id, text, version, 'pending')  # 이미 만든 벡터는 캐시에 남아 다음 색인이 이어서 빠르다
+        raise
     except Exception:
         _mark(source_id, text, version, 'failed', 'ENCODER_ERROR')
         return 'failed'
     return 'ready' if _persist(source_id, text, version, chunks) else 'pending'
 
 
-def index_source(source_id):
+def index_source(source_id, on_progress=None):
     """Index once; missing models are a successful deferred (pending) outcome."""
     from .ai.factcheck.material_chunks import build_material_chunks
     with _LOCK:
@@ -137,7 +148,9 @@ def index_source(source_id):
         except Exception:
             _mark(source_id, text, version, 'failed', 'CHUNKER_ERROR')
             return 'failed'
-        return _encode_and_persist(source_id, text, version, chunks, cache)
+        if on_progress:
+            on_progress(0.0)  # 청킹이 끝났다 — 이제부터 임베딩(대부분의 시간)
+        return _encode_and_persist(source_id, text, version, chunks, cache, on_progress)
 
 
 def material_chunks(material):
@@ -172,12 +185,16 @@ def material_chunks(material):
         return chunks
 
 
-def indexing_ids():
-    """지금 색인 작업(source_ingest)이 대기·실행 중인 자료 id(32자 hex) 집합."""
+def indexing_progress():
+    """지금 색인 작업(source_ingest)이 대기·실행 중인 자료 → 진행률(0~1) {32자 hex id: float}."""
     with vault.connect() as db:
-        rows = db.execute("SELECT input_resource_id FROM processing_jobs WHERE type = 'source_ingest' "
+        rows = db.execute("SELECT input_resource_id, progress FROM processing_jobs WHERE type = 'source_ingest' "
                           "AND status IN ('queued', 'running') AND workspace_id = ?", (vault.WORKSPACE_ID,)).fetchall()
-    return {row[0].replace('-', '') for row in rows if row[0]}
+    return {row[0].replace('-', ''): float(row[1] or 0) for row in rows if row[0]}
+
+
+def indexing_ids():
+    return set(indexing_progress())
 
 
 def start_indexing(source_id):
@@ -198,7 +215,12 @@ def start_indexing(source_id):
     def worker(ctx):
         if ctx.cancelled():
             raise jobs.JobCancelled()
-        state = index_source(source_id)
+        def on_progress(value):
+            if ctx.cancelled():
+                raise jobs.JobCancelled()
+            ctx.progress(value)
+
+        state = index_source(source_id, on_progress)
         if state == 'failed':
             raise RuntimeError('Source indexing failed')
         return {'resource_type': 'source', 'resource_id': resource_id}

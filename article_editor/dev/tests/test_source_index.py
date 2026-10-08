@@ -163,7 +163,8 @@ class SourceIndexTests(unittest.TestCase):
                 self.assertEqual(job['type'], 'source_ingest')
                 self.assertEqual(job['status'], 'running')
                 # 색인 중에는 목록이 indexing 으로 보이고, 팩트체크는 409 로 막힌다(요청 안에서 다시 색인하지 않게)
-                self.assertEqual(sources.get_source(result['sourceId'])['index']['state'], 'indexing')
+                running = sources.get_source(result['sourceId'])['index']
+                self.assertEqual((running['state'], running['progress']), ('indexing', 0.0))
                 with self.assertRaises(RequestError) as blocked:
                     AIManager().factcheck_run({'nodes': [{'id': 's1', 'type': 'TEXT', 'text': 'x'}],
                                                'materials': [{'id': result['sourceId'], 'title': 'new.txt', 'content': 'New source.'}]})
@@ -255,6 +256,25 @@ class SourceIndexTests(unittest.TestCase):
         self.assertEqual(self.status()[4], 'ENCODER_ERROR')
         self.assertEqual(self.stored_chunks(), [])
         self.assertEqual(source_index.index_source(self.sid), 'ready')
+
+    def test_progress_is_reported_per_slice_and_cancel_stops_without_failing(self):
+        seen = []
+        with mock.patch.object(source_index, 'SLICE', 1):
+            self.assertEqual(source_index.index_source(self.sid, seen.append), 'ready')
+        self.assertEqual(seen[0], 0.0)
+        self.assertEqual(seen[-1], 1.0)
+        self.assertEqual(seen, sorted(seen))
+        self.assertEqual(source_index.indexing_ids(), set())
+        sid2, _ = storage.save_source('b.txt', b'Another|source', 'Another|source')
+
+        def stop(value):
+            if value > 0:  # 청킹이 끝난 뒤 임베딩 구간에서 취소
+                raise jobs.JobCancelled()
+        with mock.patch.object(source_index, 'SLICE', 1):
+            with self.assertRaises(jobs.JobCancelled):
+                source_index.index_source(sid2, stop)
+        with vault.connect() as db:
+            self.assertEqual(db.execute('SELECT state FROM source_index WHERE source_id = ?', (sid2,)).fetchone()[0], 'pending')
 
     def test_deleted_or_changed_during_encoding_does_not_publish_stale_rows(self):
         real_encode = self.encoder.encode

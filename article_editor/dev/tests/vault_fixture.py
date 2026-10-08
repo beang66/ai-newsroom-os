@@ -15,10 +15,11 @@ from core import storage, vault  # noqa: E402
 TEST_KEY = 'ab' * 32
 
 
-def _join_background_jobs(timeout=10.0):
+def _join_background_jobs(timeout=90.0):
     """백그라운드 작업(core.jobs.run_in_background 가 띄우는 'job-…' 스레드)이 끝날 때까지 기다린다.
     DEBT-005: 자료 업로드가 시작한 색인 작업이 끝나기 전에 DB/키 패치를 풀고 임시 폴더를 지우면
-    다음 테스트가 'file is not a database'·'Directory not empty'(윈도우: database is locked·WinError 32)로 깨졌다."""
+    다음 테스트가 'file is not a database'·'Directory not empty'(윈도우: database is locked·WinError 32)로 깨졌다.
+    모델이 설치된 PC 에서는 이 작업이 실제 임베딩 모델을 불러와(전체 스위트처럼 부하가 클 때 10초를 넘긴다) 대기를 90초로 둔다."""
     deadline = time.monotonic() + timeout
     for thread in threading.enumerate():
         if thread.name.startswith('job-') and thread is not threading.current_thread():

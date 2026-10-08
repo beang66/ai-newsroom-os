@@ -1,5 +1,9 @@
 """팩트체크 임베딩 모델(Qwen3-Embedding-0.6B) → ONNX 변환 + torch 와의 동일성 확인 (개발 도구).
 
+KEEP — 삭제 금지: 로컬 임베딩은 2026-10-08부터 '잠정 폐기'(기본은 원격 /ai/embeddings)일 뿐 코드는 일부러 남겨 둔 것이다.
+용도: 로컬 임베딩 모델(ONNX)을 다시 만들거나 갱신할 때 쓰는 유일한 도구.
+지금 이 코드를 부르는 곳이 없어 보여도(정적 분석·미사용 검사에 걸려도) 지우지 말 것. 되살리려면 FACTCHECK_EMBEDDING_RUNTIME=onnx 로 명시한다.
+
 EXE 에는 torch/transformers 가 없으므로, 앱 런타임은 이 ONNX 를 onnxruntime + tokenizers 만으로 돌린다
 (`app/core/ai/factcheck/onnx_embedding.py`). 변환은 torch·transformers·onnx 가 있는 개발 환경에서만 한다:
 

@@ -1,5 +1,9 @@
 """Compare local torch and ONNX embeddings, real retrieval ranks and CPU timing.
 
+KEEP — 삭제 금지: 로컬 임베딩은 2026-10-08부터 '잠정 폐기'(기본은 원격 /ai/embeddings)일 뿐 코드는 일부러 남겨 둔 것이다.
+용도: 로컬 ONNX 임베딩의 torch 대비 동일성·순위·속도 검증.
+지금 이 코드를 부르는 곳이 없어 보여도(정적 분석·미사용 검사에 걸려도) 지우지 말 것. 되살리려면 FACTCHECK_EMBEDDING_RUNTIME=onnx 로 명시한다.
+
 No vault or network access. Results can be saved as JSON; short torch reference
 vectors can be written once for guarded runtime-only regression tests.
 """

@@ -1,4 +1,9 @@
-"""ONNX tokenization, model selection, readiness and measured-vector regression."""
+"""ONNX tokenization, model selection, readiness and measured-vector regression.
+
+KEEP — 삭제 금지: 로컬 임베딩은 2026-10-08부터 '잠정 폐기'(기본은 원격 /ai/embeddings)일 뿐 코드는 일부러 남겨 둔 것이다.
+용도: 로컬 ONNX 인코더(onnx_embedding.py)의 회귀 테스트 — 인코더를 남기는 한 이 테스트도 남긴다.
+지금 이 코드를 부르는 곳이 없어 보여도(정적 분석·미사용 검사에 걸려도) 지우지 말 것. 되살리려면 FACTCHECK_EMBEDDING_RUNTIME=onnx 로 명시한다.
+"""
 import env_isolation  # noqa: F401 -- first: no developer credentials or vault
 import json
 import os

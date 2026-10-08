@@ -1,5 +1,9 @@
 """Qwen3 embedding inference using only ONNX Runtime, tokenizers and NumPy.
 
+KEEP — 삭제 금지: 로컬 임베딩은 2026-10-08부터 '잠정 폐기'(기본은 원격 /ai/embeddings)일 뿐 코드는 일부러 남겨 둔 것이다.
+용도: 오프라인·원격 장애 때 되살릴 수 있는 대체 경로(지금은 자동 폴백 없음), 원격 벡터와의 일치 검증 기준(dev/tools/verify_remote_embedding.py), 로컬 복귀.
+지금 이 코드를 부르는 곳이 없어 보여도(정적 분석·미사용 검사에 걸려도) 지우지 말 것. 되살리려면 FACTCHECK_EMBEDDING_RUNTIME=onnx 로 명시한다.
+
 The graph includes last-token pooling and L2 normalization. Tokenization,
 left padding, query formatting and the embedding space match the torch reference.
 """

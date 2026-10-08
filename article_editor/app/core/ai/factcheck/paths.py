@@ -10,6 +10,7 @@ from app_paths import WORKSPACE
 from ... import config
 
 JUDGE_DIR = Path(os.environ.get('FACTCHECK_JUDGE_DIR') or config.MODELS_DIR / 'factcheck-judge-0.6b-v3')  # ONNX 판정기
+# KEEP — 삭제 금지: 로컬 임베딩 모델 경로(잠정 폐기, 2026-10-08). 기본 임베딩은 원격이지만 개발·검증·복귀용으로 남긴다.
 EMBEDDING_DIR = Path(os.environ.get('ARCHIVE_EMBEDDING_MODEL_PATH') or config.MODELS_DIR / 'embedding-qwen3-0.6b-onnx')
 TORCH_EMBEDDING_DIR = config.MODELS_DIR / 'embedding-qwen3-0.6b'
 BOUNDARY_DIR = Path(os.environ.get('BOUNDARY_MODEL_DIR') or config.MODELS_DIR / 'boundary-roberta-base-v3')

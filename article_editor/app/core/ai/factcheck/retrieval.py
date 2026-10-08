@@ -50,7 +50,12 @@ def vector_key(text: str, role: str) -> str:
 
 
 class QwenEncoder:
-    """Lazy CPU encoder. No implicit downloads and no MiniLM fallback."""
+    """Lazy CPU encoder. No implicit downloads and no MiniLM fallback.
+
+    KEEP — 삭제 금지: 로컬 임베딩은 2026-10-08부터 '잠정 폐기'(기본은 원격 /ai/embeddings)일 뿐 코드는 일부러 남겨 둔 것이다.
+    용도: ONNX 변환·검증의 torch 기준 구현(개발 전용, FACTCHECK_EMBEDDING_RUNTIME=torch).
+    지금 이 코드를 부르는 곳이 없어 보여도(정적 분석·미사용 검사에 걸려도) 지우지 말 것. 되살리려면 FACTCHECK_EMBEDDING_RUNTIME=onnx 로 명시한다.
+    """
 
     def __init__(self, model_path: str | Path | None = None):
         self.path = Path(
@@ -127,6 +132,7 @@ def create_encoder():
     """Preserve the embedding space/cache keys; select only the inference runtime."""
     if paths.embedding_runtime() == 'torch':
         return QwenEncoder()
+    # KEEP — 삭제 금지: 아래 'onnx'·'torch' 분기는 로컬 임베딩을 잠정 폐기하며 일부러 남긴 개발·검증·복귀 경로다(2026-10-08).
     if paths.embedding_runtime() == 'onnx':  # 개발·검증용(명시 설정일 때만)
         from .onnx_embedding import OnnxQwenEncoder
         return OnnxQwenEncoder(paths.EMBEDDING_DIR, query_input)

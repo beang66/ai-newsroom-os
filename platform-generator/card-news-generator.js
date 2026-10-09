@@ -107,9 +107,9 @@ async function generateCardNews(input) {
   if (!hasText(input?.article?.title) || !hasText(input?.article?.content)) {
     throw new Error("기사 제목과 원문을 입력해주세요.");
   }
-  if (!Array.isArray(input.selected_keywords) || !input.selected_keywords.length ||
+  if (!Array.isArray(input.selected_keywords) ||
       !input.selected_keywords.every(hasText)) {
-    throw new Error("키워드를 하나 이상 선택해주세요.");
+    throw new Error("키워드 입력 형식을 확인해주세요.");
   }
   const apiKey = OpenAI.apiKey?.trim();
   if (!apiKey) throw new Error(".env의 선택한 AI API 키를 확인해주세요.");

@@ -1,4 +1,4 @@
-// 일괄 생성: Instagram → Threads → Blog → 선택적 카드뉴스 순서로 처리합니다.
+// 일괄 생성: Instagram → Threads → 선택적 카드뉴스 순서로 처리합니다.
 // 카드뉴스 체크가 없으면 기존 카드를 보존합니다. 체크하면 새 초안으로 교체합니다.
 (() => {
   const get = (id) => document.getElementById(id);
@@ -13,7 +13,7 @@
     return;
   }
 
-  const cardButton = get("generate-instagram");
+  const cardButton = get("generate-card-news");
 
   if (!cardButton) {
     console.error("카드뉴스 생성 버튼을 찾지 못했습니다.");
@@ -24,7 +24,6 @@
     instagram: "Instagram",
     card_news: "카드뉴스",
     threads: "Threads",
-    blog: "Blog",
   };
 
   const box = document.createElement("div");
@@ -37,27 +36,24 @@
   button.textContent = "선택한 항목 생성";
   button.style.width = "100%";
 
-  const notice = document.createElement("p");
-  notice.className = "notice";
-  notice.textContent =
-    "선택한 Instagram·Threads·Blog 원고와 추가 카드뉴스를 생성합니다. 체크한 결과물은 새 초안으로 교체됩니다. 보관할 내용은 먼저 저장해주세요.";
-
   const status = document.createElement("p");
   status.className = "notice";
   status.style.whiteSpace = "pre-wrap";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
 
-  box.append(button, notice, status);
+  // 카드뉴스 전용 버튼은 일괄 생성 버튼 바로 아래로 이동합니다.
+  // 카드뉴스 단독 생성은 체크 여부와 관계없이 항상 사용할 수 있습니다.
+  box.append(button, cardButton.parentElement, status);
 
-  // 기존 개별 생성 버튼 위에 배치
+  // 생성 동작을 한 영역으로 모아 체크 항목 아래에 배치
   get("card-news-options").after(box);
 
   const platformNotice = document.getElementById("platform-notice");
 
   if (platformNotice) {
     platformNotice.textContent =
-      "플랫폼 원고와 추가 카드뉴스를 선택하세요. 카드뉴스는 별도 결과물이며 카드뉴스도 생성을 체크해 제작합니다.";
+      "일괄 생성할 항목을 선택하세요.";
   }
 
   let busy = false;
@@ -65,14 +61,10 @@
   button.addEventListener("click", async () => {
     if (busy) return;
 
-    const otherGenerationButtons = [
-      cardButton,
-      ...document.querySelectorAll(".text-generate-tools button"),
-    ];
+    const otherGenerationButtons = [cardButton];
 
     if (
-      get("suggest-keywords")?.disabled ||
-      otherGenerationButtons.some((item) => item.disabled)
+      get("import-article")?.disabled || otherGenerationButtons.some((item) => item.disabled)
     ) {
       status.textContent =
         "현재 진행 중인 요청이 끝난 뒤 실행해주세요.";
@@ -83,13 +75,13 @@
     const request = structuredClone(window.NewsInput.getRequest());
 
     const platforms = request.platforms.filter(
-      (platform) => ["instagram", "threads", "blog"].includes(platform)
+      (platform) => ["instagram", "threads"].includes(platform)
     );
 
     if (request.include_card_news) platforms.push("card_news");
 
     if (!platforms.length) {
-      status.textContent = "플랫폼 또는 카드뉴스도 생성을 선택해주세요.";
+      status.textContent = "플랫폼 또는 카드뉴스 포함을 선택해주세요.";
       return;
     }
 
@@ -98,11 +90,6 @@
       return;
     }
 
-    if (!request.selected_keywords.length) {
-      status.textContent =
-        "키워드를 선택하거나 직접 입력해주세요.";
-      return;
-    }
 
     const generationInput = {
       article: request.article,
@@ -112,9 +99,9 @@
 
     const fields = [
       ...document.querySelectorAll(
-        "#article-url, #import-article, #include-card-news, #article-title, #article-content, #custom-keywords, " +
-        "#article-requirements, #suggest-keywords, " +
-        "#keyword-candidates input, .platform input, #load-local-draft, #save, #load"
+        "#article-url, #import-article, #include-card-news, #article-title, #custom-keywords, " +
+        "#article-requirements, " +
+        ".platform input, #load-local-draft, #save, #load"
       ),
       ...otherGenerationButtons,
       button,

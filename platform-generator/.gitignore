@@ -1,11 +1,10 @@
 node_modules/
-output/
-
 .env
 .env.*
 !.env.example
-!env.example
-node_modules/
 output/
-gemini-backup-*/
-*.log
+*-backup-*/
+*.ig-local-backup-*
+*.sns-backup-*
+*.tmp
+*.zip

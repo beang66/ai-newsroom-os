@@ -7,8 +7,9 @@
     storageInfo: "/api/local/storage",
     generate: "/api/generate/",
     render: "/editor/render",
-    legacyRender: "/render",
   });
+
+  const SNS_ENDPOINTS=Object.freeze({instagram:'https://www.instagram.com/',threads:'https://www.threads.com/'});
 
   // 실제 사용자 폴더는 서버에서만 확인하며 브라우저에는 Node 모듈을 노출하지 않습니다.
   if (typeof module !== "undefined" && module.exports) {
@@ -27,10 +28,17 @@
       }
       return path.join(os.homedir(), "Documents", "AI-Newsroom");
     }
+    // 팀 프론트 개발 서버를 프록시로 연결할 때 허용할 Origin을 명시합니다.
+    function getEditorOrigins(){
+      const value=(process.env.NEWSROOM_EDITOR_ORIGIN||'').trim();if(!value)return [];
+      const url=new URL(value);
+      if(url.protocol!=='http:'||!['localhost','127.0.0.1','[::1]'].includes(url.hostname)||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw new Error('NEWSROOM_EDITOR_ORIGIN은 로컬 프론트 서버의 Origin으로 설정해주세요.');
+      return [url.origin];
+    }
     // 파일 저장 경로를 변경할 때도 이 설정만 수정합니다.
     const STORAGE_FOLDERS = Object.freeze({ drafts: "drafts", images: "images", renderOutput: "output" });
     const AI_ENDPOINTS = Object.freeze({ gemini: 'https://generativelanguage.googleapis.com/v1beta/models/' });
-    module.exports = { PATHS, STORAGE_FOLDERS, getStorageRoot, AI_ENDPOINTS };
+    module.exports = { PATHS, STORAGE_FOLDERS, getStorageRoot, AI_ENDPOINTS, SNS_ENDPOINTS, getEditorOrigins };
     return;
   }
 
@@ -125,8 +133,8 @@
         errorMessage: "사진 검색어 추천에 실패했습니다.",
       });
     },
-    searchTeamPhotos(query, page = 1, signal) {
-      return requestJson("/api/unsplash/search?" + new URLSearchParams({q: query, page}), {signal}, {
+    searchTeamPhotos(query, page = 1, signal, perPage = 3) {
+      return requestJson("/api/unsplash/search?" + new URLSearchParams({q: query, page, per_page: perPage}), {signal}, {
         errorMessage: "사진 검색에 실패했습니다.",
       });
     },
@@ -195,24 +203,6 @@
       );
     },
 
-    // Unsplash 사진 검색
-    searchPhotos(query) {
-      return requestJson(
-        "/editor/photos?q=" + encodeURIComponent(query),
-        undefined,
-        editorErrors,
-      );
-    },
-
-    // Unsplash 사진 선택 처리
-    selectPhoto(id) {
-      return requestJson(
-        "/editor/photos/select",
-        postJson({ id }),
-        editorErrors,
-      );
-    },
-
     // 현재 편집 카드 이미지 생성
     renderCard(card) {
       // 원본·편집 이력은 로컬 초안에만 보관하고 JPG 요청에는 현재 표시 이미지만 전달합니다.
@@ -220,12 +210,75 @@
       return requestJson(PATHS.render, postJson({ card: rendered }), editorErrors);
     },
 
-    // 백업 화면의 기존 이미지 생성
-    renderLegacyCard(payload) {
-      return requestJson(PATHS.legacyRender, postJson(payload), {
-        errorMessage: "이미지 생성에 실패했습니다.",
-        checkSuccess: true,
-      });
-    },
   };
+})();
+
+// 최신 카드 JPG 묶음: Instagram·Threads Playwright가 공통으로 사용합니다.
+(() => {
+  if(typeof window==='undefined'||!window.NewsApi)return;
+  const IMAGE_PATHS=['/api/local/images/','/output/'];
+  function blobDataUrl(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('이미지 파일을 읽지 못했습니다.'));reader.readAsDataURL(blob);});}
+  // 1. 최신 편집 카드 렌더링 결과를 같은 로컬 서버에서만 읽습니다.
+  window.NewsApi.renderPublishCards = async (cards,onProgress=()=>{}) => {
+    if(!Array.isArray(cards) || !cards.length || cards.length>10)throw new Error('생성한 카드뉴스 1~10장이 필요합니다.');
+    const assets=[];
+    for(const [index,card] of cards.entries()){
+      onProgress(index+1,cards.length);
+      const result=await window.NewsApi.renderCard({...card,page:index+1,total_pages:cards.length,
+        role:index===0?'cover':index===cards.length-1?'closing':'body'});
+      if(!result.success)throw new Error(result.error || '카드 이미지 생성 실패');
+      const url=new URL(result.image_url,location.origin);
+      if(url.origin!==location.origin || !IMAGE_PATHS.some(p=>url.pathname.startsWith(p)) || !/^[A-Za-z0-9_-]+\.jpg$/.test(url.pathname.split('/').pop()))throw new Error('카드 이미지 경로를 확인해주세요.');
+      const response=await fetch(url.href,{signal:AbortSignal.timeout(30000)});
+      if(!response.ok)throw new Error('생성한 카드 이미지를 읽지 못했습니다.');
+      const blob=await response.blob();
+      if(blob.type!=='image/jpeg' || blob.size>5*1024*1024)throw new Error('카드 JPG 형식 또는 용량을 확인해주세요.');
+      assets.push({name:`card_${String(index+1).padStart(2,'0')}.jpg`,mime:blob.type,order:index+1,data_url:await blobDataUrl(blob)});
+    }
+    return assets;
+  };
+})();
+
+// AI_NEWSROOM_INSTAGRAM_LOCAL_V1
+// Instagram 연결 요청 경로는 기존 api.js 안에서만 관리합니다.
+(() => {
+  if (typeof window === "undefined" || !window.NewsApi) return;
+  const root = '/api/instagram-local';
+  async function request(path, body) {
+    let response;
+    try {
+      response = await fetch(root + path, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(180000)
+      });
+    } catch { throw new Error('서버 연결 또는 작업 결과를 확인하지 못했습니다. 공유를 시도했다면 Instagram에서 먼저 확인해주세요.'); }
+    let result;
+    try { result = await response.json(); }
+    catch { throw new Error('Instagram 로컬 경로를 확인해주세요. 설치 후 Node 서버를 다시 실행해야 합니다.'); }
+    if (!response.ok || !result.success) throw new Error(result.error || 'Instagram 작업 실패');
+    return result;
+  }
+  Object.assign(window.NewsApi, {
+    instagramLocalConnect: () => request('/connect', {}),
+    instagramLocalStatus: () => request('/status'),
+    instagramLocalPrepare: payload => request('/prepare', payload),
+    instagramLocalPublish: (id, reviewed) => request('/publish', { id, reviewed }),
+    instagramLocalClose: () => request('/close', {})
+  });
+})();
+
+// Threads 전용 브라우저 연결: 모든 프론트 요청은 api.js로 모읍니다.
+(() => {
+ if(typeof window==='undefined'||!window.NewsApi)return;
+ const root='/api/threads-local';
+ async function request(path,body){
+  let response;
+  try {response=await fetch(root+path,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(180000)});}
+  catch {throw new Error('Threads 작업 결과를 확인하지 못했습니다. 게시를 요청했다면 전용 창에서 먼저 확인해주세요.');}
+  const result=await response.json().catch(()=>{throw new Error('Threads 로컬 서버 응답을 확인해주세요.');});
+  if(!response.ok||!result.success)throw new Error(result.error||'Threads 작업 실패');return result;
+ }
+ Object.assign(window.NewsApi,{threadsLocalConnect:()=>request('/connect',{}),threadsLocalStatus:()=>request('/status'),threadsLocalPrepare:payload=>request('/prepare',payload),threadsLocalPublish:(id,reviewed)=>request('/publish',{id,reviewed}),threadsLocalClose:()=>request('/close',{})});
 })();

@@ -38,14 +38,16 @@ async function selectedPhoto(id){
 }
 function safeRoute(work){return async(req,res)=>{try{await work(req,res);}catch(error){res.status([400,413,503].includes(error.status)?error.status:502).json({error:error.status===401?'AI API 키를 확인해주세요.':error.status===429?'AI 요청 한도를 확인해주세요.':error.status?error.message:'사진 서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.'});}};}
 module.exports=function registerPhotoRoutes(app){
-  // 1. 검색: 팀원 코드와 동일하게 한 페이지에 3장, 원본 Unsplash 객체 반환
+  // 1. 검색: 기존 기본 3장을 유지하며 가운데 추천 패널은 4장을 요청합니다.
   app.get('/api/unsplash/search',safeRoute(async(req,res)=>{
     const q=typeof req.query.q==='string'?req.query.q.trim():'';
     const page=Number(req.query.page??1);
+    const perPage=Number(req.query.per_page??3);
+    if(!Number.isInteger(perPage)||perPage<1||perPage>12)throw problem('사진 수는 1~12장으로 요청해주세요.');
     if(!q||q.length>150)throw problem('검색어를 150자 이하로 입력해주세요.');
     if(!Number.isInteger(page)||page<1||page>10000)throw problem('올바른 페이지 번호를 입력해주세요.');
-    const result=await unsplashGet('/search/photos?'+new URLSearchParams({query:q,per_page:3,page}));
-    res.json({photos:result.results.slice(0,3),page,totalPages:Math.min(10000,result.total_pages),total:result.total});
+    const result=await unsplashGet('/search/photos?'+new URLSearchParams({query:q,per_page:perPage,page}));
+    res.json({photos:result.results.slice(0,perPage),page,totalPages:Math.min(10000,result.total_pages),total:result.total});
   }));
   // 2. 선택·다운로드 추적 및 편집에 필요한 원본 이미지
   app.get('/api/unsplash/photo/:id/track',safeRoute(async(req,res)=>{

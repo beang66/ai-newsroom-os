@@ -1,10 +1,11 @@
 {
-  "name": "news-renderer",
+  "name": "newsroom-platform-generator",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Instagram·Threads 기사 편집 및 로컬 Playwright 발행 모듈",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "test": "node --test tests/*.test.cjs"
   },
   "keywords": [],
   "author": "",

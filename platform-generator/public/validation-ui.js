@@ -12,14 +12,14 @@
     instagram: "Instagram",
     card_news: "카드뉴스",
     threads: "Threads",
-    blog: "Blog",
   };
 
   // state와 revision은 index.html의 공통 편집 상태를 사용합니다.
 
-  // 2. 왼쪽 패널에 검수 버튼·상태·결과 영역 생성
+  // 2. 가운데 상단 오른쪽에 검수 버튼, 바로 아래에 검수 결과 배치
   const panel = document.createElement("section");
-  panel.className = "panel";
+  panel.className = "validation-panel";
+  panel.id = "validation-panel";
 
   const heading = document.createElement("h2");
   heading.textContent = "원고 검수";
@@ -31,7 +31,8 @@
 
   const button = document.createElement("button");
   button.className = "dark";
-  button.style.width = "100%";
+  button.id = "validate-current-draft";
+  button.style.width = "auto";
 
   const status = document.createElement("p");
   status.className = "notice";
@@ -41,8 +42,14 @@
 
   const results = document.createElement("div");
 
-  panel.append(heading, guide, button, status, results);
-  document.querySelector(".left").append(panel);
+  const center = get("stage").closest(".panel");
+  const header = document.createElement("div");
+  header.className = "editor-action-bar";
+  header.style.cssText = "display:flex;justify-content:flex-end;margin-bottom:12px";
+  header.append(button);
+  center.prepend(header);
+  panel.append(status, results);
+  header.after(panel);
 
   // 3. 검수 문제 목록 스타일 적용
   const style = document.createElement("style");
@@ -124,6 +131,7 @@
           opening: textDraft.opening,
           paragraphs: textDraft.paragraphs,
           closing: textDraft.closing || "",
+          hashtags: textDraft.hashtags || [],
           source_evidence: textDraft.source_evidence || [],
 
           // 제목과 각 요약 문장의 근거를 검수 서버에 전달
@@ -298,8 +306,7 @@
 
     const generationButtons = [
       ...document.querySelectorAll(
-        "#generate-instagram, #generate-selected, " +
-          ".text-generate-tools button, #suggest-keywords",
+        "#generate-card-news, #generate-selected",
       ),
     ];
 
@@ -328,8 +335,8 @@
     // 10. 검수 중 입력·생성·저장·불러오기 버튼 잠금
     const fields = [
       ...document.querySelectorAll(
-        "#article-title, #article-content, #custom-keywords, " +
-          "#article-requirements, #keyword-candidates input, " +
+        "#article-title, #custom-keywords, " +
+          "#article-requirements, " +
           ".platform input, #article-url, #import-article, #include-card-news, #load-local-draft, #save, #load",
       ),
       ...generationButtons,

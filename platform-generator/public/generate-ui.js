@@ -4,7 +4,7 @@
 // 플랫폼 선택과 관계없이 카드뉴스를 생성합니다.
 // 카드뉴스 전용 API와 독립 생성 함수를 사용합니다.
 // 서버 요청은 api.js의 NewsApi에 위임합니다.
-// generate-instagram ID는 기존 모듈의 잠금·배치 연결용으로 유지합니다.
+// generate-card-news ID는 카드뉴스 생성 버튼과 공통 요청 잠금에 사용합니다.
 
 (() => {
   // 1. 기사 입력과 카드 편집기 연결 확인
@@ -18,13 +18,12 @@
 
   // 2. 독립적인 카드뉴스 생성 버튼과 안내 생성
   const box = document.createElement("div");
-  box.style.marginTop = "16px";
+  box.id = "card-news-generation-tools";
+  box.style.marginTop = "10px";
 
-  const heading = document.createElement("h2");
-  heading.textContent = "카드뉴스 제작";
   const button = document.createElement("button");
   button.type = "button";
-  button.id = "generate-instagram";
+  button.id = "generate-card-news";
   button.className = "dark";
   button.textContent = "카드뉴스만 생성";
   button.style.width = "100%";
@@ -35,24 +34,15 @@
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
   status.style.whiteSpace = "pre-wrap";
-  status.textContent = "플랫폼을 체크하지 않아도 생성할 수 있습니다. 현재 카드 목록이 교체되므로 보관할 내용은 먼저 초안 저장을 눌러주세요.";
 
   box.append(button, status);
-  const cardOption = get("include-card-news");
   get("card-news-options").append(box);
-  box.hidden = !cardOption.checked;
-  cardOption.addEventListener("change", () => { box.hidden = !cardOption.checked; });
   let busy = false;
 
   // 3. 기사 원문에서 카드 초안 생성
   button.addEventListener("click", async () => {
     if (busy) return;
-    if (!cardOption.checked) {
-      status.textContent = "카드뉴스도 생성 항목을 체크해주세요.";
-      return;
-    }
-    if (get("suggest-keywords")?.disabled || get("generate-selected")?.disabled ||
-        [...document.querySelectorAll(".text-generate-tools button")].some((item) => item.disabled)) {
+    if (get("generate-selected")?.disabled || get("import-article")?.disabled) {
       status.textContent = "현재 진행 중인 요청이 끝난 뒤 실행해주세요.";
       return;
     }
@@ -61,10 +51,6 @@
     const request = structuredClone(window.NewsInput.getRequest());
     if (!request.article.title || !request.article.content) {
       status.textContent = "기사 제목과 원문을 먼저 입력해주세요.";
-      return;
-    }
-    if (!request.selected_keywords.length) {
-      status.textContent = "키워드 후보를 선택하거나 직접 입력해주세요.";
       return;
     }
 
@@ -77,9 +63,9 @@
 
     // 4. 입력, 생성 버튼, 편집 영역을 잠그고 기존 상태를 보관
     const fields = [...document.querySelectorAll(
-      "#article-url, #import-article, #include-card-news, #article-title, #article-content, #custom-keywords, " +
-      "#article-requirements, #suggest-keywords, #keyword-candidates input, " +
-      ".platform input, #generate-selected, .text-generate-tools button, #load-local-draft, #save, #load"
+      "#article-url, #import-article, #include-card-news, #article-title, #custom-keywords, " +
+      "#article-requirements, " +
+      ".platform input, #generate-selected, #load-local-draft, #save, #load"
     )];
     const previousDisabled = fields.map((field) => field.disabled);
     const surfaces = [get("stage")?.closest(".panel"), get("cards")?.closest(".panel"),

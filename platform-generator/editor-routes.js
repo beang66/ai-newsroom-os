@@ -6,13 +6,6 @@ const {chromium}=require('playwright');
 const template=require('./public/card-template');
 module.exports=function(app){
  if(fs.existsSync(path.join(__dirname,'.env')))require('dotenv').config({path:path.join(__dirname,'.env')});
- async function unsplash(endpoint){
-  if(!process.env.UNSPLASH_ACCESS_KEY)throw new Error('Unsplash 키가 없습니다. .env에 UNSPLASH_ACCESS_KEY를 설정하고 서버를 다시 실행해주세요.');
-  const r=await fetch('https://api.unsplash.com'+endpoint,{headers:{Authorization:'Client-ID '+process.env.UNSPLASH_ACCESS_KEY,'Accept-Version':'v1'},signal:AbortSignal.timeout(15000)});
-  if(!r.ok)throw new Error('Unsplash 요청 실패 ('+r.status+'). 키 또는 사용 한도를 확인해주세요.');return r.json();
- }
- app.get('/editor/photos',async(req,res)=>{try{const q=String(req.query.q||'').trim().slice(0,100);if(!q)return res.status(400).json({error:'검색어를 입력해주세요.'});const data=await unsplash('/search/photos?per_page=12&query='+encodeURIComponent(q));res.json({photos:data.results.map(p=>({id:p.id,url:p.urls.regular,thumb:p.urls.small,photographer:p.user.name,profile:p.user.links.html}))})}catch(e){res.status(502).json({error:e.message})}});
- app.post('/editor/photos/select',async(req,res)=>{try{const id=String(req.body.id||'');if(!/^[\w-]{1,100}$/.test(id))return res.status(400).json({error:'사진 ID가 잘못되었습니다.'});await unsplash('/photos/'+id+'/download');res.json({success:true})}catch(e){res.status(502).json({error:e.message})}});
  app.post('/editor/render',async(req,res)=>{let browser;try{
   const c=req.body.card;if(!c||typeof c.headline!=='string'||!c.headline.trim())return res.status(400).json({error:'제목을 입력해주세요.'});
   if(['keyword','headline','body'].some(k=>typeof c[k]!=='string'||c[k].length>5000))return res.status(400).json({error:'카드 텍스트를 확인해주세요.'});

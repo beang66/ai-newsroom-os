@@ -10,7 +10,7 @@ module.exports = function registerGenerateRoutes(app) {
   app.post("/api/generate/:platform", async (req, res) => {
     const platform = req.params.platform;
 
-    if (!["card_news", "instagram", "threads", "blog"].includes(platform)) {
+    if (!["card_news", "instagram", "threads"].includes(platform)) {
       return res.status(400).json({
         success: false,
         error: "지원하지 않는 플랫폼입니다.",
@@ -20,6 +20,7 @@ module.exports = function registerGenerateRoutes(app) {
     // 1. 필수 기사·키워드·요구사항 검증
     const input = req.body;
     const article = input?.article;
+    const keywords = input?.selected_keywords ?? []; // 선택 입력: 미입력도 허용
 
     if (
       typeof article?.title !== "string" ||
@@ -41,10 +42,9 @@ module.exports = function registerGenerateRoutes(app) {
     }
 
     if (
-      !Array.isArray(input.selected_keywords) ||
-      input.selected_keywords.length === 0 ||
-      input.selected_keywords.length > 20 ||
-      input.selected_keywords.some(
+      !Array.isArray(keywords) ||
+      keywords.length > 20 ||
+      keywords.some(
         (keyword) =>
           typeof keyword !== "string" ||
           !keyword.trim() ||
@@ -53,7 +53,7 @@ module.exports = function registerGenerateRoutes(app) {
     ) {
       return res.status(400).json({
         success: false,
-        error: "키워드는 1~20개, 각각 100자 이내로 입력해주세요.",
+        error: "키워드는 선택 입력이며 최대 20개, 각각 100자 이내로 입력해주세요.",
       });
     }
 
@@ -95,7 +95,7 @@ module.exports = function registerGenerateRoutes(app) {
       },
 
       selected_keywords: [
-        ...new Set(input.selected_keywords.map((value) => value.trim())),
+        ...new Set(keywords.map((value) => value.trim())),
       ],
 
       requirements: (input.requirements || "").trim(),

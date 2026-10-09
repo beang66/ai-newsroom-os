@@ -15,6 +15,7 @@
 // ============================================================
 const path = require("path");
 const OpenAI = require("./ai-provider");
+const {EMOJIS,hasEmoji,usesDefaultStyle}=require("./instagram-writing-contract");
 const { getPlatformRules } = require("./platform-rules");
 // ============================================================
 // 1. 환경 변수 불러오기
@@ -176,6 +177,7 @@ function extractDraft(platform, draft) {
     const blocks = draft.block_evidence;
     return {
       draft_version: text(draft.draft_version),
+      hashtags: Array.isArray(draft.hashtags) ? draft.hashtags.filter(tag => typeof tag === "string") : [],
       opening: draft.opening,
       paragraphs: draft.paragraphs,
       closing: draft.closing,
@@ -189,32 +191,7 @@ function extractDraft(platform, draft) {
         : null,
     };
   }
-  if (
-    typeof draft.title !== "string" ||
-    typeof draft.intro !== "string" ||
-    !Array.isArray(draft.sections) ||
-    draft.sections.some(
-      (section) =>
-        !section ||
-        typeof section.heading !== "string" ||
-        typeof section.body !== "string",
-    ) ||
-    typeof draft.conclusion !== "string"
-  ) {
-    throw new Error("Blog 원고 형식을 확인해주세요.");
-  }
-  return {
-    title: draft.title,
-    intro: draft.intro,
-    sections: draft.sections.map((section, index) => ({
-      section_id: `S${index + 1}`,
-      heading: section.heading,
-      body: section.body,
-      source_evidence: evidence(section.source_evidence),
-    })),
-    conclusion: draft.conclusion,
-    source_evidence: evidence(draft.source_evidence),
-  };
+  throw new Error("지원하지 않는 검수 대상입니다.");
 }
 // ============================================================
 // 6. 원문 인용 확인 도구
@@ -239,7 +216,7 @@ function createQuoteChecker(article) {
 // AI 판단 전에 확인합니다.
 // 사용자 요구사항의 의미나 주장·근거의 의미 일치는 검사하지 않습니다.
 // ============================================================
-function checkBasicRules(platform, draft, rules, quoteExists) {
+function checkBasicRules(platform, draft, rules, quoteExists, requirements="") {
   const fact = [];
   const requirement = [];
   function checkRequiredText(value, location, label) {
@@ -356,6 +333,11 @@ function checkBasicRules(platform, draft, rules, quoteExists) {
   }
   // 해시태그 개수·문법·중복과 문단별 인용을 로컬 규칙으로 검사합니다.
   if (platform === "instagram") {
+    // 도입 앞의 이모지 하나와 기본 문체의 완전한 마무리를 확인합니다.
+    const icon=EMOJIS.find(value=>draft.opening.startsWith(value+" "));
+    const rest=icon?draft.opening.slice(icon.length).trim():draft.opening;
+    if(!icon||hasEmoji(rest)||draft.paragraphs.some(hasEmoji)||hasEmoji(draft.closing))requirement.push({location:"opening",category:"structure_violation",problematic_text:draft.opening,reason:"도입 앞에 이모지 정확히 하나가 필요합니다.",source_evidence:[],suggestion:"도입 앞에 적절한 이모지 하나를 넣고 본문과 마무리의 이모지는 제거해주세요."});
+    if(usesDefaultStyle(requirements)&&!/(?:니다|니까|까요|나요|세요|십시오)[.!?…]*$/u.test(draft.closing.trim()))requirement.push({location:"closing",category:"structure_violation",problematic_text:draft.closing,reason:"마무리가 완전한 습니다체 문장이 아닙니다.",source_evidence:[],suggestion:"도입의 쟁점을 본문 설명과 연결해 서술어가 있는 완전한 문장으로 마무리해주세요."});
     checkRequiredText(draft.opening, "opening", "도입");
     checkRequiredText(draft.closing, "closing", "마무리");
     if (!draft.paragraphs.length) checkRequiredText("", "paragraphs", "본문");
@@ -395,24 +377,16 @@ function checkBasicRules(platform, draft, rules, quoteExists) {
       // 구형 저장 초안도 검수할 수 있지만 문장별 연결을 확인한 것으로 표시하지 않습니다.
       checkEvidence(draft.source_evidence, "source_evidence");
     }
-    // closing은 선택 사항입니다. 4~5문장은 권장 분량이며 강제 오류로 판단하지 않습니다.
+    // 이전 저장 초안에는 해시태그가 없을 수 있습니다. 새 원고는 공통 게시글 기준을 적용합니다.
+    const tags = draft.hashtags;
+    if (tags.length < 3 || tags.length > 5 || tags.some(tag => !/^#[\p{L}\p{N}_]+$/u.test(tag)) ||
+        new Set(tags.map(tag => tag.toLowerCase())).size !== tags.length) {
+      requirement.push({location: "hashtags", category: "structure_violation", problematic_text: tags.join(" "),
+        reason: "관련 해시태그 3~5개가 필요합니다.", source_evidence: [], suggestion: "기사 주제와 관련된 서로 다른 해시태그 3~5개를 추가해주세요."});
+    }
+    // closing은 선택 사항이며 권장 문장 수·글자 수는 강제 오류가 아닙니다.
   }
 
-  if (platform === "blog") {
-    checkRequiredText(draft.title, "title", "블로그 제목");
-    checkRequiredText(draft.intro, "intro", "도입 문단");
-    checkRequiredText(draft.conclusion, "conclusion", "결론");
-    if (!draft.sections.length) {
-      checkRequiredText("", "sections", "소제목별 본문");
-    }
-    draft.sections.forEach((section, index) => {
-      const prefix = `sections[${index}]`;
-      checkRequiredText(section.heading, `${prefix}.heading`, "소제목");
-      checkRequiredText(section.body, `${prefix}.body`, "본문");
-      checkEvidence(section.source_evidence, `${prefix}.source_evidence`);
-    });
-    checkEvidence(draft.source_evidence, "source_evidence");
-  }
   return { fact, requirement };
 }
 // ============================================================
@@ -462,7 +436,7 @@ async function validateDraft(input) {
     throw new Error(".env의 OPENAI_API_KEY를 확인해주세요.");
   }
   const quoteExists = createQuoteChecker(input.article);
-  const basic = checkBasicRules(input.platform, draft, rules, quoteExists);
+  const basic = checkBasicRules(input.platform, draft, rules, quoteExists, input.requirements||"");
   const client = new OpenAI({
     apiKey,
     timeout: 180000,
@@ -592,6 +566,10 @@ ${instructions}
 \- quote_mismatch: 발언 주체, 직접 인용 또는 발언 의미의 잘못된 전달
 \- evidence_mismatch: 붙인 근거가 해당 주장을 뒷받침하지 않음
 \- meaning_distortion: 조건, 예외, 불확실성, 인과관계의 왜곡
+[질문과 미래 가능성]
+- 원문 사실에 근거한 구체적인 질문은 원문과 표현이 다르다는 이유만으로 오류가 아닙니다.
+- 질문의 사실적 전제가 원문에 있는지 검사합니다. 질문형이라도 근거 없는 전제를 넣으면 오류입니다.
+- 열린 미래 가능성과 확정적 예측을 구분합니다. 성공·실패·효과를 근거 없이 단정하면 지적합니다.
 [판단 기준]
 \- 계획·검토·예상·주장을 확정된 사실로 바꿨는지 확인합니다.
 \- 수치의 기간, 대상, 단위가 바뀌거나 빠져 의미가 달라졌는지 확인합니다.
@@ -618,6 +596,12 @@ ${instructions}
 \- requirement_omission: 사용자가 명시한 톤, 분량, 강조점 등이 반영되지 않음
 \- structure_violation: 플랫폼의 필수 구성 또는 정보 배치 규칙 위반
 \- important_omission: 핵심을 이해하는 데 반드시 필요한 원문 정보가 누락됨
+[말투·완결성·우선순위]
+- 사실 정확성·이해 가능성·근거·필수 출력 구조 안에서 사용자 입력을 플랫폼 기본값보다 우선합니다.
+- 사용자 문체 요청이 없으면 Instagram은 습니다체, Threads는 설명형 반말체를 적용합니다. 명사형은 기본 최대 2회이며 Threads 제목은 명사형입니다.
+- 문장의 주체·대상 누락과 명사형 남발로 이해가 어려운 경우 structure_violation으로 지적합니다.
+- 연결 표현이 실제 대비·인과관계와 일치하는지 확인하며 문체 취향만으로 오류를 만들지 않습니다.
+- 사용자가 요청한 다른 문체를 플랫폼 기본 문체와 다르다는 이유로 지적하지 않습니다.
 [키워드와 요구사항]
 \- 키워드는 같은 의미로 자연스럽게 표현해도 반영된 것으로 봅니다.
 \- 모든 키워드를 모든 제목이나 문단에 반복할 필요는 없습니다.
@@ -637,19 +621,44 @@ ${instructions}
 \- core_text가 null이면 현재 검수 입력에 없는 항목이므로 누락으로 지적하지 않습니다.
 \- 사진 선택 여부, 글씨체, 실제 화면의 글자 넘침은 검사하지 않습니다.
 [Instagram 게시글]
+- 사용자 형식 요청이 없으면 opening은 명사형 도입입니다. 습니다체·질문형으로 끝나면 structure_violation으로 지적할 수 있습니다.
+- 본문은 기본 습니다체이고 사용자 문체 요청이 있으면 최소 기준 안에서 우선합니다.
+- 문단을 독립적인 발표 목록처럼 나열하여 실제 흐름이나 이해를 방해하는지 확인합니다.
+- 연결어·연결 어미 자체의 부재는 오류가 아닙니다. 앞뒤 내용의 실제 관계와 이해 가능성을 검사합니다.
+- 마무리는 앞 설명의 핵심 정리와 원문의 최종 결론·결과·입장을 전달해야 합니다.
+- 핵심을 짧게 되짚는 요약은 정상이며 반복 오류로 지적하지 않습니다. 세부 일정 재나열이나 본문 복사는 구분합니다.
+- 최종 결론의 발언 주체·조건·불확실성을 유지하는지 확인합니다. 사실 누락·왜곡은 사실 검수와 중복하지 않습니다.
+- 결론이 없는 기사에 결론을 새로 만들라고 요구하지 않습니다. 확인된 최종 상황·남은 조건이면 허용합니다.
+- 원문에 없는 평가·전망·질문이나 관심·주목 반응으로 끝내지 않아야 합니다.
+- 기관명·주체·사건·조건을 한 문장에 몰아넣어 실제 이해를 방해하거나 서로 다른 설명을 한 문단에 무리하게 섞는지 확인합니다.
+- 문단 수·문장 길이 자체가 아니라 실제 이해 가능성과 내용 관계를 검사합니다.
+- 원문에 없는 정보를 보충하라고 요구하지 않습니다. 수집되지 않은 정보는 이번 검수의 근거가 아닙니다.
 - 도입, 하나 이상의 본문 문단, 마무리와 해시태그 3~5개가 필요합니다.
-- 2~3개 본문 문단은 권장값이며 짧은 원문을 늘리라고 요구하지 않습니다.
+- 본문 길이와 문단 수는 핵심 정보량에 따라 늘릴 수 있습니다. 2~3개 문단 제한은 없습니다.
+- 도입 앞에는 이모지 정확히 하나가 필요하며 민감한 주제에는 중립적인 📰를 사용합니다.
+- 마무리는 명사구가 아닌 완전한 문장으로, 본문 설명을 받아 도입의 쟁점을 매듭지어야 합니다.
+- 도입·전환의 명사형 허용을 마무리에 적용하지 않습니다.
 - 카드, 카드 수, 이미지가 없다는 이유로 오류를 만들지 않습니다.
 - 해시태그가 실제 기사 주제·주체 또는 원문으로 뒷받침되는 키워드와 관련되는지 검사합니다.
 - 과장·무관한 인기 해시태그는 structure_violation으로 지적합니다.
 - 해시태그가 원문 단어와 문자 그대로 같을 필요는 없습니다. 의미와 관련성을 검사합니다.
 - 게시글 근거는 각 문단과 연결되어야 합니다.
+- Instagram은 기사 핵심 사건·주체·주요 사실·필수 조건·결과 또는 현재 상황을 충분히 전달해야 합니다.
 [Threads]
-- opening은 새 초안의 기사 제목, paragraphs는 핵심 요약 문장입니다.
+- 기본 본문은 설명형 반말체입니다. 사용자 요청과 직접 인용 없이 습니다체·해요체가 혼용되면 structure_violation으로 지적할 수 있습니다.
+- 한 paragraphs 항목에 관련 설명 1~2문장이 있는 것은 정상입니다. 항목 수를 늘리거나 문장을 분리하라고 강제하지 않습니다.
+- 그런데·그리고·그래서 등은 실제 대비·추가·인과에 맞게 사용해야 합니다. 원문에 없는 인과는 사실 검수에서 지적합니다.
+- 사용자 제목 형식 요청이 없으면 opening은 명사형 제목이어야 합니다. 습니다체·물음표로 끝나는 제목은 structure_violation으로 지적합니다.
+- 단순 발표 사실의 나열, 불명확한 주체, 갑작스러운 질문 전환으로 실제 이해가 어려운 부분을 검사합니다.
+- 밝혔다라는 단어 자체는 오류가 아닙니다. 주장·전망의 출처를 유지하는 표현은 허용합니다.
+- 연결어 사용은 의무가 아니며 특정 연결어 부재나 취향 차이를 오류로 지적하지 않습니다.
+- opening은 주체와 사건이 명확한 짧은 도입, paragraphs는 핵심 설명과 선택적인 질문입니다.
 - 제목과 하나 이상의 핵심 요약 문장이 필요합니다. closing은 선택 사항입니다.
 - closing이 비어 있다는 이유로 누락 오류를 반환하지 않습니다.
 - draft_version이 없는 이전 초안은 opening이 도입인 기존 구조도 허용합니다.
-- 기본 4~5개 문장은 권장입니다. 정보가 적으면 더 적게 작성해도 됩니다.
+- 핵심 설명 1~2문장과 선택적인 쟁점 1문장, 본문 100~180자는 권장값입니다. 길이만으로 오류 처리하지 않습니다.
+- Threads는 핵심 쟁점 하나에 집중합니다. 기사 전체 핵심 사실을 모두 넣으라고 요구하지 않습니다.
+- 관련 해시태그 3~5개의 관련성도 검사합니다.
 - 적절한 이모티콘 전체 1~2개는 권장입니다. 민감한 주제나 사용자 금지 시 생략합니다.
 - 이모티콘의 부재나 개인 취향 차이는 오류로 판단하지 않습니다.
 - block_evidence는 해당 제목과 요약 문장을 뒷받침해야 합니다.
@@ -659,14 +668,6 @@ ${instructions}
   명확한 구성 문제는 structure_violation으로 지적할 수 있습니다.
 \- 기본 문단 수와 권장 글자 수는 강제 조건이 아닙니다.
 \- 플랫폼 발행 가능 여부는 이번 검수에서 판정하지 않습니다.
-[Blog]
-\- title, intro, 하나 이상의 sections, conclusion이 있어야 합니다.
-\- 각 section은 heading과 body를 포함해야 합니다.
-\- 소제목과 해당 본문 내용이 맞아야 합니다.
-\- 원문이 짧으면 section이 하나여도 허용합니다.
-\- 여러 section이 새 정보 없이 같은 내용을 반복하거나
-  소제목과 본문이 무관하면 structure_violation으로 지적할 수 있습니다.
-\- 도입과 결론의 짧은 요약은 본문의 불필요한 반복과 구분합니다.
 [중요 정보 누락]
 \- 생략 때문에 주제나 핵심 상황을 이해하기 어려워진 경우만 지적합니다.
 \- 중요하지 않은 세부 정보의 생략은 정상적인 요약으로 봅니다.

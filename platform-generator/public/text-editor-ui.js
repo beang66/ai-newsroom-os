@@ -2,8 +2,8 @@
 // text-editor-ui.js
 //
 // 역할:
-// - Instagram / Threads / Blog 편집 화면을 전환합니다.
-// - Instagram / Threads / Blog 초안을 생성하고 직접 수정합니다. 카드뉴스는 별도 탭입니다.
+// - Instagram / Threads 편집 화면을 전환합니다.
+// - Instagram / Threads 초안을 생성하고 직접 수정합니다. 카드뉴스는 별도 탭입니다.
 // - 원문 근거를 읽기 전용으로 표시합니다.
 // - 다른 UI 모듈에 플랫폼 조회·전환·초안 적용 기능을 제공합니다.
 //
@@ -34,7 +34,7 @@
   const center = get("stage")?.closest(".panel");
   const right = get("cards")?.closest(".panel");
   const photoTools = document.querySelector(".photo-tools");
-  const instagramButton = get("generate-instagram");
+  const instagramButton = get("generate-card-news");
   if (!center || !right || !instagramButton) {
     console.error("편집 패널과 카드뉴스 생성 버튼을 확인해주세요.");
     return;
@@ -44,10 +44,8 @@
     instagram: "Instagram",
     card_news: "카드뉴스",
     threads: "Threads",
-    blog: "Blog",
   };
   let selectedView = "instagram";
-  let busy = false;
   // ==========================================================
   // 2. 카드뉴스 화면의 최초 표시 상태 보관
   // 텍스트 화면에서 숨겼다가 복원할 때 사용합니다.
@@ -65,6 +63,26 @@
   // ==========================================================
   const style = document.createElement("style");
   style.textContent = `
+    .sns-composer {border:1px solid #dededb;border-radius:18px;background:#fff;overflow:hidden;margin-top:16px;color:#222}
+    .composer-heading {display:flex;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid #eee}
+    .composer-profile {display:flex;align-items:center;gap:12px;padding:20px 20px 4px}
+    .composer-profile small {display:block;margin-top:4px}
+    .composer-avatar {display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#e6e8e5;color:#52634a;font-weight:700}
+    .composer-fields {padding:0 20px 0 70px}
+    .sns-composer .text-editor-field {margin:8px 0}
+    .sns-composer .text-editor-field label {font-size:11px;color:#777;margin-bottom:2px}
+    .sns-composer .text-editor-field textarea {border:1px solid transparent;border-radius:6px;padding:6px 0;line-height:1.65;resize:vertical;min-height:45px;background:transparent}
+    .sns-composer .text-editor-field textarea:focus {outline:1px solid #b7c0b1;padding-left:6px;background:#fafbf9}
+    .sns-composer .text-source-evidence {font-size:11px;background:transparent;border:0;padding:2px;margin-top:0;color:#72796b}
+    .sns-composer .text-source-evidence summary {font-weight:400}
+    .composer-options,.composer-attachments {padding:10px 20px 10px 70px}
+    .composer-options input[type=url] {padding:8px;border:1px solid #ddd;border-radius:8px}
+    .composer-card-strip {display:flex;gap:10px;overflow-x:auto;padding:8px 0;scroll-snap-type:x proximity}
+    .composer-card-mini {width:160px;height:200px;flex:0 0 160px;overflow:hidden;position:relative;border-radius:10px;pointer-events:none;scroll-snap-align:start}
+    .composer-card-content {position:absolute;top:0;left:0;width:1080px;height:1350px;transform:scale(0.148148148);transform-origin:top left}
+    .composer-footer {display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 20px;border-top:1px solid #eee}
+    .over-limit {color:#b42318;font-weight:bold}
+    @media(max-width:600px) {.composer-fields,.composer-options,.composer-attachments {padding-left:20px}.composer-heading {flex-wrap:wrap}}
     .platform-tabs {
       display: flex;
       gap: 8px;
@@ -102,11 +120,6 @@
       margin: 10px 0;
       text-align: left;
     }
-    .text-generate-tools button {
-      display: block;
-      width: 100%;
-      margin: 10px 0;
-    }
     .text-source-evidence {
       margin-top: 10px;
       padding: 12px;
@@ -138,7 +151,7 @@
   const tabs = document.createElement("div");
   tabs.className = "platform-tabs";
   const tabButtons = {};
-  for (const platform of ["instagram", "threads", "blog", "card_news"]) {
+  for (const platform of ["instagram", "threads", "card_news"]) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = names[platform];
@@ -258,7 +271,7 @@
       onChange(textarea.value);
     });
     wrapper.append(label, textarea);
-    textEditor.append(wrapper);
+    (textEditor.querySelector(".composer-fields") || textEditor).append(wrapper);
     const navigation = document.createElement("button");
     navigation.type = "button";
     navigation.textContent = labelText;
@@ -293,6 +306,7 @@
       photoTools.hidden = !isCardNews;
     }
     if (isCardNews) {
+      window.dispatchEvent(new Event("news:platform-changed"));
       draw();
       return;
     }
@@ -312,6 +326,7 @@
         `아직 ${names[platform]} 원고가 없습니다. ` +
         "왼쪽에서 플랫폼을 체크하고 해당 생성 버튼을 눌러주세요.";
       textEditor.append(message);
+      window.dispatchEvent(new Event("news:platform-changed"));
       return;
     }
     const status = document.createElement("p");
@@ -327,164 +342,96 @@
         markTextChanged(draft);
       };
     }
-    // 9-0. Instagram 게시글: 텍스트와 해시태그를 각각 편집합니다.
-    if (platform === "instagram") {
-      const caption = document.createElement("pre");
-      caption.id = "instagram-caption-preview";
-      caption.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.8;padding:14px;background:#f6f7f3;border-radius:10px;";
-      function refreshCaption() {
-        caption.textContent = [draft.opening, ...draft.paragraphs, draft.closing,
-          draft.hashtags.join(" ")].filter(value => value.trim()).join("\n\n");
-      }
-      function change(set) { return value => { set(value); markTextChanged(draft); refreshCaption(); }; }
-      const opening = addField("도입", draft.opening, change(value => {draft.opening = value;}), 3);
-      addEvidence(opening, "도입의 원문 근거", draft.block_evidence?.opening, draft);
-      draft.paragraphs.forEach((paragraph, index) => {
-        const field = addField(`본문 ${index + 1}`, paragraph,
-          change(value => {draft.paragraphs[index] = value;}));
-        addEvidence(field, `본문 ${index + 1}의 원문 근거`, draft.block_evidence?.paragraphs?.[index], draft);
-      });
-      const closing = addField("마무리", draft.closing, change(value => {draft.closing = value;}), 3);
-      addEvidence(closing, "마무리의 원문 근거", draft.block_evidence?.closing, draft);
-      addField("해시태그 · 3~5개, 공백으로 구분", draft.hashtags.join(" "),
-        change(value => {draft.hashtags = value.trim() ? value.trim().split(/\s+/u) : [];}), 2);
-      const title = document.createElement("h3"); title.textContent = "게시글 미리보기";
-      textEditor.append(title, caption);
-      refreshCaption();
+    // 9-0. 두 플랫폼 모두 작성창 모양으로 직접 편집합니다.
+    // 이 화면은 앱 내부 미리보기이며 실제 계정 로그인과 발행은 로컬 연결에서 처리합니다.
+    const composer=document.createElement("section");
+    composer.className="sns-composer " + platform;
+    composer.dataset.platform=platform;
+    const top=document.createElement("div");top.className="composer-heading";
+    const title=document.createElement("strong");title.textContent=platform==="threads"?"새로운 스레드":"새 게시물";
+    const badge=document.createElement("span");badge.className="muted";badge.textContent="작성 화면 미리보기";top.append(title,badge);
+    const profile=document.createElement("div");profile.className="composer-profile";
+    const avatar=document.createElement("span");avatar.className="composer-avatar";avatar.textContent="N";avatar.setAttribute("aria-hidden","true");
+    const identity=document.createElement("div");const author=document.createElement("strong");author.textContent="내 계정";
+    const accountNote=document.createElement("small");accountNote.textContent="실제 게시 계정은 전용 창에서 확인";identity.append(author,accountNote);profile.append(avatar,identity);
+    const fields=document.createElement("div");fields.className="composer-fields";
+    const options=document.createElement("div");options.className="composer-options";
+    const attachments=document.createElement("section");attachments.className="composer-attachments";
+    const footer=document.createElement("div");footer.className="composer-footer";
+    const count=document.createElement("span");count.className="notice";count.id="composer-character-count";
+    const previewOnly=document.createElement("span");previewOnly.className="muted";previewOnly.textContent="게시 전 미리보기 · 아직 게시되지 않음";
+    footer.append(count,previewOnly);
+    composer.append(top,profile,fields,options,attachments,footer);textEditor.append(composer);
+    const message=document.createElement("p");message.className="notice";
+    message.textContent="원고는 작성창 안에서 수정하세요. 첨부 카드의 글·사진·순서는 카드뉴스 탭에서만 수정할 수 있습니다.";textEditor.append(message);
+    const caption=document.createElement("pre");caption.hidden=true;caption.id=platform==="threads"?"threads-post-preview":"instagram-caption-preview";
+    // 게시용 문자열은 기존 원고 필드에서 구성합니다. 표시용 카드와 근거를 섞지 않습니다.
+    function refreshComposer() {
+      caption.textContent=[draft.opening,...draft.paragraphs,draft.closing || "",Array.isArray(draft.hashtags)?draft.hashtags.join(" "):""].filter(value=>value.trim()).join("\n\n");
+      let length=caption.textContent.length;
+      if(platform==="threads" && draft.include_source_link!==false && (draft.source_url || "").trim())length+=(draft.source_url || "").trim().length+2;
+      count.textContent=platform==="threads"?`${length}/500자 · 줄바꿈·링크 포함`:`${length}자 · 해시태그 포함`;
+      count.classList.toggle("over-limit",platform==="threads" && length>500);
+      const emoji=textEditor.querySelector("#threads-emoji-status");
+      if(emoji)emoji.textContent=/\p{Extended_Pictographic}/u.test(caption.textContent)?"이모지가 본문에 표시되어 있습니다.":"이모지는 제목이나 본문에 직접 추가할 수 있습니다.";
     }
-    // --------------------------------------------------------
-    // 9-1. Threads 편집과 항목별 근거
-    //
-    // 텍스트 항목은 기존 문자열 구조를 유지합니다.
-    // block_evidence는 해당 텍스트에 연결되는 근거입니다.
-    // --------------------------------------------------------
-    if (platform === "threads") {
-      const summaryMode = draft.draft_version === "threads_summary_v2";
-      const guide = document.createElement("p");
-      guide.className = "notice";
-      guide.textContent = summaryMode
-        ? "제목과 핵심 요약을 직접 수정하세요. 기본 4~5문장이며 짧은 원문은 더 적게 생성합니다. 원문 링크는 본문과 별도로 관리합니다."
-        : "이전 형식의 초안입니다. 기존 내용은 보존합니다. 새 제목·요약 형식을 사용하려면 다시 생성해주세요.";
-      textEditor.append(guide);
-      const blockEvidence = draft.block_evidence;
-      const missingMessage =
-        "이 초안에는 해당 항목의 근거 연결 정보가 없습니다. " +
-        "문단별 근거 생성 기능을 적용한 뒤 새로 생성해주세요.";
-      const openingField = addField(
-        summaryMode ? "기사 제목" : "제목 / 기존 도입",
-        draft.opening,
-        update((value) => {
-          draft.opening = value;
-        }),
-        3,
-      );
-      addEvidence(
-        openingField,
-        summaryMode ? "기사 제목의 원문 근거" : "도입의 원문 근거",
-        blockEvidence?.opening,
-        draft,
-        missingMessage,
-      );
-      draft.paragraphs.forEach((paragraph, index) => {
-        const paragraphField = addField(
-          `핵심 요약 ${index + 1}`,
-          paragraph,
-          update((value) => {
-            draft.paragraphs[index] = value;
-          }),
-        );
-        addEvidence(
-          paragraphField,
-          `핵심 요약 ${index + 1}의 원문 근거`,
-          blockEvidence?.paragraphs?.[index],
-          draft,
-          missingMessage,
-        );
-      });
-      // 이전 저장 원고의 마무리는 보존하되 새 초안에 빈 입력칸을 강제하지 않습니다.
-      if (typeof draft.closing === "string" && draft.closing.trim()) {
-        const closingField = addField(
-          "추가 문장 / 기존 마무리", draft.closing,
-          update(value => { draft.closing = value; }), 3,
-        );
-        addEvidence(closingField, "추가 문장의 원문 근거",
-          blockEvidence?.closing, draft, missingMessage);
-      }
-      // 9-1-1. 선택적 원문 링크: 본문에 섞지 않고 별도로 편집합니다.
-      // URL 방문은 사용자가 링크를 클릭할 때만 발생합니다.
-      addSourceLink(draft);
-
+    function change(setValue){return value=>{setValue(value);markTextChanged(draft);refreshComposer();};}
+    const opening=addField(platform==="threads"?"기사 제목":"도입",draft.opening,change(value=>{draft.opening=value;}),2);
+    addEvidence(opening,"제목·도입의 원문 근거",draft.block_evidence?.opening,draft);
+    draft.paragraphs.forEach((paragraph,index)=>{
+      const field=addField(platform==="threads"?`핵심 요약 ${index+1}`:`본문 ${index+1}`,paragraph,change(value=>{draft.paragraphs[index]=value;}),2);
+      addEvidence(field,`본문 ${index+1}의 원문 근거`,draft.block_evidence?.paragraphs?.[index],draft);
+    });
+    if(platform==="instagram" || (draft.closing || "").trim()){
+      const field=addField("마무리",draft.closing || "",change(value=>{draft.closing=value;}),2);
+      addEvidence(field,"마무리의 원문 근거",draft.block_evidence?.closing,draft);
     }
-    // --------------------------------------------------------
-    // 9-2. Blog 편집과 section별 근거
-    // 기존 생성 결과에 포함된 section 근거를 표시합니다.
-    // --------------------------------------------------------
-    if (platform === "blog") {
-      addField(
-        "제목",
-        draft.title,
-        update((value) => {
-          draft.title = value;
-        }),
-        2,
-      );
-      addField(
-        "도입",
-        draft.intro,
-        update((value) => {
-          draft.intro = value;
-        }),
-      );
-      draft.sections.forEach((section, index) => {
-        addField(
-          `소제목 ${index + 1}`,
-          section.heading,
-          update((value) => {
-            section.heading = value;
-          }),
-          2,
-        );
-        const bodyField = addField(
-          `본문 ${index + 1}`,
-          section.body,
-          update((value) => {
-            section.body = value;
-          }),
-          8,
-        );
-        addEvidence(
-          bodyField,
-          `본문 ${index + 1}의 원문 근거`,
-          section.source_evidence,
-          draft,
-        );
-      });
-      addField(
-        "결론",
-        draft.conclusion,
-        update((value) => {
-          draft.conclusion = value;
-        }),
-      );
+    if(["instagram","threads"].includes(platform))addField("해시태그 · 3~5개",(draft.hashtags || []).join(" "),change(value=>{draft.hashtags=value.trim()?value.trim().split(/\s+/u):[];}),2);
+    if(platform==="threads"){
+      const emoji=document.createElement("p");emoji.id="threads-emoji-status";emoji.className="notice";options.append(emoji);
+      addSourceLink(draft,refreshComposer);
     }
-    // --------------------------------------------------------
-    // 9-3. 전체 원문 근거 목록
-    // 기존 초안의 전체 근거도 계속 확인할 수 있습니다.
-    // --------------------------------------------------------
-    addEvidence(
-      textEditor,
-      "전체 원고의 원문 근거",
-      draft.source_evidence,
-      draft,
-      "저장된 전체 원문 근거가 없습니다.",
-    );
+    textEditor.append(caption);refreshComposer();
+    renderAttachedCards(attachments,platform,draft);
+    addEvidence(textEditor,"전체 원고의 원문 근거",draft.source_evidence,draft,"저장된 전체 원문 근거가 없습니다.");
+    window.dispatchEvent(new Event("news:platform-changed"));
   }
+
+  // 첨부 카드는 현재 카드 데이터로 표시하고 편집은 카드뉴스 탭에서만 허용합니다.
+  function renderAttachedCards(host,platform,draft) {
+    host.replaceChildren();
+    const title=document.createElement("strong");title.textContent="첨부 카드뉴스";host.append(title);
+    const cards=state.card_news?state.cards:[];
+    const source=state.card_news_generation_input?.article,original=draft.generation_input?.article;
+    const mismatched=cards.length && source && original && (source.title!==original.title || source.content!==original.content);
+    const note=document.createElement("p");note.className="notice";
+    note.textContent=mismatched?"원고와 카드뉴스의 원문이 다릅니다. 같은 기사로 다시 생성해야 함께 보낼 수 있습니다.":cards.length?`${cards.length}장 · 읽기 전용 미리보기 · 원고와 함께 첨부됩니다.`:platform==="instagram"?"첨부 카드뉴스가 없습니다. Instagram 작성창 준비에는 카드뉴스가 필요합니다.":"첨부 카드뉴스가 없습니다. Threads는 글만 보낼 수도 있습니다.";
+    host.append(note);
+    if(!mismatched && cards.length){
+      const strip=document.createElement("div");strip.className="composer-card-strip";
+      cards.forEach((card,index)=>{
+        const mini=document.createElement("div");mini.className="composer-card-mini";mini.setAttribute("aria-label",`${index+1}번 카드 읽기 전용 미리보기`);
+        const content=document.createElement("div");content.className="composer-card-content";
+        content.innerHTML=CardTemplate.markup(displayCard(card,index),false);
+        content.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
+        mini.append(content);strip.append(mini);
+      });host.append(strip);
+    }
+    const edit=document.createElement("button");edit.type="button";edit.className="dark";edit.textContent="카드뉴스에서 수정";
+    edit.onclick=()=>window.TextEditor.showPlatform("card_news");host.append(edit);
+  }
+  // 카드 변경 시 첨부 영역만 갱신해 본문 입력과 커서를 보존합니다.
+  window.addEventListener("news:cards-changed",()=>{
+    if(selectedView==="card_news")return;
+    const host=textEditor.querySelector(".composer-attachments"),draft=state.text_drafts?.[selectedView];
+    if(host && draft)renderAttachedCards(host,selectedView,draft);
+  });
   // ==========================================================
   // 9-4. 원문 URL 편집과 링크 첨부 여부
   // 새 URL을 입력해도 원문을 다시 수집하지 않습니다.
   // 출처의 정확성은 사용자가 확인하며 HTTP(S) 링크만 표시합니다.
   // ==========================================================
-  function addSourceLink(draft) {
+  function addSourceLink(draft, onChange = () => {}) {
     const wrapper = document.createElement("section");
     wrapper.className = "text-editor-field";
     const heading = document.createElement("h3");
@@ -525,7 +472,7 @@
         link.href = url.href;
         link.hidden = false;
         hint.textContent = checkbox.checked
-          ? "원문 링크를 첨부하도록 선택했습니다. 실제 플랫폼 업로드는 이후에 연결합니다."
+          ? "원문 링크를 첨부하도록 선택했습니다. 작성창 준비 시 선택한 링크를 포함합니다."
           : "주소를 보관하지만 게시물 링크 첨부는 선택하지 않았습니다.";
       } catch {
         hint.textContent = "올바른 http:// 또는 https:// 기사 주소를 입력해주세요.";
@@ -535,14 +482,16 @@
       draft.source_url = input.value.trim();
       markTextChanged(draft);
       refresh();
+      onChange();
     });
     checkbox.addEventListener("change", () => {
       draft.include_source_link = checkbox.checked;
       markTextChanged(draft);
       refresh();
+      onChange();
     });
     wrapper.append(heading, label, input, choice, hint, link);
-    textEditor.append(wrapper);
+    (textEditor.querySelector(".composer-options") || textEditor).append(wrapper);
     refresh();
   }
 
@@ -552,7 +501,7 @@
   // ==========================================================
   function validateTextDraft(platform, draft) {
     if (
-      !["instagram", "threads", "blog"].includes(platform) ||
+      !["instagram", "threads"].includes(platform) ||
       draft?.platform !== platform
     ) {
       throw new Error("생성 결과의 플랫폼이 올바르지 않습니다.");
@@ -598,21 +547,8 @@
       }
       return;
     }
-    if (
-      typeof draft.title !== "string" ||
-      typeof draft.intro !== "string" ||
-      !Array.isArray(draft.sections) ||
-      draft.sections.some(
-        (section) =>
-          !section ||
-          typeof section.heading !== "string" ||
-          typeof section.body !== "string",
-      ) ||
-      typeof draft.conclusion !== "string"
-    ) {
-      throw new Error("Blog 원고 형식이 올바르지 않습니다.");
-    }
   }
+
   // ==========================================================
   // 11. 초안과 생성 입력 보관
   // 다른 플랫폼의 초안은 유지합니다.
@@ -631,118 +567,8 @@
     state.text_drafts[platform] = storedDraft;
     revision++;
   }
-  // ==========================================================
-  // 12. Instagram / Threads / Blog 개별 생성 버튼 (이 순서로 표시)
-  // ==========================================================
-  const generationTools = document.createElement("div");
-  generationTools.className = "text-generate-tools";
-  const generationStatus = document.createElement("p");
-  generationStatus.className = "notice";
-  generationStatus.setAttribute("role", "status");
-  generationStatus.setAttribute("aria-live", "polite");
-  generationStatus.style.whiteSpace = "pre-wrap";
-  const generationButtons = [];
-  for (const platform of ["instagram", "threads", "blog"]) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.id = "generate-" + platform + "-text";
-    button.textContent = `${names[platform]} 원고 생성`;
-    button.onclick = () => generate(platform);
-    generationButtons.push(button);
-    generationTools.append(button);
-  }
-  generationTools.append(generationStatus);
-  // 카드뉴스 선택 상자가 숨겨져도 텍스트 생성 버튼은 계속 표시합니다.
-  const cardOptions = get("card-news-options");
-  (cardOptions || instagramButton.parentElement).after(generationTools);
-  // 카드 선택 항목은 플랫폼 영역에 두고, 카드 생성 버튼만 원고 버튼 뒤로 옮깁니다.
-  generationTools.after(instagramButton.parentElement);
-  // ==========================================================
-  // 13. 개별 원고 생성
-  // 입력을 시작 시점에 복사하고, 완료 후 UI 잠금을 복원합니다.
-  // ==========================================================
-  async function generate(platform) {
-    if (busy) return;
-    if (
-      instagramButton.disabled ||
-      get("import-article")?.disabled ||
-      get("suggest-keywords")?.disabled ||
-      get("generate-selected")?.disabled
-    ) {
-      generationStatus.textContent =
-        "현재 진행 중인 요청이 끝난 뒤 실행해주세요.";
-      return;
-    }
-    const request = structuredClone(window.NewsInput.getRequest());
-    if (!request.platforms.includes(platform)) {
-      generationStatus.textContent = `왼쪽 플랫폼 선택에서 ${names[platform]}를 체크해주세요.`;
-      return;
-    }
-    if (!request.article.title || !request.article.content) {
-      generationStatus.textContent = "기사 제목과 원문을 먼저 입력해주세요.";
-      return;
-    }
-    if (!request.selected_keywords.length) {
-      generationStatus.textContent = "키워드를 선택하거나 직접 입력해주세요.";
-      return;
-    }
-    const generationInput = {
-      article: request.article,
-      selected_keywords: request.selected_keywords,
-      requirements: request.requirements,
-    };
-    const expectedRevision = revision;
-    const fields = [
-      ...document.querySelectorAll(
-        "#article-url, #import-article, #include-card-news, " +
-        "#article-title, #article-content, #custom-keywords, " +
-          "#article-requirements, #suggest-keywords, " +
-          "#keyword-candidates input, .platform input, " +
-          "#generate-instagram, #generate-selected, #load-local-draft, #save, #load",
-      ),
-      ...generationButtons,
-    ];
-    const previousDisabled = fields.map((field) => field.disabled);
-    const surfaces = [center, right, photoTools].filter(Boolean);
-    const previousInert = surfaces.map((element) => element.inert);
-    busy = true;
-    fields.forEach((field) => {
-      field.disabled = true;
-    });
-    surfaces.forEach((element) => {
-      element.inert = true;
-    });
-    generationStatus.textContent = `${names[platform]} 원고를 생성하고 있습니다…`;
-    try {
-      // 서버 요청과 오류 처리는 api.js에 위임합니다.
-      const result = await window.NewsApi.generateDraft(
-        platform,
-        generationInput,
-        {
-          jsonError: "서버 응답을 읽지 못했습니다.",
-          errorMessage: "생성에 실패했습니다.",
-        },
-      );
-      applyDraft(platform, result.draft, generationInput, expectedRevision);
-      state.platforms = request.platforms;
-      // 검수 UI와 연결된 공개 화면 전환 함수를 사용합니다.
-      window.TextEditor.showPlatform(platform);
-      generationStatus.textContent =
-        `${names[platform]} 생성 완료\n` +
-        "가운데 입력칸에서 수정할 수 있습니다.\n" +
-        "다시 생성하면 해당 플랫폼의 기존 원고가 교체됩니다.";
-    } catch (error) {
-      generationStatus.textContent = `생성 실패: ${error.message}`;
-    } finally {
-      fields.forEach((field, index) => {
-        field.disabled = previousDisabled[index];
-      });
-      surfaces.forEach((element, index) => {
-        element.inert = previousInert[index];
-      });
-      busy = false;
-    }
-  }
+  // 개별 원고 생성 버튼은 제공하지 않습니다.
+  // 플랫폼 원고 생성은 batch-generate-ui.js의 선택한 항목 생성에서 담당합니다.
   // ==========================================================
   // 14. 기존 파일 불러오기와 화면 갱신 연결
   // ==========================================================

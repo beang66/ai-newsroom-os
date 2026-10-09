@@ -56,11 +56,11 @@
     }
   };
   $("custom-keywords").addEventListener("input",updateSelection);
-  // URL変更で古い原文を別記事のURLと混ぜないよう、再取得を必要にします。
+  // URL 변경 시 이전 기사 원문과 제목을 초기화합니다.
   $("article-url").addEventListener("input",()=>{
     article={article_id:"article_01",url:"",title:"",content:""};
     $("article-title").value="";showSource();
-    $("article-import-status").textContent="URLを変更しました。記事を再度読み込んでください。";
+    $("article-import-status").textContent="";
   });
   $("import-article").addEventListener("click",async()=>{
     if(importing)return;

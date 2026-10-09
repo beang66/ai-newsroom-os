@@ -43,15 +43,15 @@ if (tools) {
   let selectionToken = 0, gesture = null, selectionController = null;
   let renderedPhotos = null, renderedSelecting = null;
   function contextFor(card) {
-    const input = state.card_news_generation_input || window.NewsInput?.getRequest() || {};
-    return {text:[card.keyword,card.headline,card.body,(input.selected_keywords || []).join(', '),input.article?.title].filter(Boolean).join('\n'),article:input.article};
+    const content = Object.fromEntries(['keyword','headline','body'].map(key => [key,typeof card[key] === 'string' ? card[key].trim() : '']));
+    return {card:content,text:Object.values(content).filter(Boolean).join('\n')};
   }
   function signature(card) { return contextFor(card).text; }
   function recordFor(card) {
     const key = signature(card), previous = records.get(card);
     if (previous?.signature === key) return previous;
     const context = contextFor(card);
-    const record = {signature:key,query:(card.keyword || context.article?.title || card.headline || '').replace(/\s+/g,' ').slice(0,150),page:1,photos:[],loading:false,loaded:false,error:''};
+    const record = {signature:key,query:(context.card.keyword || context.card.headline || context.card.body || '').replace(/\s+/g,' ').slice(0,150),page:1,photos:[],loading:false,loaded:false,error:''};
     records.set(card,record);return record;
   }
   function remember(card) {
@@ -74,19 +74,19 @@ if (tools) {
     try {
       if(!manual && !record.loaded) {
         const context=contextFor(card);
-        const body=[context.text,context.article?.content?.slice(0,1800)].filter(Boolean).join('\n').slice(0,30000);
-        if(body.length>=80) {
+        const body=context.text;
+        if(body.length>0) {
           try {
-            const result=await window.NewsApi.suggestPhotoKeywords(body,signal);
-            if(signal.aborted)return;
+            const result=await window.NewsApi.suggestPhotoKeywords(body,signal,context.card);
+            if(signal.aborted || records.get(card)!==record || signature(card)!==record.signature)return;
             const keyword=result.keywords?.find(value=>typeof value==='string'&&value.trim());
             if(keyword)record.query=keyword.trim().slice(0,150);
-          }catch(error){if(signal.aborted)return;/* AI 추천 실패 시 카드 키워드로 검색합니다. */}
+          }catch(error){if(signal.aborted || records.get(card)!==record || signature(card)!==record.signature)return;/* AI 추천 실패 시 카드 키워드로 검색합니다. */}
         }
       }
       if(!record.query)throw new Error('검색어를 입력해주세요.');
       const result=await window.NewsApi.searchTeamPhotos(record.query,record.page,signal,4);
-      if(signal.aborted || !state.cards.includes(card))return;
+      if(signal.aborted || !state.cards.includes(card) || records.get(card)!==record || signature(card)!==record.signature)return;
       record.photos=(result.photos || []).slice(0,4);record.loaded=true;
     }catch(error){if(!signal.aborted){record.error=error.message;record.loaded=true;}}
     finally{record.loading=false;if(current()===card && records.get(card)===record)sync();}
@@ -178,7 +178,7 @@ if (tools) {
   function open(mode='search') {
     if(window.TextEditor?.getPlatform()!=='card_news')window.TextEditor.showPlatform('card_news');
     picker.controller.abort();picker.controller=new AbortController();picker.sessionToken=(picker.sessionToken||0)+1;
-    target=current();picker.articleText=contextFor(target).article?.content || '';picker.selectedPhoto=null;picker.mode='edit';picker.render();dialog.showModal();
+    target=current();picker.articleText=contextFor(target).text;picker.selectedPhoto=null;picker.mode='edit';picker.render();dialog.showModal();
     if(mode==='upload')picker.choosePhotoFile();else picker.media();
   }
   close.onclick=finish;dialog.addEventListener('cancel',event=>{event.preventDefault();finish();});

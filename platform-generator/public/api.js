@@ -128,8 +128,8 @@
       return requestJson(PATHS.storageInfo, undefined, { checkSuccess: true });
     },
     // 팀원 사진 컴포넌트와 같은 검색·페이지·원본·추적 형식을 사용합니다.
-    suggestPhotoKeywords(body, signal) {
-      return requestJson("/api/photo/keywords", {...postJson({body}), signal}, {
+    suggestPhotoKeywords(body, signal, card) {
+      return requestJson("/api/photo/keywords", {...postJson(card === undefined ? {body} : {card}), signal}, {
         errorMessage: "사진 검색어 추천에 실패했습니다.",
       });
     },

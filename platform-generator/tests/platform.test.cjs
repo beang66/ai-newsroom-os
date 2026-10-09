@@ -101,7 +101,7 @@ test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 �
   // 카드별 추천 4장, 자동 삽입 금지, 선택/취소/되돌리기와 캐시 확인.
   let searches=0,keywordCalls=0,blobCalls=0;
   const photos=Array.from({length:4},(_,i)=>({id:'photo'+i,alt_description:'도시',urls:{small:'https://images.unsplash.com/fixture'+i,full:'https://images.unsplash.com/fixture'+i},user:{name:'작가'+i,links:{html:'https://unsplash.com/@fixture'}},links:{html:'https://unsplash.com/photos/fixture'}}));
-  w.NewsApi.suggestPhotoKeywords=async()=>{keywordCalls++;return {keywords:['city','street','building']}};
+  w.NewsApi.suggestPhotoKeywords=async(body,signal,card)=>{keywordCalls++;assert.equal(body,[card.keyword,card.headline,card.body].filter(Boolean).join('\n'));assert(!body.includes('원문 정보'));return {keywords:['city','street','building']}};
   w.NewsApi.searchTeamPhotos=async(query,page,signal,perPage)=>{searches++;assert.equal(perPage,4);return {photos}};
   w.NewsApi.getTeamPhotoBlob=async()=>{blobCalls++;return new w.Blob(['photo'],{type:'image/jpeg'})};
   w.TextEditor.showPlatform('card_news');
@@ -109,6 +109,10 @@ test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 �
   await new Promise(r=>setTimeout(r,10));
   assert.equal(w.document.querySelectorAll('[data-recommendations] .recommended-photo').length,4);
   assert.equal(w.eval('current().image'),undefined);assert.equal(keywordCalls,1);assert.equal(searches,1);
+  w.eval("current().keyword='edited';current().headline='short';current().body='card';draw();");
+  await new Promise(r=>setTimeout(r,10));assert.equal(keywordCalls,2);assert.equal(searches,2);
+  w.document.querySelector('[data-recommend-query]').value='manual search';
+  w.document.querySelector('[data-recommend-search]').click();await new Promise(r=>setTimeout(r,10));assert.equal(keywordCalls,2);assert.equal(searches,3);
   w.document.querySelector('.recommended-photo').click();await new Promise(r=>setTimeout(r,20));
   assert.equal(blobCalls,1);assert(w.eval('current().image.url').startsWith('data:image/jpeg;base64,'));
   assert.equal(w.document.querySelector('[data-photo-edit]').hidden,false);
@@ -118,7 +122,7 @@ test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 �
   w.document.querySelector('[data-remove]').click();assert.equal(w.eval('current().image'),undefined);
   w.document.querySelector('[data-photo-undo]').click();assert.equal(w.eval('current().image.url'),savedImage);
   w.document.querySelector('[data-photo-undo]').click();assert.equal(w.eval('current().image'),undefined);
-  w.eval('active=0;draw();');await new Promise(r=>setTimeout(r,0));w.eval('active=1;draw();');await new Promise(r=>setTimeout(r,0));assert.equal(searches,1);
+  w.eval('active=0;draw();');await new Promise(r=>setTimeout(r,0));w.eval('active=1;draw();');await new Promise(r=>setTimeout(r,0));assert.equal(searches,3);
   w.eval(`state.card_news_generation_input={article:{title:'기사',content:'원문'}};`);
   w.TextEditor.applyDraft('threads',{platform:'threads',opening:'📰 제목',paragraphs:['본문'],closing:'',source_evidence:[]},{article:{title:'기사',content:'원문'}},w.CardEditor.getRevision());
   w.TextEditor.showPlatform('threads');await new Promise(r=>setTimeout(r,0));

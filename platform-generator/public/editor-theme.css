@@ -1,0 +1,118 @@
+/* 편집실의 실버 테마입니다. 카드 템플릿과 출력 스타일에는 적용하지 않습니다. */
+:root {
+  --studio-ink: #172632;
+  --studio-muted: #536775;
+  --studio-line: #b6c3ce;
+  --studio-mint: #bceee4;
+}
+body {
+  min-height: 100vh;
+  color: var(--studio-ink);
+  background:
+    radial-gradient(ellipse at 95% 0%, #f9fcff 0%, transparent 40%),
+    radial-gradient(ellipse at 0% 65%, #d6e8e8 0%, transparent 45%),
+    linear-gradient(125deg, #d2dbe3, #e9eef2 48%, #c6d1da);
+}
+body > header {
+  margin: 20px auto 0;
+  width: calc(100% - 40px);
+  max-width: 1680px;
+  padding: 22px 26px;
+  border: 1px solid #aab9c5;
+  border-radius: 22px;
+  background: linear-gradient(115deg, #f8fafceb, #dce4eaf2 60%, #f4f7fa);
+  box-shadow: inset 0 1px 0 #fff, inset 0 -2px 0 #c4ced7, 0 8px 24px #263e5015;
+}
+header h1 { font-size: 26px; letter-spacing: -.8px; color: #142733; }
+header .eyebrow { color: #5b7480; letter-spacing: 2.5px; font-size: 10px; }
+header > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+.layout { max-width: 1720px; grid-template-columns: 280px minmax(350px, 1fr) 220px; gap: 18px; padding: 20px; align-items: start; }
+.layout > .panel, .layout > .left { min-width: 0; }
+.layout .panel, body > dialog {
+  color: var(--studio-ink);
+  border: 1px solid var(--studio-line);
+  border-radius: 22px;
+  background: linear-gradient(135deg, #f9fbfcf5, #e3eaf0f5 65%, #f1f5f8);
+  box-shadow: inset 0 1px 0 #fff, 0 8px 24px #263e5012;
+}
+.layout .panel { padding: 20px; }
+.layout h2 { color: #203441; font-size: 17px; letter-spacing: -.4px; }
+.layout .notice, .layout .muted, .layout small { color: var(--studio-muted); }
+header button, .layout button:not(.text-move-handle), dialog button {
+  color: var(--studio-ink);
+  border: 1px solid #afbec9;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff, #e5ecf1);
+  box-shadow: inset 0 1px 0 #fff, 0 2px 4px #213b4b12;
+  transition: background-color .15s, border-color .15s, box-shadow .15s;
+}
+header button:hover, .layout button:not(.text-move-handle):hover, dialog button:hover {
+  border-color: #779a9b;
+  background: linear-gradient(180deg, #f6fffd, #d8ede8);
+  box-shadow: inset 0 1px 0 #fff, 0 3px 9px #315c621c;
+}
+.layout button.dark, header button.dark, dialog button.dark {
+  color: #f5fcfd;
+  border-color: #425767;
+  background: linear-gradient(180deg, #40525e, #182b35);
+  box-shadow: inset 0 1px 0 #8c9ba5, 0 3px 8px #1c34472a;
+}
+.layout button.dark:hover, header button.dark:hover, dialog button.dark:hover {
+  background: linear-gradient(180deg, #365b61, #1b3940);
+  border-color: #73b9b0;
+}
+header button:disabled, .layout button:disabled, dialog button:disabled { opacity: .45; box-shadow: none; cursor: default; }
+.layout button:focus-visible, header button:focus-visible, dialog button:focus-visible,
+.layout input:focus-visible, .layout textarea:focus-visible, .layout select:focus-visible {
+  outline: 3px solid #388b83; outline-offset: 3px;
+}
+.layout input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
+.layout textarea, .layout select, dialog input[type=search] {
+  max-width: 100%; min-width: 0; padding: 11px 12px;
+  border: 1px solid #b5c3cf !important; border-radius: 11px !important;
+  color: #203340; background: linear-gradient(180deg, #fdfefe, #f0f4f7) !important;
+  box-shadow: inset 0 1px 3px #2d46500a;
+  line-height: 1.6;
+}
+.layout input::placeholder, .layout textarea::placeholder { color: #718390; opacity: 1; }
+.layout input[type=checkbox], .layout input[type=radio], .layout input[type=range] { accent-color: #32796f; }
+#article-source-panel label, #card-design-tools label { color: #304957; }
+#article-source-panel #import-article { width: 100%; }
+#article-source-panel #article-source-preview { border-color: #bdccd5; background: #eff4f7; }
+.layout .platform { border-color: #b9c8d1; background: #f1f5f8; padding: 13px; }
+.layout .platform:has(input:checked) { background: linear-gradient(135deg, #e3faf3, #c8e8df); color: #1d4b43; border-color: #76b5a6; }
+.layout .pill { background: #d5eee8; color: #285a52; border: 1px solid #b1d7cd; }
+.layout .platform-tabs { gap: 8px; }
+.layout .platform-tabs button { border-radius: 12px; }
+.layout .platform-tabs button[aria-pressed=true] {
+  background: linear-gradient(180deg, #38535c, #193039); color: #f3fffd;
+  border-color: #81b6ad; box-shadow: 0 0 0 2px #c7f0e7, inset 0 1px 0 #78948f;
+}
+#card-workspace .photo-tools {
+  background: linear-gradient(135deg, #f5f8fa, #e3eaf0);
+  border: 1px solid #bccbd4; border-radius: 16px;
+  box-shadow: inset 0 1px 0 #fff;
+}
+#card-design-tools { border-color: #bfccd5; box-shadow: inset 0 1px 0 #fff; }
+#cards .thumb { border-color: #b6c4cf; background: linear-gradient(135deg, #f7fafc, #e0e8ee); }
+#cards .thumb.selected { outline: 2px solid #548f83; outline-offset: 0; background: #dcf3ec; box-shadow: 0 0 0 4px #c2e9df6b; }
+#cards .thumb-label { color: #2f4857; }
+#add { border-style: dashed; margin-top: 6px; }
+#reset-text-positions { font-size: 12px; padding: 8px 10px; }
+#card-fit-status { color: #2a6557; border: 1px solid #b4d7ca; border-radius: 12px; padding: 11px 13px; background: #e6f5ed; }
+.layout .over-limit { color: #b42318; }
+.layout .panel:has(#canvas .news-card[data-overflow=true]) #card-fit-status,
+.layout .panel:has(#canvas .news-card[data-overlap=true]) #card-fit-status { color: #9f2929; border-color: #dfb5b5; background: #faeded; }
+#status, #generation-status, #batch-generation-status { color: #435e70; }
+.layout .validation-issue { background: #f5f8fa; border-color: #b5c7d2; }
+.layout .sns-composer { border-color: #bccad4; background: #f8fafc; box-shadow: inset 0 1px 0 #fff; }
+.layout .composer-options, .layout .text-source-evidence { border-color: #c1d0d9; background: #edf3f6; }
+.layout .composer-avatar { background: #d5ede7; color: #285c51; }
+.layout a.download, #photo-credit a, #results a { color: #256c65; }
+body > dialog::backdrop { background: #172d426b; }
+body > dialog { padding: 24px; }
+/* 화면 폭만 조정하며 원본 카드의 좌표·글 크기·이미지 표현은 유지합니다. */
+@media (max-width: 1250px) { .layout { grid-template-columns: 245px minmax(300px, 1fr) 190px; gap: 14px; } }
+@media (max-width: 1000px) { .layout { grid-template-columns: 195px minmax(300px, 1fr) 170px; gap: 10px; padding: 12px; } .layout .panel { padding: 14px; } body > header { width: calc(100% - 24px); margin-top: 12px; padding: 18px; } }
+@media (max-width: 760px) { .layout { grid-template-columns: 1fr; } body > header { align-items: flex-start; flex-direction: column; gap: 14px; } header h1 { font-size: 23px; } header > div:last-child { width: 100%; } header > div:last-child button { flex: 1; } }
+@media (prefers-reduced-motion: reduce) { header button, .layout button, dialog button { transition: none; } }

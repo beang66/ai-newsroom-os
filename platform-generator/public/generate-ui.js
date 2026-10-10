@@ -60,7 +60,6 @@
       requirements: request.requirements,
     };
     const expectedRevision = window.CardEditor.getRevision();
-
     // 4. 입력, 생성 버튼, 편집 영역을 잠그고 기존 상태를 보관
     const fields = [...document.querySelectorAll(
       "#article-url, #import-article, #include-card-news, #article-title, #custom-keywords, " +
@@ -89,7 +88,7 @@
       window.TextEditor?.showPlatform("card_news");
 
       const evidenceIssues = result.draft.cards.filter(
-        (card) => card.evidence_valid !== true
+        (card) => card.evidence_status!=='user_notice'&&card.evidence_valid !== true
       ).length + (result.draft.core_text?.evidence_valid === true ? 0 : 1);
 
       status.textContent = [
@@ -99,7 +98,10 @@
         evidenceIssues === 0
           ? "인용 근거의 원문 존재 여부를 확인했습니다."
           : `원문 근거를 확인해야 하는 항목: ${evidenceIssues}개`,
-        "전체 내용의 사실관계·요구사항 검수는 아직 진행하지 않았습니다.",
+        result.draft.generation_review ? (result.draft.generation_review.status==='passed'
+          ? '생성본의 사실관계·내용 배분 검수를 통과했습니다. 편집 후 JPG 출력 전 현재 전체 카드를 다시 확인합니다.'
+          : '생성본에 수정할 검수 문제가 남아 있습니다. 원고 검수에서 확인하고 수정한 뒤 출력해주세요.')
+          : '전체 내용의 사실관계·요구사항 검수는 아직 진행하지 않았습니다.',
       ].join("\n");
     } catch (error) {
       status.textContent = `생성 실패: ${error.message}`;

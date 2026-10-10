@@ -164,7 +164,8 @@
 
     // 독립 카드뉴스 생성: 플랫폼 체크 여부와 관계없이 호출합니다.
     generateCardNews(payload) {
-      return generateDraft("card_news", payload, {
+      const {card_news_options,...input}=payload;
+      return generateDraft("card_news", input, {
         jsonError:
           "서버 응답을 읽지 못했습니다. generate-routes 연결을 확인해주세요.",
         errorMessage: "카드뉴스 생성에 실패했습니다.",
@@ -206,7 +207,10 @@
     // 현재 편집 카드 이미지 생성
     renderCard(card) {
       // 원본·편집 이력은 로컬 초안에만 보관하고 JPG 요청에는 현재 표시 이미지만 전달합니다.
-      const rendered = { ...card, image: card.image ? { ...card.image, photo_edit: undefined } : undefined };
+      const normalized=window.CardModel.normalize(card);
+      const error=window.CardModel.layoutError(normalized);
+      if(error)throw new Error(error);
+      const rendered = { ...normalized, image: card.image ? { ...card.image, photo_edit: undefined } : undefined };
       return requestJson(PATHS.render, postJson({ card: rendered }), editorErrors);
     },
 

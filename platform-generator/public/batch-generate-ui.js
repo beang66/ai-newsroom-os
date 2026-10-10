@@ -79,7 +79,6 @@
     );
 
     if (request.include_card_news) platforms.push("card_news");
-
     if (!platforms.length) {
       status.textContent = "플랫폼 또는 카드뉴스 포함을 선택해주세요.";
       return;
@@ -159,9 +158,11 @@
         updateProgress();
 
         try {
+          let cardReview;
           // 카드뉴스 선택과 플랫폼 원고 선택을 구분합니다.
           if (platform === "card_news") {
             const result = await window.NewsApi.generateCardNews(generationInput);
+            cardReview=result.draft.generation_review;
             window.CardEditor.applyCardNewsDraft(result.draft, expectedRevision, generationInput);
           } else {
             const result = await window.NewsApi.generateDraft(platform, generationInput);
@@ -175,6 +176,7 @@
           successfulPlatforms.push(platform);
 
           progress[platform] = `${names[platform]}: 원고 생성 완료`;
+          if(cardReview)progress[platform]+=cardReview.status==='passed'?' · 생성본 검수 통과':' · 수정할 검수 문제 있음';
         } catch (error) {
           progress[platform] =
             `${names[platform]}: 실패 — ${error.message}`;

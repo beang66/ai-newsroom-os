@@ -44,6 +44,8 @@ if (tools) {
   let renderedPhotos = null, renderedSelecting = null;
   function contextFor(card) {
     const content = Object.fromEntries(['keyword','headline','body'].map(key => [key,typeof card[key] === 'string' ? card[key].trim() : '']));
+    // 화면에서 숨긴 키워드도 유지하고 새 본문 설명을 사진 추천에 연결합니다.
+    if(card.content_version===2)content.body=[card.answer,card.detail].filter(Boolean).join('\n');
     return {card:content,text:Object.values(content).filter(Boolean).join('\n')};
   }
   function signature(card) { return contextFor(card).text; }

@@ -88,9 +88,11 @@
 
       draft = {
         core_text: state.core_text,
+        information_plan:state.information_plan||null,
 
         cards: state.cards.map((card, index) => ({
           card_id: card.card_id,
+          covered_point_ids:card.covered_point_ids||[],
           page: index + 1,
 
           // 사용자가 바꾼 현재 카드 순서를 기준으로 역할 결정
@@ -105,7 +107,14 @@
             keyword: card.keyword,
             headline: card.headline,
             body: card.body,
+            ...(card.content_version===2?{answer:card.answer,detail:card.detail}:{}),
+            show_keyword:card.show_keyword,
+            farewell:card.farewell,
           },
+          content_version:card.content_version,
+          closing_type:card.closing_type,
+          service_message:card.service_message,
+          text_positions:CardModel.positions(card.text_positions),
 
           design: CardTemplate.normalizeDesign(card),
           source_evidence: card.source_evidence || [],
@@ -197,6 +206,9 @@
       .replace(/hashtags/g, "해시태그")
       .replace(/core_text/g, "핵심 요약")
       .replace(/source_evidence/g, "원문 근거")
+      .replace(/farewell/g, "끝인사")
+      .replace(/service_message/g, "이전 안내 문구")
+      .replace(/closing_type/g, "마지막 카드 유형")
       .replace(/\.?content/g, "")
       .replace(/headline/g, "제목")
       .replace(/keyword/g, "키워드")
@@ -204,6 +216,8 @@
       .replace(/intro/g, "도입")
       .replace(/heading/g, "소제목")
       .replace(/body/g, "본문")
+      .replace(/answer/g, "핵심 답변")
+      .replace(/detail/g, "상세 설명")
       .replace(/closing/g, "마무리")
       .replace(/conclusion/g, "결론")
       .replace(/summary/g, "요약")
@@ -482,6 +496,26 @@
     queueMicrotask(render);
     return result;
   };
+
+  window.addEventListener('news:cards-changed',()=>queueMicrotask(render));
+
+  // JPG 출력 전에 현재 전체 카드의 정보 누락·중복·마지막 신규 정보를 재검수합니다.
+  window.CardValidation={async ensureForExport(){
+    if(busy)throw new Error('진행 중인 검수가 끝난 뒤 다시 출력해주세요.');
+    const snapshot=JSON.stringify(makePayload('card_news')),before=CardEditor.getRevision();
+    let record=state.validation_results?.card_news;
+    if(!record||record.invalidated||record.snapshot!==snapshot){
+      busy=true;status.textContent='JPG 출력 전 전체 카드의 내용 배분을 검수합니다…';
+      try{
+        const response=await NewsApi.validateDraft(snapshot);
+        if(before!==CardEditor.getRevision()||snapshot!==JSON.stringify(makePayload('card_news')))throw new Error('검수 중 카드가 변경되었습니다. 다시 출력해주세요.');
+        if(response.validation?.platform!=='card_news')throw new Error('카드뉴스 검수 결과를 확인해주세요.');
+        record={snapshot,invalidated:false,result:response.validation};state.validation_results??={};state.validation_results.card_news=record;
+        state.validation_status=record.result.status;
+      }finally{busy=false;render();}
+    }
+    if(record.result.status!=='passed')throw new Error('전체 카드 검수에서 수정할 문제가 있습니다. 검수 결과를 확인하고 수정한 뒤 출력해주세요.');
+  }};
 
   // 20. 최초 화면의 플랫폼에 맞춰 검수 UI 초기화
   render();

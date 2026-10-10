@@ -110,6 +110,7 @@ function evidence(value) {
 // 사진, 화면 설정, 과거 검수 상태는 제외합니다.
 // 카드뉴스는 중첩 content·평면 구조, Instagram은 게시글·해시태그 구조를 지원합니다.
 // ============================================================
+const CardModel = require('./public/card-model');
 function extractDraft(platform, draft) {
   if (!draft || typeof draft !== "object") {
     throw new Error("검수할 원고가 없습니다.");
@@ -124,6 +125,7 @@ function extractDraft(platform, draft) {
     }
     return {
       // 기존 화면에서는 core_text가 전달되지 않을 수도 있습니다.
+      information_plan:draft.information_plan||null,
       // 전달된 경우에만 현재 검수에 포함합니다.
       core_text: draft.core_text
         ? {
@@ -134,16 +136,25 @@ function extractDraft(platform, draft) {
         : null,
       cards: draft.cards.map((card, index) => {
         const content = card.content || card;
+        const normalized=CardModel.normalize(card);
         return {
           card_id: text(card.card_id) || `C${index + 1}`,
           page: index + 1,
           role: text(card.role),
+          covered_point_ids:Array.isArray(card.covered_point_ids)?card.covered_point_ids.filter(id=>typeof id==='string'):[],
+          content_version:normalized.content_version,
+          closing_type:card.closing_type==='service'?'service':'summary',
+          service_message:text(card.service_message),
           // 배치 검수는 정해진 본문 줄바꿈만 확인합니다. 강조는 사실 근거를 대신하지 않습니다.
           design: {layout: typeof card.design?.layout === "string" ? card.design.layout : "standard"},
           content: {
             keyword: text(content.keyword),
             headline: text(content.headline),
             body: text(content.body),
+            answer:normalized.answer,
+            detail:normalized.detail,
+            show_keyword:normalized.show_keyword,
+            farewell:normalized.farewell,
           },
           source_evidence: evidence(card.source_evidence),
         };
@@ -204,11 +215,13 @@ function createQuoteChecker(article) {
     normalizeText(article.title),
     normalizeText(article.content),
   ].filter(Boolean);
-  return function quoteExists(quote) {
+  const quoteExists=function(quote) {
     if (!hasText(quote)) return false;
     const normalized = normalizeText(quote);
     return sourceParts.some((source) => source.includes(normalized));
   };
+  quoteExists.inBody=quote=>hasText(quote)&&normalizeText(article.content).includes(normalizeText(quote));
+  return quoteExists;
 }
 // ============================================================
 // 7. 코드로 확인 가능한 필수 구성과 인용 검사
@@ -288,12 +301,12 @@ function checkBasicRules(platform, draft, rules, quoteExists, requirements="") {
     draft.cards.forEach((card, index) => {
       const prefix = `cards[${index}]`;
       const layout = card.design?.layout || "standard";
-      const lines = card.content.body.split("\n").filter(line => line.trim());
+      const lines = CardModel.details(card).split("\n").filter(line => line.trim());
       if (!["standard","comparison","list","steps","stat"].includes(layout) ||
           (layout === "comparison" && lines.length !== 2) ||
           (["list","steps"].includes(layout) && (lines.length < 2 || lines.length > 4))) {
-        requirement.push({location: `${prefix}.content.body`,category: "structure_violation",
-          problematic_text: card.content.body,reason: "선택한 정보 배치와 본문 줄 구성이 맞지 않습니다.",
+        requirement.push({location: `${prefix}.content.${card.content_version===2?'detail':'body'}`,category: "structure_violation",
+          problematic_text: CardModel.details(card),reason: "선택한 정보 배치와 상세 설명 줄 구성이 맞지 않습니다.",
           source_evidence: [],suggestion: "비교형은 두 줄, 목록·단계형은 2~4개 항목으로 줄바꿈하거나 설명형으로 변경해주세요."});
       }
       const expectedRole =
@@ -313,6 +326,12 @@ function checkBasicRules(platform, draft, rules, quoteExists, requirements="") {
             "첫 장은 cover, 중간 장은 body, 마지막 장은 closing으로 구성해주세요.",
         });
       }
+      const isService=expectedRole==='closing'&&card.closing_type==='service';
+      if(isService){
+        if(!hasText(card.service_message))requirement.push({location:`${prefix}.service_message`,category:'structure_violation',problematic_text:'',reason:'사용자 서비스 안내 문구가 비어 있습니다.',source_evidence:[],suggestion:'사용할 서비스 안내 문구를 직접 입력해주세요. 기사 원문 근거는 필요하지 않습니다.'});
+        return;
+      }
+      if(card.closing_type==='service')requirement.push({location:`${prefix}.closing_type`,category:'structure_violation',problematic_text:'service',reason:'서비스 안내는 마지막 카드에만 사용할 수 있습니다.',source_evidence:[],suggestion:'본문은 기사 내용으로 구성하고 서비스 안내는 마지막 카드로 옮겨주세요.'});
       checkRequiredText(
         card.content.keyword,
         `${prefix}.content.keyword`,
@@ -323,12 +342,20 @@ function checkBasicRules(platform, draft, rules, quoteExists, requirements="") {
         `${prefix}.content.headline`,
         "카드 제목",
       );
-      checkRequiredText(
-        card.content.body,
-        `${prefix}.content.body`,
-        "카드 본문",
-      );
+      if(expectedRole==='body'&&card.content_version===2){
+        checkRequiredText(card.content.answer,`${prefix}.content.answer`,'핵심 답변');
+        checkRequiredText(card.content.detail,`${prefix}.content.detail`,'상세 설명');
+        // 조사·구두점 차이만 있는 긴 답변을 상세 설명에 그대로 다시 쓰는 경우를 검사합니다.
+        const compact=v=>v.replace(/[^\p{L}\p{N}]/gu,''),answer=compact(card.content.answer),detail=compact(card.content.detail);
+        if(answer.length>=20&&detail.includes(answer))requirement.push({location:`${prefix}.content.detail`,category:'structure_violation',problematic_text:card.content.detail,reason:'핵심 답변의 긴 문장이 상세 설명에서 그대로 반복됩니다.',source_evidence:[],suggestion:'핵심 답변은 짧게 쓰고, 상세 설명에는 답변에서 생략한 대상·시점·조건 등 원문의 필수 맥락을 배분해주세요.'});
+      }else if(expectedRole!=='cover')checkRequiredText(CardModel.details(card),`${prefix}.content.${card.content_version===2?'detail':'body'}`,'카드 본문');
       checkEvidence(card.source_evidence, `${prefix}.source_evidence`);
+      // 직접 인용의 존재 확인은 제목만으로 통과시키지 않습니다. 주체·맥락은 AI가 별도로 검수합니다.
+      for(const field of ['headline','answer','detail','body']){
+        for(const match of card.content[field].matchAll(/[“"]([^”"\n]{8,})[”"]/gu)){
+          if(quoteExists.inBody&&!quoteExists.inBody(match[1]))fact.push({location:`${prefix}.content.${field}`,category:'quote_mismatch',problematic_text:match[0],reason:'직접 인용 문구가 기사 본문에 그대로 존재하지 않습니다. 제목만으로 발언을 확인할 수 없습니다.',source_evidence:[],suggestion:'본문의 실제 발언 표현·주체를 확인하거나 근거가 있는 간접 요약으로 수정해주세요.'});
+        }
+      }
     });
   }
   // 해시태그 개수·문법·중복과 문단별 인용을 로컬 규칙으로 검사합니다.
@@ -425,19 +452,19 @@ function buildCheckResult(issues, quoteExists) {
 // 9. 전체 검수 실행
 // 사실 검수 → 요구사항 검수 순서로 진행합니다.
 // ============================================================
-async function validateDraft(input) {
+async function validateDraft(input, options={}) {
   if (!hasText(input?.article?.title) || !hasText(input?.article?.content)) {
     throw new Error("검수에 사용할 기사 제목과 원문이 필요합니다.");
   }
   const rules = getPlatformRules(input.platform);
   const draft = extractDraft(input.platform, input.draft);
-  const apiKey = OpenAI.apiKey?.trim();
+  const apiKey = (options.apiKey||OpenAI.apiKey)?.trim();
   if (!apiKey) {
     throw new Error(".env의 OPENAI_API_KEY를 확인해주세요.");
   }
   const quoteExists = createQuoteChecker(input.article);
   const basic = checkBasicRules(input.platform, draft, rules, quoteExists, input.requirements||"");
-  const client = new OpenAI({
+  const client = options.client||new OpenAI({
     apiKey,
     timeout: 180000,
     maxRetries: 0,
@@ -494,7 +521,12 @@ ${instructions}
         article: input.article,
         selected_keywords: input.selected_keywords ?? [],
         requirements: input.requirements ?? "",
-        draft,
+        // 서비스 문구는 기사 사실 검수 입력에서 제외하되 다른 카드와 위치는 유지합니다.
+        draft: kind==='fact'&&input.platform==='card_news'?{
+          ...draft,
+          cards:draft.cards.map((card,index)=>index===draft.cards.length-1&&card.closing_type==='service'?
+            {card_id:card.card_id,page:card.page,role:card.role,closing_type:'service',excluded_from_article_fact_check:true}:{...card,content:{...card.content,farewell:''}}),
+        }:draft,
         already_detected: alreadyDetected,
       }),
       text: {
@@ -559,6 +591,8 @@ ${instructions}
     "fact",
     `
 [사실관계 검수]
+- 직접 인용은 기사 제목에 일치해도 본문의 실제 발언 표현·주체·맥락을 확인합니다. 제목의 따옴표만을 발언 근거로 인정하지 않습니다.
+\- excluded_from_article_fact_check=true인 마지막 서비스 안내 카드는 기사 주장과 원문 근거 검사에서 제외합니다. 다른 카드와 core_text는 그대로 검사합니다.
 다음 분류만 사용합니다.
 \- unsupported_claim: 원문에 없는 사실, 평가, 사례 또는 근거 없는 단정
 \- number_mismatch: 숫자, 날짜, 시간, 비율, 단위, 비교 기준의 불일치
@@ -572,6 +606,8 @@ ${instructions}
 - 열린 미래 가능성과 확정적 예측을 구분합니다. 성공·실패·효과를 근거 없이 단정하면 지적합니다.
 [판단 기준]
 \- 계획·검토·예상·주장을 확정된 사실로 바꿨는지 확인합니다.
+- 카드 headline·answer·detail은 각각 독립적으로 확인합니다. 제목이나 상세 설명의 '계획'·'예정'이 다른 필드의 확정 표현을 정당화하지 않습니다.
+- 예를 들어 원문이 '늘릴 계획'인데 answer가 '늘어납니다'·'확대됩니다'이면 계획을 확정 결과로 바꾼 meaning_distortion입니다. 인용이 원문에 실제 존재해도 이 의미 오류는 따로 지적합니다.
 \- 수치의 기간, 대상, 단위가 바뀌거나 빠져 의미가 달라졌는지 확인합니다.
 \- 직접 인용은 원문의 발언 표현과 일치해야 합니다.
 \- 간접 인용과 자연스러운 요약은 의미가 유지되면 허용합니다.
@@ -610,6 +646,19 @@ ${instructions}
 \- 원문의 모든 세부 내용을 넣으라고 요구하지 않습니다.
 \- 이미 사실 검수에서 지적한 조건 누락이나 의미 왜곡은 반복하지 않습니다.
 [독립 카드뉴스]
+- 기사 주요 내용과 필수 맥락이 마지막 장을 제외한 본문 카드에서 충분히 설명되는지 기사 원문과 대조합니다. information_plan이 있으면 배분표의 누락·중복과 각 covered_point_ids가 실제 문장에서도 설명되는지 확인합니다. covered_point_ids는 서버가 배분표에서 연결한 작성 계약일 수 있으며 내용 충족의 증거가 아닙니다. 각 point.summary의 핵심과 필수 조건을 지정 body_page의 answer·detail에서 직접 확인하고 누락하면 해당 id와 카드 위치를 지적합니다. id 존재만으로 통과시키지 않습니다.
+- 마지막 장은 표지 주제와 전체 본문 주요 내용의 짧은 종합입니다. 원문 마지막 문단만 옮기거나 부가 정보 하나만 요약하면 structure_violation입니다. 마지막 장에서 처음 소개한 새 사실·필수 조건은 본문으로 옮기도록 지적합니다.
+- 본문에서 설명한 주요 내용을 마지막 장에서 간결하게 재언급하는 것은 허용합니다. 이를 신규 정보나 불필요한 중복으로 잘못 지적하지 않습니다. 제목·답변·설명에 같은 뜻을 반복해 채우는 것은 구분합니다.
+- ‘사연을 전했습니다’ 같은 추상적 표현이 핵심 사실을 대신하면 실제 핵심 내용을 쓰도록 지적합니다.
+\- 표지 보충 설명은 선택 사항입니다. 표지 body·answer·detail이 비어도 누락 오류가 아닙니다.
+\- 새 본문은 headline·answer·detail을 구분하고 질문 제목은 answer에서 직접 답합니다. 기존 content_version=1 초안은 keyword/headline/body만 있는 기존 구조를 허용하며 새 필드를 강제하지 않습니다.
+\- 인용의 실제 원문 존재 확인과 주장 의미 검수는 구분합니다. 원문 근거가 있어도 과장·인과·조건·발언 주체를 검수합니다.
+- 마지막 카드는 전체 핵심을 짧게 정리하고 원문의 결과·현재 상태·중요한 조건으로 표지의 주제·질문을 회수합니다. 본문을 그대로 반복하거나 새 사실·전망·평가를 추가하지 않습니다.
+- 제목을 포함한 각 문장이 조건·예정 상태를 유지하는지 확인합니다. ‘인력 배치를 마친 뒤 시행일 확정’이라는 조건을 ‘인력 배치 진행’·‘배치 완료’로 바꾸면 현재 상태를 새로 단정한 것입니다. 실제 착수·진행·완료를 원문이 명시했는지 따로 확인합니다.
+- farewell은 선택적인 짧은 끝인사입니다. 존재·부재나 동일한 문구를 강제하지 않고 기사 인용 근거를 요구하지 않습니다. 다만 새 사실·전망·평가나 예정되지 않은 후속 보도·업데이트·게시 일정 약속이면 structure_violation으로 지적합니다.
+- 이전 저장 초안의 closing_type=service는 호환용 사용자 안내이며 기사 근거 검사를 제외합니다. 새 생성 결과에 이 유형을 요구하지 않습니다.
+- 마지막 카드의 기사 핵심 정리에 대한 원문 근거와 다른 카드의 근거 누락은 계속 검사합니다.
+\- show_keyword=false는 키워드 숨김이며 내부 keyword가 있으면 표시 누락으로 지적하지 않습니다.
 \- 카드 수의 허용 범위는 ${rules.default_card_count?.min ?? 3}~${rules.default_card_count?.max ?? 10}장입니다.
 \- 기본 3~5장은 추천이며 그 범위 밖이라는 이유만으로 실패 처리하지 않습니다.
 \- 첫 카드는 cover, 중간은 body, 마지막은 closing이어야 합니다.
@@ -703,4 +752,5 @@ ${instructions}
 // ============================================================
 module.exports = {
   validateDraft,
+  extractDraft, checkBasicRules, createQuoteChecker,
 };

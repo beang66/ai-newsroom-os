@@ -2,11 +2,10 @@ import React, { useEffect, useState } from "react";
 import { Search, Calendar, Link2, Check, Filter } from "lucide-react";
 import { listStoredSources } from "../api/editorial";
 
-export default function SourceSearch({ onConnectToArticle, isModal = false, onClose }) {
+export default function SourceSearch({ onConnectToArticle, connectedSourceIds = [], isModal = false, onClose }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("전체");
   const [selectedSource, setSelectedSource] = useState(null);
-  const [connectedIds, setConnectedIds] = useState([]);
   const [sources, setSources] = useState([]);
   const [loadError, setLoadError] = useState("");
 
@@ -30,9 +29,6 @@ export default function SourceSearch({ onConnectToArticle, isModal = false, onCl
   });
 
   const handleConnect = (source) => {
-    if (!connectedIds.includes(source.id)) {
-      setConnectedIds([...connectedIds, source.id]);
-    }
     if (onConnectToArticle) {
       onConnectToArticle(source);
     }
@@ -108,7 +104,7 @@ export default function SourceSearch({ onConnectToArticle, isModal = false, onCl
             ) : (
               filteredSources.map((item) => {
                 const isSelected = selectedSource?.id === item.id;
-                const isConnected = connectedIds.includes(item.id);
+                const isConnected = connectedSourceIds.includes(item.id);
                 return (
                   <div
                     key={item.id}
@@ -173,14 +169,15 @@ export default function SourceSearch({ onConnectToArticle, isModal = false, onCl
                   <span className="text-xs text-[#8E8982] font-semibold">자체 보안 DB 보관 문서</span>
                   <button
                     onClick={() => handleConnect(selectedSource)}
+                    disabled={connectedSourceIds.includes(selectedSource.id)}
                     className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 ${
-                      connectedIds.includes(selectedSource.id)
+                      connectedSourceIds.includes(selectedSource.id)
                         ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                         : "bg-[#292B2F] hover:bg-[#1F2124] text-[#FAF8F5] shadow-xs"
                     }`}
                   >
                     <Link2 className="w-4 h-4 text-[#D8C76A]" />
-                    {connectedIds.includes(selectedSource.id) ? "연결 완료 (기사 적용됨)" : "기사에 출처 연결"}
+                    {connectedSourceIds.includes(selectedSource.id) ? "연결 완료 (기사 적용됨)" : "기사에 출처 연결"}
                   </button>
                 </div>
               </>

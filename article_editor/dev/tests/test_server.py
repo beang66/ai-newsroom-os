@@ -55,6 +55,25 @@ class ApiTestCase(unittest.TestCase):
             return e.code, e.read(), e.headers
 
 class ServerTests(ApiTestCase):
+    def test_saved_transcript_list_detail_and_audio_routes(self):
+        import base64
+        use_temp_vault(self)
+        saved = storage.save_transcript(
+            {'filename': 'interview.m4a', 'mimeType': 'audio/mp4', 'data': base64.b64encode(b'AUDIO').decode()},
+            {'dialogues': [{'id': 's1', 'speakerName': '기자', 'text': '질문', 'timestamp': 0}], 'duration': 3},
+        )
+        identifier = saved['transcriptId']
+        self.assertEqual(json.loads(self.request('/api/transcripts')[1])['transcripts'][0]['id'], identifier)
+        self.assertEqual(json.loads(self.request('/api/transcripts/' + identifier)[1])['dialogues'][0]['text'], '질문')
+        status, raw, headers = self.request('/api/transcripts/' + identifier + '/audio')
+        self.assertEqual((status, raw, headers['Content-Type']), (200, b'AUDIO', 'audio/mp4'))
+
+    def test_cms_route_only_returns_success_from_platform_manager(self):
+        with patch.object(api.CORE.platform, 'publish', return_value={'published': True, 'id': 'cms-1'}) as publish:
+            status, raw, _ = self.request('/api/cms/publish', {'article': {'title': '기사', 'content': '본문'}})
+        self.assertEqual((status, json.loads(raw)['id']), (200, 'cms-1'))
+        publish.assert_called_once()
+
     def test_get_article_reads_selected_draft_without_creating_revision(self):
         use_temp_vault(self)
         first = storage.save_article({'draft': {'title': 'Selected', 'content': 'kept', 'bodyHtml': '<p>kept</p>'}})['articleId']

@@ -1,6 +1,6 @@
 """자료 파일 → 텍스트 (팩트체크 서랍 업로드). PDF·DOCX·HWPX·HWP·텍스트.
 
-추출에 성공한 파일은 원본과 텍스트를 내 문서/AI Newsroom/sources 에 보관한다(storage.save_source).
+추출에 성공한 파일은 원본과 텍스트를 암호화 저장소에 보관한다(storage.save_source).
 
 PDF 는 pypdf, 옛 HWP(한글 5.x 바이너리)는 olefile 로 열고 본문 레코드를 직접 읽는다.
 DOCX·HWPX 는 zip 안의 XML 이라 표준 라이브러리로 충분하다. 스캔 PDF(이미지)는 글자가 없어 OCR 이 필요하다.

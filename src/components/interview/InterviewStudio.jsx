@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
-import { transcribeAudio } from "../../api/editorial";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { transcribeAudio, listTranscripts, loadTranscript } from "../../api/editorial";
 import {
   Upload,
   Play,
@@ -39,6 +39,8 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
   const [dialogues, setDialogues] = useState([]);
   const [sttStatus, setSttStatus] = useState(""); // "" | "전사 중…" | 오류 문구
   const [selectedQuotes, setSelectedQuotes] = useState([]);
+  const [savedTranscripts, setSavedTranscripts] = useState([]);
+  const [transcriptId, setTranscriptId] = useState("");
 
   // 2. 뷰 모드 토글: 'speaker' (화자별 대화형) vs 'fullText' (전체 통 텍스트)
   const [viewMode, setViewMode] = useState("speaker");
@@ -64,6 +66,34 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
   }, [active]);
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
   const fileInputRef = useRef(null);
+  const loadSeq = useRef(0); // only the latest transcript request may update the screen
+  const openTranscript = useCallback(async (id, signal) => {
+    const seq = ++loadSeq.current;
+    setSttStatus("녹취 불러오는 중…");
+    try {
+      const saved = await loadTranscript(id, signal);
+      if (seq !== loadSeq.current) return;
+      setTranscriptId(saved.id);
+      setFileName(saved.filename);
+      setDialogues(saved.dialogues || []);
+      setDuration(saved.duration || 0);
+      setCurrentTime(0);
+      setAudioUrl(saved.audioUrl);
+      setSelectedQuotes([]);
+      setSttStatus("");
+    } catch (error) {
+      if (seq === loadSeq.current && !signal?.aborted) setSttStatus("녹취 불러오기 실패: " + (error?.message || error));
+    }
+  }, []);
+  useEffect(() => {
+    const request = new AbortController();
+    listTranscripts(request.signal).then(({ transcripts }) => {
+      if (request.signal.aborted) return;
+      setSavedTranscripts(transcripts || []);
+      if (transcripts?.[0] && !loadSeq.current) void openTranscript(transcripts[0].id, request.signal);
+    }).catch((error) => { if (!request.signal.aborted) setSttStatus("녹취 목록 실패: " + (error?.message || error)); });
+    return () => request.abort();
+  }, [openTranscript]);
 
   // 오디오 객체 재생/시간 제어
   useEffect(() => {
@@ -104,11 +134,16 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
 
       // 코어 전사(Whisper) → 화자별 대화
       setDialogues([]);
+      setTranscriptId("");
       setSelectedQuotes([]);
       setSttStatus("전사 중…");
       transcribeAudio(file)
         .then((result) => {
           setDialogues(result.dialogues || []);
+          setTranscriptId(result.transcriptId || "");
+          if (result.transcriptId) setSavedTranscripts((items) => [{ id: result.transcriptId, filename: file.name,
+            duration: result.duration, createdAt: result.createdAt, segments: (result.dialogues || []).length },
+            ...items.filter((item) => item.id !== result.transcriptId)]);
           setSttStatus("");
         })
         .catch((error) => setSttStatus("전사 실패: " + (error?.message || error)));
@@ -279,6 +314,12 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
 
         {/* 상단 업로드 및 기사 연동 액션 버튼 */}
         <div className="flex items-center gap-2.5 flex-wrap">
+          {savedTranscripts.length > 0 && <select aria-label="저장된 녹취" value={transcriptId}
+            onChange={(event) => void openTranscript(event.target.value)}
+            className="max-w-[240px] px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold">
+            <option value="" disabled>저장된 녹취 선택</option>
+            {savedTranscripts.map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}
+          </select>}
           <button
             onClick={() => fileInputRef.current?.click()}
             className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold transition shadow-xs flex items-center gap-2 cursor-pointer"
@@ -684,7 +725,7 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
         {selectedQuotes.map((quote) => <blockquote key={quote.id}><small>{formatDuration(quote.timestamp)} · {quote.speakerName}</small><p>{quote.text}</p><button type="button" onClick={() => setSelectedQuotes((quotes) => quotes.filter((item) => item.id !== quote.id))}>선택에서 제외</button></blockquote>)}
         <div className="workspace-actions"><button type="button" className="workspace-primary" disabled={!selectedQuotes.length} onClick={() => {
           const text = selectedQuotes.map((quote) => `[${quote.speakerName} · ${formatDuration(quote.timestamp)}]\n${quote.text}`).join("\n\n");
-          onReturnToArticle?.(text, { id: `interview-${Date.now()}`, name: fileName, quotes: selectedQuotes });
+          onReturnToArticle?.(text, { id: transcriptId || `interview-${Date.now()}`, name: fileName, quotes: selectedQuotes });
           setSelectedQuotes([]);
         }}>선택한 발언을 기사로 보내기</button></div>
       </aside></div>

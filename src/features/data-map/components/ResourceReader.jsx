@@ -20,7 +20,6 @@ export default function ResourceReader({
   onSavePage,
   canEditSource = true,
   onSave,
-  onVisit,
   onClose,
 }) {
   const [page, setPage] = useState(initialPage),
@@ -40,9 +39,6 @@ export default function ResourceReader({
       previous?.focus();
     };
   }, []);
-  useEffect(() => {
-    onVisit(node, page);
-  }, [node, page, onVisit]);
   const move = (next) => {
     setPage(next);
     setEditing(false);

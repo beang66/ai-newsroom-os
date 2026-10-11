@@ -136,10 +136,26 @@ class ExpectedRevisionTests(unittest.TestCase):
     def test_match_saves_and_mismatch_is_rejected_without_changes(self):
         aid = storage.save_article(draft(title='1'))['articleId']
         self.assertEqual(storage.save_article(dict(draft(aid, title='2'), expectedRevisionNo=1))['revisionNo'], 2)
+        self.assertEqual(storage.latest_article()['draft']['revisionNo'], 2)
         error = self.conflict(dict(draft(aid, title='낡은 화면'), expectedRevisionNo=1))
         self.assertEqual((error.status, error.code), (409, 'REVISION_CONFLICT'))
         self.assertIn('2번', error.message)
         self.assertEqual(storage.latest_article()['draft']['title'], '2')
+        self.assertEqual(len(storage.list_revisions(aid)['revisions']), 2)
+
+    def test_same_session_replaces_its_latest_temporary_revision(self):
+        aid = storage.save_article(dict(draft(title='처음'), expectedRevisionNo=0))['articleId']
+        first_working = storage.save_article(dict(draft(aid, title='작업 1'), expectedRevisionNo=1))
+        replaced = storage.save_article(dict(draft(aid, title='작업 2'), expectedRevisionNo=2, replaceLatest=True))
+        self.assertEqual((first_working['revisionNo'], replaced['revisionNo']), (2, 2))
+        self.assertEqual(storage.latest_article()['draft']['title'], '작업 2')
+        self.assertEqual(len(storage.list_revisions(aid)['revisions']), 2)
+
+    def test_snapshot_revision_is_never_replaced(self):
+        aid = storage.save_article(dict(draft(title='처음'), expectedRevisionNo=0))['articleId']
+        storage.create_snapshot(aid)
+        saved = storage.save_article(dict(draft(aid, title='다음'), expectedRevisionNo=1, replaceLatest=True))
+        self.assertEqual(saved['revisionNo'], 2)
         self.assertEqual(len(storage.list_revisions(aid)['revisions']), 2)
 
     def test_omitted_keeps_old_behaviour(self):
@@ -152,6 +168,8 @@ class ExpectedRevisionTests(unittest.TestCase):
             with self.subTest(bad=bad):
                 error = self.conflict(dict(draft(), expectedRevisionNo=bad))
                 self.assertEqual((error.status, error.code), (400, None))
+        error = self.conflict(dict(draft(), replaceLatest='yes'))
+        self.assertEqual((error.status, error.code), (400, None))
 
 
 class RequestErrorCompatTests(unittest.TestCase):

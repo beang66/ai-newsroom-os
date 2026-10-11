@@ -18,6 +18,7 @@ import {
   cachedExternalRecheck,
 } from "../api/editorial";
 import { core } from "../api/core.js";
+import { isRestoring } from "../restoreState";
 
 /** 외부 재판정 요청 항목 — 클릭 재검토와 저장된 판정 복원이 **똑같은 형식**이어야 코어가 저장된 기록을 찾는다 */
 const recheckItems = (todo) => todo.map(([text, r], i) => {
@@ -381,6 +382,7 @@ export function FlowSummaryButton({ body }) {
  *  App 에서 한 번만 쓴다 — 어느 화면에 있든 저장되고, 저장 ID 는 article.articleId 에 남아 같은 파일을 덮어쓴다 */
 export function useAutosave(article, setArticle) {
   const [status, setStatus] = useState("");
+  const [dirty, setDirty] = useState(false);
   const idRef = useRef(article.articleId || null);
   const mounted = useRef(true);
   const pending = useRef(null);
@@ -402,6 +404,7 @@ export function useAutosave(article, setArticle) {
       while (pending.current) {
         const job = pending.current;
         pending.current = null;
+        if (isRestoring()) break;
         if (mounted.current) setStatus("자동 저장 중…");
         try {
           const id = await saveDraft(job.article, idRef.current || job.article.articleId);
@@ -412,6 +415,7 @@ export function useAutosave(article, setArticle) {
           }
           if (mounted.current && job.sequence === sequence.current && !pending.current) {
             setStatus("자동 저장됨");
+            setDirty(false);
           }
         } catch (e) {
           lastError.current = e;
@@ -437,6 +441,7 @@ export function useAutosave(article, setArticle) {
     if (fields.every((value, index) => Object.is(value, previousFields.current[index]))) return;
     previousFields.current = fields;
     const revision = ++sequence.current;
+    setDirty(true);
     setStatus("저장 대기…");
     const timer = timerRef.current = setTimeout(() => {
       pending.current = { article, sequence: revision };
@@ -453,5 +458,5 @@ export function useAutosave(article, setArticle) {
     if (lastError.current) throw lastError.current;
     return idRef.current;
   }, [article, drain]);
-  return { status, flush };
+  return { status, flush, dirty };
 }

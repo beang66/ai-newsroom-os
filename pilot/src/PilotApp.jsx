@@ -88,7 +88,7 @@ function DeskPage({ setPage }) {
   ];
   return (
     <>
-      <PageHeader index="01" eyebrow="SUNDAY · 11 OCTOBER" title="오늘의 데스크" description="우선순위가 높은 기사와 마감 위험을 한눈에 확인합니다." actions={<Button iconId="plus" iconMode="left" mode="light" size="md" variant="primary">새 기사</Button>} />
+      <PageHeader index="01" eyebrow="SUNDAY · 11 OCTOBER" title="오늘의 데스크" description="우선순위가 높은 기사와 마감 위험을 한눈에 확인합니다." actions={<Button mode="light" size="md" variant="primary">+ 새 기사</Button>} />
       <section className="metric-band" aria-label="오늘의 업무 현황">
         {[["마감 예정","04"],["검증 대기","03"],["편집 중","07"],["배포 준비","05"]].map(([label,value])=><div key={label}><span>{label}</span><strong>{value}</strong></div>)}
       </section>
@@ -244,7 +244,7 @@ function ArchivePage() {
   ];
   return (
     <>
-      <PageHeader index="06" eyebrow="NEWSROOM ARCHIVE" title="기사 보관함" description="원고와 연결된 취재 자료, 인터뷰, 미디어, 발행 이력을 함께 찾습니다." actions={<Button iconId="plus" iconMode="left" mode="light" size="md" variant="primary">새 기사</Button>} />
+      <PageHeader index="06" eyebrow="NEWSROOM ARCHIVE" title="기사 보관함" description="원고와 연결된 취재 자료, 인터뷰, 미디어, 발행 이력을 함께 찾습니다." actions={<Button mode="light" size="md" variant="primary">+ 새 기사</Button>} />
       <div className="archive-command"><TextInput leftIconId="search" mode="light" placeholder="기사 제목, 기자, 키워드 검색" showLabel={false} showLeftIcon variant="with-icon" /><div><Button mode="light" size="sm" variant="primary">전체 24</Button><Button mode="light" size="sm" variant="link">작성 중 5</Button><Button mode="light" size="sm" variant="link">발행됨 15</Button></div></div>
       <div className="archive-grid">
         <section className="archive-list"><SectionHead code="ARTICLES / 24" title="최근 기사" meta={<span>최근 수정순</span>} />{items.map(([title,status,date,tone],index)=><button className={selected===index?"archive-row active":"archive-row"} key={title} onClick={()=>setSelected(index)}><span>{String(index+1).padStart(2,"0")}</span><div><strong>{title}</strong><small>김다은 기자 · 사회부 · {date}</small></div><Badge mode="light" variant={tone}>{status}</Badge></button>)}</section>

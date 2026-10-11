@@ -7,15 +7,10 @@ import { supportedClaimRanges } from "../api/claim-details.js";
 // 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
 import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useFactCheck } from "./EditorialAssist";
 import { 
-  Sparkles, 
   Search, 
   Check, 
   RotateCcw, 
   History,
-  Bold, 
-  Italic, 
-  Quote, 
-  Wand2, 
   AlertTriangle,
   Eye,
   Edit3,
@@ -33,6 +28,7 @@ export default function ArticleWriter({
   setArticle, 
   onOpenSearch, 
   onModels,
+  onPublish,
   saveStatus // 자동 저장은 App 에서(어느 화면에 있든 저장된다)
 }) {
   // 1. 화면 뷰 모드: 'editor' (에디터만) | 'split' (에디터+미리보기 나란히) | 'preview' (미리보기 전체)
@@ -68,46 +64,16 @@ export default function ArticleWriter({
   // 4. CMS 발행 이관 상태
   const [isCmsExporting, setIsCmsExporting] = useState(false);
   const [isCmsSuccessModal, setIsCmsSuccessModal] = useState(false);
+  const [cmsError, setCmsError] = useState("");
+  const [cmsReceipt, setCmsReceipt] = useState(null);
 
   // 에디터 서식 및 제목 관련 상태
   const [isTitleHovered, setIsTitleHovered] = useState(false);
   const [isTitleConfirmed, setIsTitleConfirmed] = useState(false);
-  const [selectedText, setSelectedText] = useState("");
-  const [floatingToolbarPos, setFloatingToolbarPos] = useState(null);
-  const [showDraftModal, setShowDraftModal] = useState(false);
-  const [draftPrompt, setDraftPrompt] = useState("");
-  const [isGenerating] = useState(false); // ponytail: 초안 생성 AI 는 아직 코어 계약이 없어 항상 false — 연결할 때 setter 를 쓴다
-
-  const editorRef = useRef(null);
   const photoInputRef = useRef(null);
 
   const headlineSuggest = useSuggestions("headline", article);
   const subtitleSuggest = useSuggestions("subtitle", article);
-
-  // 텍스트 드래그 선택 서식 툴바
-  const handleSelection = () => {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !editorRef.current) {
-      setFloatingToolbarPos(null);
-      setSelectedText("");
-      return;
-    }
-
-    const text = selection.toString().trim();
-    if (text.length > 0) {
-      setSelectedText(text);
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      const containerRect = editorRef.current.getBoundingClientRect();
-
-      setFloatingToolbarPos({
-        top: Math.max(0, rect.top - containerRect.top - 48),
-        left: Math.max(10, rect.left - containerRect.left + (rect.width / 2) - 120)
-      });
-    } else {
-      setFloatingToolbarPos(null);
-    }
-  };
 
   const handleTitleConfirm = () => {
     setIsTitleConfirmed(true);
@@ -116,18 +82,6 @@ export default function ArticleWriter({
   const handleRegenerateTitle = () => {
     headlineSuggest.request(); // 코어 제목 추천 → 아래 후보 목록에서 고른다
     setIsTitleConfirmed(false);
-  };
-
-  // ponytail: 초안 생성 AI 는 아직 코어 계약이 없다 — 연결 전까지 안내만 한다
-  const handleGenerateDraft = () => {
-    alert("AI 초안 생성은 아직 코어에 연결되지 않았어요.");
-    setShowDraftModal(false);
-  };
-
-  const applyFormat = (formatType) => {
-    if (!selectedText) return;
-    alert(`선택한 문장 "${selectedText.slice(0, 15)}..." 에 [${formatType}] 서식을 적용했습니다.`);
-    setFloatingToolbarPos(null);
   };
 
   // 사진 업로드 핸들러
@@ -182,13 +136,20 @@ export default function ArticleWriter({
   };
 
   // CMS 발행/이관 실행
-  const handleCmsExport = () => {
+  const handleCmsExport = async () => {
+    if (isCmsExporting) return;
     setIsCmsExporting(true);
-    setTimeout(() => {
-      setIsCmsExporting(false);
+    setCmsError("");
+    try {
+      const receipt = await onPublish();
+      setCmsReceipt(receipt);
       setIsCmsSuccessModal(true);
-      setArticle((prev) => ({ ...prev, status: "발행 완료" }));
-    }, 1200);
+      setArticle((prev) => ({ ...prev, status: "발행 완료", cmsReceipt: receipt }));
+    } catch (error) {
+      setCmsError(error?.message || "CMS 발행에 실패했습니다.");
+    } finally {
+      setIsCmsExporting(false);
+    }
   };
 
   if (editingPhoto) return (
@@ -204,23 +165,16 @@ export default function ArticleWriter({
   return (
     <div className="w-full space-y-5 animate-float-in">
       {photoNotice && <p role="status" className="px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">{photoNotice}</p>}
+      {cmsError && <p role="alert" className="px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">CMS로 보내지 못했습니다. {cmsError}</p>}
 
       {/* ──────────────────────────────────────────
           1. 최상단 통합 컨트롤 툴바
-          (AI 초안, 자료검색, 팩트체크, 뷰 모드 전환, 미디어 관리, CMS 발행)
+          (자료검색, 팩트체크, 뷰 모드 전환, 미디어 관리, CMS 발행)
          ────────────────────────────────────────── */}
       <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-4 md:p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
         
         {/* 좌측: 기사 작성 도구들 */}
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={() => setShowDraftModal(true)}
-            className="px-4.5 py-2.5 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full font-black text-xs md:text-sm transition shadow-xs flex items-center gap-2 cursor-pointer active:scale-95 border border-[#23211F]"
-          >
-            <Wand2 className="w-4 h-4 text-amber-300" />
-            <span>AI 기사 초안 생성</span>
-          </button>
-          
           <button
             onClick={onOpenSearch}
             className="px-4.5 py-2.5 bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95"
@@ -531,40 +485,14 @@ export default function ArticleWriter({
             )}
 
             {/* 본문 텍스트 에디터 */}
-            <div className="relative pt-1" ref={editorRef} onMouseUp={handleSelection}>
+            <div className="relative pt-1">
               <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-2">
-                <span>본문 작성 영역 (자유 작성 및 서식 적용)</span>
+                <span>본문 작성 영역</span>
                 <span className="flex items-center gap-2">
                   <FlowSummaryButton body={article.content} />
                   공백 포함 {article.content.length.toLocaleString()}자
                 </span>
               </div>
-
-              {/* 드래그 플로팅 툴바 */}
-              {floatingToolbarPos && (
-                <div
-                  style={{ top: `${floatingToolbarPos.top}px`, left: `${floatingToolbarPos.left}px` }}
-                  className="absolute z-30 flex items-center gap-1 bg-slate-900 text-white px-2 py-1.5 rounded-xl shadow-xl border border-slate-700 animate-float-in text-xs"
-                >
-                  <button onClick={() => applyFormat("굵게")} className="p-1 hover:bg-slate-800 rounded-md" title="굵게">
-                    <Bold className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => applyFormat("기울임")} className="p-1 hover:bg-slate-800 rounded-md" title="기울임">
-                    <Italic className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => applyFormat("인용구")} className="p-1 hover:bg-slate-800 rounded-md" title="인용구">
-                    <Quote className="w-3.5 h-3.5" />
-                  </button>
-                  <div className="w-[1px] h-4 bg-slate-700 my-auto mx-1" />
-                  <button
-                    onClick={() => applyFormat("AI 다듬기")}
-                    className="p-1 px-2 hover:bg-blue-600 rounded-md transition flex items-center gap-1 text-blue-300 font-bold"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    AI 문장 다듬기
-                  </button>
-                </div>
-              )}
 
               <HighlightedBody
                 value={article.content}
@@ -909,7 +837,7 @@ export default function ArticleWriter({
             </div>
             <h3 className="text-lg font-black text-slate-950">CMS 발행이 완료되었습니다</h3>
             <p className="text-xs text-slate-600 leading-relaxed font-medium">
-              동아일보 디지털 통합 시스템(CMS)과 포털 송고 대기열로 기사 텍스트와 사진 데이터가 성공적으로 이관되었습니다.
+              CMS가 발행 요청을 정상 접수했습니다.{cmsReceipt?.id ? ` 접수 ID: ${cmsReceipt.id}` : ""}
             </p>
             <button
               onClick={() => setIsCmsSuccessModal(false)}
@@ -917,86 +845,6 @@ export default function ArticleWriter({
             >
               확인
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* AI 기사 초안 생성 모달 */}
-      {showDraftModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-6 md:p-8 max-w-xl w-full shadow-2xl border border-white space-y-5 animate-float-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Wand2 className="w-4 h-4 text-amber-500" />
-                <h3 className="text-base font-bold text-slate-900">AI 기사 초안 생성</h3>
-              </div>
-              <button
-                onClick={() => setShowDraftModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs md:text-sm">
-              <p className="text-slate-600">
-                수집된 취재자료나 녹취 데이터를 바탕으로 AI가 종합 기사 초안을 작성합니다.
-              </p>
-
-              <div className="space-y-2">
-                <label className="font-bold text-slate-800 block">연결할 취재자료 선택</label>
-                <div className="space-y-2 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
-                  {!article.linkedSources.length && <span className="text-slate-400">연결된 취재자료가 없어요.</span>}
-                  {article.linkedSources.map((src, idx) => (
-                    <label key={idx} className="flex items-center gap-2.5 text-slate-800 text-xs cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        defaultChecked={idx < 2} 
-                        className="w-4 h-4 rounded text-slate-900 focus:ring-slate-800"
-                      />
-                      <span>{src}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-slate-800 block">추가 지시사항 (선택)</label>
-                <input
-                  type="text"
-                  value={draftPrompt}
-                  onChange={(e) => setDraftPrompt(e.target.value)}
-                  placeholder="예: 핵심 기술 성과 위주로 객관적 톤으로 작성해줘"
-                  className="w-full px-3.5 py-2.5 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-900 outline-none focus:border-slate-800 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-              <button
-                onClick={() => setShowDraftModal(false)}
-                className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] text-xs font-bold rounded-full transition cursor-pointer"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleGenerateDraft}
-                disabled={isGenerating}
-                className="px-5 py-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] text-xs font-bold rounded-full transition shadow-xs cursor-pointer flex items-center gap-2 border border-[#23211F]"
-              >
-                {isGenerating ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>초안 생성 중...</span>
-                  </>
-                ) : (
-                  <>
-                    <Wand2 className="w-3.5 h-3.5 text-amber-300" />
-                    <span>초안 자동 생성</span>
-                  </>
-                )}
-              </button>
-            </div>
           </div>
         </div>
       )}

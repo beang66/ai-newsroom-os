@@ -29,6 +29,12 @@ export const ROUTES = Object.freeze({
   factcheckExternal: "/api/factcheck/external",
   semanticParse: "/api/semantic/parse",
   transcribe: "/api/interview/transcribe",
+  transcripts: "/api/transcripts",
+  transcript: (id) => "/api/transcripts/" + encodeURIComponent(id),
+  transcriptAudio: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/audio",
+  cmsPublish: "/api/cms/publish",
+  vaultExport: "/api/vault/export",
+  vaultRestore: "/api/vault/restore",
   materialsExtract: "/api/materials/extract",
   sources: "/api/sources",
   knowledgeMap: "/api/knowledge-map",
@@ -89,8 +95,14 @@ export function createCoreApi(transport) {
     semanticParse: (text, source = "frontend", signal) =>
       transport.json(ROUTES.semanticParse, { text, source }, signal),
     /** 인터뷰 녹음 전사(Whisper) → { dialogues:[{id,speaker,speakerName,timestamp,text}], text, duration } */
-    transcribe: (filename, data, signal) =>
-      transport.json(ROUTES.transcribe, { filename, data }, signal),
+    transcribe: (filename, mimeType, data, signal) =>
+      transport.json(ROUTES.transcribe, { filename, mimeType, data }, signal),
+    listTranscripts: (signal) => transport.json(ROUTES.transcripts, null, signal),
+    getTranscript: (id, signal) => transport.json(ROUTES.transcript(id), null, signal),
+    transcriptAudio: (id, signal) => transport.bytes(ROUTES.transcriptAudio(id), signal),
+    publishCms: (article, signal) => transport.json(ROUTES.cmsPublish, { article }, signal),
+    exportVault: (password, signal) => transport.json(ROUTES.vaultExport, { password }, signal),
+    restoreVault: (password, data, signal) => transport.json(ROUTES.vaultRestore, { password, data }, signal),
     /** 자료 파일(PDF·DOCX·HWP·HWPX·TXT) 텍스트 추출 → { text, chars, format } */
     extractText: (filename, data, signal) =>
       transport.json(ROUTES.materialsExtract, { filename, data }, signal),
@@ -109,9 +121,13 @@ export function createCoreApi(transport) {
       transport.json(ROUTES.sourcesOpen, { sourceId }, signal),
     /** 보관한 취재자료 원본 바이트(앱 안 뷰어용) → Blob */
     sourceBytes: (sourceId, signal) => transport.bytes(ROUTES.sourceFile(sourceId), signal),
-    /** 원고 디스크 저장 (파일: 내 문서/AI Newsroom/articles) */
-    saveArticle: (draft, signal) =>
-      transport.json(ROUTES.articlesSave, { draft }, signal),
+    /** 원고를 코어의 암호화 저장소에 저장 */
+    saveArticle: (draft, expectedRevisionNo, replaceLatest = false, signal) =>
+      transport.json(ROUTES.articlesSave, {
+        draft,
+        ...(Number.isInteger(expectedRevisionNo) ? { expectedRevisionNo } : {}),
+        ...(replaceLatest ? { replaceLatest: true } : {}),
+      }, signal),
     /** 가장 최근에 저장된 원고(앱을 열면 이어서 작업) → { draft | null }. 사진(data/original)은 "media:<id>" 참조 */
     latestArticle: (signal) => transport.json(ROUTES.articlesLatest, null, signal),
     listArticles: (signal) => transport.json(ROUTES.articles, null, signal),

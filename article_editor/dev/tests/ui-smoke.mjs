@@ -454,6 +454,8 @@ try {
       node_id: n.id, status: "CONFLICT", claim: n.text, reason: "스모크 불일치 사유", evidence: { text: "스모크 근거 문장", material_title: "자료.txt" },
     })) }) });
   });
+  // 자료 등록이 따로 저장돼야 아래 이력 복원(바로 앞 저장본)이 취재자료를 잃지 않는다
+  await page.getByTestId("save-status").getByText("자동 저장됨").waitFor({ timeout: 15_000 });
   await body.fill((await body.inputValue()) + " 순서형 검사용 새 문장을 하나 더 씁니다.");
   const sequence = page.getByTestId("fact-sequence");
   await sequence.getByText("문제 문장:").waitFor({ timeout: 15_000 });
@@ -599,7 +601,7 @@ try {
   await go('기사 작성');
   await body.fill((await body.inputValue()) + '\n전환 직전 보존 문장');
   await go('오늘의 데스크');
-  await page.getByRole('button', { name: '새 기사', exact: true }).click();
+  await page.getByRole('button', { name: '+ 새 기사', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('textarea[placeholder="기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다..."]')?.value === '');
   await page.getByPlaceholder('기사 제목을 입력하거나 AI 추천을 확인하세요').fill('전환 검증 두 번째 기사');
   await body.fill('두 번째 기사 본문입니다. 저장 ID를 분리합니다.');
@@ -614,7 +616,7 @@ try {
   await page.route('**/api/articles/save', (route) => reply(route, { error: '전환 저장 테스트 오류' }, 503));
   await body.fill((await body.inputValue()) + '\n저장 실패 시 보존 문장');
   await go('오늘의 데스크');
-  await page.getByRole('button', { name: '새 기사', exact: true }).click();
+  await page.getByRole('button', { name: '+ 새 기사', exact: true }).click();
   await page.getByRole('alert').getByText(/현재 원고는 유지됩니다/).waitFor();
   await page.unroute('**/api/articles/save');
   await go('기사 작성');

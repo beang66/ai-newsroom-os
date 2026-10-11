@@ -10,9 +10,11 @@ from ..media_assets import get_media_asset as _get_media_asset, media_asset_file
 from ..read_models import knowledge_map as _knowledge_map, list_articles as _list_articles
 from ..sources import delete_source as _delete_source, get_source as _get_source, list_sources as _list_sources
 from ..storage import (create_snapshot as _create_snapshot, get_revision as _get_revision, get_snapshot as _get_snapshot,
+                       get_transcript as _get_transcript, list_transcripts as _list_transcripts,
                        latest_article as _latest_article, media_file as _media_file, list_revisions as _list_revisions, list_snapshots as _list_snapshots,
                        open_source as _open_source, restore_revision as _restore_revision, save_article as _save_article,
-                       source_file as _source_file)
+                       source_file as _source_file, transcript_audio as _transcript_audio)
+from .. import vault
 
 
 class StorageManager:
@@ -106,3 +108,30 @@ class StorageManager:
     def delete_knowledge_file(self, file_id):
         """Markdown 지식 파일을 삭제하고 남은 링크를 다시 해석한다."""
         return guarded('knowledge_file_delete', _delete_knowledge_file, file_id)
+
+    def list_transcripts(self):
+        return _list_transcripts()
+
+    def get_transcript(self, transcript_id):
+        return _get_transcript(transcript_id)
+
+    def transcript_audio(self, transcript_id):
+        return _transcript_audio(transcript_id)
+
+    def export_backup(self, data):
+        import base64
+        raw = vault.export_backup(data.get('password'))
+        return {'filename': 'ai-newsroom-backup.db', 'data': base64.b64encode(raw).decode()}
+
+    def restore_backup(self, data):
+        import base64
+        encoded = data.get('data')
+        if not isinstance(encoded, str):
+            from ..errors import RequestError
+            raise RequestError('복구할 백업 파일을 선택해 주세요.')
+        try:
+            raw = base64.b64decode(encoded.split(',', 1)[-1], validate=True)
+        except ValueError:
+            from ..errors import RequestError
+            raise RequestError('백업 파일을 읽지 못했습니다.') from None
+        return guarded('vault_restore', vault.restore_backup, raw, data.get('password'))

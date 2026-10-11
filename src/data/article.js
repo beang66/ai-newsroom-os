@@ -18,10 +18,11 @@ export function createEmptyArticle() {
     subtitle: "",
     content: "",
     status: "작성 중", // 작성 중, 검증 완료, 발행 준비, 발행 완료
+    cmsReceipt: null,
     createdAt: now,
     updatedAt: now,
     linkedSources: [],
-    sources: [], // 올린 취재자료 [{id, name, format, size, chars, path, addedAt, text}] — text 는 메모리에만(원본·텍스트는 코어가 내 문서에 보관)
+    sources: [], // 올린 취재자료 [{id, name, format, size, chars, path, addedAt, text}] — 원본·텍스트는 코어 암호화 저장소에 보관
     linkedInterviews: [],
     photos: [],
     platformDrafts: {},

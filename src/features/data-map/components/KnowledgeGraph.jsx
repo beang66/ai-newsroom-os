@@ -42,9 +42,6 @@ export default memo(function KnowledgeGraph({
       ),
     [edges],
   );
-  const bridgeCount = edges.filter(
-    (edge) => edge.relation === "cross-project",
-  ).length;
   const haloDots = useMemo(
     () => Array.from({ length: 220 }, (_, i) => {
       const angle = (i / 220) * Math.PI * 2 + Math.sin(i * 2.17) * 0.012;
@@ -106,10 +103,6 @@ export default memo(function KnowledgeGraph({
         <div>
           <span className="eyebrow">CONNECTED KNOWLEDGE</span>
           <h2>{selected ? "선택한 맥락의 연결" : "취재의 맥락을 한눈에"}</h2>
-          <p>
-            {nodes.length}개 노드 <span>·</span> {edges.length.toLocaleString()}
-            개 연결 <span>·</span> 프로젝트 간 {bridgeCount}개
-          </p>
         </div>
         <button
           className="icon-button"
@@ -321,14 +314,6 @@ export default memo(function KnowledgeGraph({
         <div className="graph-empty">검색 조건에 맞는 노드가 없습니다.</div>
       )}
       <div className="graph-bottom">
-        <div className="legend">
-          {Object.entries(TYPES).map(([key, label]) => (
-            <span key={key}>
-              <i style={{ background: COLORS[key] }} />
-              {label}
-            </span>
-          ))}
-        </div>
         <div className="graph-controls">
           <label>
             <input

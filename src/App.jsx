@@ -16,7 +16,9 @@ const ModelsDialog = lazy(() => import("./components/ModelsDialog"));
 import { createEmptyArticle } from "./data/article";
 import { core, coreSnapshot } from "./api/core";
 import { loadLatestArticle, loadStoredArticle } from "./api/editorial";
+import { publishCms } from "./api/editorial";
 import { useAutosave } from "./components/EditorialAssist";
+import { isRestoring } from "./restoreState";
 import PageHeader from "./components/PageHeader";
 import { destinations } from "./data/navigation";
 import "./workspace.css";
@@ -61,7 +63,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   const setActiveTab = (tab) => { if (tab === "interview") setInterviewVisited(true); if (tab === "map") setMapArticleId(null); setActiveTabState(tab); writeTab(tab); };
   const [article, setArticle] = useState(() => initialArticle || createEmptyArticle());
   const [mapArticleId, setMapArticleId] = useState(null);
-  const { status: saveStatus, flush } = useAutosave(article, setArticle);
+  const { status: saveStatus, flush, dirty } = useAutosave(article, setArticle);
   const [storedArticles, setStoredArticles] = useState([]);
   const [listError, setListError] = useState("");
   const [listAttempt, setListAttempt] = useState(0);
@@ -96,6 +98,26 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       setSwitchError(`원고를 전환하지 못했습니다. 현재 원고는 유지됩니다. ${error.message}`);
     } finally { setSwitching(false); }
   };
+  const publishArticle = async () => {
+    const articleId = await flush();
+    return publishCms({ ...article, articleId });
+  };
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const beforeUnload = (event) => {
+      if (isRestoring()) return;
+      void flush();
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const saveWhenHidden = () => { if (document.visibilityState === "hidden" && !isRestoring()) void flush(); };
+    window.addEventListener("beforeunload", beforeUnload);
+    document.addEventListener("visibilitychange", saveWhenHidden);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("visibilitychange", saveWhenHidden);
+    };
+  }, [dirty, flush]);
 
   // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
   const [showLogin, setShowLogin] = useState(false);
@@ -193,7 +215,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
           <Suspense fallback={<div className="py-24 text-center text-sm text-slate-500">화면을 불러오는 중…</div>}>
           <main>
             <PageHeader page={activeTab} actions={['desk', 'archive'].includes(activeTab) &&
-              <button type="button" className="workspace-primary" disabled={loading || switching} onClick={() => changeArticle()}>새 기사</button>} />
+              <button type="button" className="workspace-primary" disabled={loading || switching} onClick={() => changeArticle()}>+ 새 기사</button>} />
             {listError && ['desk', 'archive'].includes(activeTab) && <div role="alert" className="workspace-global-error">저장된 기사 목록을 불러오지 못했습니다. {listError} <button type="button" onClick={() => setListAttempt((attempt) => attempt + 1)}>다시 시도</button></div>}
             {loading && loadError && (
               <div role="alert" className="py-24 text-center text-sm text-red-700">
@@ -211,6 +233,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
                 onOpenSearch={() => setShowSearchModal(true)}
                 saveStatus={saveStatus}
                 onModels={() => setShowModels(true)}
+                onPublish={publishArticle}
               />
             )}
 
@@ -218,7 +241,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
             {!loading && activeTab === "map" && <DataMapView articleId={mapArticleId || article.articleId} />}
 
             {!loading && activeTab === "search" && (
-              <SourceSearch onConnectToArticle={handleConnectSource} />
+              <SourceSearch onConnectToArticle={handleConnectSource} connectedSourceIds={article.linkedSources} />
             )}
 
             {!loading && interviewVisited && (
@@ -240,7 +263,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
 
       <Suspense fallback={null}>
         {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} />}
-        {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
+        {showModels && <ModelsDialog onClose={() => setShowModels(false)} onBeforeRestore={() => (dirty ? flush() : Promise.resolve())} />}
 
       {/* Quick Source Search Modal during Writing */}
       {showSearchModal && (
@@ -248,6 +271,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
           isModal={true}
           onClose={() => setShowSearchModal(false)}
           onConnectToArticle={handleConnectSource}
+          connectedSourceIds={article.linkedSources}
         />
       )}
       </Suspense>

@@ -1,31 +1,21 @@
-import { FileEdit, List, Network } from "lucide-react";
+import { List, Network } from "lucide-react";
 
-// Data Map 안의 보기 전환(관계망 / 파일 목록 / 기사 모아보기). 프로토타입 NewsroomChrome.jsx 에서
-// 이 부분만 옮겼다 — 가짜 헤더·사이드바·탭은 앱에 이미 있으므로 가져오지 않는다.
-export default function MapViews({ view, onView, count }) {
+// 파일럿처럼 검색 옆에서 관계망과 문서 목록만 전환한다.
+export default function MapViews({ view, onView }) {
   return (
-    <div className="datamap-subnav">
-      <nav className="map-views" aria-label="데이터맵 보기">
-        <button
-          className={view === "map" ? "active" : ""}
-          onClick={() => onView("map")}
-        >
-          <Network size={15} /> 관계망
-        </button>
-        <button
-          className={view === "library" ? "active" : ""}
-          onClick={() => onView("library")}
-        >
-          <List size={15} /> 문서 목록
-        </button>
-        <button
-          className={view === "history" ? "active" : ""}
-          onClick={() => onView("history")}
-        >
-          <FileEdit size={15} /> 기사 기록
-          {count > 0 && <small>{count}</small>}
-        </button>
-      </nav>
-    </div>
+    <nav className="map-views" aria-label="데이터맵 보기">
+      <button
+        className={view === "map" ? "active" : ""}
+        onClick={() => onView("map")}
+      >
+        <Network size={15} /> 관계망
+      </button>
+      <button
+        className={view === "library" ? "active" : ""}
+        onClick={() => onView("library")}
+      >
+        <List size={15} /> 문서 목록
+      </button>
+    </nav>
   );
 }

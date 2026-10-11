@@ -401,7 +401,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 10px;
   padding: 0 17px 8px;
 }
@@ -1952,13 +1952,13 @@
   color: #555d69;
 }
 .dm-root .content-grid.context-resizable {
-  grid-template-columns: minmax(0, 1fr) 12px minmax(300px, var(--context-width, 380px));
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 8px minmax(300px, var(--context-width, 380px));
+  column-gap: 12px;
 }
 .dm-root .context-resizer {
   align-self: stretch;
-  width: 12px;
-  margin: 0 -5px;
+  width: 8px;
+  margin: 0;
   cursor: col-resize;
   touch-action: none;
   position: relative;
@@ -1969,20 +1969,20 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 22px;
-  height: 38px;
+  width: 14px;
+  height: 24px;
   transform: translate(-50%, -50%);
   border: 1px solid #d6d5dc;
-  border-radius: 8px;
+  border-radius: 6px;
   background-color: #fff;
   background-image:
-    radial-gradient(circle at 6px 8px, #777983 1.25px, transparent 1.6px),
-    radial-gradient(circle at 15px 8px, #777983 1.25px, transparent 1.6px),
-    radial-gradient(circle at 6px 19px, #777983 1.25px, transparent 1.6px),
-    radial-gradient(circle at 15px 19px, #777983 1.25px, transparent 1.6px),
-    radial-gradient(circle at 6px 30px, #777983 1.25px, transparent 1.6px),
-    radial-gradient(circle at 15px 30px, #777983 1.25px, transparent 1.6px);
-  box-shadow: 0 2px 8px #1f293311;
+    radial-gradient(circle at 4px 5px, #777983 1px, transparent 1.3px),
+    radial-gradient(circle at 10px 5px, #777983 1px, transparent 1.3px),
+    radial-gradient(circle at 4px 12px, #777983 1px, transparent 1.3px),
+    radial-gradient(circle at 10px 12px, #777983 1px, transparent 1.3px),
+    radial-gradient(circle at 4px 19px, #777983 1px, transparent 1.3px),
+    radial-gradient(circle at 10px 19px, #777983 1px, transparent 1.3px);
+  box-shadow: 0 1px 5px #1f293311;
 }
 .dm-root .context-resizer:hover::after,
 .dm-root .context-resizer:focus-visible::after {
@@ -2049,8 +2049,8 @@
 .dm-root .table-title { color: #272d38; font-size: 15px; font-weight: 600; }
 .dm-root .table-title small { color: #596271; font-size: 13px; }
 .dm-root .table-scroll td { color: #4d5663; font-size: 14px; }
-.dm-root .overview-resizer { align-self: stretch; width: 12px; margin: 0 -5px; cursor: col-resize; touch-action: none; position: relative; z-index: 2; }
-.dm-root .overview-resizer::after { content: ""; position: absolute; top: 50%; left: 50%; width: 22px; height: 38px; transform: translate(-50%, -50%); border: 1px solid #d6d5dc; border-radius: 8px; background-color: #fff; background-image: radial-gradient(circle at 6px 8px, #777983 1.25px, transparent 1.6px), radial-gradient(circle at 15px 8px, #777983 1.25px, transparent 1.6px), radial-gradient(circle at 6px 19px, #777983 1.25px, transparent 1.6px), radial-gradient(circle at 15px 19px, #777983 1.25px, transparent 1.6px), radial-gradient(circle at 6px 30px, #777983 1.25px, transparent 1.6px), radial-gradient(circle at 15px 30px, #777983 1.25px, transparent 1.6px); box-shadow: 0 2px 8px #1f293311; }
+.dm-root .overview-resizer { align-self: stretch; width: 8px; margin: 0; cursor: col-resize; touch-action: none; position: relative; z-index: 2; }
+.dm-root .overview-resizer::after { content: ""; position: absolute; top: 50%; left: 50%; width: 14px; height: 24px; transform: translate(-50%, -50%); border: 1px solid #d6d5dc; border-radius: 6px; background-color: #fff; background-image: radial-gradient(circle at 4px 5px, #777983 1px, transparent 1.3px), radial-gradient(circle at 10px 5px, #777983 1px, transparent 1.3px), radial-gradient(circle at 4px 12px, #777983 1px, transparent 1.3px), radial-gradient(circle at 10px 12px, #777983 1px, transparent 1.3px), radial-gradient(circle at 4px 19px, #777983 1px, transparent 1.3px), radial-gradient(circle at 10px 19px, #777983 1px, transparent 1.3px); box-shadow: 0 1px 5px #1f293311; }
 .dm-root .overview-resizer:hover::after, .dm-root .overview-resizer:focus-visible::after { border-color: #8f9cac; box-shadow: 0 3px 11px #1f293322; }
 .dm-root .graph-halo circle { fill: #777486; opacity: .52; }
 .dm-root .graph-node circle { transition: fill 2s ease, stroke 2s ease, filter 2s ease; }
@@ -2114,7 +2114,8 @@
   overflow: auto;
 }
 .dm-root .content-grid.context-resizable {
-  grid-template-columns: minmax(0, 1fr) 12px minmax(260px, var(--context-width, 320px));
+  grid-template-columns: minmax(0, 1fr) 8px minmax(260px, var(--context-width, 320px));
+  column-gap: 12px;
 }
 @container dm (max-width: 760px) {
   .dm-root .content-grid.context-resizable {
@@ -2163,9 +2164,8 @@
 .dm-root .dm-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 24px 24px 20px;
+  justify-content: flex-end;
+  padding: 18px 24px;
   border-bottom: 1px solid var(--dm-border);
 }
 .dm-root .dm-header-copy {
@@ -2186,7 +2186,9 @@
 .dm-root .dm-header-actions {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 18px;
+  width: 100%;
   flex-shrink: 0;
 }
 .dm-root .dm-map-stats {
@@ -2216,10 +2218,23 @@
   font-variant-numeric: tabular-nums;
 }
 .dm-root .dm-import-button {
-  min-height: 40px;
+  height: 32px;
+  border: 1px solid #d8d2df;
+  border-radius: 8px;
+  background: #fff;
+  color: #51445f;
+  display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 750;
   white-space: nowrap;
   cursor: pointer;
+}
+.dm-root .dm-import-button:hover {
+  border-color: #a99ab9;
+  background: #faf8fc;
 }
 .dm-root .dm-import-notice {
   margin: 12px 24px 0;
@@ -2230,40 +2245,43 @@
   font-size: 12px;
   font-weight: 650;
 }
-.dm-root .datamap-subnav {
-  padding: 0 24px;
-  background: var(--dm-canvas);
-  border-bottom: 1px solid var(--dm-border);
+.dm-root .datamap-command {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 24px 12px;
+}
+.dm-root .datamap-command .global-search {
+  flex: 1;
+  max-width: 420px;
+}
+.dm-root .datamap-command .map-views {
+  flex-shrink: 0;
 }
 .dm-root .map-views {
-  gap: 22px;
-  padding: 0;
+  display: inline-flex;
+  height: 42px;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--dm-border);
+  border-radius: 10px;
+  background: #f7f5f8;
 }
 .dm-root .map-views button {
-  position: relative;
-  min-height: 48px;
-  border-radius: 0;
-  padding: 0 1px;
+  min-height: 34px;
+  border-radius: 7px;
+  padding: 0 12px;
   color: #666d78;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
-}
-.dm-root .map-views button::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  background: transparent;
+  white-space: nowrap;
 }
 .dm-root .map-views button.active {
-  background: transparent;
-  color: #4f3b70;
+  background: #fff;
+  color: #3f3156;
   font-weight: 800;
-}
-.dm-root .map-views button.active::after {
-  background: var(--dm-accent);
+  box-shadow: 0 1px 3px #292c3314;
 }
 .dm-root .workspace-heading {
   min-height: 72px;
@@ -2283,7 +2301,7 @@
   font-size: 12px;
 }
 .dm-root .global-search {
-  width: min(340px, 48%);
+  width: min(420px, 52%);
   height: 42px;
   border-color: #dcd8df;
   border-radius: 10px;
@@ -2305,6 +2323,7 @@
   padding: 0 0 14px;
 }
 .dm-root .type-filters button {
+  height: 32px;
   border-radius: 8px;
   padding: 7px 10px;
   color: #555d69;
@@ -2347,7 +2366,7 @@
   margin: 0 24px 24px;
 }
 .dm-root .graph-panel {
-  height: 500px;
+  height: clamp(620px, 72vh, 760px);
   border-color: #e3dfe8;
   border-radius: 14px;
   background: #f6f3f9;
@@ -2355,7 +2374,7 @@
 .dm-root .context-panel,
 .dm-root .library,
 .dm-root .history-page {
-  max-height: 500px;
+  max-height: clamp(620px, 72vh, 760px);
   border-color: #e3dfe8;
   border-radius: 14px;
   background: #fff;
@@ -2403,8 +2422,7 @@
   .dm-root .dm-import-button {
     width: 100%;
   }
-  .dm-root .datamap-subnav,
-  .dm-root .workspace-heading,
+  .dm-root .datamap-command,
   .dm-root .filterbar {
     padding-right: 16px;
     padding-left: 16px;
@@ -2412,12 +2430,13 @@
   .dm-root .filterbar {
     margin: 0;
   }
-  .dm-root .workspace-heading {
+  .dm-root .datamap-command {
     align-items: stretch;
     gap: 12px;
   }
   .dm-root .global-search {
     width: 100%;
+    max-width: none;
   }
   .dm-root .selection-bar {
     margin: 12px 16px;
@@ -2425,5 +2444,18 @@
   .dm-root .content-grid,
   .dm-root .content-grid.context-resizable {
     margin: 0 16px 16px;
+  }
+}
+
+@container dm (max-width: 520px) {
+  .dm-root .datamap-command {
+    flex-direction: column;
+  }
+  .dm-root .map-views {
+    display: flex;
+  }
+  .dm-root .map-views button {
+    flex: 1;
+    justify-content: center;
   }
 }

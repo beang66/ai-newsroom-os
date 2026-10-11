@@ -63,10 +63,18 @@ const readDataUrl = (file) => new Promise((resolve, reject) => {
 
 /** 인터뷰 녹음 파일 전사 — 파일을 data URL 로 읽어 코어로 보낸다(25MB 이하) */
 export async function transcribeAudio(file) {
-  return core.transcribe(file.name, await readDataUrl(file));
+  return core.transcribe(file.name, file.type || "application/octet-stream", await readDataUrl(file));
 }
+export const listTranscripts = (signal) => core.listTranscripts(signal);
+export async function loadTranscript(id, signal) {
+  const [transcript, audio] = await Promise.all([core.getTranscript(id, signal), core.transcriptAudio(id, signal)]);
+  return { ...transcript, audioUrl: URL.createObjectURL(audio) };
+}
+export const publishCms = (article, signal) => core.publishCms(article, signal);
+export const exportVault = (password, signal) => core.exportVault(password, signal);
+export const restoreVault = (password, data, signal) => core.restoreVault(password, data, signal);
 
-/** 취재자료 등록 — 코어가 텍스트를 뽑고 원본·텍스트를 내 문서\AI Newsroom\sources 에 보관한다(30MB 이하).
+/** 취재자료 등록 — 코어가 텍스트를 뽑고 원본·텍스트를 암호화 저장소에 보관한다(30MB 이하).
  *  → 기사 sources 항목 {id, name, format, size, chars, path, addedAt, text} */
 export async function registerSource(file) {
   const d = await core.extractText(file.name, await readDataUrl(file));
@@ -322,7 +330,7 @@ async function fromMediaRef(value, loaded) {
 const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 /** 원고 저장. 사진은 코어의 data/original 필드로 보내 암호화 media 저장소에서 중복 없이 보관한다. */
-export async function saveDraft(article, articleId) {
+export async function saveDraft(article, articleId, expectedRevisionNo, replaceLatest = false) {
   const bodyHtml = (article.content || "")
     .split(/\n{2,}/)
     .map((p) => `<p>${escapeHtml(p.trim()).replace(/\n/g, "<br>")}</p>`)
@@ -342,13 +350,14 @@ export async function saveDraft(article, articleId) {
     content: article.content || "", // 다시 열 때 그대로 복원(bodyHtml 은 발행·변환용)
     linkedSources: article.linkedSources || [],
       linkedInterviews: article.linkedInterviews || [],
-    sources: (article.sources || []).map(({ text: _text, ...meta }) => meta), // 본문 텍스트는 sources/<id>/text.txt 에 있다
+    sources: (article.sources || []).map(({ text: _text, ...meta }) => meta), // 자료 본문은 코어 sources 테이블에서 다시 붙인다
     status: article.status || "",
+    cmsReceipt: article.cmsReceipt || null,
     createdAt: article.createdAt || "",
     platformDrafts: article.platformDrafts || {},
     cardNews: article.cardNews || null,
     platformGeneration: article.platformGeneration || {},
-  });
+  }, expectedRevisionNo, replaceLatest);
   return d.articleId;
 }
 
@@ -360,10 +369,12 @@ function articleFromDraft(draft, empty) {
   return {
     ...empty,
     articleId: draft.articleId,
+    revisionNo: Number.isInteger(draft.revisionNo) ? draft.revisionNo : null,
     title: draft.title || "",
     subtitle: draft.subtitle || "",
     content,
     status: draft.status || empty.status,
+    cmsReceipt: draft.cmsReceipt || null,
     createdAt: draft.createdAt || empty.createdAt,
     updatedAt: (draft.savedAt || "").replace("T", " ").slice(0, 16) || empty.updatedAt,
     linkedSources: draft.linkedSources || [],

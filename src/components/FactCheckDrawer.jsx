@@ -49,7 +49,7 @@ const indexBadge = (index) => {
   return ["색인 안 됨", "bg-slate-200 text-slate-700", "아직 색인되지 않았습니다(모델 미설치 등). 팩트체크 때 한 번에 처리합니다."];
 };
 
-// 모든 자료는 코어(/api/materials/extract)가 텍스트를 뽑고 원본을 내 문서에 보관한다 → 기사 sources 에 등록
+// 모든 자료는 코어(/api/materials/extract)가 텍스트를 뽑고 원본을 암호화 저장소에 보관한다 → 기사 sources 에 등록
 const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 const VERDICT_BADGE = {
   SUPPORTED: ["팩트 일치", "bg-emerald-50 text-emerald-700 border-emerald-200"],
@@ -128,7 +128,7 @@ export default function FactCheckDrawer({
     setCitationNotice(`“${ev.sourceDoc}” 근거 주석을 본문 끝에 삽입했습니다.`);
   };
 
-  // 기사에서 자료 연결 해제(내 문서의 원본 파일은 지우지 않는다)
+  // 기사에서 자료 연결 해제(암호화 저장소의 원본은 지우지 않는다)
   const handleDeleteFile = (id) => {
     setFailedFiles((prev) => prev.filter((f) => f.id !== id));
     setArticle((prev) => ({ ...prev, sources: (prev.sources || []).filter((f) => f.id !== id) }));

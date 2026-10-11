@@ -25,6 +25,8 @@ ACCOUNT = 'device-key'
 WORKSPACE_ID = '10000000-0000-4000-8000-000000000001'  # 단일 워크스페이스(계약 ERD 의 workspace_id)
 _INIT_LOCK = threading.RLock()
 SCHEMA_VERSION = 2
+# api.py 의 /api/vault/restore 요청 한도(220MB)에 base64(4/3배)·JSON 여유를 뺀 값. 넘는 백업은 받아도 복구할 수 없다.
+MAX_BACKUP_BYTES = 160_000_000
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS articles (
@@ -147,6 +149,8 @@ def export_backup(password):
         with connect() as db:
             db.execute('PRAGMA wal_checkpoint(FULL)')
             _export(db, target, password)
+        if target.stat().st_size > MAX_BACKUP_BYTES:
+            raise RequestError('자료가 너무 커서 복구할 수 있는 백업을 만들 수 없습니다(최대 160MB). 오래된 녹음·자료를 정리해 주세요.', 413)
         return target.read_bytes()
     finally:
         target.unlink(missing_ok=True)
@@ -180,6 +184,10 @@ def restore_backup(raw, password):
                 raise RequestError('백업 암호가 맞지 않거나 파일이 손상됐습니다.') from error
             finally:
                 db.close()
+            if DB_PATH.is_file():
+                # 옛 -wal 이 새 DB 옆에 남으면 다음 실행에서 옛 쓰기가 새 DB 위에 재생돼 깨진다: 먼저 비운다.
+                with contextlib.suppress(RequestError, sqlite.DatabaseError), connect() as live_db:
+                    live_db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
             rollback.unlink(missing_ok=True)
             for suffix in ('', '-wal', '-shm'):
                 live = DB_PATH.with_name(DB_PATH.name + suffix)
@@ -187,9 +195,9 @@ def restore_backup(raw, password):
                 copy.unlink(missing_ok=True)
                 if live.exists():
                     shutil.copy2(live, copy)
-            os.replace(target, DB_PATH)  # atomic: the live DB path is never empty
-            for suffix in ('-wal', '-shm'):
+            for suffix in ('-wal', '-shm'):  # 교체 전에 지운다(체크포인트가 실패했어도 안전 복사본에 남아 있다)
                 DB_PATH.with_name(DB_PATH.name + suffix).unlink(missing_ok=True)
+            os.replace(target, DB_PATH)  # atomic: the live DB path is never empty
             return {'restored': True, 'safetyCopy': str(rollback) if rollback.exists() else None,
                     'restoredAt': datetime.datetime.now(datetime.timezone.utc).isoformat()}
         finally:

@@ -70,6 +70,14 @@ class ReliabilityFeaturesTests(unittest.TestCase):
         self.assertTrue(vault.DB_PATH.is_file())
         self.assertEqual(storage.latest_article()['draft']['title'], 'live')
 
+    def test_backup_too_big_to_restore_is_refused_at_export(self):
+        use_temp_vault(self)
+        storage.save_article({'draft': {'title': 'big', 'bodyHtml': '<p>a</p>'}})
+        with mock.patch.object(vault, 'MAX_BACKUP_BYTES', 100):
+            with self.assertRaises(RequestError) as caught:
+                vault.export_backup('portable-password-123')
+        self.assertEqual(caught.exception.status, 413)
+
     def test_cms_publish_rejects_error_and_empty_responses(self):
         article = {'articleId': 'a' * 32, 'title': 'title', 'subtitle': '', 'content': 'body'}
         for bad in ({'error': 'validation failed'}, {}):

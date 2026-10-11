@@ -72,7 +72,7 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
     setSttStatus("녹취 불러오는 중…");
     try {
       const saved = await loadTranscript(id, signal);
-      if (seq !== loadSeq.current) return;
+      if (seq !== loadSeq.current) { URL.revokeObjectURL(saved.audioUrl); return; }
       setTranscriptId(saved.id);
       setFileName(saved.filename);
       setDialogues(saved.dialogues || []);

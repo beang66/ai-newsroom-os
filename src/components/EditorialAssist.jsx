@@ -403,8 +403,8 @@ export function useAutosave(article, setArticle) {
     try {
       while (pending.current) {
         const job = pending.current;
+        if (isRestoring()) break; // 작업을 비우기 전에 멈춰야 복구가 실패해도 다음 저장에 남는다
         pending.current = null;
-        if (isRestoring()) break;
         if (mounted.current) setStatus("자동 저장 중…");
         try {
           const id = await saveDraft(job.article, idRef.current || job.article.articleId);

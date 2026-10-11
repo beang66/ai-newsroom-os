@@ -384,7 +384,9 @@ export function useAutosave(article, setArticle) {
   const idRef = useRef(article.articleId || null);
   const mounted = useRef(true);
   const pending = useRef(null);
-  const saving = useRef(false);
+  const saving = useRef(null);
+  const timerRef = useRef(null);
+  const lastError = useRef(null);
   const sequence = useRef(0);
   const previousFields = useRef(null);
 
@@ -393,9 +395,9 @@ export function useAutosave(article, setArticle) {
     return () => { mounted.current = false; };
   }, []);
 
-  const drain = useCallback(async () => {
-    if (saving.current) return;
-    saving.current = true;
+  const drain = useCallback(() => {
+    if (saving.current) return saving.current;
+    saving.current = (async () => {
     try {
       while (pending.current) {
         const job = pending.current;
@@ -404,6 +406,7 @@ export function useAutosave(article, setArticle) {
         try {
           const id = await saveDraft(job.article, idRef.current || job.article.articleId);
           idRef.current = id;
+          lastError.current = null;
           if (mounted.current && id !== job.article.articleId) {
             setArticle((prev) => prev.articleId === id ? prev : ({ ...prev, articleId: id }));
           }
@@ -411,19 +414,22 @@ export function useAutosave(article, setArticle) {
             setStatus("자동 저장됨");
           }
         } catch (e) {
+          lastError.current = e;
           if (mounted.current && job.sequence === sequence.current && !pending.current) {
             setStatus("저장 실패: " + (e?.message || e));
           }
         }
       }
     } finally {
-      saving.current = false;
+      saving.current = null;
     }
+    })();
+    return saving.current;
   }, [setArticle]);
 
   useEffect(() => {
     const fields = [article.title, article.subtitle, article.content, article.photos, article.sources,
-      article.linkedSources, article.status, article.platformDrafts, article.cardNews, article.platformGeneration];
+      article.linkedSources, article.linkedInterviews, article.status, article.platformDrafts, article.cardNews, article.platformGeneration];
     if (!previousFields.current) {
       previousFields.current = fields;
       return;
@@ -432,13 +438,20 @@ export function useAutosave(article, setArticle) {
     previousFields.current = fields;
     const revision = ++sequence.current;
     setStatus("저장 대기…");
-    const timer = setTimeout(() => {
+    const timer = timerRef.current = setTimeout(() => {
       pending.current = { article, sequence: revision };
       void drain();
     }, 1500);
     return () => clearTimeout(timer);
     // 저장 대상 필드가 바뀔 때만(article 객체 전체가 아니라 — articleId 변경으로는 다시 저장하지 않는다)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [article.title, article.subtitle, article.content, article.photos, article.sources, article.linkedSources, article.status, article.platformDrafts, article.cardNews, article.platformGeneration, drain]);
-  return status;
+  }, [article.title, article.subtitle, article.content, article.photos, article.sources, article.linkedSources, article.linkedInterviews, article.status, article.platformDrafts, article.cardNews, article.platformGeneration, drain]);
+  const flush = useCallback(async () => {
+    clearTimeout(timerRef.current);
+    pending.current = { article, sequence: ++sequence.current };
+    await drain();
+    if (lastError.current) throw lastError.current;
+    return idRef.current;
+  }, [article, drain]);
+  return { status, flush };
 }

@@ -16,6 +16,8 @@ export const ROUTES = Object.freeze({
   modelsCancel: "/api/models/cancel",
   assist: "/api/assist",
   articlesSave: "/api/articles/save",
+  articles: "/api/articles",
+  article: (id) => "/api/articles/" + encodeURIComponent(id.replaceAll("-", "")),
   articlesLatest: "/api/articles/latest?photos=ref", // 사진은 'media:<id>' 참조로 받고 바이트는 mediaBytes 로 따로
   media: (id) => "/api/media/" + encodeURIComponent(id),
   mediaAssets: "/api/media-assets",
@@ -112,6 +114,8 @@ export function createCoreApi(transport) {
       transport.json(ROUTES.articlesSave, { draft }, signal),
     /** 가장 최근에 저장된 원고(앱을 열면 이어서 작업) → { draft | null }. 사진(data/original)은 "media:<id>" 참조 */
     latestArticle: (signal) => transport.json(ROUTES.articlesLatest, null, signal),
+    listArticles: (signal) => transport.json(ROUTES.articles, null, signal),
+    getArticle: (id, signal) => transport.json(ROUTES.article(id), null, signal),
     /** 원고의 저장 이력 목록(최신이 위) → { revisions: [{ revisionNo, id, createdAt, title, excerpt, chars, ... }] } */
     listRevisions: (articleId, signal) => transport.json(ROUTES.articleRevisions(articleId), null, signal),
     /** 저장 이력 한 건의 미리보기(읽기 전용) → { title, subtitle, content, ... } */

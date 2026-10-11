@@ -36,6 +36,9 @@ class StorageManager:
         """원고 사진('media:<id>')의 바이트 → (bytes, mime)."""
         return _media_file(media_id)
 
+    def get_article(self, article_id, photo_refs=False):
+        return _latest_article(photo_refs, article_id)
+
     def list_revisions(self, article_id):
         """원고의 저장 이력 목록 ``{"revisions": [...]}`` (최신이 위)."""
         return _list_revisions(article_id)

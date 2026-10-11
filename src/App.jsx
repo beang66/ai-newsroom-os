@@ -8,17 +8,22 @@ const SourceSearch = lazy(() => import("./components/SourceSearch"));
 const InterviewStudio = lazy(() => import("./components/interview/InterviewStudio"));
 const FormatConverter = lazy(() => import("./components/FormatConverter"));
 const ArchiveView = lazy(() => import("./components/ArchiveView"));
+const DeskView = lazy(() => import("./components/DeskView"));
+const DataMapView = lazy(() => import("./features/data-map/DataMapView"));
 const LoginDialog = lazy(() => import("./components/LoginDialog"));
 const ModelsDialog = lazy(() => import("./components/ModelsDialog"));
 
 import { createEmptyArticle } from "./data/article";
-import { coreSnapshot } from "./api/core";
-import { loadLatestArticle } from "./api/editorial";
+import { core, coreSnapshot } from "./api/core";
+import { loadLatestArticle, loadStoredArticle } from "./api/editorial";
 import { useAutosave } from "./components/EditorialAssist";
+import PageHeader from "./components/PageHeader";
+import { destinations } from "./data/navigation";
+import "./workspace.css";
 
 // 마지막으로 보던 화면(작성·보관함 등) — 이 PC 화면 설정이라 브라우저 저장소에 둔다(없거나 막혀도 동작)
 const TAB_KEY = "ai-newsroom:lastTab";
-const readTab = () => { try { return localStorage.getItem(TAB_KEY) || "writer"; } catch { return "writer"; } };
+const readTab = () => { try { const tab = localStorage.getItem(TAB_KEY); return destinations.some((item) => item.id === tab) ? tab : "desk"; } catch { return "desk"; } };
 const writeTab = (tab) => { try { localStorage.setItem(TAB_KEY, tab); } catch { /* 저장 못 해도 그만 */ } };
 // 로그인 안내 띠를 닫았는지 — 이 PC 화면 설정(닫으면 다시 띄우지 않는다. 로그인은 헤더 버튼으로 언제든)
 const HINT_KEY = "ai-newsroom:loginHintDismissed";
@@ -31,6 +36,7 @@ export default function App() {
   const [core, setCore] = useState({ ok: false });
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [workspaceVersion, setWorkspaceVersion] = useState(0);
   useEffect(() => {
     let alive = true;
     loadLatestArticle(createEmptyArticle())
@@ -43,16 +49,53 @@ export default function App() {
   }, [loadAttempt]);
   // 원고를 불러오는 동안에도 앱 틀(헤더·사이드바)은 바로 그린다. 불러오면 작업 영역을 한 번 새로 연다(key) —
   // 불러온 원고가 '변경'으로 잡히지 않아 자동 저장이 돌지 않는다.
-  return <Workspace key={initial ? "ready" : "loading"} initialArticle={initial} core={core} setCore={setCore}
+  return <Workspace key={initial ? `ready-${workspaceVersion}` : "loading"} initialArticle={initial} core={core} setCore={setCore}
+    onReplaceArticle={(next) => { writeTab("writer"); setInitial(next); setWorkspaceVersion((version) => version + 1); }}
     loadError={loadError} onRetry={() => { setLoadError(""); setLoadAttempt((attempt) => attempt + 1); }} />;
 }
 
-function Workspace({ initialArticle, core, setCore, loadError, onRetry }) {
+function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetry, onReplaceArticle }) {
   const loading = !initialArticle;
   const [activeTab, setActiveTabState] = useState(readTab);
-  const setActiveTab = (tab) => { setActiveTabState(tab); writeTab(tab); };
+  const [interviewVisited, setInterviewVisited] = useState(activeTab === "interview");
+  const setActiveTab = (tab) => { if (tab === "interview") setInterviewVisited(true); if (tab === "map") setMapArticleId(null); setActiveTabState(tab); writeTab(tab); };
   const [article, setArticle] = useState(() => initialArticle || createEmptyArticle());
-  const saveStatus = useAutosave(article, setArticle);
+  const [mapArticleId, setMapArticleId] = useState(null);
+  const { status: saveStatus, flush } = useAutosave(article, setArticle);
+  const [storedArticles, setStoredArticles] = useState([]);
+  const [listError, setListError] = useState("");
+  const [listAttempt, setListAttempt] = useState(0);
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState("");
+  useEffect(() => {
+    if (loading) return;
+    const controller = new AbortController();
+    core.listArticles(controller.signal).then(({ articles }) => {
+      setStoredArticles(articles.map((item) => ({ ...item, id: item.id.replaceAll("-", "") })));
+      setListError("");
+    }).catch((error) => { if (!controller.signal.aborted) setListError(error.message); });
+    return () => controller.abort();
+  }, [loading, activeTab, saveStatus, listAttempt]);
+  const currentId = article.articleId || article.id;
+  const storedCurrent = storedArticles.find((item) => item.id === currentId);
+  const currentSummary = { ...storedCurrent, id: currentId,
+    title: article.title, subtitle: article.subtitle, status: article.status,
+    updated_at: storedCurrent?.updated_at || article.updatedAt };
+  const articles = storedCurrent ? storedArticles.map((item) => item.id === currentId ? currentSummary : item) : [currentSummary, ...storedArticles];
+  const changeArticle = async (id = null) => {
+    if (switching) return;
+    if (id === currentId) { setActiveTab("writer"); return; }
+    setSwitching(true);
+    setSwitchError("");
+    try {
+      if (article.articleId || article.title || article.content || article.sources.length || article.photos.length
+        || article.linkedSources.length || article.linkedInterviews.length || article.cardNews || Object.keys(article.platformDrafts).length) await flush();
+      const next = id ? await loadStoredArticle(id, createEmptyArticle()) : createEmptyArticle();
+      onReplaceArticle(next);
+    } catch (error) {
+      setSwitchError(`원고를 전환하지 못했습니다. 현재 원고는 유지됩니다. ${error.message}`);
+    } finally { setSwitching(false); }
+  };
 
   // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
   const [showLogin, setShowLogin] = useState(false);
@@ -77,12 +120,11 @@ function Workspace({ initialArticle, core, setCore, loadError, onRetry }) {
     loggedIn.current = false;
     loginWait.current.splice(0).forEach((resolve) => resolve(ok));
   };
-  const session = core.session;
+  const session = coreState.session;
   const showLoginHint = !loading && !loginHintHidden && session && !session.signedIn
     && !session.autoLogin?.available && !session.autoLogin?.enabled;
 
   // Sidebar collapse state (main 디자인: 기본은 세로로 긴 슬림 사이드바 접힘)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
   // Quick Source Search Modal inside Article Writer
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -98,10 +140,11 @@ function Workspace({ initialArticle, core, setCore, loadError, onRetry }) {
     alert(`"${source.title}" 자료가 작성 기사의 출처로 연결되었습니다.`);
   };
 
-  const handleReturnFromInterview = (editedTranscript) => {
+  const handleReturnFromInterview = (editedTranscript, interview) => {
     if (editedTranscript) {
-      const interviewQuote = `\n\n[인터뷰 발췌 녹취: ${editedTranscript.slice(0, 80)}...]`;
-      setArticle((prev) => ({ ...prev, content: prev.content + interviewQuote }));
+      const interviewQuote = `\n\n[인터뷰 발췌]\n${editedTranscript}`;
+      setArticle((prev) => ({ ...prev, content: prev.content + interviewQuote,
+        linkedInterviews: interview ? [...(prev.linkedInterviews || []), interview] : prev.linkedInterviews }));
     }
     setActiveTab("writer");
   };
@@ -112,16 +155,18 @@ function Workspace({ initialArticle, core, setCore, loadError, onRetry }) {
       <Header
         currentArticleTitle={article.title}
         status={article.status}
-        coreReady={core.ok}
-        coreLabel={core.ok ? "코어 연결됨" : "코어 대기"}
-        session={core.session}
+        coreReady={coreState.ok}
+        coreLabel={coreState.ok ? "코어 연결됨" : "코어 대기"}
+        session={coreState.session}
         onSession={onSession}
         onLogin={() => setShowLogin(true)}
         onModels={() => setShowModels(true)}
         saveStatus={saveStatus}
+        onHome={() => setActiveTab("desk")}
+        onSearch={() => setActiveTab("archive")}
       />
 
-      {showLoginHint && !core.session?.signedIn && (
+      {showLoginHint && !coreState.session?.signedIn && (
         <div role="status" data-testid="login-hint"
           className="mx-3 md:mx-5 mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-[#E7E4DE] bg-white px-4 py-2 text-xs text-[#666666]">
           <span className="flex-1 min-w-[200px]">로그인하면 AI 추천 같은 서버 기능을 쓸 수 있어요. 글쓰기·저장·팩트체크는 로그인 없이도 됩니다.</span>
@@ -133,24 +178,23 @@ function Workspace({ initialArticle, core, setCore, loadError, onRetry }) {
       )}
 
       {/* 2. Main Workspace Layout: Floating Slim Sidebar & Warm Minimal Workspace */}
-      <div className="flex flex-1 w-full relative min-h-[calc(100vh-70px)] pl-3 md:pl-5 pr-3 md:pr-6 py-2 gap-4 md:gap-5 items-start">
+      {switchError && <p role="alert" className="workspace-global-error">{switchError}</p>}
+      {switching && <p role="status" className="px-6 py-2">현재 원고를 저장하고 작업을 전환합니다…</p>}
+      <div className="workspace-layout" inert={switching || undefined}>
         <Sidebar
-          isCollapsed={isSidebarCollapsed}
-          setIsCollapsed={setIsSidebarCollapsed}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          session={core.session}
+          session={coreState.session}
           onModels={() => setShowModels(true)}
         />
 
         {/* Main Content Workspace */}
-        <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0">
+        <div className="workspace-content">
           <Suspense fallback={<div className="py-24 text-center text-sm text-slate-500">화면을 불러오는 중…</div>}>
-          <main className={`flex-1 min-w-0 transition-all ${
-            activeTab === "writer" || activeTab === "publish"
-              ? ""
-              : "main-warm-container py-6 px-4 md:px-8"
-          }`}>
+          <main>
+            <PageHeader page={activeTab} actions={['desk', 'archive'].includes(activeTab) &&
+              <button type="button" className="workspace-primary" disabled={loading || switching} onClick={() => changeArticle()}>새 기사</button>} />
+            {listError && ['desk', 'archive'].includes(activeTab) && <div role="alert" className="workspace-global-error">저장된 기사 목록을 불러오지 못했습니다. {listError} <button type="button" onClick={() => setListAttempt((attempt) => attempt + 1)}>다시 시도</button></div>}
             {loading && loadError && (
               <div role="alert" className="py-24 text-center text-sm text-red-700">
                 <p>{loadError}</p>
@@ -170,12 +214,15 @@ function Workspace({ initialArticle, core, setCore, loadError, onRetry }) {
               />
             )}
 
+            {!loading && activeTab === "desk" && <DeskView article={article} articles={articles} onNavigate={setActiveTab} onOpen={changeArticle} busy={switching} />}
+            {!loading && activeTab === "map" && <DataMapView articleId={mapArticleId || article.articleId} />}
+
             {!loading && activeTab === "search" && (
               <SourceSearch onConnectToArticle={handleConnectSource} />
             )}
 
-            {!loading && activeTab === "interview" && (
-              <InterviewStudio onReturnToArticle={handleReturnFromInterview} />
+            {!loading && interviewVisited && (
+              <div hidden={activeTab !== "interview"}><InterviewStudio active={activeTab === "interview"} onReturnToArticle={handleReturnFromInterview} /></div>
             )}
 
             {!loading && activeTab === "convert" && (
@@ -183,7 +230,8 @@ function Workspace({ initialArticle, core, setCore, loadError, onRetry }) {
             )}
 
             {!loading && activeTab === "archive" && (
-              <ArchiveView article={article} />
+              <ArchiveView article={article} articles={articles} onOpen={changeArticle}
+                onMap={(id) => { setActiveTab("map"); setMapArticleId(id === article.id ? null : id); }} busy={switching} />
             )}
           </main>
           </Suspense>

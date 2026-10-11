@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Bell, FileEdit, FileText } from "lucide-react";
+import { Search, FileEdit, FileText } from "lucide-react";
 import AutoLoginToggle from "./AutoLoginToggle";
 import { signOut } from "../api/editorial";
 
@@ -14,6 +14,8 @@ export default function Header({
   onLogin,
   onModels,
   saveStatus = "",
+  onHome,
+  onSearch,
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -39,12 +41,12 @@ export default function Header({
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="bg-white border border-[#E7E4DE] rounded-full px-4 py-2 flex items-center gap-2.5 shadow-[0_2px_12px_rgba(41,41,41,0.03)]">
             <span className="w-2.5 h-2.5 rounded-full bg-[#F4A940]" />
-            <h1 
+            <button type="button" onClick={onHome} aria-label="오늘의 데스크 홈"
               className="text-base font-extrabold text-[#292929] tracking-tight"
               style={{ fontFamily: "'Plus Jakarta Sans', 'Pretendard', sans-serif" }}
             >
               AI Newsroom
-            </h1>
+            </button>
             <span
               className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-bold text-[#666666]"
               title={coreLabel || "로컬 코어 상태"}
@@ -90,9 +92,9 @@ export default function Header({
           {/* 알림 버튼 Capsule */}
           <button 
             className="w-10 h-10 rounded-full bg-white border border-[#E7E4DE] text-[#666666] hover:text-[#292929] hover:bg-[#F8F7F4] flex items-center justify-center transition shadow-[0_2px_12px_rgba(41,41,41,0.03)] cursor-pointer relative"
-            title="알림"
+            title="기사 검색" aria-label="기사 검색" onClick={onSearch}
           >
-            <Bell className="w-4 h-4" />
+            <Search className="w-4 h-4" />
           </button>
 
           <AutoLoginToggle session={session} onSession={onSession} />

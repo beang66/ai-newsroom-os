@@ -142,7 +142,7 @@ export default function FactCheckDrawer({
        ────────────────────────────────────────── */
     <aside 
       aria-label="팩트체크 및 근거자료"
-      className="order-first lg:order-none w-full min-w-0 lg:w-[450px] xl:w-[470px] flex-shrink-0 bg-white/95 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col h-[calc(100vh-170px)] min-h-[640px] lg:sticky lg:top-4 overflow-hidden animate-float-in z-20"
+      className="order-first lg:order-none w-full min-w-0 lg:w-[360px] xl:w-[380px] flex-shrink-0 bg-white/95 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col h-[calc(100vh-170px)] min-h-[640px] lg:sticky lg:top-4 overflow-hidden animate-float-in z-20"
     >
       {/* 상단 헤더 */}
       <div className="p-4 md:p-5 border-b border-slate-200/90 flex items-center justify-between bg-slate-50/70">

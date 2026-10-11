@@ -12,6 +12,7 @@ import { createServer } from "node:http";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 
 const require = createRequire(import.meta.url);
@@ -162,8 +163,13 @@ try {
 
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
   // 사이드바(main 디자인)의 메뉴 이름 — 접힌 상태에서는 버튼 title 로 보인다
-  const NAV = { "기사 작성": "Article Writer", "녹음 파일": "Interview & Audio", "플랫폼 변환": "Publish & Convert", "보관함": "Saved Archive" };
-  const go = (title) => page.locator(`button[title="${NAV[title] || title}"]`).first().click();
+  const NAV = { "오늘의 데스크": "오늘의 데스크", "기사 작성": "기사 작성", "녹음 파일": "인터뷰·녹취", "플랫폼 변환": "변환·배포", "데이터맵": "데이터맵", "보관함": "보관함" };
+  const go = async (title) => {
+    await page.locator(`button[title="${NAV[title] || title}"]`).first().click();
+    await page.getByTestId('page-heading').filter({ hasText: NAV[title] || title }).waitFor();
+  };
+  fs.mkdirSync(new URL('temp/', ROOT), { recursive: true });
+  const snapshot = (name) => page.screenshot({ path: fileURLToPath(new URL(`temp/${name}.png`, ROOT)), fullPage: true });
 
   // 로그인·모델 설치는 브라우저에서 고정 응답: 실제 인증·다운로드를 전혀 호출하지 않는다.
   let session = { signedIn: false, email: null, userId: null, expiresIn: 0, supabase: true, backend: true,
@@ -244,6 +250,10 @@ try {
   assert.equal(await page.getByPlaceholder("기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다...").count(), 0);
   assert.equal(savedIds.size, 0, "조회 실패 중에는 빈 원고를 저장하지 않는다");
   await page.getByRole("button", { name: "다시 불러오기" }).click();
+  await page.getByTestId("desk-view").waitFor();
+  await snapshot('prototype-ux-desk');
+  assert.equal(await page.getByTestId("data-map").count(), 0);
+  await go("기사 작성");
   await page.getByPlaceholder("기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다...").waitFor();
   assert.equal(latestAttempts, 2);
   await page.unroute(latestRoute);
@@ -383,7 +393,7 @@ try {
   await page.getByRole("button", { name: /사진·미디어 편집/ }).click();
   await page.getByTestId("photo-finder").getByRole("button", { name: "stub wafer" }).click();
   await page.getByTestId("photo-finder").locator("img").nth(2).waitFor();
-  await page.getByRole("button", { name: "닫기" }).click();
+  await page.getByRole("button", { name: "닫기", exact: true }).click();
 
   // 3-1. 로컬 사진 → PhotoEditor → 편집본을 기사에 반영
   await page.getByRole("button", { name: /사진·미디어 편집/ }).click();
@@ -489,6 +499,10 @@ try {
   // 팩트체크 서랍에 올린 자료가 기사 취재자료로 남아 보관함에 보여야 한다(깨진 파일은 빠짐)
   await page.getByText("취재자료 (1건)").waitFor();
   await page.getByText("• 자료.txt").waitFor();
+  await snapshot('prototype-ux-archive');
+  assert.equal(await page.getByTestId("data-map").count(), 0, "보관함에는 데이터맵을 중복 렌더링하지 않는다");
+  await go("데이터맵");
+  assert.equal(await page.getByTestId("archive-view").count(), 0);
   const dataMap = page.getByTestId("data-map");
   const sampleRoot = new URL('../sample-data/datamap/', ROOT);
   const samples = fs.readdirSync(sampleRoot).filter((name) => name.endsWith('.md'));
@@ -501,12 +515,19 @@ try {
   assert.equal(knowledge.files.length, 5);
   assert.equal(knowledge.file_links.length, 21);
   assert.ok(knowledge.files.every((file) => file.backlink_count > 0));
+  await snapshot('prototype-ux-map');
   await go("녹음 파일");
   await see("인터뷰·녹취 스튜디오");
   // 녹음 전사: 파일 → 코어 /api/interview/transcribe → 백엔드 /ai/audio/transcriptions(multipart) → 화자별 대화
   await page.locator('input[type="file"]').setInputFiles({ name: "stub.m4a", mimeType: "audio/mp4", buffer: Buffer.from("stub audio") });
   await see("스텁 답변입니다");
   await see("전사 완료");
+  await page.getByRole('button', { name: '발언 선택', exact: true }).first().click();
+  await page.getByRole('complementary', { name: '선택한 발언' }).getByText(/저희는 3년 전부터 이 연구를 해 왔고 이번에 결과를 냈습니다/).waitFor();
+  await page.getByRole('button', { name: '선택한 발언을 기사로 보내기' }).click();
+  assert.ok((await body.inputValue()).includes('저희는 3년 전부터 이 연구를 해 왔고 이번에 결과를 냈습니다.'));
+  await go('녹음 파일');
+  await see('전사 완료');
   await go("기사 작성");
   await see("취재자료 검색");
   // 앱을 다시 열면 마지막 화면과 최근 원고(제목·본문·취재자료)가 그대로 — 자동 저장(1.5초) 뒤 새로고침
@@ -542,6 +563,14 @@ try {
   session = { ...session, signedIn: true, email: "reporter@example.test",
     autoLogin: { available: false, enabled: false, email: "", error: "" } };
   await page.setViewportSize({ width: 390, height: 844 });
+  await go('오늘의 데스크');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await snapshot('prototype-ux-mobile-desk');
+  await go('데이터맵');
+  assert.equal(await dataMap.evaluate((element) => element.scrollWidth > element.clientWidth), false);
+  await go('보관함');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await go('기사 작성');
   await page.reload();
   // 좁은 화면에서는 상태 배지를 일부러 숨긴다(hidden sm:inline-flex) → 그려졌는지만 본다
   await page.getByText("코어 연결됨").first().waitFor({ state: "attached", timeout: 10_000 });
@@ -565,11 +594,36 @@ try {
   for (const name of ["headlines", "subtitles", "article_flow_summary", "photo_keywords", "search:stub wafer", "stt:multipart/form-data"])
     assert.ok(stubCalls.includes(name), `코어가 백엔드로 ${name} 를 요청하지 않았습니다: ${stubCalls}`);
   assert.equal(savedIds.size, 1, "같은 원고는 화면을 오가도 한 파일에 저장돼야 합니다: " + [...savedIds]);
+  // 새 기사로 전환할 때 디바운스가 남아 있어도 현재 원고를 먼저 저장한다.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await go('기사 작성');
+  await body.fill((await body.inputValue()) + '\n전환 직전 보존 문장');
+  await go('오늘의 데스크');
+  await page.getByRole('button', { name: '새 기사', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('textarea[placeholder="기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다..."]')?.value === '');
+  await page.getByPlaceholder('기사 제목을 입력하거나 AI 추천을 확인하세요').fill('전환 검증 두 번째 기사');
+  await body.fill('두 번째 기사 본문입니다. 저장 ID를 분리합니다.');
+  await page.getByTestId('save-status').getByText('자동 저장됨').waitFor();
+  assert.equal(savedIds.size, 2, '새 기사는 별도 ID에 저장한다');
+  await go('보관함');
+  await page.getByTestId('archive-view').getByRole('button', { name: /스텁 제목 둘/ }).click();
+  await page.getByRole('button', { name: '원고 열기', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('input[placeholder="기사 제목을 입력하거나 AI 추천을 확인하세요"]')?.value === '스텁 제목 둘');
+  assert.ok((await body.inputValue()).includes('전환 직전 보존 문장'));
+  // 전환 저장이 실패하면 현재 원고를 버리거나 새 기사로 넘어가지 않는다.
+  await page.route('**/api/articles/save', (route) => reply(route, { error: '전환 저장 테스트 오류' }, 503));
+  await body.fill((await body.inputValue()) + '\n저장 실패 시 보존 문장');
+  await go('오늘의 데스크');
+  await page.getByRole('button', { name: '새 기사', exact: true }).click();
+  await page.getByRole('alert').getByText(/현재 원고는 유지됩니다/).waitFor();
+  await page.unroute('**/api/articles/save');
+  await go('기사 작성');
+  assert.ok((await body.inputValue()).includes('저장 실패 시 보존 문장'));
   assert.deepEqual(problems, [], "브라우저 오류:\n" + problems.join("\n"));
   console.log("PASS ui-smoke: 로그인·로그아웃·개발 자동 로그인·모델 설치/취소/오류/폴링·코어 연결·제목/부제 추천·흐름 요약·자동 저장·사진 찾기·PhotoEditor·팩트체크 서랍·자료 검색·실제 platform-generator 경계·보관함·녹취 전사·모바일 폭");
 } catch (error) {
   if (page) await page.screenshot({ path: new URL("temp/ui-smoke-failure.png", ROOT).pathname.slice(1) }).catch(() => {});
-  console.error("FAIL ui-smoke:", error.message);
+  console.error("FAIL ui-smoke:", error.stack || error.message);
   if (problems.length) console.error(problems.join("\n"));
   process.exitCode = 1;
 } finally {

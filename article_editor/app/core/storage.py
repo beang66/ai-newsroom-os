@@ -215,13 +215,21 @@ def save_article(data):
             'fileName': identifier + '.json', 'folder': '암호화 저장소'}  # fileName·folder 는 이전 응답과의 호환용 표시값
 
 
-def latest_revisions(db, limit=None):
+def latest_revisions(db, limit=None, article_id=None):
     """기사마다 **최신 저장본** 한 줄 (article_id, created_at, updated_at, revision_no, draft_json) — 최근 수정순.
     "기사가 지금 무엇을 쓰는가"(자료 사용처·읽기 모델·이어서 작업)는 모두 이 한 곳에서 읽는다."""
     sql = ('SELECT a.id, a.created_at, a.updated_at, r.revision_no, r.draft_json FROM articles a '
            'JOIN article_revisions r ON r.article_id = a.id AND r.revision_no = '
-           '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id) ORDER BY a.updated_at DESC')
-    return db.execute(sql + ' LIMIT ?', (limit,)).fetchall() if limit else db.execute(sql).fetchall()
+           '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id)')
+    params = []
+    if article_id is not None:
+        sql += ' WHERE a.id = ?'
+        params.append(_article_id(article_id))
+    sql += ' ORDER BY a.updated_at DESC'
+    if limit:
+        sql += ' LIMIT ?'
+        params.append(limit)
+    return db.execute(sql, params).fetchall()
 
 
 def draft_source_ids(draft):
@@ -231,13 +239,15 @@ def draft_source_ids(draft):
     return {i for i in found if isinstance(i, str)}
 
 
-def latest_article(photo_refs=False):
+def latest_article(photo_refs=False, article_id=None):
     """가장 최근에 저장된 원고(앱을 열면 이어서 작업). 취재자료 본문은 sources 테이블에서 다시 붙인다.
     photo_refs=True 면 사진을 data URL 로 되돌리지 않고 'media:<id>' 참조 그대로 준다 — 화면이 사진 바이트를
     media_file 로 따로 받는다(사진 몇 장이면 응답이 수십 MB 가 되던 것을 피한다)."""
     with vault.connect() as db:
-        rows = latest_revisions(db, limit=1)
+        rows = latest_revisions(db, limit=1, article_id=article_id)
         if not rows:
+            if article_id is not None:
+                raise RequestError('원고를 찾지 못했습니다.', 404)
             return {'draft': None}
         return {'draft': _full_draft(db, rows[0][4], rows[0][2], unpack_photos=not photo_refs)}
 

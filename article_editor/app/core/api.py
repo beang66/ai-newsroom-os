@@ -78,6 +78,10 @@ class Handler(BaseHTTPRequestHandler):
         if path.path in ('/api/articles','/api/knowledge-map'):
             try:return self.send(200,CORE.storage.list_articles() if path.path=='/api/articles' else CORE.storage.knowledge_map())
             except RequestError as e:return self.send(e.status,error_body(e))
+        match=re.fullmatch(r'/api/articles/([a-f0-9]{32})',path.path)
+        if match:
+            try:return self.send(200,CORE.storage.get_article(match.group(1),photo_refs=True))
+            except RequestError as e:return self.send(e.status,error_body(e))
         if path.path=='/api/sources':
             try:return self.send(200,CORE.storage.list_sources())
             except RequestError as e:return self.send(e.status,error_body(e))

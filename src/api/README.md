@@ -2,6 +2,8 @@
 
 UI가 코어(App Core)와 대화하는 방법은 **여기 하나뿐**입니다.
 
+데스크·보관함은 `listArticles()`로 목록을 조회하고, 선택한 원고는 `getArticle(id)`로 읽습니다. 원고 열기는 복원 API를 호출하거나 이력을 생성하지 않습니다. 사진은 참조로 받고 `editorial.js`에서 바이트를 읽어 편집기 데이터로 변환합니다.
+
 ```
 UI (assets/*.js, react/*.tsx)
         │  이름 붙은 메서드만 호출:  api.assist(...), api.searchPhotos(...)

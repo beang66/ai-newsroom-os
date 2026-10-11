@@ -575,7 +575,7 @@ export default function FormatConverter({ article, setArticle }) {
           </span>
           <h2 className="text-xl font-black tracking-tight md:text-2xl">플랫폼 콘텐츠 편집실</h2>
           <p className="mt-1 text-xs text-[#8E8982]">
-            화면은 FormatConverter, 생성은 병합된 platform-generator가 담당합니다.
+              원문을 바탕으로 채널별 원고를 만들고 근거와 카드 구성을 확인하세요.
           </p>
         </div>
         <button

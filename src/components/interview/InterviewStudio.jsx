@@ -32,12 +32,13 @@ function formatDuration(seconds) {
 }
 
 
-export default function InterviewStudio({ onReturnToArticle }) {
+export default function InterviewStudio({ onReturnToArticle, active = true }) {
   // 1. 녹음 파일 및 인터뷰 상태
   const [audioUrl, setAudioUrl] = useState(null);
   const [fileName, setFileName] = useState("");
   const [dialogues, setDialogues] = useState([]);
   const [sttStatus, setSttStatus] = useState(""); // "" | "전사 중…" | 오류 문구
+  const [selectedQuotes, setSelectedQuotes] = useState([]);
 
   // 2. 뷰 모드 토글: 'speaker' (화자별 대화형) vs 'fullText' (전체 통 텍스트)
   const [viewMode, setViewMode] = useState("speaker");
@@ -58,6 +59,10 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // 가상 오디오 타이머 및 실제 Audio element ref
   const audioRef = useRef(null);
+  useEffect(() => {
+    if (!active) audioRef.current?.pause();
+  }, [active]);
+  useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
   const fileInputRef = useRef(null);
 
   // 오디오 객체 재생/시간 제어
@@ -99,6 +104,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
       // 코어 전사(Whisper) → 화자별 대화
       setDialogues([]);
+      setSelectedQuotes([]);
       setSttStatus("전사 중…");
       transcribeAudio(file)
         .then((result) => {
@@ -235,6 +241,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
           ref={audioRef}
           src={audioUrl}
           onTimeUpdate={handleAudioTimeUpdate}
+          onPause={() => setIsPlaying(false)}
           onEnded={() => setIsPlaying(false)}
         />
       )}
@@ -289,7 +296,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
           {onReturnToArticle && (
             <button
-              onClick={() => onReturnToArticle(rawContinuousText.slice(0, 300))}
+              onClick={() => onReturnToArticle(rawContinuousText)}
               className="px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl text-xs font-extrabold transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
               title="녹취록 핵심 발췌를 기사 작성 화면으로 인계합니다"
             >
@@ -496,6 +503,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
           모드 1. [화자별 대화형 뷰]
           모드 2. [전체 통 텍스트 뷰]
          ────────────────────────────────────────── */}
+      <div className="interview-workspace"><div>
       {viewMode === "speaker" ? (
         /* ──────────────────────────────────────────
             모드 1. 화자별 나누어 보기 (화자 카드 & 타임스탬프 다시듣기 & 작은 복사 아이콘)
@@ -585,6 +593,11 @@ export default function InterviewStudio({ onReturnToArticle }) {
                         </>
                       )}
                     </button>
+                    <button type="button" aria-pressed={selectedQuotes.some((quote) => quote.id === item.id)}
+                      onClick={() => setSelectedQuotes((quotes) => quotes.some((quote) => quote.id === item.id) ? quotes.filter((quote) => quote.id !== item.id) : [...quotes, item])}
+                      className="ml-2 rounded-full border border-[#DDD6CB] px-3 py-2 text-xs font-bold cursor-pointer">
+                      {selectedQuotes.some((quote) => quote.id === item.id) ? "선택 취소" : "발언 선택"}
+                    </button>
                   </div>
 
                   {/* 발언 텍스트 (1시간 분량도 눈이 편안한 행간과 폰트 크기) */}
@@ -665,7 +678,16 @@ export default function InterviewStudio({ onReturnToArticle }) {
           </div>
         </div>
       )}
-
+      </div><aside className="workspace-panel quote-bank" aria-label="선택한 발언">
+        <span className="workspace-kicker">선택한 발언 · {selectedQuotes.length}</span><h2>기사에 사용할 인용</h2>
+        {!selectedQuotes.length && <p>녹취록에서 발언을 선택하면 이곳에 모입니다.</p>}
+        {selectedQuotes.map((quote) => <blockquote key={quote.id}><small>{formatDuration(quote.timestamp)} · {quote.speakerName}</small><p>{quote.text}</p><button type="button" onClick={() => setSelectedQuotes((quotes) => quotes.filter((item) => item.id !== quote.id))}>선택에서 제외</button></blockquote>)}
+        <div className="workspace-actions"><button type="button" className="workspace-primary" disabled={!selectedQuotes.length} onClick={() => {
+          const text = selectedQuotes.map((quote) => `[${quote.speakerName} · ${formatDuration(quote.timestamp)}]\n${quote.text}`).join("\n\n");
+          onReturnToArticle?.(text, { id: `interview-${Date.now()}`, name: fileName, quotes: selectedQuotes });
+          setSelectedQuotes([]);
+        }}>선택한 발언을 기사로 보내기</button></div>
+      </aside></div>
     </div>
   );
 }

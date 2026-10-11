@@ -55,6 +55,17 @@ class ApiTestCase(unittest.TestCase):
             return e.code, e.read(), e.headers
 
 class ServerTests(ApiTestCase):
+    def test_get_article_reads_selected_draft_without_creating_revision(self):
+        use_temp_vault(self)
+        first = storage.save_article({'draft': {'title': 'Selected', 'content': 'kept', 'bodyHtml': '<p>kept</p>'}})['articleId']
+        second = storage.save_article({'draft': {'title': 'Latest', 'content': 'other', 'bodyHtml': '<p>other</p>'}})['articleId']
+        status, raw, _ = self.request('/api/articles/' + first)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(raw)['draft']['content'], 'kept')
+        self.assertEqual(storage.latest_article()['draft']['articleId'], second)
+        self.assertEqual(len(storage.list_revisions(first)['revisions']), 1)
+        self.assertEqual(self.request('/api/articles/' + 'f' * 32)[0], 404)
+
     def test_static_assets(self):
         # 새 프론트는 Vite 빌드 결과(해시 파일명)를 코어가 그대로 서빙한다.
         status, raw, headers = self.request('/')

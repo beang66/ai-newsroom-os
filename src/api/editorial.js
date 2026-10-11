@@ -341,6 +341,7 @@ export async function saveDraft(article, articleId) {
     photos,
     content: article.content || "", // 다시 열 때 그대로 복원(bodyHtml 은 발행·변환용)
     linkedSources: article.linkedSources || [],
+      linkedInterviews: article.linkedInterviews || [],
     sources: (article.sources || []).map(({ text: _text, ...meta }) => meta), // 본문 텍스트는 sources/<id>/text.txt 에 있다
     status: article.status || "",
     createdAt: article.createdAt || "",
@@ -366,6 +367,7 @@ function articleFromDraft(draft, empty) {
     createdAt: draft.createdAt || empty.createdAt,
     updatedAt: (draft.savedAt || "").replace("T", " ").slice(0, 16) || empty.updatedAt,
     linkedSources: draft.linkedSources || [],
+    linkedInterviews: draft.linkedInterviews || [],
     sources: draft.sources || [],
     photos: (draft.photos || []).map((photo) => ({ ...photo, url: photo.data || photo.url || "" })),
     platformDrafts: draft.platformDrafts || {},
@@ -378,6 +380,15 @@ function articleFromDraft(draft, empty) {
 export async function loadLatestArticle(empty) {
   const { draft } = await core.latestArticle();
   if (!draft) return null;
+  return hydrateArticle(draft, empty);
+}
+
+export async function loadStoredArticle(articleId, empty) {
+  const { draft } = await core.getArticle(articleId);
+  return hydrateArticle(draft, empty);
+}
+
+async function hydrateArticle(draft, empty) {
   const loaded = new Map();
   const photos = await Promise.all((draft.photos || []).map(async (photo) => ({
     ...photo,

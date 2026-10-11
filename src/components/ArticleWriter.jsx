@@ -39,7 +39,7 @@ export default function ArticleWriter({
   const [viewMode, setViewMode] = useState("editor");
 
   // 팩트체크 & 근거자료 우측 슬라이더(Drawer) 열림 상태
-  const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(false);
+  const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches);
   const [showHistory, setShowHistory] = useState(false);
   // 팩트체크 — 글쓰기가 멈추면 자동 실행. 서랍을 닫아도 본문 하이라이트가 남도록 여기에 둔다
   const factCheck = useFactCheck(article);

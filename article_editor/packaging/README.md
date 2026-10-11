@@ -1,4 +1,4 @@
-﻿# Windows EXE packaging (HTTP mode)
+# Windows EXE packaging (HTTP mode)
 
 The EXE runs the existing local HTTP core in a thread and opens the built React UI
 in a pywebview/WebView2 window. IPC is deferred. Teammates do not need Python or Node.js.
@@ -29,9 +29,9 @@ collects dynamic libraries ([PyInstaller hook documentation](https://pyinstaller
 Torch/transformers and training tools remain excluded.
 
 `app/frontend/index.html` and its assets must already be built. The UI build is
-owned by the frontend workstream; the EXE build does not modify `web/` or rebuild it.
-For a separate frontend build, run `npm --prefix web ci` and
-`npm --prefix web run build` before packaging.
+owned by the frontend workstream; the EXE build does not modify the root `src/` or rebuild it.
+For a separate frontend build, run `npm --prefix .. ci` and
+`npm --prefix .. run build` before packaging.
 
 Default output (distribute the entire folder):
 
@@ -62,7 +62,7 @@ dist/AINewsroom/
 
 Run `python packaging/prepare_platform.py` before the first EXE build or after
 changing platform-generator sources. The repeatable tool copies source JavaScript,
-`public/` runtime assets and the unchanged package/lock files into an isolated
+`lib/` runtime assets and the unchanged package/lock files into an isolated
 staging folder, then installs `npm ci --omit=dev --no-audit --no-fund` there.
 It copies the build PC's Windows x64 node.exe and downloads the matching official
 Node LICENSE (including third-party notices). Browser downloads are disabled.

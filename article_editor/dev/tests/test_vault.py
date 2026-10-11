@@ -2,6 +2,7 @@
 import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -21,6 +22,15 @@ class VaultTests(unittest.TestCase):
 
     def disk_bytes(self):
         return b''.join(p.read_bytes() for p in self.root.glob('vault.db*'))
+
+    def test_concurrent_first_connections_initialize_once(self):
+        def read_version(_):
+            with vault.connect() as db:
+                return db.execute('PRAGMA user_version').fetchone()[0]
+        with mock.patch.object(vault, '_migrate', wraps=vault._migrate) as migrate:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                self.assertEqual(list(pool.map(read_version, range(8))), [vault.SCHEMA_VERSION] * 8)
+        migrate.assert_called_once()
 
     def test_manuscript_and_source_are_not_plaintext_on_disk(self):
         storage.save_article({'draft': {'bodyHtml': '<p>극비원고본문</p>', 'title': '극비제목'}})
@@ -146,6 +156,7 @@ class VaultTests(unittest.TestCase):
         ident = 'e' * 32
         with vault.connect() as db:  # 옛 모양(id 열 없음)으로 되돌린다
             db.execute('DROP INDEX article_revisions_id')
+            db.execute('PRAGMA user_version = 0')
             db.execute('DROP TABLE article_revisions')
             db.execute('CREATE TABLE article_revisions (article_id TEXT NOT NULL REFERENCES articles(id), revision_no INTEGER NOT NULL, '
                        'draft_json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (article_id, revision_no))')

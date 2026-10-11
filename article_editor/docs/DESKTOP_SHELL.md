@@ -8,7 +8,7 @@
 | 항목 | 사실 |
 |---|---|
 | App Core | Python 전용 — `core/bootstrap.py`가 표준 라이브러리 `ThreadingHTTPServer`로 127.0.0.1 서빙 |
-| Frontend | React UI(`web/`) — `web/src/api/` 가 **유일한 코어 경계** |
+| Frontend | React UI(`web/`) — `src/api/` 가 **유일한 코어 경계** |
 | 로컬 AI | 제목·부제: onnxruntime+tokenizers(ONNX 1.07 GB), 팩트체크: torch+transformers(모델 수 GB) |
 | 요구 | "Desktop Shell은 React를 유지할 수 있는 구조"(설계문서 §3), **Windows/macOS**, 로컬 우선, 앱에 운영키 금지 |
 

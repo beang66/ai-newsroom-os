@@ -5,6 +5,7 @@ import threading
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -165,6 +166,25 @@ class CancelTests(JobTestCase):
 
 
 class BackgroundTests(JobTestCase):
+    def test_storage_failure_at_start_or_finish_is_recorded(self):
+        for transition in ('set_running', 'finish'):
+            with self.subTest(transition=transition):
+                job_id = self.new()['id']
+                worker = mock.Mock(return_value=ref())
+                with mock.patch.object(jobs, transition, side_effect=vault.sqlite.OperationalError('locked')):
+                    self.join(jobs.run_in_background(job_id, worker))
+                self.assertEqual(jobs.get_job(job_id)['error']['code'], 'STORAGE_ERROR')
+                if transition == 'set_running':
+                    worker.assert_not_called()
+
+    def test_unwritable_failure_record_allows_recovery(self):
+        job_id = self.new()['id']
+        with mock.patch.object(jobs, 'set_running', side_effect=OSError('unavailable')), \
+                mock.patch.object(jobs, 'fail', side_effect=OSError('unavailable')):
+            self.join(jobs.run_in_background(job_id, mock.Mock()))
+        self.assertNotIn(job_id, jobs._OWN)
+        self.assertEqual(jobs.recover_interrupted_jobs(), 1)
+
     def run_job(self, worker):
         job_id = self.new()['id']
         thread = jobs.run_in_background(job_id, worker)

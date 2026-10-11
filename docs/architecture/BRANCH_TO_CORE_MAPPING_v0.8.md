@@ -26,7 +26,7 @@
 **현재 파일**
 - `article_editor/app/core/api.py`
 - `article_editor/app/core/storage.py`
-- `article_editor/web/src/api/core-api.js`
+- `src/api/core-api.js`
 
 **현재 endpoint**
 - `POST /api/articles/save`
@@ -68,7 +68,7 @@
 - `article_editor/app/core/api.py`
 - `article_editor/app/core/managers/ai_manager.py`
 - `article_editor/app/core/ai/factcheck/`
-- `article_editor/web/src/api/core-api.js`
+- `src/api/core-api.js`
 
 **현재 endpoint**
 - `GET /api/factcheck/status`
@@ -215,7 +215,7 @@ photos[]
 - `article_editor/app/core/ai/transcribe.py`
 - `article_editor/app/core/managers/ai_manager.py`
 - `article_editor/app/core/api.py`
-- `article_editor/web/src/api/core-api.js`
+- `src/api/core-api.js`
 
 **현재 endpoint**
 - `POST /api/interview/transcribe`

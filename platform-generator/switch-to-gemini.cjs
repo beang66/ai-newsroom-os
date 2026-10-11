@@ -8,7 +8,7 @@ const edits = [];
 try {
   if (!fs.existsSync(path.join(root, 'server.js'))) throw new Error('이 파일을 server.js가 있는 프로젝트 최상단에 넣어주세요.');
   if (!fs.existsSync(path.join(root, 'ai-provider.js'))) throw new Error('ai-provider.js 파일도 같은 폴더에 복사해주세요.');
-  const apiName = 'public/api.js';
+  const apiName = 'lib/api.js';
   let api = fs.readFileSync(path.join(root, apiName), 'utf8');
   if (!api.includes('AI_ENDPOINTS')) {
     const marker = 'module.exports = { PATHS, STORAGE_FOLDERS, getStorageRoot };';

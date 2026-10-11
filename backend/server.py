@@ -17,12 +17,15 @@
     CF_ACCOUNT_ID         임베딩(Cloudflare Workers AI) 계정 id
     CF_API_TOKEN          임베딩용 Workers AI 토큰
     CF_BASE_URL           기본 https://api.cloudflare.com/client/v4 (시험용 대체 가능)
+    CMS_PUBLISH_URL       실제 CMS 수신 API(HTTPS)
+    CMS_BEARER_TOKEN      CMS 서버 인증 토큰
 
 앱 계약
     GET  /ai/health
     POST /ai/responses | /ai/images/generations      (본문·응답을 그대로 중계)
     POST /ai/audio/transcriptions                    (녹음 전사, multipart 본문 그대로 중계)
     POST /ai/embeddings                              (Cloudflare Workers AI qwen3-embedding-0.6b 로 본문 그대로 중계)
+    POST /cms/publish                                (CMS_PUBLISH_URL 로 기사 송고)
     GET  /unsplash/search/photos | /unsplash/photos/<id> | /unsplash/download/<...> | /unsplash/absolute?url=
 
 무저장: 요청·응답 본문을 로그나 디스크에 남기지 않는다(경로·상태·사용자만).
@@ -194,6 +197,21 @@ class Handler(BaseHTTPRequestHandler):
         # 본문을 **먼저** 읽는다 — 401/404 로 조기 반환할 때 남은 본문이 다음 요청을 오염시키지 않게.
         body = self._body()
         path = urllib.parse.urlsplit(self.path).path
+        if path == '/cms/publish':
+            if self._guard() is None:
+                return
+            if len(body) > 10_000_000:
+                return self._json(413, {'error': '기사 요청이 너무 큽니다.'})
+            target = os.environ.get('CMS_PUBLISH_URL', '').strip()
+            token = os.environ.get('CMS_BEARER_TOKEN', '').strip()
+            parsed = urllib.parse.urlsplit(target)
+            if not parsed.hostname or (parsed.scheme != 'https' and parsed.hostname not in ('127.0.0.1', 'localhost')):
+                return self._json(503, {'error': 'CMS_PUBLISH_URL이 설정되지 않았습니다.'})
+            headers = {'Content-Type': 'application/json'}
+            if token:
+                headers['Authorization'] = 'Bearer ' + token
+            status, mime, raw = forward(target, body, headers, method='POST')
+            return self._send(status, raw, mime)
         if not path.startswith('/ai/'):
             return self._json(404, {'error': '지원하지 않는 경로입니다.'})
         sub = path[len('/ai/'):]

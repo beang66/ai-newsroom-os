@@ -27,3 +27,10 @@ __pycache__/
 *.njsproj
 *.sln
 *.sw?
+# Added by code-review-graph
+.code-review-graph/
+
+# Local runtimes and packaged executables are reproducible, not source.
+.venv/
+AINewsroom/
+article_editor/.runtime/

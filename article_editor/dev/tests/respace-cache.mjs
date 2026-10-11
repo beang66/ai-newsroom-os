@@ -1,6 +1,6 @@
 // 띄어쓰기만 바뀐 문장은 팩트체크 모델을 다시 부르지 않고, 단어가 바뀐 문장만 다시 부른다.
 import assert from "node:assert/strict";
-import { factcheckArticle } from "../../web/src/api/editorial.js";
+import { factcheckArticle } from "../../../src/api/editorial.js";
 
 let calls = 0;
 globalThis.fetch = async (_url, opts) => {

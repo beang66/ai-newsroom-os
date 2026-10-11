@@ -2,9 +2,9 @@
 // 실행: node --test dev/tests/datamap-*.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDataMapApi } from "../../web/src/features/data-map/api.js";
-import { articleUuid, projectKnowledgeMap } from "../../web/src/features/data-map/domain/coreProjection.js";
-import { MAP_CENTER, MAP_RADIUS } from "../../web/src/features/data-map/domain/layout.js";
+import { createDataMapApi } from "../../../src/features/data-map/api.js";
+import { articleUuid, projectKnowledgeMap } from "../../../src/features/data-map/domain/coreProjection.js";
+import { MAP_CENTER, MAP_RADIUS } from "../../../src/features/data-map/domain/layout.js";
 
 const workspaceId = "10000000-0000-4000-8000-000000000001";
 const articleHex = "f".repeat(32);

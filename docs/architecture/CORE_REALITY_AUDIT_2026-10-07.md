@@ -1,6 +1,6 @@
 # App Core 구현 현황과 계약 차이 (2026-10-07)
 
-상태: **코드 확인 결과 / v0.8.1 목표 계약과 구분**. 기준은 `feature/app-core`의 `article_editor/app/core/{api,storage,vault}.py`, `managers/{storage_manager,ai_manager}.py` 및 `article_editor/web/src/api/{index,core-api,http,client,ipc}.js`이다. 브랜치의 현재 파일을 정적으로 확인했으며 실제 EXE·IPC·전체 기능 연결을 실행 검증한 결과는 아니다. `main`의 [OpenAPI v0.8.1](./OPENAPI_v0.8.yaml)과 [ERD v0.8](./ERD_v0.8.md)은 목표 계약이다.
+상태: **코드 확인 결과 / v0.8.1 목표 계약과 구분**. 기준은 `feature/app-core`의 `article_editor/app/core/{api,storage,vault}.py`, `managers/{storage_manager,ai_manager}.py` 및 `src/api/{index,core-api,http,client,ipc}.js`이다. 브랜치의 현재 파일을 정적으로 확인했으며 실제 EXE·IPC·전체 기능 연결을 실행 검증한 결과는 아니다. `main`의 [OpenAPI v0.8.1](./OPENAPI_v0.8.yaml)과 [ERD v0.8](./ERD_v0.8.md)은 목표 계약이다.
 
 ## 1. 현재 실제 호출 경계
 

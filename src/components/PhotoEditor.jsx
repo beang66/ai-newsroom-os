@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { cropForRatio, renderMosaics } from "../utils/imageEditor";
+import { cropForRatio, renderMosaics, renderDerivative } from "../utils/imageEditor";
 
 export default function PhotoEditor({
   photo,
@@ -14,52 +14,73 @@ export default function PhotoEditor({
   const [hardness, setHardness] = useState(20); // 20% 경계 선명도
   const [caption, setCaption] = useState(photo?.caption || "");
   const [source, setSource] = useState(
-    photo?.source || (photo?.photographer ? `Photo by ${photo.photographer} on Unsplash` : "Unsplash")
+    photo?.source || ""
   );
 
   // 모자이크 마스크 상태 및 단계별 되돌리기(Undo) 히스토리 스택
   const [masks, setMasks] = useState([]);
+  const masksRef = useRef([]);
   const [history, setHistory] = useState([[]]); // [0]: 원본 상태 (빈 배열)
   const [historyIndex, setHistoryIndex] = useState(0);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState(null);
+  const currentStrokeRef = useRef(null);
   const strokeStartMasksRef = useRef(null);
+  const pendingMoveRef = useRef(null);
+  const moveFrameRef = useRef(null);
 
   // 캔버스 및 이미지 참조
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const imageObjRef = useRef(null);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [error, setError] = useState("");
+  const [displaySize, setDisplaySize] = useState({ w: 300, h: 400 });
   const [imageDimensions, setImageDimensions] = useState({ w: 800, h: 600 });
 
   // 마우스 위치 브러시 인디케이터
   const [cursorPos, setCursorPos] = useState({ x: -100, y: -100, visible: false });
 
-  // 1. 이미지 로드 (CORS 실패 대비 fallback 포함)
+  // 코어가 받아온 사진 또는 사용자가 선택한 로컬 사진만 편집한다.
   useEffect(() => {
-    if (!photo?.url) return;
-    const img = new Image();
-    if (!photo.url.startsWith("data:")) {
-      img.crossOrigin = "anonymous";
+    if (!photo?.url?.startsWith("data:image/")) {
+      setError("저장된 사진 원본이 없습니다. 사진을 다시 가져와 주세요.");
+      return;
     }
-    img.src = photo.url;
+    let alive = true;
+    const img = new Image();
     img.onload = () => {
+      if (!alive) return;
       imageObjRef.current = img;
-      setImageDimensions({ w: img.naturalWidth || 800, h: img.naturalHeight || 600 });
+      setImageDimensions({ w: img.naturalWidth, h: img.naturalHeight });
       setImageLoaded(true);
     };
     img.onerror = () => {
-      // crossOrigin 실패 시 일반 모드로 재시도
-      const fallbackImg = new Image();
-      fallbackImg.src = photo.url;
-      fallbackImg.onload = () => {
-        imageObjRef.current = fallbackImg;
-        setImageDimensions({ w: fallbackImg.naturalWidth || 800, h: fallbackImg.naturalHeight || 600 });
-        setImageLoaded(true);
-      };
+      if (alive) setError("사진을 표시하지 못했습니다. JPG·PNG·WebP 파일을 다시 선택해 주세요.");
     };
+    img.src = photo.url;
+    return () => { alive = false; };
   }, [photo?.url]);
 
+  useEffect(() => {
+    const container = containerRef.current;
+    const resize = () => {
+      const style = getComputedStyle(container);
+      setDisplaySize({
+        w: Math.max(1, Math.min(880, container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight))),
+        h: Math.max(220, Math.min(680, window.innerHeight - 200)),
+      });
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    window.addEventListener("resize", resize);
+    resize();
+    return () => { observer.disconnect(); window.removeEventListener("resize", resize); };
+  }, []);
+
+  useEffect(() => () => {
+    if (moveFrameRef.current != null) cancelAnimationFrame(moveFrameRef.current);
+  }, []);
 
   // 비율 계산
   const getCropRect = useCallback(() => {
@@ -87,8 +108,8 @@ export default function PhotoEditor({
     const g = canvas.getContext("2d");
 
     // 캔버스 크기를 크롭 영역 비율에 맞춤 (화면 표시용)
-    const displayMaxWidth = Math.max(300, Math.min(880, window.innerWidth - 420));
-    const displayMaxHeight = Math.max(220, Math.min(680, window.innerHeight - 150));
+    const displayMaxWidth = displaySize.w;
+    const displayMaxHeight = displaySize.h;
 
     let drawW = displayMaxWidth;
     let drawH = (displayMaxWidth * crop.h) / crop.w;
@@ -113,7 +134,7 @@ export default function PhotoEditor({
       const renderOpacity = 1 - opacity / 100;
       renderMosaics(g, img, allMasks, scale, crop.x, crop.y, renderOpacity, hardness);
     }
-  }, [getCropRect, imageLoaded, masks, currentStroke, opacity, hardness]);
+  }, [getCropRect, imageLoaded, masks, currentStroke, opacity, hardness, displaySize]);
 
   useEffect(() => {
     drawCanvas();
@@ -125,10 +146,10 @@ export default function PhotoEditor({
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     const crop = getCropRect();
-    const scale = crop.w / canvas.width;
+    const scale = crop.w / rect.width;
 
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const clientX = e.clientX;
+    const clientY = e.clientY;
 
     const canvasX = clientX - rect.left;
     const canvasY = clientY - rect.top;
@@ -142,6 +163,8 @@ export default function PhotoEditor({
   };
 
   const handleMouseDown = (e) => {
+    if (!imageLoaded || e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
     const coords = getCanvasCoords(e);
     if (!coords) return;
 
@@ -149,7 +172,7 @@ export default function PhotoEditor({
     strokeStartMasksRef.current = JSON.parse(JSON.stringify(masks));
 
     const crop = getCropRect();
-    const scale = crop.w / (canvasRef.current?.width || 1);
+    const scale = crop.w / canvasRef.current.getBoundingClientRect().width;
     const strokeDiameter = brushSize * scale;
 
     setIsDrawing(true);
@@ -162,6 +185,7 @@ export default function PhotoEditor({
         opacity: 1 - opacity / 100,
         hardness
       };
+      currentStrokeRef.current = newStroke;
       setCurrentStroke(newStroke);
     } else if (activeTool === "eraser") {
       // 지우개: 현재 마스크들에 erasure 추가
@@ -173,61 +197,75 @@ export default function PhotoEditor({
         ...m,
         erasures: [...(m.erasures || []), erasure]
       }));
+      masksRef.current = updated;
       setMasks(updated);
+    }
+  };
+
+  const flushPendingMove = () => {
+    const next = pendingMoveRef.current;
+    pendingMoveRef.current = null;
+    if (!next) return;
+    setCursorPos({ x: next.canvasX, y: next.canvasY, visible: true });
+
+    if (!isDrawing) return;
+    if (activeTool === "mosaic") {
+      const stroke = currentStrokeRef.current;
+      if (stroke) {
+        const updated = { ...stroke, points: [...stroke.points, { x: next.imgX, y: next.imgY }] };
+        currentStrokeRef.current = updated;
+        setCurrentStroke(updated);
+      }
+    } else if (activeTool === "eraser") {
+        const crop = getCropRect();
+        const scale = crop.w / canvasRef.current.getBoundingClientRect().width;
+        const strokeDiameter = brushSize * scale;
+        const updated = masksRef.current.map((m) => {
+          const erasures = m.erasures || [];
+          if (erasures.length === 0) return m;
+          const last = erasures[erasures.length - 1];
+          return {
+            ...m,
+            erasures: [...erasures.slice(0, -1), {
+              ...last,
+              points: [...last.points, { x: next.imgX, y: next.imgY }],
+              diameter: strokeDiameter
+            }]
+          };
+        });
+        masksRef.current = updated;
+        setMasks(updated);
     }
   };
 
   const handleMouseMove = (e) => {
     const coords = getCanvasCoords(e);
-    if (coords) {
-      setCursorPos({ x: coords.canvasX, y: coords.canvasY, visible: true });
-    }
-
-    if (!isDrawing || !coords) return;
-
-    if (activeTool === "mosaic") {
-      setCurrentStroke((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          points: [...prev.points, { x: coords.imgX, y: coords.imgY }]
-        };
-      });
-    } else if (activeTool === "eraser") {
-      const crop = getCropRect();
-      const scale = crop.w / (canvasRef.current?.width || 1);
-      const strokeDiameter = brushSize * scale;
-
-      setMasks((prevMasks) =>
-        prevMasks.map((m) => {
-          const erasures = m.erasures || [];
-          if (erasures.length === 0) return m;
-          const last = erasures[erasures.length - 1];
-          const updatedLast = {
-            ...last,
-            points: [...last.points, { x: coords.imgX, y: coords.imgY }],
-            diameter: strokeDiameter
-          };
-          return {
-            ...m,
-            erasures: [...erasures.slice(0, -1), updatedLast]
-          };
-        })
-      );
-    }
+    if (!coords) return;
+    pendingMoveRef.current = coords;
+    if (moveFrameRef.current != null) return;
+    moveFrameRef.current = requestAnimationFrame(() => {
+      moveFrameRef.current = null;
+      flushPendingMove();
+    });
   };
 
   const handleMouseUp = () => {
     if (!isDrawing) return;
+    if (moveFrameRef.current != null) {
+      cancelAnimationFrame(moveFrameRef.current);
+      moveFrameRef.current = null;
+    }
+    flushPendingMove();
     setIsDrawing(false);
 
-    let nextMasks = masks;
-    if (activeTool === "mosaic" && currentStroke && currentStroke.points.length > 0) {
-      nextMasks = [...masks, currentStroke];
+    let nextMasks = masksRef.current;
+    const stroke = currentStrokeRef.current;
+    if (activeTool === "mosaic" && stroke && stroke.points.length > 0) {
+      nextMasks = [...masksRef.current, stroke];
+      masksRef.current = nextMasks;
       setMasks(nextMasks);
+      currentStrokeRef.current = null;
       setCurrentStroke(null);
-    } else if (activeTool === "eraser") {
-      nextMasks = masks;
     }
 
     // 마스크가 실제로 변경된 경우 히스토리 스택에 기록
@@ -241,17 +279,13 @@ export default function PhotoEditor({
     }
   };
 
-  const handleMouseLeave = () => {
-    setCursorPos((prev) => ({ ...prev, visible: false }));
-    handleMouseUp();
-  };
-
   // 단계별 되돌리기 (Undo)
   const handleUndo = () => {
     if (historyIndex > 0) {
       const nextIndex = historyIndex - 1;
       setHistoryIndex(nextIndex);
       const restoredMasks = JSON.parse(JSON.stringify(history[nextIndex]));
+      masksRef.current = restoredMasks;
       setMasks(restoredMasks);
     }
   };
@@ -260,7 +294,7 @@ export default function PhotoEditor({
   const handleDownloadOriginal = () => {
     if (!photo?.url) return;
     const a = document.createElement("a");
-    a.href = photo.url;
+    a.href = photo.original || photo.url;
     a.download = `original_${photo.id || "image"}.jpg`;
     document.body.appendChild(a);
     a.click();
@@ -269,9 +303,8 @@ export default function PhotoEditor({
 
   // 편집본 다운로드
   const handleDownloadEdited = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    if (!imageLoaded) return;
+    const dataUrl = renderDerivative(imageObjRef.current, getCropRect(), masks, 1600, 1 - opacity / 100, hardness);
     const a = document.createElement("a");
     a.href = dataUrl;
     a.download = `edited_${photo.id || "image"}.jpg`;
@@ -282,16 +315,16 @@ export default function PhotoEditor({
 
   // 본문에 넣기
   const handleApplyToArticle = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const finalUrl = canvas.toDataURL("image/jpeg", 0.92);
+    if (!imageLoaded) return;
+    const finalUrl = renderDerivative(imageObjRef.current, getCropRect(), masks, 1600, 1 - opacity / 100, hardness);
 
     const editedPhotoData = {
-      id: `photo-edited-${Date.now()}`,
+      ...photo,
       url: finalUrl,
+      original: photo.original || photo.url,
       caption: caption || photo?.caption || "기사 사진",
-      source: source || photo?.source || "출처",
-      provider: photo?.provider || "김동아 기자",
+      source,
+      provider: photo?.provider || "",
       ratio: selectedRatio
     };
 
@@ -299,7 +332,7 @@ export default function PhotoEditor({
   };
 
   return (
-    <div className="w-full flex-1 min-h-[calc(100vh-80px)] bg-white rounded-2xl md:rounded-[32px] border border-[#E7E4DE] shadow-[0_8px_30px_rgba(41,41,41,0.03)] flex flex-col font-sans select-none animate-float-in overflow-hidden relative z-10 self-start">
+    <div data-testid="photo-editor" className="w-full min-w-0 flex-1 min-h-[calc(100vh-80px)] bg-white rounded-2xl md:rounded-[32px] border border-[#E7E4DE] shadow-[0_8px_30px_rgba(41,41,41,0.03)] flex flex-col font-sans select-none animate-float-in overflow-hidden relative z-10 self-start">
       {/* ──────────────────────────────────────────
           상단 헤더: 좌측 [사진 편집] / 우측 [작성으로 돌아가기]
          ────────────────────────────────────────── */}
@@ -323,20 +356,20 @@ export default function PhotoEditor({
         {/* 좌측: 대형 사진 캔버스 영역 */}
         <div
           ref={containerRef}
-          className="flex-1 flex items-center justify-center p-6 md:p-10 relative overflow-hidden"
+          className="flex-1 min-w-0 flex items-center justify-center p-6 md:p-10 relative overflow-hidden"
         >
-          <div className="relative inline-block shadow-lg rounded-sm overflow-hidden select-none bg-stone-900">
+          {!imageLoaded && <p role={error ? "alert" : "status"} className="text-xs text-stone-600">{error || "사진을 불러오는 중…"}</p>}
+          <div className={`relative max-w-full inline-block shadow-lg rounded-sm overflow-hidden select-none bg-stone-900 ${imageLoaded ? "" : "hidden"}`}>
             {/* 실제 편집 캔버스 */}
             <canvas
               ref={canvasRef}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseLeave}
-              onTouchStart={handleMouseDown}
-              onTouchMove={handleMouseMove}
-              onTouchEnd={handleMouseUp}
-              className={`block max-w-full h-auto ${
+              aria-label="사진 편집 캔버스"
+              onPointerDown={handleMouseDown}
+              onPointerMove={handleMouseMove}
+              onPointerUp={handleMouseUp}
+              onPointerCancel={handleMouseUp}
+              onPointerLeave={() => setCursorPos((prev) => ({ ...prev, visible: false }))}
+              className={`block max-w-full h-auto touch-none ${
                 activeTool === "mosaic" || activeTool === "eraser"
                   ? "cursor-crosshair"
                   : "cursor-default"
@@ -384,6 +417,7 @@ export default function PhotoEditor({
                 {["원본", "16:9", "4:3", "1:1", "3:2"].map((ratio) => (
                   <button
                     key={ratio}
+                    aria-pressed={selectedRatio === ratio}
                     onClick={() => setSelectedRatio(ratio)}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
                       selectedRatio === ratio
@@ -405,6 +439,7 @@ export default function PhotoEditor({
               <div className="grid grid-cols-3 gap-1.5">
                 <button
                   onClick={() => setActiveTool("mosaic")}
+                  aria-pressed={activeTool === "mosaic"}
                   className={`py-1.5 text-xs font-semibold rounded-md border transition cursor-pointer ${
                     activeTool === "mosaic"
                       ? "bg-[#18181B] text-white border-[#18181B]"
@@ -415,6 +450,7 @@ export default function PhotoEditor({
                 </button>
                 <button
                   onClick={() => setActiveTool("eraser")}
+                  aria-pressed={activeTool === "eraser"}
                   className={`py-1.5 text-xs font-semibold rounded-md border transition cursor-pointer ${
                     activeTool === "eraser"
                       ? "bg-[#18181B] text-white border-[#18181B]"
@@ -450,6 +486,7 @@ export default function PhotoEditor({
               </div>
               <input
                 type="range"
+                aria-label="브러시 크기"
                 min="10"
                 max="100"
                 value={brushSize}
@@ -466,6 +503,7 @@ export default function PhotoEditor({
               </div>
               <input
                 type="range"
+                aria-label="투명도"
                 min="0"
                 max="100"
                 value={opacity}
@@ -482,6 +520,7 @@ export default function PhotoEditor({
               </div>
               <input
                 type="range"
+                aria-label="경계 선명도"
                 min="0"
                 max="100"
                 value={hardness}
@@ -496,6 +535,7 @@ export default function PhotoEditor({
                 사진 설명
               </label>
               <textarea
+                aria-label="사진 설명"
                 rows={2}
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
@@ -511,6 +551,7 @@ export default function PhotoEditor({
               </label>
               <input
                 type="text"
+                aria-label="사진 출처"
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
                 placeholder="예: Mike Kenneally / Unsplash"
@@ -525,12 +566,14 @@ export default function PhotoEditor({
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={handleDownloadOriginal}
+                disabled={!imageLoaded}
                 className="py-2 text-xs font-semibold rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 transition cursor-pointer"
               >
                 원본 다운로드
               </button>
               <button
                 onClick={handleDownloadEdited}
+                disabled={!imageLoaded || isDrawing}
                 className="py-2 text-xs font-semibold rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 transition cursor-pointer"
               >
                 편집본 다운로드
@@ -540,6 +583,7 @@ export default function PhotoEditor({
             {/* 본문에 넣기 */}
             <button
               onClick={handleApplyToArticle}
+              disabled={!imageLoaded || isDrawing}
               className="w-full py-3 bg-[#18181B] hover:bg-black text-white text-xs font-bold rounded-lg transition cursor-pointer shadow-sm text-center"
             >
               본문에 넣기
@@ -550,7 +594,7 @@ export default function PhotoEditor({
 
       {/* 최하단 상태바 푸터 (참고 이미지 하단) */}
       <footer className="h-10 border-t border-stone-200 px-6 flex items-center justify-end text-xs text-stone-500 bg-white flex-shrink-0">
-        <span>본문 {(charCount || 1149).toLocaleString()}자</span>
+        <span>본문 {(charCount || 0).toLocaleString()}자</span>
       </footer>
     </div>
   );

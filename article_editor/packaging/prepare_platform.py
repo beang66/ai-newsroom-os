@@ -23,7 +23,7 @@ VENDOR = APP / 'packaging/vendor'
 def source_files(root=SOURCE):
     files = [p for p in root.glob('*.js') if not p.name.startswith('test-')]
     files += [root / 'package.json', root / 'package-lock.json']
-    files += list((root / 'public').rglob('*'))
+    files += list((root / 'lib').rglob('*'))
     files += list(root.glob('LICENSE*')) + list(root.glob('NOTICE*'))
     return sorted({p for p in files if p.is_file() and p.resolve().is_relative_to(root.resolve())
         and not any(part.startswith('.') or part in ('node_modules', 'output', 'local_data')

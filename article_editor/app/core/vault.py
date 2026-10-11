@@ -6,6 +6,7 @@
 """
 import contextlib
 import os
+import threading
 
 import keyring
 from sqlcipher3 import dbapi2 as sqlite
@@ -19,6 +20,8 @@ from .ids import revision_uuid
 SERVICE = os.environ.get('AI_NEWSROOM_KEY_SERVICE') or 'AI Newsroom'  # 테스트는 다른 이름을 써서 실제 기기 키를 건드리지 않는다
 ACCOUNT = 'device-key'
 WORKSPACE_ID = '10000000-0000-4000-8000-000000000001'  # 단일 워크스페이스(계약 ERD 의 workspace_id)
+_INIT_LOCK = threading.RLock()
+SCHEMA_VERSION = 1
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS articles (
@@ -109,25 +112,31 @@ def _device_key():
 @contextlib.contextmanager
 def connect():
     """암호화 DB 연결(호출마다 열고 닫는다). 정상 종료하면 커밋, 예외면 롤백."""
-    # TODO(debt: DEBT-001): 키/스키마 초기화가 동시 연결마다 실행된다. 업로드 시험에서 WAL 설정 시 잠금 오류 관찰.
-    # 초기화 직렬화·이미 WAL인 DB의 재설정 생략·마이그레이션 트랜잭션 조기 종료를 검토할 것.
-    key = _device_key()
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite.connect(str(DB_PATH))
+    db = None
     try:
-        db.execute('PRAGMA cipher_log_level = NONE')  # 키가 틀려도 C 라이브러리가 stderr 에 로그를 쏟지 않게
-        db.execute(f"PRAGMA key = \"x'{key}'\"")
-        try:
-            db.execute('SELECT count(*) FROM sqlite_master').fetchone()
-        except sqlite.DatabaseError:
-            raise RequestError('암호화 저장소를 열 수 없습니다. 키가 맞지 않거나 파일이 손상됐습니다.', 500)
-        db.execute('PRAGMA journal_mode = WAL')
-        db.executescript(SCHEMA)
-        _migrate(db)
+        with _INIT_LOCK:
+            key = _device_key()
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            db = sqlite.connect(str(DB_PATH), timeout=10)
+            db.execute('PRAGMA cipher_log_level = NONE')
+            db.execute(f"PRAGMA key = \"x'{key}'\"")
+            try:
+                db.execute('SELECT count(*) FROM sqlite_master').fetchone()
+            except sqlite.DatabaseError:
+                raise RequestError('암호화 저장소를 열 수 없습니다. 키가 맞지 않거나 파일이 손상됐습니다.', 500)
+            if db.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'wal':
+                db.execute('PRAGMA journal_mode = WAL')
+            if db.execute('PRAGMA user_version').fetchone()[0] < SCHEMA_VERSION:
+                db.executescript(SCHEMA)
+                _migrate(db)
+                db.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
+                db.commit()  # 초기화의 쓰기 잠금을 호출자의 긴 작업 전에 해제한다.
         yield db
         db.commit()
     except BaseException:
-        db.rollback()
+        if db is not None:
+            db.rollback()
         raise
     finally:
-        db.close()
+        if db is not None:
+            db.close()

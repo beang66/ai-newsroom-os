@@ -4,13 +4,14 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const require = createRequire(new URL('../../web/package.json', import.meta.url));
+const require = createRequire(new URL('../../../package.json', import.meta.url));
 const { createServer } = await import(pathToFileURL(require.resolve('vite')).href);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const server = await createServer({
-  root: fileURLToPath(new URL('../../web', import.meta.url)),
+  root: fileURLToPath(new URL('../../..', import.meta.url)),
   server: { middlewareMode: true },
+  ssr: { external: ['react', 'react-dom', 'react-dom/server', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'lucide-react'] },
   appType: 'custom',
 });
 try {

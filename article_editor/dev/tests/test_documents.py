@@ -89,6 +89,14 @@ class DocumentTests(unittest.TestCase):
     def setUp(self):  # 추출 결과 보관(암호화 저장소)은 임시 DB 로 — 실제 APP_DATA 에 쓰지 않는다
         use_temp_vault(self)
 
+    def test_index_start_failure_keeps_saved_source(self):
+        with mock.patch('core.source_index.start_indexing', side_effect=OSError('unavailable')):
+            out = doc.extract_text(payload('saved.txt', b'saved material'))
+        self.assertEqual(out['indexState'], 'pending')
+        self.assertIsNone(out['indexJobId'])
+        self.assertIn('indexError', out)
+        self.assertEqual(storage.source_file(out['sourceId'])[0], b'saved material')
+
     def test_source_is_kept_once_with_original_name(self):
         out = doc.extract_text(payload('C:/x/보도자료 1.txt', '본문'.encode()))
         again = doc.extract_text(payload('보도자료 1.txt', '본문'.encode()))

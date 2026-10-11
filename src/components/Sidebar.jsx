@@ -38,7 +38,11 @@ function AiSparkleStarIcon({ className = "w-5 h-5", strokeWidth = 2.2 }) {
  * - 접힌 상태: 세로형 슬림 Glass 캡슐 패널 (w: ~76px)
  * - 펼친 상태: 가로 확장 Glass Navigation Drawer (w: ~295px)
  */
-export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setActiveTab }) {
+export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setActiveTab, session = null, onModels }) {
+  // 프로필 칸은 코어가 알려주는 세션 상태를 보여 준다(가짜 이름·요금제 없음).
+  const email = session?.email || "";
+  const profileName = session?.signedIn ? (email || "로그인됨") : "로그인하지 않음";
+  const profileInitial = email ? email.slice(0, 1).toUpperCase() : "👤";
   // 펼침 상태: isCollapsed가 false이면 펼쳐진 상태
   const isExpanded = !isCollapsed;
 
@@ -212,8 +216,9 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
         )}
 
         <button
-          onClick={() => alert("Settings panel.")}
-          title={!isExpanded ? "Settings" : undefined}
+          onClick={onModels}
+          title={!isExpanded ? "모델 설치 설정" : undefined}
+          aria-label="모델 설치 설정"
           className={`transition-all duration-200 cursor-pointer relative group text-left ${isExpanded
             ? "w-full hover:bg-white/50 rounded-[20px] p-2 pr-3.5 flex items-center gap-3 text-[#444444] hover:text-[#222222]"
             : "w-11 h-11 rounded-full flex items-center justify-center text-[#555555] hover:text-[#222222] hover:bg-white/50"
@@ -245,20 +250,19 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
           {isExpanded ? (
             /* [펼친 상태의 프로필 카드]: 사람 이모지 + Reporter Profile + [>] 화살표 */
             <div
-              onClick={() => alert("Reporter Profile")}
               className="w-full bg-white/65 hover:bg-white/85 border border-white/80 rounded-[22px] p-2.5 flex items-center justify-between transition cursor-pointer shadow-2xs group"
-              title="Reporter Profile"
+              title={profileName}
             >
               <div className="flex items-center gap-2.5 truncate">
                 <div className="w-10 h-10 rounded-full bg-[#EFECE6] border border-[#E7E2D9] flex items-center justify-center text-lg flex-shrink-0 shadow-2xs">
-                  👤
+                  {profileInitial}
                 </div>
                 <div className="truncate text-left">
                   <div className="text-xs md:text-sm font-bold text-[#222222] truncate">
-                    Staff Reporter
+                    {profileName}
                   </div>
                   <div className="text-[10px] text-[#8E8982] font-medium truncate">
-                    Premium Plan
+                    {session?.signedIn ? "AI Newsroom" : "로컬 작업 가능"}
                   </div>
                 </div>
               </div>
@@ -269,10 +273,9 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
             /* [접힌 상태의 프로필 원형 아바타]: 사람 이모지 */
             <div
               className="w-10 h-10 rounded-full bg-[#EFECE6] border border-[#E7E2D9] hover:border-[#F4A940] transition-colors cursor-pointer shadow-xs flex items-center justify-center text-lg group relative"
-              title="Reporter Profile"
-              onClick={() => alert("Reporter Profile")}
+              title={profileName}
             >
-              <span>👤</span>
+              <span>{profileInitial}</span>
               <div className="absolute left-[82px] bg-[#292929] text-white text-xs font-medium px-2.5 py-1 rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-md z-50">
                 Reporter Profile
               </div>

@@ -121,6 +121,7 @@ const server = spawn(process.env.PYTHON || "python", ["app/server.py"], {
     AI_NEWSROOM_DOCUMENTS: SMOKE_DOCS,
     AI_NEWSROOM_APPDATA: path.join(SMOKE_DOCS, "appdata"),
     AI_NEWSROOM_SKIP_DOTENV: "1", // 개발자의 실제 키·테스트 계정을 읽지 않는다
+    AI_NEWSROOM_KEY_SERVICE: "AI Newsroom (ui-smoke)",
     USE_LOCAL_MODELS: "false",
     PYTHONIOENCODING: "utf-8",
     AI_BACKEND: "remote",
@@ -230,7 +231,54 @@ try {
     return reply(route, modelState);
   });
 
+  let latestAttempts = 0;
+  const latestRoute = /\/api\/articles\/latest(?:\?.*)?$/;
+  await page.route(latestRoute, (route) => {
+    latestAttempts += 1;
+    return latestAttempts === 1
+      ? reply(route, { error: "최근 원고 조회 테스트 오류" }, 503)
+      : route.continue();
+  });
   await page.goto(BASE);
+  await page.getByRole("alert").getByText("최근 원고 조회 테스트 오류").waitFor();
+  assert.equal(await page.getByPlaceholder("기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다...").count(), 0);
+  assert.equal(savedIds.size, 0, "조회 실패 중에는 빈 원고를 저장하지 않는다");
+  await page.getByRole("button", { name: "다시 불러오기" }).click();
+  await page.getByPlaceholder("기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다...").waitFor();
+  assert.equal(latestAttempts, 2);
+  await page.unroute(latestRoute);
+
+  // 첫 저장이 지연되는 동안 새 편집을 큐에 넣어 같은 원고 ID로 순서대로 저장한다.
+  const saveRoute = "**/api/articles/save";
+  let releaseFirst, firstStarted;
+  const started = new Promise((resolve) => { firstStarted = resolve; });
+  const held = new Promise((resolve) => { releaseFirst = resolve; });
+  const savePayloads = [];
+  await page.route(saveRoute, async (route) => {
+    savePayloads.push(route.request().postDataJSON());
+    if (savePayloads.length === 1) {
+      firstStarted();
+      await held;
+    }
+    return route.continue();
+  });
+  const queueBody = page.getByPlaceholder("기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다...");
+  await queueBody.fill("첫 저장");
+  await started;
+  await queueBody.fill("두 번째 저장");
+  await page.waitForTimeout(1700);
+  assert.equal(savePayloads.length, 1, "첫 요청이 끝나기 전에 두 번째 저장을 시작하지 않는다");
+  releaseFirst();
+  await page.getByTestId("save-status").getByText("자동 저장됨").waitFor();
+  assert.equal(savePayloads.length, 2);
+  assert.equal(savePayloads[1].draft.articleId, [...savedIds][0]);
+  const queueSaved = await (await page.request.get(`${BASE}/api/articles/latest`)).json();
+  assert.equal(queueSaved.draft.content, "두 번째 저장");
+  await page.unroute(saveRoute);
+  const cleared = page.waitForResponse((response) => response.url().endsWith('/api/articles/save') && response.ok());
+  await queueBody.fill("");
+  await cleared;
+  await page.getByTestId("save-status").getByText("자동 저장됨").waitFor();
   // 1. 코어 연결 — UI 가 계약(web/src/api)으로 /api/status·/api/session 을 받아 헤더에 반영
   await see("코어 연결됨");
   const login = page.getByTestId("login-dialog");
@@ -441,6 +489,18 @@ try {
   // 팩트체크 서랍에 올린 자료가 기사 취재자료로 남아 보관함에 보여야 한다(깨진 파일은 빠짐)
   await page.getByText("취재자료 (1건)").waitFor();
   await page.getByText("• 자료.txt").waitFor();
+  const dataMap = page.getByTestId("data-map");
+  const sampleRoot = new URL('../sample-data/datamap/', ROOT);
+  const samples = fs.readdirSync(sampleRoot).filter((name) => name.endsWith('.md'));
+  assert.equal(samples.length, 5);
+  await dataMap.locator('input[type="file"]').setInputFiles(samples.map((name) => ({
+    name, mimeType: 'text/markdown', buffer: fs.readFileSync(new URL(name, sampleRoot)),
+  })));
+  await dataMap.getByText('5개 추가 · 0개 갱신').first().waitFor();
+  const knowledge = await (await page.request.get(`${BASE}/api/knowledge-map`)).json();
+  assert.equal(knowledge.files.length, 5);
+  assert.equal(knowledge.file_links.length, 21);
+  assert.ok(knowledge.files.every((file) => file.backlink_count > 0));
   await go("녹음 파일");
   await see("인터뷰·녹취 스튜디오");
   // 녹음 전사: 파일 → 코어 /api/interview/transcribe → 백엔드 /ai/audio/transcriptions(multipart) → 화자별 대화

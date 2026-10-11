@@ -60,7 +60,7 @@
 
 ### Task 4: DataMap interaction
 
-**Files:** Modify `article_editor/web/src/api/core-api.js`, `article_editor/web/src/features/data-map/api.js`, `article_editor/web/src/features/data-map/domain/coreProjection.js`, `DataMapView.jsx`, `components/ContextPanel.jsx`, `components/ResourceTable.jsx`, `components/KnowledgeGraph.jsx`, `constants.js`, `data-map.css`; test `article_editor/web` DataMap tests.
+**Files:** Modify `src/api/core-api.js`, `src/features/data-map/api.js`, `src/features/data-map/domain/coreProjection.js`, `DataMapView.jsx`, `components/ContextPanel.jsx`, `components/ResourceTable.jsx`, `components/KnowledgeGraph.jsx`, `constants.js`, `data-map.css`; test `article_editor/web` DataMap tests.
 
 **Interfaces:** Core transport imports/gets/deletes files; projection adds note and placeholder nodes and directed `links_to` edges.
 

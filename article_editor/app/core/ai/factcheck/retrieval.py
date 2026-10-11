@@ -173,18 +173,16 @@ class VectorCache:
             raise ValueError(f"Unknown embedding role: {role}")
 
         keys = [vector_key(text, role) for text in texts]
-        # TODO(debt: DEBT-002): 캐시 미스의 모델 추론 동안 DB 연결도 열린 채로 유지된다.
-        # _migrate가 UPDATE를 수행한 연결이면 긴 추론 동안 쓰기 잠금까지 유지할 수 있다.
-        # 캐시 읽기/연결 해제 → 모델 계산 → 짧은 저장 트랜잭션으로 분리할 것.
-        with self.lock, vault.connect() as db:
+        with self.lock:
             found: dict[str, np.ndarray] = {}
-            for key in dict.fromkeys(keys):
-                row = db.execute(
-                    "SELECT vector FROM embedding_vectors WHERE key=?",
-                    (key,),
-                ).fetchone()
-                if row:
-                    found[key] = np.frombuffer(row[0], dtype="<f4").copy()
+            with vault.connect() as db:
+                for key in dict.fromkeys(keys):
+                    row = db.execute(
+                        "SELECT vector FROM embedding_vectors WHERE key=?",
+                        (key,),
+                    ).fetchone()
+                    if row:
+                        found[key] = np.frombuffer(row[0], dtype="<f4").copy()
 
             missing_pairs: list[tuple[str, str]] = []
             seen_missing: set[str] = set()
@@ -199,19 +197,13 @@ class VectorCache:
                     role,
                 )
                 self.validate(vectors, len(missing_pairs))
-                for (key, _), value in zip(missing_pairs, vectors):
-                    found[key] = value
-                    db.execute(
-                        """
-                        INSERT OR REPLACE INTO embedding_vectors(key, vector, origin)
-                        VALUES (?,?,?)
-                        """,
-                        (
-                            key,
-                            value.astype("<f4", copy=False).tobytes(),
-                            "local-cpu",
-                        ),
-                    )
+                with vault.connect() as db:
+                    for (key, _), value in zip(missing_pairs, vectors):
+                        found[key] = value
+                        db.execute(
+                            "INSERT OR REPLACE INTO embedding_vectors(key, vector, origin) VALUES (?,?,?)",
+                            (key, value.astype("<f4", copy=False).tobytes(), "local-cpu"),
+                        )
 
             result = (
                 np.stack([found[key] for key in keys]).astype("<f4", copy=False)

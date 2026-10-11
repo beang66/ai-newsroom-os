@@ -42,6 +42,34 @@ class EmbeddingCacheTests(unittest.TestCase):
         with vault.connect() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM embedding_vectors').fetchone()[0], 2)
 
+    def test_encoder_runs_without_an_open_vault_connection(self):
+        import contextlib
+        from core.ai.factcheck.retrieval import VectorCache
+        active = 0
+        connect = vault.connect
+
+        @contextlib.contextmanager
+        def tracked_connect():
+            nonlocal active
+            with connect() as db:
+                active += 1
+                try:
+                    yield db
+                finally:
+                    active -= 1
+
+        case = self
+
+        class Encoder:
+            def encode(self, texts, role):
+                case.assertEqual(active, 0)
+                result = np.zeros((len(texts), 1024), dtype='<f4')
+                result[:, 0] = 1
+                return result
+
+        with mock.patch.object(vault, 'connect', tracked_connect):
+            VectorCache(encoder=Encoder()).encode(['new'], 'document')
+
     def test_legacy_plain_cache_is_moved_then_deleted(self):
         legacy = self.root / 'factcheck'
         legacy.mkdir()

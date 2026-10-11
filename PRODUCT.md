@@ -28,7 +28,7 @@ Windows 데스크톱 배포를 염두에 둔 로컬 웹 UI다. React 화면은 P
 
 ## Evidence on Hand
 
-- 구현: `article_editor/app/core/vault.py`, `article_editor/app/core/read_models.py`, `article_editor/web/src/features/data-map/`.
+- 구현: `article_editor/app/core/vault.py`, `article_editor/app/core/read_models.py`, `src/features/data-map/`.
 - Foam 참조 구현: `C:/myproject/art-city-intelligence-ref/code/foam-main/packages/foam-core/src/`.
 - 기존 DataMap 통합 메모: `docs/architecture/DATA_MAP_INTEGRATION.md`.
 

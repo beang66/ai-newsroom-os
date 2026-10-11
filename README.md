@@ -1,16 +1,52 @@
-# React + Vite
+# AI Newsroom OS
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+기사 작성, 취재자료, 팩트체크, DataMap, 플랫폼 변환을 제공하는 로컬 뉴스룸 앱입니다.
 
-Currently, two official plugins are available:
+메인 UI 소스는 루트 `src/` 하나입니다. 이전 `article_editor/web/src`의 최신 UI와 DataMap을 이곳으로 이동했습니다. `pilot/`은 별도 프로토타입입니다. Python 코어는 `article_editor/app/core/`, 플랫폼 변환기의 공용 런타임은 `platform-generator/lib/`에 있습니다.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Windows에서 실행
 
-## React Compiler
+프로젝트 폴더에서 최신 UI를 빌드하고 데스크톱 창을 엽니다. Python과 Node.js가 필요하며, 저장소 의존성은 배치 파일이 프로젝트 로컬에 설치합니다.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```powershell
+cd C:\myproject\ai-newsroom-os-main
+.\article_editor\start_window_fresh.bat
+```
 
-## Expanding the Oxlint configuration
+브라우저 개발은 터미널 두 개를 사용합니다.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+```powershell
+# 터미널 1: 코어 API (기본 포트 8765)
+cd C:\myproject\ai-newsroom-os-main
+cmd /c article_editor\scripts\ensure_storage_deps.bat
+py -3 .\article_editor\app\server.py
+```
+
+```powershell
+# 터미널 2: 메인 UI
+cd C:\myproject\ai-newsroom-os-main
+npm ci
+npm run dev
+```
+
+브라우저에서 http://127.0.0.1:5173 을 엽니다. `npm run build` 결과는 `article_editor/app/frontend/`에 생성되고 Python 코어와 EXE 패키징이 같은 결과를 사용합니다.
+
+## 검증
+
+```powershell
+cd C:\myproject\ai-newsroom-os-main
+npm test
+npm run build
+npm test --prefix platform-generator
+$env:PYTHONPATH = "$pwd\article_editor\.runtime"
+npm --prefix article_editor run test:python
+npm run test:ui
+```
+
+화면 테스트는 Edge와 가짜 백엔드, 임시 저장소를 사용합니다. AI 기능에는 별도의 로그인·모델·서버 설정이 필요합니다. EXE 배포 준비는 `article_editor/packaging/README.md`를 참고하세요.
+
+## DataMap 테스트 자료와 복구점
+
+`sample-data/datamap/`의 마크다운 5개는 내부 링크, 백링크, 미해결 링크를 검증합니다. 보관함의 DataMap에서 가져올 수 있습니다.
+
+GitHub `origin/main` 이력을 연결했으며, UI 정리 직전 로컬 DataMap 변경은 `backup/local-before-ui-consolidation` 브랜치에 보존했습니다. 구형 UI는 이 브랜치에서 확인할 수 있습니다. 로컬 커밋은 별도 요청 전에는 GitHub로 push하지 않습니다.

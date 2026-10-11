@@ -84,6 +84,28 @@ export default function ContextPanel({
     );
   const direct = ranked.files.filter((n) => n.priority === "direct"),
     indirect = ranked.files.filter((n) => n.priority !== "direct");
+  const isKnowledgeFile = node.kind === "note";
+  const linkRow = (link, direction) => {
+    const linkedId = direction === "out" ? link.target : link.source;
+    const linked = graph.nodes.find((candidate) => candidate.id === linkedId);
+    return (
+      <button
+        className="knowledge-link"
+        key={`${direction}:${link.id}`}
+        onClick={() => linked && onSelect(linked.id)}
+      >
+        <span className={`link-state ${link.resolved ? "resolved" : "missing"}`} aria-hidden="true" />
+        <span>
+          <strong>{linked?.label || link.target_ref || "연결할 파일 없음"}</strong>
+          <small>
+            {direction === "out" ? link.raw_text : `${linked?.path || "Markdown"}에서 연결`}
+            {link.line ? ` · ${link.line}행` : ""}
+          </small>
+        </span>
+        <ChevronRight size={14} />
+      </button>
+    );
+  };
   const fileRow = (n, i) => (
     <button className="ranked-file" key={n.id} onClick={() => onSelect(n.id)}>
       <span className="rank-number">{String(i + 1).padStart(2, "0")}</span>
@@ -113,7 +135,7 @@ export default function ContextPanel({
       </div>
       <span className={`type-label ${node.kind}`}>
         {TYPES[node.kind]}
-        {node.placeholder ? " · 형태 시연" : ""}
+        {node.placeholder ? " · 연결 대기" : ""}
       </span>
       <h2>{node.label}</h2>
       <div className="tag-row">
@@ -174,6 +196,32 @@ export default function ContextPanel({
         </div>
       ) : (
         <>
+          {isKnowledgeFile && (
+            <div className="knowledge-relations">
+              <section>
+                <div className="section-label">
+                  <h3>이 파일이 가리키는 링크</h3>
+                  <small>{node.outgoing?.length || 0}</small>
+                </div>
+                {node.outgoing?.length ? (
+                  node.outgoing.map((link) => linkRow(link, "out"))
+                ) : (
+                  <p className="muted">나가는 링크가 없습니다.</p>
+                )}
+              </section>
+              <section>
+                <div className="section-label">
+                  <h3>이 파일을 가리키는 백링크</h3>
+                  <small>{node.backlinks?.length || 0}</small>
+                </div>
+                {node.backlinks?.length ? (
+                  node.backlinks.map((link) => linkRow(link, "in"))
+                ) : (
+                  <p className="muted">들어오는 백링크가 없습니다.</p>
+                )}
+              </section>
+            </div>
+          )}
           <section className="related-projects">
             <div className="section-label">
               <h3>관련 프로젝트</h3>
@@ -233,8 +281,9 @@ export default function ContextPanel({
             </button>
           )}
           <p className="panel-footnote">
-            관련도는 직접 연결·프로젝트·공통 주제로 계산한 참고 점수이며, 사실
-            검증 결과가 아닙니다.
+            {isKnowledgeFile
+              ? "링크와 백링크는 Markdown 원문에서 해석한 실제 연결입니다. 아래 관련 자료 점수는 탐색을 위한 참고값입니다."
+              : "관련도는 직접 연결·프로젝트·공통 주제로 계산한 참고 점수이며, 사실 검증 결과가 아닙니다."}
           </p>
         </>
       )}

@@ -170,6 +170,24 @@ class ServerTests(ApiTestCase):
         self.assertEqual(json.loads(self.request('/api/sources/%s/delete' % sid, {'force': True})[1])['deleted'], True)
         self.assertEqual(json.loads(self.request('/api/knowledge-map')[1])['edges'], [])
 
+    def test_knowledge_files_routes_import_read_delete_and_origin(self):
+        use_temp_vault(self)
+        body = {'files': [{'path': 'notes/a.md', 'content': '# A\n[[b]]'},
+                          {'path': 'notes/b.md', 'content': '# B'}]}
+        self.assertEqual(self.request('/api/knowledge-files/import', body, origin='http://evil.example')[0], 403)
+        status, raw, _ = self.request('/api/knowledge-files/import', body)
+        self.assertEqual(status, 200)
+        files = json.loads(raw)['files']
+        graph = json.loads(self.request('/api/knowledge-map')[1])
+        self.assertEqual([(link['source'], link['target']) for link in graph['file_links']],
+                         [(files[0]['id'], files[1]['id'])])
+        status, raw, _ = self.request('/api/knowledge-files/' + files[0]['id'])
+        self.assertEqual((status, json.loads(raw)['content']), (200, '# A\n[[b]]'))
+        self.assertEqual(self.request('/api/knowledge-files/import',
+                                      {'files': [{'path': '../outside.md', 'content': 'x'}]})[0], 400)
+        self.assertEqual(self.request('/api/knowledge-files/' + files[1]['id'] + '/delete', {})[0], 200)
+        self.assertEqual(len(json.loads(self.request('/api/knowledge-map')[1])['unresolved']), 1)
+
     def test_media_asset_routes(self):
         import base64
         use_temp_vault(self)

@@ -46,6 +46,17 @@ CREATE TABLE IF NOT EXISTS source_index (
   source_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, state TEXT NOT NULL,
   text_sha256 TEXT NOT NULL, chunker_version TEXT NOT NULL, chunk_count INTEGER NOT NULL,
   error_code TEXT, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS knowledge_files (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, path TEXT NOT NULL, path_key TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL, content TEXT NOT NULL, sha256 TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS knowledge_links (
+  source_id TEXT NOT NULL REFERENCES knowledge_files(id), ordinal INTEGER NOT NULL,
+  kind TEXT NOT NULL, raw_text TEXT NOT NULL, target_ref TEXT NOT NULL,
+  fragment TEXT NOT NULL, target_id TEXT, target_key TEXT NOT NULL, line INTEGER NOT NULL,
+  is_embed INTEGER NOT NULL, PRIMARY KEY (source_id, ordinal));
+CREATE INDEX IF NOT EXISTS knowledge_links_target_id ON knowledge_links(target_id);
+CREATE INDEX IF NOT EXISTS knowledge_links_target_key ON knowledge_links(target_key);
 CREATE TABLE IF NOT EXISTS article_snapshots (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, article_id TEXT NOT NULL REFERENCES articles(id),
   revision_id TEXT NOT NULL, revision_no INTEGER NOT NULL, title TEXT NOT NULL, body_html TEXT NOT NULL,

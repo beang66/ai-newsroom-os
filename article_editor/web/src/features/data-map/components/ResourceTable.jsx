@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowDownUp, ArrowUpRight, FileText } from "lucide-react";
+import { ArrowDownUp, ArrowUpRight, FileText, FolderUp, Upload } from "lucide-react";
 import { TYPES } from "../constants.js";
 export default function ResourceTable({
   nodes,
@@ -7,6 +7,9 @@ export default function ResourceTable({
   selectedId,
   onSelect,
   onOpen,
+  onImport,
+  importing,
+  importNotice,
 }) {
   const [sort, setSort] = useState("updated"),
     [page, setPage] = useState(0);
@@ -31,24 +34,57 @@ export default function ResourceTable({
           <h2>파일 목록</h2>
           <p>기사에 연결된 출처·녹취·취재 노트를 한곳에서 관리합니다.</p>
         </div>
-        <label className="sort-control">
-          <ArrowDownUp size={14} />
-          <select
-            aria-label="자료 정렬"
-            value={sort}
-            onChange={(e) => {
-              setSort(e.target.value);
-              setPage(0);
-            }}
-          >
-            <option value="updated">최근 기록순</option>
-            <option value="title">이름순</option>
-          </select>
-        </label>
+        <div className="library-heading-actions">
+          <label className="file-upload-button">
+            <Upload size={14} />
+            {importing ? "가져오는 중" : "Markdown 추가"}
+            <input
+              className="sr-only"
+              type="file"
+              accept=".md,text/markdown"
+              multiple
+              disabled={importing}
+              onChange={(event) => {
+                onImport(event.target.files);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          <label className="file-upload-button secondary">
+            <FolderUp size={14} />
+            폴더 추가
+            <input
+              className="sr-only"
+              type="file"
+              accept=".md,text/markdown"
+              multiple
+              webkitdirectory=""
+              directory=""
+              disabled={importing}
+              onChange={(event) => {
+                onImport(event.target.files);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          <label className="sort-control">
+            <ArrowDownUp size={14} />
+            <select
+              aria-label="자료 정렬"
+              value={sort}
+              onChange={(e) => {
+                setSort(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="updated">최근 기록순</option>
+              <option value="title">이름순</option>
+            </select>
+          </label>
+        </div>
       </div>
-      <p className="file-notice" role="note">
-        파일 추가·삭제는 아직 지원하지 않습니다 — 코어에 자료 업로드·삭제 기능이
-        생기면 열립니다. 취재자료는 기사 작성 화면에서 추가하세요.
+      <p className="file-notice" role="status">
+        {importNotice || "Markdown은 앱의 암호화 저장소에 복사되며 원본 파일은 변경하지 않습니다."}
       </p>
       <div className="table-scroll">
         <table>
@@ -81,7 +117,7 @@ export default function ResourceTable({
                     <span>
                       {n.label}
                       <small>
-                        {n.placeholder ? "형태 시연 노드" : n.tags.join(" · ")}
+                        {n.path || n.tags.join(" · ")}
                       </small>
                     </span>
                   </button>

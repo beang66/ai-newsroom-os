@@ -1,11 +1,12 @@
-import React, { useState } from "react";
+import React, { lazy, Suspense, useState } from "react";
 import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import ArticleWriter from "./components/ArticleWriter";
-import SourceSearch from "./components/SourceSearch";
-import InterviewStudio from "./components/interview/InterviewStudio";
-import FormatConverter from "./components/FormatConverter";
-import ArchiveView from "./components/ArchiveView";
+
+const SourceSearch = lazy(() => import("./components/SourceSearch"));
+const InterviewStudio = lazy(() => import("./components/interview/InterviewStudio"));
+const FormatConverter = lazy(() => import("./components/FormatConverter"));
+const ArchiveView = lazy(() => import("./components/ArchiveView"));
 
 import { initialArticles, mockFactCheckIssues } from "./data/mockData";
 
@@ -93,6 +94,7 @@ export default function App() {
         />
 
         {/* Main Content Workspace (우측 여백 없이 전체 너비 자연스럽게 채움) */}
+        <Suspense fallback={<div className="flex-1 py-24 text-center text-sm text-slate-500">화면을 불러오는 중…</div>}>
         <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0">
           {activeTab === "writer" || activeTab === "publish" ? (
             <ArticleWriter
@@ -128,9 +130,11 @@ export default function App() {
             </main>
           )}
         </div>
+        </Suspense>
       </div>
 
       {/* Quick Source Search Modal during Writing */}
+      <Suspense fallback={null}>
       {showSearchModal && (
         <SourceSearch
           isModal={true}
@@ -138,7 +142,7 @@ export default function App() {
           onConnectToArticle={handleConnectSource}
         />
       )}
+      </Suspense>
     </div>
   );
 }
-

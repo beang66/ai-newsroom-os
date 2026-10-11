@@ -22,6 +22,10 @@ import threading
 import webbrowser
 from pathlib import Path
 
+from runtime_path import add_project_runtime
+
+add_project_runtime()
+
 _APP_DIR = Path(__file__).resolve().parent
 if not getattr(sys, 'frozen', False) and str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))

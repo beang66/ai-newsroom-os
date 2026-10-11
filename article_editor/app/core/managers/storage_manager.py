@@ -5,6 +5,7 @@ Current implementation: encrypted SQLite (``core/storage.py`` on ``core/vault.py
 Planned: project files + attachments.
 """
 from ..diagnostics import guarded
+from ..knowledge_files import delete_file as _delete_knowledge_file, get_file as _get_knowledge_file, import_files as _import_knowledge_files
 from ..media_assets import get_media_asset as _get_media_asset, media_asset_file as _media_asset_file, register_media_asset as _register_media_asset
 from ..read_models import knowledge_map as _knowledge_map, list_articles as _list_articles
 from ..sources import delete_source as _delete_source, get_source as _get_source, list_sources as _list_sources
@@ -90,3 +91,15 @@ class StorageManager:
     def knowledge_map(self):
         """기사·자료·고정본과 실제 근거 있는 연결의 읽기 전용 묶음(Data Map·보관함용)."""
         return _knowledge_map()
+
+    def import_knowledge_files(self, data):
+        """앱 관리 저장소에 Markdown 지식 파일을 가져오고 링크를 다시 해석한다."""
+        return guarded('knowledge_files_import', _import_knowledge_files, data)
+
+    def get_knowledge_file(self, file_id):
+        """Markdown 지식 파일 한 건과 실제 링크·백링크를 반환한다."""
+        return _get_knowledge_file(file_id)
+
+    def delete_knowledge_file(self, file_id):
+        """Markdown 지식 파일을 삭제하고 남은 링크를 다시 해석한다."""
+        return guarded('knowledge_file_delete', _delete_knowledge_file, file_id)

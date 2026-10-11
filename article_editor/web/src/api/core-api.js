@@ -30,6 +30,9 @@ export const ROUTES = Object.freeze({
   materialsExtract: "/api/materials/extract",
   sources: "/api/sources",
   knowledgeMap: "/api/knowledge-map",
+  knowledgeFilesImport: "/api/knowledge-files/import",
+  knowledgeFile: (id) => "/api/knowledge-files/" + encodeURIComponent(id),
+  knowledgeFileDelete: (id) => "/api/knowledge-files/" + encodeURIComponent(id) + "/delete",
   sourcesOpen: "/api/sources/open",
   sourceFile: (id) => "/api/sources/" + encodeURIComponent(id) + "/file",
   unsplashSearch: "/api/unsplash/search",
@@ -93,6 +96,12 @@ export function createCoreApi(transport) {
     listSources: (signal) => transport.json(ROUTES.sources, null, signal),
     /** 기사·자료·고정본과 실제 연결(읽기 모델) → { articles, sources, snapshots, entities, edges:[{source,target,relation}] } */
     knowledgeMap: (signal) => transport.json(ROUTES.knowledgeMap, null, signal),
+    /** Markdown 파일을 앱 관리 저장소로 가져오고 링크·백링크를 다시 색인한다. */
+    importKnowledgeFiles: (payload, signal) => transport.json(ROUTES.knowledgeFilesImport, payload, signal),
+    /** Markdown 파일 본문과 링크·백링크를 읽는다. */
+    getKnowledgeFile: (id, signal) => transport.json(ROUTES.knowledgeFile(id), null, signal),
+    /** Markdown 파일을 지우고 남은 링크를 다시 해석한다. */
+    deleteKnowledgeFile: (id, signal) => transport.json(ROUTES.knowledgeFileDelete(id), {}, signal),
     /** 보관한 취재자료 원본을 이 PC 의 기본 프로그램으로 열기 */
     openSource: (sourceId, signal) =>
       transport.json(ROUTES.sourcesOpen, { sourceId }, signal),

@@ -59,6 +59,38 @@ export function projectKnowledgeMap(payload) {
       articleId: Array.isArray(source.used_by) ? source.used_by[0] || null : null,
     });
   }
+  const fileLinks = Array.isArray(payload.file_links) ? payload.file_links : [];
+  const outgoingById = new Map();
+  const backlinksById = new Map();
+  for (const link of fileLinks) {
+    if (!outgoingById.has(link.source)) outgoingById.set(link.source, []);
+    outgoingById.get(link.source).push(link);
+    if (link.resolved) {
+      if (!backlinksById.has(link.target)) backlinksById.set(link.target, []);
+      backlinksById.get(link.target).push(link);
+    }
+  }
+  for (const file of Array.isArray(payload.files) ? payload.files : [])
+    add(file.id, "note", {
+      label: file.title || file.path || "제목 없는 노트",
+      summary: file.path || "",
+      updated: date(file.updated_at),
+      path: file.path || "",
+      outgoingCount: Number(file.outgoing_count) || 0,
+      backlinkCount: Number(file.backlink_count) || 0,
+      outgoing: outgoingById.get(file.id) || [],
+      backlinks: backlinksById.get(file.id) || [],
+    });
+  for (const missing of Array.isArray(payload.unresolved) ? payload.unresolved : [])
+    add(missing.id, "note", {
+      label: missing.label || "연결할 파일 없음",
+      summary: "아직 가져오지 않은 Markdown 파일",
+      placeholder: true,
+      targetKey: missing.target_key || "",
+      mentions: Number(missing.mentions) || 0,
+      outgoing: [],
+      backlinks: fileLinks.filter((link) => !link.resolved && link.target === missing.id),
+    });
   const seen = new Set();
   const edges = [];
   for (const edge of payload.edges) {
@@ -67,6 +99,13 @@ export function projectKnowledgeMap(payload) {
     if (seen.has(id)) continue;
     seen.add(id);
     edges.push({ id, source: edge.source, target: edge.target, relation: "article-source" });
+  }
+  for (const link of fileLinks) {
+    if (!link?.resolved || link.relation !== "links_to" || !byId.has(link.source) || !byId.has(link.target)) continue;
+    const id = `file:${link.source}:${link.target}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    edges.push({ id, source: link.source, target: link.target, relation: "links-to" });
   }
   return { nodes, edges, projects: [], meta: { mode: "knowledge-map", workspaceId: payload.workspace_id || null } };
 }

@@ -10,11 +10,11 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Bookmark,
-  ChevronRight,
   Folder,
   Layers3,
   Network,
   Search,
+  Upload,
   X,
 } from "lucide-react";
 import { dataMapApi } from "../../api/datamap.js";
@@ -59,6 +59,8 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
   const [graph, setGraph] = useState(null),
     [error, setError] = useState(""),
     [attempt, setAttempt] = useState(0);
+  const [importing, setImporting] = useState(false),
+    [importNotice, setImportNotice] = useState("");
   const [view, setView] = useState("map"),
     [query, setQuery] = useState(""),
     [project, setProject] = useState("all"),
@@ -140,6 +142,36 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
     setKind("all");
     setQuery("");
   };
+  const importMarkdown = async (fileList) => {
+    const selectedFiles = [...(fileList || [])].filter((file) =>
+      file.name.toLowerCase().endsWith(".md"),
+    );
+    if (!selectedFiles.length) {
+      setImportNotice("가져올 .md 파일을 선택해 주세요.");
+      return;
+    }
+    setImporting(true);
+    setImportNotice("");
+    try {
+      const files = await Promise.all(
+        selectedFiles.map(async (file) => ({
+          path: (file.webkitRelativePath || file.name).replaceAll("\\", "/"),
+          content: await file.text(),
+        })),
+      );
+      const result = await api.importFiles(files);
+      const changed = (result.imported || 0) + (result.updated || 0);
+      setImportNotice(
+        `${result.imported || 0}개 추가 · ${result.updated || 0}개 갱신${result.unchanged ? ` · ${result.unchanged}개 동일` : ""}`,
+      );
+      if (changed || result.unchanged) setAttempt((value) => value + 1);
+      setView("library");
+    } catch (cause) {
+      setImportNotice(cause?.message || "Markdown 파일을 가져오지 못했습니다.");
+    } finally {
+      setImporting(false);
+    }
+  };
   if (!graph || !graph.nodes.length)
     return (
       <div className="dm-root dm-status" data-testid="data-map">
@@ -161,10 +193,28 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
           </>
         )}
         {graph && (
-          <p>
-            아직 저장된 기사나 취재자료가 없습니다. 기사 작성 화면에서 기사를
-            저장하면 기사와 연결된 취재자료가 여기 관계망으로 표시됩니다.
-          </p>
+          <>
+            <p>
+              저장된 기사나 지식 파일이 없습니다. Markdown을 추가하면 문서의
+              링크와 백링크가 관계망으로 표시됩니다.
+            </p>
+            <label className="primary-button file-import-empty">
+              <Upload size={15} />
+              {importing ? "가져오는 중" : "Markdown 추가"}
+              <input
+                className="sr-only"
+                type="file"
+                accept=".md,text/markdown"
+                multiple
+                disabled={importing}
+                onChange={(event) => {
+                  importMarkdown(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+            {importNotice && <p role="status">{importNotice}</p>}
+          </>
         )}
       </div>
     );
@@ -177,12 +227,51 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
     (n) =>
       n.kind === "article" && (project === "all" || n.projectId === project),
   );
+  const unresolvedCount = graph.nodes.filter((node) => node.placeholder).length;
   return (
     <div
       className={`dm-root ${expanded ? "expanded" : ""}`}
       data-testid="data-map"
     >
       <div className="map-workspace">
+        <header className="dm-header">
+          <div className="dm-header-copy">
+            <h1>데이터맵</h1>
+            <p>문서에 기록된 링크와 백링크를 따라 취재 근거를 확인하세요.</p>
+          </div>
+          <div className="dm-header-actions">
+            <dl className="dm-map-stats" aria-label="데이터맵 요약">
+              <div>
+                <dt>문서</dt>
+                <dd>{graph.nodes.length}</dd>
+              </div>
+              <div>
+                <dt>연결</dt>
+                <dd>{graph.edges.length}</dd>
+              </div>
+              <div>
+                <dt>미해결</dt>
+                <dd>{unresolvedCount}</dd>
+              </div>
+            </dl>
+            <label className="primary-button dm-import-button">
+              <Upload size={15} />
+              {importing ? "가져오는 중" : "Markdown 추가"}
+              <input
+                className="sr-only"
+                type="file"
+                accept=".md,text/markdown"
+                multiple
+                disabled={importing}
+                onChange={(event) => {
+                  importMarkdown(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+        </header>
+        {importNotice && <p className="dm-import-notice" role="status">{importNotice}</p>}
         <MapViews view={view} onView={navigate} count={visits.length} />
         {!currentSaved && (
           <p className="dm-scope-note" role="note">
@@ -193,8 +282,7 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
         <div className="workspace-heading">
           <div className="breadcrumb">
             <Folder size={14} />
-            지식 공간
-            <ChevronRight size={12} />
+            탐색 범위
             <strong>{projectName || "모든 프로젝트"}</strong>
           </div>
           <label className="global-search">
@@ -265,7 +353,7 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
                 </button>
               </span>
             ) : (
-              <span aria-hidden="true" />
+              <span className="selection-hint">관계를 확인할 노드를 선택하세요.</span>
             )}
             {selected && (
               <small>
@@ -299,6 +387,9 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
               selectedId={selectedId}
               onSelect={choose}
               onOpen={open}
+              onImport={importMarkdown}
+              importing={importing}
+              importNotice={importNotice}
             />
           ) : (
             <section className="history-page">

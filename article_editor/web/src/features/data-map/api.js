@@ -17,5 +17,23 @@ export function createDataMapApi({ coreApi } = {}) {
     async saveSourceRevision() {
       throw new Error("Core는 자료 수정본 저장을 지원하지 않습니다.");
     },
+    async importFiles(files, { signal } = {}) {
+      signal?.throwIfAborted();
+      if (typeof coreApi?.importKnowledgeFiles !== "function")
+        throw new Error("Core importKnowledgeFiles 메서드를 연결해 주세요.");
+      const result = await coreApi.importKnowledgeFiles({ files }, signal);
+      signal?.throwIfAborted();
+      return result;
+    },
+    async getKnowledgeFile(id, { signal } = {}) {
+      if (typeof coreApi?.getKnowledgeFile !== "function")
+        throw new Error("Core getKnowledgeFile 메서드를 연결해 주세요.");
+      return coreApi.getKnowledgeFile(id, signal);
+    },
+    async deleteKnowledgeFile(id, { signal } = {}) {
+      if (typeof coreApi?.deleteKnowledgeFile !== "function")
+        throw new Error("Core deleteKnowledgeFile 메서드를 연결해 주세요.");
+      return coreApi.deleteKnowledgeFile(id, signal);
+    },
   };
 }

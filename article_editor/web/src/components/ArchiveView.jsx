@@ -6,7 +6,8 @@ import {
   Sparkles,
   History,
   Check,
-  Plus,
+  ChevronDown,
+  FileText,
 } from "lucide-react";
 import DataMapView from "../features/data-map/DataMapView.jsx";
 
@@ -29,121 +30,136 @@ export default function ArchiveView({ article }) {
   }).filter((art) => {
     if (!searchQuery.trim()) return true;
     return (
-      art.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      art.subtitle.toLowerCase().includes(searchQuery.toLowerCase())
+      (art.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (art.subtitle || "").toLowerCase().includes(searchQuery.toLowerCase())
     );
   });
 
   return (
     <div className="w-full animate-float-in pb-10">
+      <section className="relative z-40 mb-5 rounded-[24px] bg-white px-5 py-4 shadow-[0_12px_34px_rgba(40,35,25,0.08)] sm:px-6" aria-labelledby="archive-context-title">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F1EDF8] text-[#6F579A]">
+              <FileText className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 id="archive-context-title" className="text-sm font-extrabold text-[#292B2F]">현재 탐색 기사</h2>
+                <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                  selectedArticle.status === "작성 중"
+                    ? "bg-amber-100 text-amber-900"
+                    : "bg-emerald-100 text-emerald-900"
+                }`}>
+                  {selectedArticle.status}
+                </span>
+              </div>
+              <p className="mt-1 truncate text-base font-bold text-[#292B2F]">{selectedArticle.title || "제목 없는 기사"}</p>
+              <p className="mt-1 text-xs leading-5 text-[#706A63]">
+                이 기사를 기준으로 원고, 취재자료, Markdown 링크의 연결을 탐색합니다.
+              </p>
+            </div>
+          </div>
+
+          <dl className="flex shrink-0 items-center gap-5 border-y border-[#ECE8E2] py-3 xl:border-x xl:border-y-0 xl:px-5 xl:py-0">
+            <div>
+              <dt className="text-[10px] font-bold text-[#817A72]">취재자료</dt>
+              <dd className="mt-0.5 text-sm font-extrabold tabular-nums text-[#292B2F]">{sources.length + selectedArticle.linkedSources.length}건</dd>
+            </div>
+            <div>
+              <dt className="text-[10px] font-bold text-[#817A72]">녹취</dt>
+              <dd className="mt-0.5 text-sm font-extrabold tabular-nums text-[#292B2F]">{interviews.length}건</dd>
+            </div>
+            <div>
+              <dt className="text-[10px] font-bold text-[#817A72]">미디어</dt>
+              <dd className="mt-0.5 text-sm font-extrabold tabular-nums text-[#292B2F]">{selectedArticle.photos.length}건</dd>
+            </div>
+          </dl>
+
+          <button
+            type="button"
+            onClick={() => setIsSearchOpen((open) => !open)}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#292B2F] px-4 text-sm font-bold text-white transition hover:bg-[#414348] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7963B6]"
+            aria-expanded={isSearchOpen}
+            aria-controls="article-context-picker"
+          >
+            <Search className="h-4 w-4" aria-hidden="true" />
+            기사 찾기
+            <ChevronDown className={`h-4 w-4 transition-transform ${isSearchOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+          </button>
+        </div>
+
+        {isSearchOpen && (
+          <div id="article-context-picker" className="mt-4 border-t border-[#ECE8E2] pt-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <label className="relative min-w-0 flex-1">
+                <span className="sr-only">기사 제목 검색</span>
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#817A72]" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="기사 제목이나 부제 검색"
+                  className="h-11 w-full rounded-xl border border-[#DED9D1] bg-[#FAF8F5] pl-10 pr-4 text-sm text-[#292B2F] outline-none transition placeholder:text-[#817A72] focus:border-[#7963B6] focus:ring-2 focus:ring-[#7963B6]/20"
+                  autoFocus
+                />
+              </label>
+              <div className="inline-flex rounded-xl bg-[#F4F1EC] p-1" aria-label="기사 상태 필터">
+                {[
+                  ["all", `전체 ${articles.length}`],
+                  ["draft", "작성 중"],
+                  ["published", "발행본"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSelectedTab(value)}
+                    className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                      selectedTab === value
+                        ? "bg-white text-[#292B2F] shadow-[0_2px_8px_rgba(40,35,25,0.08)]"
+                        : "text-[#625C55] hover:text-[#292B2F]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-3 max-h-56 overflow-y-auto rounded-xl border border-[#ECE8E2] bg-[#FAF8F5] p-2 custom-scrollbar">
+              {filteredArticles.map((art) => (
+                <button
+                  key={art.id}
+                  type="button"
+                  onClick={() => setIsSearchOpen(false)}
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                    selectedArticle.id === art.id
+                      ? "bg-white font-bold text-[#292B2F] shadow-[0_2px_8px_rgba(40,35,25,0.06)]"
+                      : "text-[#57514A] hover:bg-white"
+                  }`}
+                >
+                  <span className="truncate pr-3">{art.title || "제목 없는 기사"}</span>
+                  {selectedArticle.id === art.id && <Check className="h-4 w-4 shrink-0 text-emerald-700" aria-label="현재 기사" />}
+                </button>
+              ))}
+              {!filteredArticles.length && (
+                <p className="px-3 py-6 text-center text-sm text-[#706A63]">조건에 맞는 기사가 없습니다.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* 메인 2분할 레이아웃 그리드 (좌측/중앙 대형 영역 + 우측 패널 컬럼) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
 
-        {/* ══════════════════════════════════════════════════════════
-            [좌측 / 중앙 메인 컬럼] (lg:col-span-8 flex flex-col)
-            - 형태: 좌우 반전된 ㄱ자 (상단 와이드 + 좌측 하단 연장 기둥)
-            - 상단 메인 공간과 좌측 하단 기사 선택 영역이 빈틈없이 하나의 일체형 공간으로 연결됨
-            - 우측 하단 오목한 영역에 [미디어 & 변환 자산] 패널 독립 배치
-           ══════════════════════════════════════════════════════════ */}
+        {/* 관계 탐색과 부속 자산을 한 열에 두되, 기사 선택은 위의 독립 컨텍스트 바가 담당한다. */}
         <div className="lg:col-span-8 flex flex-col">
-
-          {/* 1. 상단 메인 작업 공간 (와이드 상단 바디) — 여기가 Data Map 이 들어갈 자리다(2026-10-07 확정, 화면 이식은 M5) */}
-          <div data-testid="data-map-slot" className="w-full min-h-[380px] lg:min-h-[420px] bg-white/80 backdrop-blur-xl rounded-t-[36px] rounded-tr-[36px] rounded-br-[32px] border-t border-x border-white/90 shadow-[6px_10px_24px_rgba(40,35,25,0.08),0_2px_8px_rgba(40,35,25,0.04)] relative overflow-visible">
+          <div data-testid="data-map-slot" className="w-full min-h-[380px] overflow-hidden rounded-[28px] bg-white shadow-[0_16px_40px_rgba(40,35,25,0.08)]">
             <DataMapView articleId={article.articleId} />
-            {/* 우측 하단 미디어 패널 상단부와 맞닿는 바닥 보더 (우측 바닥 그림자 라인) */}
-            <div className="absolute bottom-0 right-0 w-[58%] md:w-[58%] h-[1px] bg-white/90 shadow-[0_4px_12px_rgba(40,35,25,0.08)]" />
           </div>
 
-          {/* 2. 하단 서브 영역: [좌측 메인 연장 기둥 (기사 선택 포함)] + [우측 미디어 패널] */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-x-4 items-start">
-
-            {/* [좌측 연장 기둥]: 사용자가 지정한 우측 변 및 하단 변에 그림자 적용 */}
-            <div className="md:col-span-5 bg-white/80 backdrop-blur-xl border-x border-b border-white/90 rounded-b-[36px] p-3 pt-6 pb-3.5 shadow-[8px_16px_28px_rgba(40,35,25,0.1),2px_6px_12px_rgba(40,35,25,0.06)] flex flex-col justify-end min-h-[140px] relative -mt-[1px]">
-              {/* 상단 메인 박스와의 이음새 경계선을 완벽하게 지워 하나로 이어주는 브릿지 패치 */}
-              <div className="absolute -top-2 inset-x-0 h-4 bg-white/85 z-10 pointer-events-none" />
-
-              {/* 안쪽 꺾이는 코너의 부드러운 오목 곡선 (우상단 내각 라운딩) */}
-              <div className="absolute -top-4 -right-4 w-4 h-4 pointer-events-none z-20 hidden md:block">
-                <svg viewBox="0 0 16 16" fill="none" className="w-full h-full">
-                  <path d="M 0 0 C 0 8.8 7.2 16 16 16 H 0 V 0 Z" fill="#FAF8F5" />
-                  <path d="M 0 0 C 0 8.8 7.2 16 16 16" stroke="rgba(255,255,255,0.9)" strokeWidth="1.2" fill="none" />
-                </svg>
-              </div>
-
-              {/* 기사 선택 및 탐색 알약 바 (메인 공간 하단에 안착) */}
-              <div className="relative z-20 w-full">
-                <div className="flex items-center gap-2.5 bg-white/95 backdrop-blur-md rounded-full px-3.5 py-2.5 border border-white shadow-[0_4px_16px_rgba(40,35,25,0.06)]">
-                  {/* 원형 (+) 버튼 */}
-                  <button
-                    type="button"
-                    onClick={() => setIsSearchOpen(!isSearchOpen)}
-                    className="w-8 h-8 rounded-full bg-[#292B2F] text-[#FAF8F5] flex items-center justify-center shrink-0 hover:scale-105 active:scale-95 transition cursor-pointer shadow-xs"
-                    title="기사 선택 및 검색 열기"
-                  >
-                    <Plus className={`w-4 h-4 transition-transform duration-200 ${isSearchOpen ? "rotate-45" : ""}`} />
-                  </button>
-
-                  {/* 현재 선택된 기사 라벨 / 입력 공간 */}
-                  <div
-                    className="flex-1 min-w-0 cursor-pointer"
-                    onClick={() => setIsSearchOpen(!isSearchOpen)}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[10px] text-[#8E8982] font-extrabold uppercase tracking-wider block">
-                        기사 선택 및 탐색
-                      </span>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full shrink-0 ${
-                        selectedArticle.status === "작성 중" ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"
-                      }`}>
-                        {selectedArticle.status}
-                      </span>
-                    </div>
-                    <p className="text-xs font-bold text-[#292B2F] truncate">
-                      {selectedArticle.title}
-                    </p>
-                  </div>
-                </div>
-
-                {/* 기사 선택 팝오버 목록 */}
-                {isSearchOpen && (
-                  <div className="absolute bottom-full left-0 mb-2 w-full max-h-64 overflow-y-auto bg-white/95 backdrop-blur-xl rounded-2xl border border-white shadow-[0_16px_36px_rgba(40,35,25,0.12)] p-2.5 z-50 space-y-2 animate-float-in">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="기사 제목 검색..."
-                        className="w-full text-xs pl-7 pr-3 py-1.5 rounded-xl bg-[#FAF8F5] border border-[#E7E2D9] focus:outline-none focus:border-[#292B2F]"
-                        autoFocus
-                      />
-                      <Search className="w-3.5 h-3.5 text-[#8E8982] absolute left-2 top-1/2 -translate-y-1/2" />
-                    </div>
-                    <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
-                      {filteredArticles.map((art) => (
-                        <button
-                          key={art.id}
-                          type="button"
-                          onClick={() => setIsSearchOpen(false)}
-                          className={`w-full p-2 rounded-xl text-left transition flex items-center justify-between text-xs cursor-pointer ${
-                            selectedArticle.id === art.id
-                              ? "bg-[#FAF8F5] font-bold text-[#292B2F] border border-[#E7E2D9]"
-                              : "hover:bg-[#FAF8F5] text-[#57514A]"
-                          }`}
-                        >
-                          <span className="truncate pr-2">{art.title}</span>
-                          {selectedArticle.id === art.id && (
-                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* [하단 중앙 3열 패널]: 참고 이미지의 상단 캡슐 + 3열 그리드 슬롯 + 하단 선 (독립 배치) */}
-            <div className="md:col-span-7 mt-4 bg-white/85 backdrop-blur-md rounded-[28px] border border-white/90 p-3.5 shadow-[0_8px_24px_rgba(40,35,25,0.05)] flex flex-col justify-between gap-2.5">
+          <div className="mt-4">
+            <div className="rounded-[20px] bg-white p-4 shadow-[0_10px_28px_rgba(40,35,25,0.06)] flex flex-col justify-between gap-3">
               {/* 상단 캡슐 칩 */}
               <div className="flex items-center justify-between">
                 <div className="inline-flex items-center gap-1.5 bg-[#FAF8F5] px-2.5 py-1 rounded-full border border-white/90 shadow-2xs">
@@ -222,56 +238,10 @@ export default function ArchiveView({ article }) {
             </div>
 
           </div>
-
         </div>
 
-        {/* ══════════════════════════════════════════════════════════
-            [우측 패널 컬럼] (lg:col-span-4 flex flex-col justify-between gap-4)
-            - 1. 최상단 가로형 캡슐 바 (기사 필터 탭: 전체 / 작성 중 / 발행본)
-            - 2. 중단 3단 스택 레이어 카드 (원고 / 취재자료 / 인터뷰·녹취)
-                 각 카드의 좌측에 세로 알약 탭 부착
-            - 3. 하단 카드 덱 모듈 (발행 이력 및 타임라인 - 비스듬히 겹친 카드 덱)
-           ══════════════════════════════════════════════════════════ */}
+        {/* 선택한 기사의 자료 묶음과 발행 이력을 보여 주는 보조 열. */}
         <div className="lg:col-span-4 flex flex-col gap-4">
-
-          {/* 1. 참고 이미지 우측 최상단: 가로 캡슐 바 (필터 모드) */}
-          <div className="w-full bg-white/85 backdrop-blur-md rounded-full p-1.5 border border-white/90 shadow-[0_4px_16px_rgba(40,35,25,0.04)] flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setSelectedTab("all")}
-              className={`flex-1 py-1.5 text-center text-xs rounded-full font-bold transition cursor-pointer ${
-                selectedTab === "all"
-                  ? "bg-[#292B2F] text-[#FAF8F5] shadow-xs"
-                  : "text-[#57514A] hover:text-[#292B2F]"
-              }`}
-            >
-              전체 ({articles.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedTab("draft")}
-              className={`flex-1 py-1.5 text-center text-xs rounded-full font-bold transition cursor-pointer ${
-                selectedTab === "draft"
-                  ? "bg-[#292B2F] text-[#FAF8F5] shadow-xs"
-                  : "text-[#57514A] hover:text-[#292B2F]"
-              }`}
-            >
-              작성 중
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedTab("published")}
-              className={`flex-1 py-1.5 text-center text-xs rounded-full font-bold transition cursor-pointer ${
-                selectedTab === "published"
-                  ? "bg-[#292B2F] text-[#FAF8F5] shadow-xs"
-                  : "text-[#57514A] hover:text-[#292B2F]"
-              }`}
-            >
-              발행본
-            </button>
-          </div>
-
-          {/* 2. 참고 이미지 우측 중단: 3개 겹친 스택 카드 (Stacked Layer Cards) */}
           <div className="relative flex-1 flex flex-col justify-center min-h-[340px]">
             {/* 스택 카드 1 (맨 뒤): 인터뷰·녹취 전사본 */}
             <div

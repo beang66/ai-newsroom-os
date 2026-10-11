@@ -10,19 +10,19 @@ export default function MapViews({ view, onView, count }) {
           className={view === "map" ? "active" : ""}
           onClick={() => onView("map")}
         >
-          <Network size={15} /> 지식 관계망
+          <Network size={15} /> 관계망
         </button>
         <button
           className={view === "library" ? "active" : ""}
           onClick={() => onView("library")}
         >
-          <List size={15} /> 파일 목록
+          <List size={15} /> 문서 목록
         </button>
         <button
           className={view === "history" ? "active" : ""}
           onClick={() => onView("history")}
         >
-          <FileEdit size={15} /> 나의 기사 모아보기
+          <FileEdit size={15} /> 기사 기록
           {count > 0 && <small>{count}</small>}
         </button>
       </nav>

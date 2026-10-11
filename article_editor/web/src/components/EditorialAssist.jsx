@@ -59,8 +59,17 @@ export function useFactCheck(article) {
   const latest = useRef(article);
   latest.current = article;
   const state = useRef({ running: false, again: false, cacheKey: "", cache: new Map(), tried: new Set() });
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      clearTimeout(state.current.wait);
+    };
+  }, []);
 
   const run = useCallback(async (fresh = false) => {
+    if (!mounted.current) return;
     if (state.current.running) {
       state.current.again = true;
       return;
@@ -77,32 +86,39 @@ export function useFactCheck(article) {
     // 색인(청킹·임베딩)이 끝나기 전에는 팩트체크를 보내지 않는다 — 끝나면 자동으로 이어서 돈다
     try {
       const { sources: stored = [] } = await core.listSources();
+      if (!mounted.current) return;
       const ids = new Set(materials.map((s) => s.id));
       const active = stored.filter((s) => ids.has(s.id) && s.index?.state === "indexing");
       if (active.length) {
         setIndexing({ percent: Math.min(...active.map((s) => s.index.progress ?? 0)) }); // 가장 덜 끝난 자료 기준
         clearTimeout(state.current.wait);
-        state.current.wait = setTimeout(() => run(), 3000);
+        if (mounted.current) state.current.wait = setTimeout(() => run(), 3000);
         return;
       }
     } catch { /* 목록을 못 읽으면 기존처럼 진행 — 코어도 색인 중이면 409 로 막는다 */ }
+    if (!mounted.current) return;
     setIndexing(false);
     state.current.running = true;
     setBusy(true);
     setError("");
     try {
       const items = await factcheckArticle(content, materials, state.current.cache);
+      if (!mounted.current) return;
       // 다시 열었을 때 이미 받은 AI 재판정을 붙인다 — 붙으면 기억에서 화면만 다시 그린다(코어 판정 없음)
-      setResults((await restoreExternal(state.current, content)) ? await factcheckArticle(content, materials, state.current.cache) : items);
+      const restored = await restoreExternal(state.current, content);
+      if (!mounted.current) return;
+      const nextResults = restored ? await factcheckArticle(content, materials, state.current.cache) : items;
+      if (mounted.current) setResults(nextResults);
     } catch (e) {
+      if (!mounted.current) return;
       if (e?.code === "SOURCE_INDEXING") {
         setIndexing({ percent: 0 });
-        state.current.wait = setTimeout(() => run(), 3000);
+        if (mounted.current) state.current.wait = setTimeout(() => run(), 3000);
       } else setError(e?.message || String(e));
     } finally {
       state.current.running = false;
-      setBusy(false);
-      if (state.current.again) {
+      if (mounted.current) setBusy(false);
+      if (mounted.current && state.current.again) {
         state.current.again = false;
         run();
       }
@@ -366,30 +382,63 @@ export function FlowSummaryButton({ body }) {
 export function useAutosave(article, setArticle) {
   const [status, setStatus] = useState("");
   const idRef = useRef(article.articleId || null);
-  const first = useRef(true);
+  const mounted = useRef(true);
+  const pending = useRef(null);
+  const saving = useRef(false);
+  const sequence = useRef(0);
+  const previousFields = useRef(null);
+
   useEffect(() => {
-    if (first.current) {
-      first.current = false; // 처음 연(또는 불러온) 기사는 바꾸기 전까지 저장하지 않는다
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  const drain = useCallback(async () => {
+    if (saving.current) return;
+    saving.current = true;
+    try {
+      while (pending.current) {
+        const job = pending.current;
+        pending.current = null;
+        if (mounted.current) setStatus("자동 저장 중…");
+        try {
+          const id = await saveDraft(job.article, idRef.current || job.article.articleId);
+          idRef.current = id;
+          if (mounted.current && id !== job.article.articleId) {
+            setArticle((prev) => prev.articleId === id ? prev : ({ ...prev, articleId: id }));
+          }
+          if (mounted.current && job.sequence === sequence.current && !pending.current) {
+            setStatus("자동 저장됨");
+          }
+        } catch (e) {
+          if (mounted.current && job.sequence === sequence.current && !pending.current) {
+            setStatus("저장 실패: " + (e?.message || e));
+          }
+        }
+      }
+    } finally {
+      saving.current = false;
+    }
+  }, [setArticle]);
+
+  useEffect(() => {
+    const fields = [article.title, article.subtitle, article.content, article.photos, article.sources,
+      article.linkedSources, article.status, article.platformDrafts, article.cardNews, article.platformGeneration];
+    if (!previousFields.current) {
+      previousFields.current = fields;
       return;
     }
+    if (fields.every((value, index) => Object.is(value, previousFields.current[index]))) return;
+    previousFields.current = fields;
+    const revision = ++sequence.current;
     setStatus("저장 대기…");
-    // TODO(debt: DEBT-006): 실행 중인 저장 요청은 clearTimeout으로 중단되지 않아 다음 저장과 겹칠 수 있다.
-    // 첫 ID 응답 전에는 새 기사 중복 생성, 응답 순서가 뒤집히면 오래된 본문/상태 덮어쓰기 가능성.
-    // 동일 기사 저장 요청을 직렬화하고 낡은 응답의 상태 갱신을 막을 것(실사용 재현은 후속).
-    const timer = setTimeout(async () => {
-      setStatus("자동 저장 중…");
-      try {
-        const id = await saveDraft(article, idRef.current || article.articleId);
-        idRef.current = id;
-        if (id !== article.articleId) setArticle((prev) => ({ ...prev, articleId: id }));
-        setStatus("자동 저장됨");
-      } catch (e) {
-        setStatus("저장 실패: " + (e?.message || e));
-      }
+    const timer = setTimeout(() => {
+      pending.current = { article, sequence: revision };
+      void drain();
     }, 1500);
     return () => clearTimeout(timer);
     // 저장 대상 필드가 바뀔 때만(article 객체 전체가 아니라 — articleId 변경으로는 다시 저장하지 않는다)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [article.title, article.subtitle, article.content, article.photos, article.sources, article.linkedSources, article.status, article.platformDrafts, article.cardNews, article.platformGeneration]);
+  }, [article.title, article.subtitle, article.content, article.photos, article.sources, article.linkedSources, article.status, article.platformDrafts, article.cardNews, article.platformGeneration, drain]);
   return status;
 }

@@ -12,6 +12,9 @@ const articleId = articleUuid(articleHex);
 const otherArticle = articleUuid("e".repeat(32));
 const legacySource = "a".repeat(16);
 const newSource = articleUuid("b".repeat(32));
+const noteA = "10000000-0000-4000-8000-00000000000a";
+const noteB = "10000000-0000-4000-8000-00000000000b";
+const missing = "10000000-0000-5000-8000-00000000000c";
 
 // core/read_models.knowledge_map() 과 같은 모양
 const payload = {
@@ -36,15 +39,26 @@ const payload = {
     { source: articleId, target: "00000000-0000-4000-8000-000000000009", relation: "has_snapshot" },
     { source: articleId, target: "deleted-source", relation: "uses_source" },
   ],
+  files: [
+    { id: noteA, path: "desk/brief.md", title: "오늘의 브리프", updated_at: "2026-10-09T01:00:00+00:00", outgoing_count: 2, backlink_count: 0 },
+    { id: noteB, path: "desk/context.md", title: "맥락 노트", updated_at: "2026-10-09T02:00:00+00:00", outgoing_count: 0, backlink_count: 1 },
+  ],
+  unresolved: [{ id: missing, label: "missing", target_key: "wiki:missing.md", mentions: 1 }],
+  file_links: [
+    { id: `${noteA}:0`, source: noteA, target: noteB, relation: "links_to", resolved: true, raw_text: "[[context]]", line: 3 },
+    { id: `${noteA}:1`, source: noteA, target: missing, relation: "links_to", resolved: false, raw_text: "[[missing]]", line: 4 },
+  ],
 };
 
 test("knowledge-map projection keeps core ids and only real article→source links", () => {
   const map = projectKnowledgeMap(payload);
   assert.deepEqual(map.nodes.map((n) => [n.id, n.kind]), [
     [articleId, "article"], [otherArticle, "article"], [legacySource, "source"], [newSource, "source"],
+    [noteA, "note"], [noteB, "note"], [missing, "note"],
   ]);
   assert.deepEqual(map.edges.map((e) => [e.source, e.target, e.relation]), [
     [articleId, legacySource, "article-source"], [articleId, newSource, "article-source"],
+    [noteA, noteB, "links-to"],
   ]);
   assert.deepEqual(map.projects, []);
   assert.equal(map.meta.workspaceId, workspaceId);
@@ -54,6 +68,11 @@ test("knowledge-map projection keeps core ids and only real article→source lin
   assert.equal(untitled.label, "제목 없는 기사");
   assert.equal(pdf.summary, "PDF · 12,345자");
   assert.equal(pdf.articleId, articleId);
+  const note = map.nodes.find((n) => n.id === noteA);
+  assert.deepEqual([note.path, note.outgoingCount, note.backlinkCount], ["desk/brief.md", 2, 0]);
+  assert.equal(map.nodes.find((n) => n.id === missing).placeholder, true);
+  assert.deepEqual(note.outgoing.map((link) => link.target), [noteB, missing]);
+  assert.deepEqual(map.nodes.find((n) => n.id === noteB).backlinks.map((link) => link.source), [noteA]);
 });
 
 test("nodes stay inside the map circle with the first node centred", () => {
@@ -81,10 +100,16 @@ test("adapter needs an injected Core method, passes the signal and honours abort
   await assert.rejects(createDataMapApi().saveSourceRevision({}), /수정본 저장/);
   assert.equal(createDataMapApi().canSaveSourceRevision, false);
   let received;
-  const api = createDataMapApi({ coreApi: { knowledgeMap: async (signal) => { received = signal; return payload; } } });
+  let imported;
+  const api = createDataMapApi({ coreApi: {
+    knowledgeMap: async (signal) => { received = signal; return payload; },
+    importKnowledgeFiles: async (body, signal) => { imported = [body, signal]; return { imported: body.files.length }; },
+  } });
   const controller = new AbortController();
-  assert.equal((await api.getKnowledgeMap({ signal: controller.signal })).nodes.length, 4);
+  assert.equal((await api.getKnowledgeMap({ signal: controller.signal })).nodes.length, 7);
   assert.equal(received, controller.signal);
+  assert.equal((await api.importFiles([{ path: "a.md", content: "# A" }], { signal: controller.signal })).imported, 1);
+  assert.deepEqual(imported, [{ files: [{ path: "a.md", content: "# A" }] }, controller.signal]);
   controller.abort();
   await assert.rejects(api.getKnowledgeMap({ signal: controller.signal }), { name: "AbortError" });
 });

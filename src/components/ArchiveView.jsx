@@ -10,6 +10,7 @@ import {
   Plus,
   Layers,
   ChevronRight,
+  Network,
   Clock,
   ExternalLink,
   Film,
@@ -42,37 +43,15 @@ export default function ArchiveView() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
 
         {/* ══════════════════════════════════════════════════════════
-            [좌측 / 중앙 메인 컬럼] (lg:col-span-8 flex flex-col)
-            - 형태: 좌우 반전된 ㄱ자 (상단 와이드 + 좌측 하단 연장 기둥)
-            - 상단 메인 공간과 좌측 하단 기사 선택 영역이 빈틈없이 하나의 일체형 공간으로 연결됨
-            - 우측 하단 오목한 영역에 [미디어 & 변환 자산] 패널 독립 배치
+            [좌측 메인 컬럼] (lg:col-span-8) — UX 흐름 순서의 독립 카드 3개
+            1. 기사 선택 및 탐색 → 2. 데이터맵 → 3. 미디어 & 변환 자산
            ══════════════════════════════════════════════════════════ */}
-        <div className="lg:col-span-8 flex flex-col">
+        <div className="lg:col-span-8 flex flex-col gap-4">
 
-          {/* 1. 상단 메인 작업 공간 (와이드 상단 바디) */}
-          <div className="w-full min-h-[380px] lg:min-h-[420px] bg-white/80 backdrop-blur-xl rounded-t-[36px] rounded-tr-[36px] rounded-br-[32px] border-t border-x border-white/90 shadow-[6px_10px_24px_rgba(40,35,25,0.08),0_2px_8px_rgba(40,35,25,0.04)] relative overflow-visible">
-            {/* 우측 하단 미디어 패널 상단부와 맞닿는 바닥 보더 (우측 바닥 그림자 라인) */}
-            <div className="absolute bottom-0 right-0 w-[58%] md:w-[58%] h-[1px] bg-white/90 shadow-[0_4px_12px_rgba(40,35,25,0.08)]" />
-          </div>
-
-          {/* 2. 하단 서브 영역: [좌측 메인 연장 기둥 (기사 선택 포함)] + [우측 미디어 패널] */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-x-4 items-start">
-
-            {/* [좌측 연장 기둥]: 사용자가 지정한 우측 변 및 하단 변에 그림자 적용 */}
-            <div className="md:col-span-5 bg-white/80 backdrop-blur-xl border-x border-b border-white/90 rounded-b-[36px] p-3 pt-6 pb-3.5 shadow-[8px_16px_28px_rgba(40,35,25,0.1),2px_6px_12px_rgba(40,35,25,0.06)] flex flex-col justify-end min-h-[140px] relative -mt-[1px]">
-              {/* 상단 메인 박스와의 이음새 경계선을 완벽하게 지워 하나로 이어주는 브릿지 패치 */}
-              <div className="absolute -top-2 inset-x-0 h-4 bg-white/85 z-10 pointer-events-none" />
-
-              {/* 안쪽 꺾이는 코너의 부드러운 오목 곡선 (우상단 내각 라운딩) */}
-              <div className="absolute -top-4 -right-4 w-4 h-4 pointer-events-none z-20 hidden md:block">
-                <svg viewBox="0 0 16 16" fill="none" className="w-full h-full">
-                  <path d="M 0 0 C 0 8.8 7.2 16 16 16 H 0 V 0 Z" fill="#FAF8F5" />
-                  <path d="M 0 0 C 0 8.8 7.2 16 16 16" stroke="rgba(255,255,255,0.9)" strokeWidth="1.2" fill="none" />
-                </svg>
-              </div>
-
-              {/* 기사 선택 및 탐색 알약 바 (메인 공간 하단에 안착) */}
-              <div className="relative z-20 w-full">
+          {/* 1. 기사 선택 및 탐색 (독립 카드, 최상단) */}
+          <div className="relative z-30 bg-white/80 backdrop-blur-xl rounded-[28px] border border-white/90 p-3 shadow-[0_8px_24px_rgba(40,35,25,0.07)]">
+            <div className="relative w-full">
+              <div>
                 <div className="flex items-center gap-2.5 bg-white/95 backdrop-blur-md rounded-full px-3.5 py-2.5 border border-white shadow-[0_4px_16px_rgba(40,35,25,0.06)]">
                   {/* 원형 (+) 버튼 */}
                   <button
@@ -107,7 +86,7 @@ export default function ArchiveView() {
 
                 {/* 기사 선택 팝오버 목록 */}
                 {isSearchOpen && (
-                  <div className="absolute bottom-full left-0 mb-2 w-full max-h-64 overflow-y-auto bg-white/95 backdrop-blur-xl rounded-2xl border border-white shadow-[0_16px_36px_rgba(40,35,25,0.12)] p-2.5 z-50 space-y-2 animate-float-in">
+                  <div className="absolute top-full left-0 mt-2 w-full max-h-64 overflow-y-auto bg-white/95 backdrop-blur-xl rounded-2xl border border-white shadow-[0_16px_36px_rgba(40,35,25,0.12)] p-2.5 z-50 space-y-2 animate-float-in">
                     <div className="relative">
                       <input
                         type="text"
@@ -145,9 +124,40 @@ export default function ArchiveView() {
                 )}
               </div>
             </div>
+          </div>
 
-            {/* [하단 중앙 3열 패널]: 참고 이미지의 상단 캡슐 + 3열 그리드 슬롯 + 하단 선 (독립 배치) */}
-            <div className="md:col-span-7 mt-4 bg-white/85 backdrop-blur-md rounded-[28px] border border-white/90 p-3.5 shadow-[0_8px_24px_rgba(40,35,25,0.05)] flex flex-col justify-between gap-2.5">
+          {/* 2. 데이터맵 (독립 카드): 선택한 기사의 근거 연결 요약 */}
+          <div className="bg-white/80 backdrop-blur-xl rounded-[32px] border border-white/90 p-5 min-h-[300px] lg:min-h-[340px] shadow-[0_10px_28px_rgba(40,35,25,0.08)] flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="inline-flex items-center gap-1.5 bg-[#FAF8F5] px-3 py-1.5 rounded-full border border-white/90 shadow-2xs">
+                <Network className="w-3.5 h-3.5 text-[#008285]" />
+                <span className="text-xs font-extrabold text-[#292B2F]">데이터맵</span>
+              </div>
+              <span className="text-[10px] text-[#8E8982] font-semibold">읽기 전용</span>
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-extrabold text-[#292B2F] truncate">{selectedArticle.title}</h3>
+              <p className="text-xs text-[#57514A] mt-1 line-clamp-2">{selectedArticle.subtitle}</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mt-auto">
+              <div className="rounded-2xl bg-[#FAF8F5] border border-white/90 p-3 text-center">
+                <span className="text-[10px] font-bold text-[#8E8982] block">연결된 취재자료</span>
+                <p className="text-lg font-extrabold text-[#292B2F]">{selectedArticle.linkedSources.length}건</p>
+              </div>
+              <div className="rounded-2xl bg-[#FAF8F5] border border-white/90 p-3 text-center">
+                <span className="text-[10px] font-bold text-[#8E8982] block">사진</span>
+                <p className="text-lg font-extrabold text-[#292B2F]">{selectedArticle.photos.length}건</p>
+              </div>
+              <div className="rounded-2xl bg-[#FAF8F5] border border-white/90 p-3 text-center">
+                <span className="text-[10px] font-bold text-[#8E8982] block">상태</span>
+                <p className="text-lg font-extrabold text-[#292B2F]">{selectedArticle.status}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. 미디어 & 변환 자산 (독립 카드, 전체 너비) */}
+          <div>
+            <div className="bg-white/85 backdrop-blur-md rounded-[28px] border border-white/90 p-3.5 shadow-[0_8px_24px_rgba(40,35,25,0.05)] flex flex-col justify-between gap-2.5">
               {/* 상단 캡슐 칩 */}
               <div className="flex items-center justify-between">
                 <div className="inline-flex items-center gap-1.5 bg-[#FAF8F5] px-2.5 py-1 rounded-full border border-white/90 shadow-2xs">
@@ -217,7 +227,6 @@ export default function ArchiveView() {
                 </div>
               </div>
             </div>
-
           </div>
 
         </div>

@@ -19,11 +19,15 @@ export default function PhotoEditor({
 
   // 모자이크 마스크 상태 및 단계별 되돌리기(Undo) 히스토리 스택
   const [masks, setMasks] = useState([]);
+  const masksRef = useRef([]);
   const [history, setHistory] = useState([[]]); // [0]: 원본 상태 (빈 배열)
   const [historyIndex, setHistoryIndex] = useState(0);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentStroke, setCurrentStroke] = useState(null);
+  const currentStrokeRef = useRef(null);
   const strokeStartMasksRef = useRef(null);
+  const pendingMoveRef = useRef(null);
+  const moveFrameRef = useRef(null);
 
   // 캔버스 및 이미지 참조
   const containerRef = useRef(null);
@@ -72,6 +76,10 @@ export default function PhotoEditor({
     window.addEventListener("resize", resize);
     resize();
     return () => { observer.disconnect(); window.removeEventListener("resize", resize); };
+  }, []);
+
+  useEffect(() => () => {
+    if (moveFrameRef.current != null) cancelAnimationFrame(moveFrameRef.current);
   }, []);
 
   // 비율 계산
@@ -177,6 +185,7 @@ export default function PhotoEditor({
         opacity: 1 - opacity / 100,
         hardness
       };
+      currentStrokeRef.current = newStroke;
       setCurrentStroke(newStroke);
     } else if (activeTool === "eraser") {
       // 지우개: 현재 마스크들에 erasure 추가
@@ -188,61 +197,75 @@ export default function PhotoEditor({
         ...m,
         erasures: [...(m.erasures || []), erasure]
       }));
+      masksRef.current = updated;
       setMasks(updated);
+    }
+  };
+
+  const flushPendingMove = () => {
+    const next = pendingMoveRef.current;
+    pendingMoveRef.current = null;
+    if (!next) return;
+    setCursorPos({ x: next.canvasX, y: next.canvasY, visible: true });
+
+    if (!isDrawing) return;
+    if (activeTool === "mosaic") {
+      const stroke = currentStrokeRef.current;
+      if (stroke) {
+        const updated = { ...stroke, points: [...stroke.points, { x: next.imgX, y: next.imgY }] };
+        currentStrokeRef.current = updated;
+        setCurrentStroke(updated);
+      }
+    } else if (activeTool === "eraser") {
+        const crop = getCropRect();
+        const scale = crop.w / canvasRef.current.getBoundingClientRect().width;
+        const strokeDiameter = brushSize * scale;
+        const updated = masksRef.current.map((m) => {
+          const erasures = m.erasures || [];
+          if (erasures.length === 0) return m;
+          const last = erasures[erasures.length - 1];
+          return {
+            ...m,
+            erasures: [...erasures.slice(0, -1), {
+              ...last,
+              points: [...last.points, { x: next.imgX, y: next.imgY }],
+              diameter: strokeDiameter
+            }]
+          };
+        });
+        masksRef.current = updated;
+        setMasks(updated);
     }
   };
 
   const handleMouseMove = (e) => {
     const coords = getCanvasCoords(e);
-    if (coords) {
-      setCursorPos({ x: coords.canvasX, y: coords.canvasY, visible: true });
-    }
-
-    if (!isDrawing || !coords) return;
-
-    if (activeTool === "mosaic") {
-      setCurrentStroke((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          points: [...prev.points, { x: coords.imgX, y: coords.imgY }]
-        };
-      });
-    } else if (activeTool === "eraser") {
-      const crop = getCropRect();
-      const scale = crop.w / canvasRef.current.getBoundingClientRect().width;
-      const strokeDiameter = brushSize * scale;
-
-      setMasks((prevMasks) =>
-        prevMasks.map((m) => {
-          const erasures = m.erasures || [];
-          if (erasures.length === 0) return m;
-          const last = erasures[erasures.length - 1];
-          const updatedLast = {
-            ...last,
-            points: [...last.points, { x: coords.imgX, y: coords.imgY }],
-            diameter: strokeDiameter
-          };
-          return {
-            ...m,
-            erasures: [...erasures.slice(0, -1), updatedLast]
-          };
-        })
-      );
-    }
+    if (!coords) return;
+    pendingMoveRef.current = coords;
+    if (moveFrameRef.current != null) return;
+    moveFrameRef.current = requestAnimationFrame(() => {
+      moveFrameRef.current = null;
+      flushPendingMove();
+    });
   };
 
   const handleMouseUp = () => {
     if (!isDrawing) return;
+    if (moveFrameRef.current != null) {
+      cancelAnimationFrame(moveFrameRef.current);
+      moveFrameRef.current = null;
+    }
+    flushPendingMove();
     setIsDrawing(false);
 
-    let nextMasks = masks;
-    if (activeTool === "mosaic" && currentStroke && currentStroke.points.length > 0) {
-      nextMasks = [...masks, currentStroke];
+    let nextMasks = masksRef.current;
+    const stroke = currentStrokeRef.current;
+    if (activeTool === "mosaic" && stroke && stroke.points.length > 0) {
+      nextMasks = [...masksRef.current, stroke];
+      masksRef.current = nextMasks;
       setMasks(nextMasks);
+      currentStrokeRef.current = null;
       setCurrentStroke(null);
-    } else if (activeTool === "eraser") {
-      nextMasks = masks;
     }
 
     // 마스크가 실제로 변경된 경우 히스토리 스택에 기록
@@ -262,6 +285,7 @@ export default function PhotoEditor({
       const nextIndex = historyIndex - 1;
       setHistoryIndex(nextIndex);
       const restoredMasks = JSON.parse(JSON.stringify(history[nextIndex]));
+      masksRef.current = restoredMasks;
       setMasks(restoredMasks);
     }
   };

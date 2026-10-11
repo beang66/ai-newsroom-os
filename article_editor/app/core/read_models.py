@@ -10,7 +10,7 @@ ponytail: 전부 한 번에 읽는다(기사·자료 수백 건 규모까지). �
 import datetime
 import json
 
-from . import ids, sources, storage, vault
+from . import ids, knowledge_files, sources, storage, vault
 
 
 def _uuid(value):
@@ -47,6 +47,7 @@ def knowledge_map():
         source_rows = db.execute(sources._SELECT + ' ORDER BY created_at DESC, id').fetchall()
         snapshot_rows = db.execute('SELECT id, article_id, revision_id, revision_no, content_hash, created_at '
                                    'FROM article_snapshots ORDER BY created_at DESC, id').fetchall()
+        files, unresolved, file_links = knowledge_files.map_items(db)
     known = {a['id'] for a in articles}
     source_items = [sources._item(row, used) for row in source_rows]
     snapshots = [{'id': row[0], 'article_id': _uuid(row[1]), 'revision_id': row[2], 'revision_no': row[3],
@@ -57,9 +58,12 @@ def knowledge_map():
     edges += [{'source': s['article_id'], 'target': s['id'], 'relation': 'has_snapshot'} for s in snapshots if s['article_id'] in known]
     present = {_uuid(item['id']) for item in source_items}
     edges = [e for e in edges if e['relation'] != 'uses_source' or e['target'] in present]  # 지운 자료를 가리키는 선은 뺀다
+    file_edges = sorted({(link['source'], link['target']) for link in file_links if link['resolved']})
+    edges += [{'source': source, 'target': target, 'relation': 'links_to'} for source, target in file_edges]
     return {'workspace_id': vault.WORKSPACE_ID, 'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'articles': articles,
             'sources': [{'id': _uuid(item['id']), 'name': item['name'], 'format': item['format'], 'size': item['size'],
                          'chars': item['chars'], 'created_at': item['createdAt'],
                          'used_by': [_uuid(u['articleId']) for u in item['usedBy']]} for item in source_items],
-            'snapshots': snapshots, 'entities': [], 'edges': edges}
+            'snapshots': snapshots, 'entities': [], 'edges': edges,
+            'files': files, 'unresolved': unresolved, 'file_links': file_links}

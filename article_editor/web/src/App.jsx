@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { lazy, Suspense, useState, useEffect, useRef } from "react";
 import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import ArticleWriter from "./components/ArticleWriter";
-import SourceSearch from "./components/SourceSearch";
-import InterviewStudio from "./components/interview/InterviewStudio";
-import FormatConverter from "./components/FormatConverter";
-import ArchiveView from "./components/ArchiveView";
-import LoginDialog from "./components/LoginDialog";
 import { setLoginHandler } from "./api/auth-gate";
-import ModelsDialog from "./components/ModelsDialog";
+
+const SourceSearch = lazy(() => import("./components/SourceSearch"));
+const InterviewStudio = lazy(() => import("./components/interview/InterviewStudio"));
+const FormatConverter = lazy(() => import("./components/FormatConverter"));
+const ArchiveView = lazy(() => import("./components/ArchiveView"));
+const LoginDialog = lazy(() => import("./components/LoginDialog"));
+const ModelsDialog = lazy(() => import("./components/ModelsDialog"));
 
 import { createEmptyArticle } from "./data/article";
 import { coreSnapshot } from "./api/core";
@@ -27,19 +28,25 @@ const dismissHint = () => { try { localStorage.setItem(HINT_KEY, "1"); } catch {
 /** 앱을 열면 가장 최근에 저장된 원고를 불러와 이어서 작업한다(없으면 새 원고) */
 export default function App() {
   const [initial, setInitial] = useState(null);
+  const [core, setCore] = useState({ ok: false });
   useEffect(() => {
+    let alive = true;
     loadLatestArticle(createEmptyArticle())
-      .then((a) => setInitial(a || createEmptyArticle()))
+      .then((a) => alive && setInitial(a || createEmptyArticle()))
       // TODO(debt: DEBT-007): 조회 실패도 저장 원고 없음으로 취급해 빈 원고를 보여 준다.
       // 저장소/키 오류와 실제 빈 저장소를 구분하고 오류·재시도 UI를 제공할 것.
-      .catch(() => setInitial(createEmptyArticle()));
+      .catch(() => alive && setInitial(createEmptyArticle()));
+    coreSnapshot()
+      .then((snapshot) => alive && setCore(snapshot))
+      .catch(() => alive && setCore({ ok: false }));
+    return () => { alive = false; };
   }, []);
   // 원고를 불러오는 동안에도 앱 틀(헤더·사이드바)은 바로 그린다. 불러오면 작업 영역을 한 번 새로 연다(key) —
   // 불러온 원고가 '변경'으로 잡히지 않아 자동 저장이 돌지 않는다.
-  return <Workspace key={initial ? "ready" : "loading"} initialArticle={initial} />;
+  return <Workspace key={initial ? "ready" : "loading"} initialArticle={initial} core={core} setCore={setCore} />;
 }
 
-function Workspace({ initialArticle }) {
+function Workspace({ initialArticle, core, setCore }) {
   const loading = !initialArticle;
   const [activeTab, setActiveTabState] = useState(readTab);
   const setActiveTab = (tab) => { setActiveTabState(tab); writeTab(tab); };
@@ -47,9 +54,8 @@ function Workspace({ initialArticle }) {
   const saveStatus = useAutosave(article, setArticle);
 
   // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
-  const [core, setCore] = useState({ ok: false });
   const [showLogin, setShowLogin] = useState(false);
-  const [showLoginHint, setShowLoginHint] = useState(false);
+  const [loginHintHidden, setLoginHintHidden] = useState(hintDismissed);
   const [showModels, setShowModels] = useState(false);
   const loginWait = useRef([]); // 로그인 창 결과를 기다리는 요청들(AUTH_REQUIRED 로 멈춘 것)
   const loggedIn = useRef(false);
@@ -70,23 +76,9 @@ function Workspace({ initialArticle }) {
     loggedIn.current = false;
     loginWait.current.splice(0).forEach((resolve) => resolve(ok));
   };
-  useEffect(() => {
-    if (loading) return; // 원고를 불러온 뒤 한 번만(작업 영역을 새로 열 때 다시 묻지 않게)
-    let alive = true;
-    coreSnapshot().then((snapshot) => {
-      if (alive) {
-        setCore(snapshot);
-        const session = snapshot.session;
-        // 시작할 때 로그인 창으로 가로막지 않는다 — 작업을 막지 않는 안내 띠만(포커스를 빼앗지 않음)
-        if (session && !session.signedIn && !session.autoLogin?.available && !session.autoLogin?.enabled && !hintDismissed()) {
-          setShowLoginHint(true);
-        }
-      }
-    });
-    return () => {
-      alive = false;
-    };
-  }, [loading]);
+  const session = core.session;
+  const showLoginHint = !loading && !loginHintHidden && session && !session.signedIn
+    && !session.autoLogin?.available && !session.autoLogin?.enabled;
 
   // Sidebar collapse state (main 디자인: 기본은 세로로 긴 슬림 사이드바 접힘)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
@@ -134,7 +126,7 @@ function Workspace({ initialArticle }) {
           <span className="flex-1 min-w-[200px]">로그인하면 AI 추천 같은 서버 기능을 쓸 수 있어요. 글쓰기·저장·팩트체크는 로그인 없이도 됩니다.</span>
           <button type="button" onClick={() => setShowLogin(true)}
             className="px-3 py-1 font-bold text-white bg-[#292929] rounded-full cursor-pointer hover:bg-black">로그인</button>
-          <button type="button" onClick={() => { dismissHint(); setShowLoginHint(false); }}
+          <button type="button" onClick={() => { dismissHint(); setLoginHintHidden(true); }}
             className="px-2 py-1 font-bold text-[#666666] hover:text-[#292929] cursor-pointer">다시 보지 않기</button>
         </div>
       )}
@@ -152,6 +144,7 @@ function Workspace({ initialArticle }) {
 
         {/* Main Content Workspace */}
         <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0">
+          <Suspense fallback={<div className="py-24 text-center text-sm text-slate-500">화면을 불러오는 중…</div>}>
           <main className={`flex-1 min-w-0 transition-all ${
             activeTab === "writer" || activeTab === "publish"
               ? ""
@@ -186,11 +179,13 @@ function Workspace({ initialArticle }) {
               <ArchiveView article={article} />
             )}
           </main>
+          </Suspense>
         </div>
       </div>
 
-      {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} />}
-      {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
+      <Suspense fallback={null}>
+        {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} />}
+        {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
 
       {/* Quick Source Search Modal during Writing */}
       {showSearchModal && (
@@ -200,6 +195,7 @@ function Workspace({ initialArticle }) {
           onConnectToArticle={handleConnectSource}
         />
       )}
+      </Suspense>
     </div>
   );
 }

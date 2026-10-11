@@ -214,6 +214,7 @@ export default memo(function KnowledgeGraph({
             const labelLimit = screenScale < 0.45 ? 11 : 23;
             const visibleLabel =
               n.kind === "article" ||
+              n.placeholder ||
               active ||
               hovered === n.id ||
               (labels && !n.placeholder && camera.k > 1.35);
@@ -228,8 +229,8 @@ export default memo(function KnowledgeGraph({
                 data-node={n.id}
                 pointerEvents="bounding-box"
                 role="button"
-                tabIndex={n.placeholder ? -1 : 0}
-                aria-label={`${TYPES[n.kind]}: ${n.label}`}
+                tabIndex={0}
+                aria-label={`${n.placeholder ? "연결할 파일 없음" : TYPES[n.kind]}: ${n.label}`}
                 aria-pressed={active}
                 className={`graph-node ${isHovered ? "is-hovered" : ""} ${active ? "is-selected" : ""}`}
                 style={{ opacity }}
@@ -264,16 +265,19 @@ export default memo(function KnowledgeGraph({
                 <circle
                   cx={n.x}
                   cy={n.y}
-                  r={n.kind === "article" ? 7 : n.placeholder ? 1.65 : 3.2}
+                  r={n.kind === "article" ? 7 : n.placeholder ? 3.8 : 3.2}
                   fill={
-                    isHovered && !active
+                    n.placeholder && !active
+                      ? "#fff"
+                      : isHovered && !active
                       ? "#4f95f5"
                       : active || (selected && connected)
                         ? "#73767d"
                       : COLORS[n.kind]
                   }
-                  stroke={n.kind === "article" ? "#fff" : "none"}
-                  strokeWidth="1.6"
+                  stroke={n.kind === "article" ? "#fff" : n.placeholder ? COLORS.note : "none"}
+                  strokeWidth={n.placeholder ? "1.2" : "1.6"}
+                  strokeDasharray={n.placeholder ? "2 1.5" : undefined}
                 />
                 {visibleLabel && (
                   <text
@@ -309,7 +313,7 @@ export default memo(function KnowledgeGraph({
           <span className={`type-dot ${hoverNode.kind}`} />
           <span>{hoverNode.label}</span>
           <small>
-            {hoverNode.placeholder ? "형태 시연 노드" : TYPES[hoverNode.kind]}
+            {hoverNode.placeholder ? "연결할 파일 없음" : TYPES[hoverNode.kind]}
           </small>
         </div>
       )}

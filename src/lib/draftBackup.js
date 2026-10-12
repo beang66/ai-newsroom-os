@@ -1,5 +1,5 @@
 // 작업 중인 원고의 실시간 백업 — 앱이 강제 종료되거나 코어 저장이 실패해도 다음에 열 때 복구한다.
-// 이 PC 의 브라우저 저장소(IndexedDB)에 한 칸만 둔다. 코어 저장(자동·수동)이 최신 내용까지 끝나면 지운다.
+// 이 PC 의 브라우저 저장소(IndexedDB)에 계정마다 한 칸씩 둔다. 코어 저장(자동·수동)이 최신 내용까지 끝나면 지운다.
 // 저장소를 못 쓰는 환경(사생활 보호 창 등)에서는 조용히 아무것도 하지 않는다.
 const DB_NAME = "ai-newsroom-backup";
 const STORE = "drafts";
@@ -36,16 +36,20 @@ async function withStore(mode, work) {
 /** 화면 전용 값(복구 표시 등)은 빼고 원고만 남긴다 */
 const draftOnly = ({ restoredFromBackup: _r, openedFrom: _o, ...article }) => article;
 
-// 계정마다 자기 원고만 복구한다: 백업에 만든 계정의 id 를 적어 두고, 다른 계정으로 열면 보이지 않게 한다.
+// 계정마다 칸이 따로다: 키에 계정 id 를 넣어, 다른 계정의 백업을 읽지도 덮어쓰지도 지우지도 않는다.
+// 계정을 모르는 동안(owner 없음)에는 아무것도 하지 않는다. 계정 도입 전의 한 칸짜리 백업("current")은 주인을 알 수 없어 지운다.
 let owner = "";
 export const setBackupOwner = (userId) => { owner = userId || ""; };
-export const writeBackup = (article) => withStore("readwrite", (store) => store.put({ article: draftOnly(article), at: Date.now(), owner }, KEY));
-/** → { article, at } | undefined (다른 계정의 백업이면 undefined) */
+const key = () => `current:${owner}`;
+
+export const writeBackup = (article) => (owner ? withStore("readwrite", (store) => store.put({ article: draftOnly(article), at: Date.now() }, key())) : undefined);
+/** → { article, at } | undefined */
 export const readBackup = async () => {
-  const entry = await withStore("readonly", (store) => store.get(KEY));
-  return entry && owner && entry.owner === owner ? entry : undefined;
+  if (!owner) return undefined;
+  await withStore("readwrite", (store) => store.delete(KEY)); // 옛 한 칸짜리 백업
+  return withStore("readonly", (store) => store.get(key()));
 };
-export const clearBackup = () => withStore("readwrite", (store) => store.delete(KEY));
+export const clearBackup = () => (owner ? withStore("readwrite", (store) => store.delete(key())) : undefined);
 
 // 사진은 data URL 대신 id·설명만 비교한다(같은 사진이 참조/바이트로 오갈 수 있다)
 const comparable = (a) => JSON.stringify([

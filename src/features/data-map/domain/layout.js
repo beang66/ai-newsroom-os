@@ -1,4 +1,4 @@
-// 관계망 좌표계(KnowledgeGraph viewBox 1100×910)의 중심과 노드가 놓일 원.
+// 관계망 좌표계(1100×910)의 중심과 노드가 놓일 원.
 export const MAP_CENTER = { x: 550, y: 455 };
 export const MAP_RADIUS = 390;
 

@@ -615,7 +615,7 @@ try {
   const sampleRoot = new URL('../sample-data/datamap/', ROOT);
   const samples = fs.readdirSync(sampleRoot).filter((name) => name.endsWith('.md'));
   assert.equal(samples.length, 5);
-  await dataMap.locator('input[type="file"]').setInputFiles(samples.map((name) => ({
+  await dataMap.locator('input[type="file"]:not([webkitdirectory])').first().setInputFiles(samples.map((name) => ({
     name, mimeType: 'text/markdown', buffer: fs.readFileSync(new URL(name, sampleRoot)),
   })));
   await dataMap.getByText('5개 추가 · 0개 갱신').first().waitFor();

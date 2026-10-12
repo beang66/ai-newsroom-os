@@ -58,7 +58,13 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   const loading = !initialArticle;
   const [activeTab, setActiveTabState] = useState(readTab);
   const [interviewVisited, setInterviewVisited] = useState(activeTab === "interview");
-  const setActiveTab = (tab) => { if (tab === "interview") setInterviewVisited(true); if (tab === "map") setMapArticleId(null); setActiveTabState(tab); writeTab(tab); };
+  // "evidence" 는 기사 작성 화면을 팩트체크·근거자료 서랍이 열린 채로 연다(데스크의 근거 확인·검증 작업)
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const setActiveTab = (target) => {
+    const tab = target === "evidence" ? "writer" : target;
+    setEvidenceOpen(target === "evidence");
+    if (tab === "interview") setInterviewVisited(true); if (tab === "map") setMapArticleId(null); setActiveTabState(tab); writeTab(tab);
+  };
   const [article, setArticle] = useState(() => initialArticle || createEmptyArticle());
   const [mapArticleId, setMapArticleId] = useState(null);
   // 저장: 자동 임시 저장 + 수동 저장(저장 버튼·Ctrl+S) + 실시간 백업. 보관소 '원고'는 마지막 수동 저장본
@@ -285,6 +291,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
             )}
             {!loading && (activeTab === "writer" || activeTab === "publish") && (
               <ArticleWriter
+                openEvidence={evidenceOpen}
                 article={article}
                 setArticle={setArticle}
                 onOpenSearch={() => setShowSearchModal(true)}
@@ -299,7 +306,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
               />
             )}
 
-            {!loading && activeTab === "desk" && <DeskView article={article} articles={articles} onNavigate={setActiveTab} onOpen={changeArticle} busy={switching} />}
+            {!loading && activeTab === "desk" && <DeskView articles={articles} onNavigate={setActiveTab} busy={switching} />}
             {!loading && activeTab === "map" && <DataMapView articleId={mapArticleId || article.articleId} />}
 
             {!loading && activeTab === "search" && (

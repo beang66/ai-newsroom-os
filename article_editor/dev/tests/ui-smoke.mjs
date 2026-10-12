@@ -341,7 +341,7 @@ try {
     await page.waitForTimeout(1300);
     assert.equal(modelReads, reads, "설치가 끝나거나 창을 닫으면 폴링이 멈춰야 합니다");
   };
-  await page.locator("header").getByRole("button", { name: "모델 설치", exact: true }).click();
+  await page.locator("header").getByRole("button", { name: "환경 설정", exact: true }).click();
   await models.getByText("미설치 모델 전체 용량: 3.0 MB", { exact: true }).waitFor();
   assert.equal(installCalls, 0, "모델 설치는 자동으로 시작하지 않습니다");
   await noMorePolling();
@@ -547,7 +547,7 @@ try {
   const sampleRoot = new URL('../sample-data/datamap/', ROOT);
   const samples = fs.readdirSync(sampleRoot).filter((name) => name.endsWith('.md'));
   assert.equal(samples.length, 5);
-  await dataMap.locator('input[type="file"]').setInputFiles(samples.map((name) => ({
+  await dataMap.locator('input[type="file"]:not([webkitdirectory])').first().setInputFiles(samples.map((name) => ({
     name, mimeType: 'text/markdown', buffer: fs.readFileSync(new URL(name, sampleRoot)),
   })));
   await dataMap.getByText('5개 추가 · 0개 갱신').first().waitFor();
@@ -614,7 +614,7 @@ try {
   await page.reload();
   // 좁은 화면에서는 상태 배지를 일부러 숨긴다(hidden sm:inline-flex) → 그려졌는지만 본다
   await page.getByText("코어 연결됨").first().waitFor({ state: "attached", timeout: 10_000 });
-  await page.locator("header").getByRole("button", { name: "모델 설치", exact: true }).click();
+  await page.locator("header").getByRole("button", { name: "환경 설정", exact: true }).click();
   await models.getByText("모두 설치됨", { exact: true }).waitFor();
   const modelsBounds = await models.boundingBox();
   assert.ok(modelsBounds.x >= 0 && modelsBounds.x + modelsBounds.width <= 390);

@@ -1,16 +1,12 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Focus, Maximize2, Minus, Plus, RotateCcw } from "lucide-react";
-import { TYPES } from "../constants.js";
-const WIDTH = 1100,
-  HEIGHT = 910;
-const COLORS = {
-  article: "#6d648d",
-  evidence: "#8e89a2",
-  source: "#849691",
-  person: "#ac939e",
-  audio: "#aa9986",
-  note: "#9d9aa8",
-};
+import { categoryLabel } from "../constants.js";
+import { categoryShape } from "./categoryShape.jsx";
+import { MAP_CENTER } from "../domain/layout.js";
+// 화면에 그리는 범위 — 원(점선 테두리)과 라벨 여백만 남기고 잘라 원이 보드를 최대한 채우게 한다
+const VIEW = { x: 80, y: 60, width: 940, height: 790 };
+// 연결이 가장 많은 문서(허브)만 라벨을 늘 보여 묶음의 중심을 읽게 한다 — 나머지는 선택·호버·라벨 모두 보기로
+const HUB_LABELS = 6;
 export default memo(function KnowledgeGraph({
   graph,
   nodes,
@@ -33,15 +29,7 @@ export default memo(function KnowledgeGraph({
       graph.edges.filter((e) => allowed.has(e.source) && allowed.has(e.target)),
     [graph.edges, allowed],
   );
-  const sortedEdges = useMemo(
-    () =>
-      [...edges].sort(
-        (a, b) =>
-          Number(a.relation === "cross-project") -
-          Number(b.relation === "cross-project"),
-      ),
-    [edges],
-  );
+  // 관계망 원 둘레의 점선 테두리(장식)
   const haloDots = useMemo(
     () => Array.from({ length: 220 }, (_, i) => {
       const angle = (i / 220) * Math.PI * 2 + Math.sin(i * 2.17) * 0.012;
@@ -54,7 +42,7 @@ export default memo(function KnowledgeGraph({
     [],
   );
   const reset = () => setCamera({ x: 0, y: 0, k: 1 });
-  const zoom = (factor, cx = WIDTH / 2, cy = HEIGHT / 2) =>
+  const zoom = (factor, cx = MAP_CENTER.x, cy = MAP_CENTER.y) =>
     setCamera((c) => {
       const k = Math.max(0.55, Math.min(4, c.k * factor));
       return {
@@ -69,7 +57,7 @@ export default memo(function KnowledgeGraph({
       setScreenScale(
         Math.max(
           0.1,
-          Math.min(el.clientWidth / WIDTH, el.clientHeight / HEIGHT),
+          Math.min(el.clientWidth / VIEW.width, el.clientHeight / VIEW.height),
         ),
       ),
     );
@@ -91,18 +79,29 @@ export default memo(function KnowledgeGraph({
     if (selected) {
       setCamera({
         k: 2.05,
-        x: WIDTH / 2 - selected.x * 2.05,
-        y: HEIGHT / 2 - selected.y * 2.05,
+        x: MAP_CENTER.x - selected.x * 2.05,
+        y: MAP_CENTER.y - selected.y * 2.05,
       });
     }
   };
   const hoverNode = hovered && index.byId.get(hovered);
+  const degree = (id) => index.adjacent.get(id)?.size || 0;
+  const hubs = useMemo(
+    () => new Set(nodes.filter((n) => !n.placeholder && (index.adjacent.get(n.id)?.size || 0) >= 3)
+      .sort((a, b) => (index.adjacent.get(b.id)?.size || 0) - (index.adjacent.get(a.id)?.size || 0))
+      .slice(0, HUB_LABELS).map((n) => n.id)),
+    [nodes, index],
+  );
   return (
-    <section className="graph-panel" aria-label="원형 지식 관계망">
+    <section className="graph-panel" aria-label="취재 자료 관계망">
       <div className="graph-heading">
         <div>
-          <span className="eyebrow">CONNECTED KNOWLEDGE</span>
-          <h2>{selected ? "선택한 맥락의 연결" : "취재의 맥락을 한눈에"}</h2>
+          <h2>{selected ? "선택한 자료의 연결" : "관계망"}</h2>
+          <p>
+            {selected
+              ? `직접 연결 ${Math.max(0, context.direct.size - 1)}개 · 한 단계 건너 ${context.indirect.size}개`
+              : `노드 ${nodes.length}개 · 연결 ${edges.length}개`}
+          </p>
         </div>
         <button
           className="icon-button"
@@ -115,7 +114,7 @@ export default memo(function KnowledgeGraph({
       <svg
         ref={svg}
         className="network-svg"
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        viewBox={`${VIEW.x} ${VIEW.y} ${VIEW.width} ${VIEW.height}`}
         aria-label="기사 중심 관계망. 노드는 목록표에서도 탐색할 수 있습니다."
         onPointerDown={(e) => {
           if (e.button !== 0 || e.target.closest("[data-node]")) return;
@@ -154,10 +153,9 @@ export default memo(function KnowledgeGraph({
             ))}
           </g>
           <g aria-hidden="true">
-            {sortedEdges.map((e) => {
+            {edges.map((e) => {
               const a = index.byId.get(e.source),
                 b = index.byId.get(e.target);
-              const bridge = e.relation === "cross-project";
               const strong =
                 selected &&
                 (e.source === selected.id || e.target === selected.id);
@@ -169,32 +167,19 @@ export default memo(function KnowledgeGraph({
               return (
                 <line
                   key={e.id}
+                  className={`graph-edge ${hoveredEdge || strong ? "is-strong" : ""}`}
                   x1={a.x}
                   y1={a.y}
                   x2={b.x}
                   y2={b.y}
-                  stroke={hoveredEdge ? "#5c9dff" : strong ? "#777a82" : bridge ? "#7773c4" : "#aaa3c4"}
-                  strokeWidth={
-                    strong ? (bridge ? 0.95 : 1) : bridge ? 0.55 : 0.4
-                  }
+                  strokeWidth={strong || hoveredEdge ? 1.4 : 0.8}
+                  strokeDasharray={e.relation === "missing-link" ? "4 3" : undefined}
                   opacity={
                     hovered && hovered !== selected?.id
                       ? hoveredEdge ? 0.78 : 0.035
                       : selected
-                      ? strong
-                        ? bridge
-                          ? 0.94
-                          : 0.72
-                        : within
-                          ? bridge
-                            ? 0.48
-                            : 0.25
-                          : bridge
-                            ? 0.095
-                            : 0.045
-                      : bridge
-                        ? 0.39
-                        : 0.17
+                        ? strong ? 0.72 : within ? 0.25 : 0.045
+                        : 0.32
                   }
                 />
               );
@@ -205,17 +190,21 @@ export default memo(function KnowledgeGraph({
               connected = context.direct.has(n.id),
               indirect = context.indirect.has(n.id);
             const labelLimit = screenScale < 0.45 ? 11 : 23;
+            const article = n.category === "article";
+            const hub = hubs.has(n.id);
             const visibleLabel =
-              n.kind === "article" ||
-              n.placeholder ||
+              (hub && !selected && screenScale >= 0.4) || // 작게 그려질 때는 허브 라벨도 겹치므로 숨긴다
               active ||
               hovered === n.id ||
-              (labels && !n.placeholder && camera.k > 1.35);
+              (selected && connected && !n.placeholder) ||
+              labels;
             const isHovered = hovered === n.id;
             const opacity =
               hovered && hovered !== selected?.id
-                ? isHovered ? 1 : active ? 0.45 : 0.14
-                : !selected || active || connected ? 1 : indirect ? 0.27 : 0.12;
+                ? isHovered ? 1 : active ? 0.45 : 0.18
+                : !selected || active || connected ? 1 : indirect ? 0.32 : 0.14;
+            const size = article ? 8 : hub ? 6.5 : 5;
+            const scale = screenScale * camera.k;
             return (
               <g
                 key={n.id}
@@ -223,9 +212,9 @@ export default memo(function KnowledgeGraph({
                 pointerEvents="bounding-box"
                 role="button"
                 tabIndex={0}
-                aria-label={`${n.placeholder ? "연결할 파일 없음" : TYPES[n.kind]}: ${n.label}`}
+                aria-label={`${categoryLabel(n)}: ${n.label}`}
                 aria-pressed={active}
-                className={`graph-node ${isHovered ? "is-hovered" : ""} ${active ? "is-selected" : ""}`}
+                className={`graph-node ${active ? "is-selected" : ""}`}
                 style={{ opacity }}
                 onClick={() => onSelect(n.id)}
                 onKeyDown={(e) => {
@@ -239,56 +228,20 @@ export default memo(function KnowledgeGraph({
                 onFocus={() => setHovered(n.id)}
                 onBlur={() => setHovered(null)}
               >
-                <circle
-                  cx={n.x}
-                  cy={n.y}
-                  r={n.kind === "article" ? 16 : 9}
-                  fill="transparent"
-                />
-                {active && (
-                  <circle
-                    cx={n.x}
-                    cy={n.y}
-                    r={n.kind === "article" ? 18 : 11}
-                    fill={isHovered ? "#e5f0ff" : "#e5e7eb"}
-                    stroke={isHovered ? "#a9cbff" : "#b9bdc4"}
-                    strokeWidth="1"
-                  />
+                <circle cx={n.x} cy={n.y} r={size + 9} fill="transparent" />
+                {(active || isHovered) && (
+                  <circle className="node-ring" cx={n.x} cy={n.y} r={size + 6} />
                 )}
-                <circle
-                  cx={n.x}
-                  cy={n.y}
-                  r={n.kind === "article" ? 7 : n.placeholder ? 3.8 : 3.2}
-                  fill={
-                    n.placeholder && !active
-                      ? "#fff"
-                      : isHovered && !active
-                      ? "#4f95f5"
-                      : active || (selected && connected)
-                        ? "#73767d"
-                      : COLORS[n.kind]
-                  }
-                  stroke={n.kind === "article" ? "#fff" : n.placeholder ? COLORS.note : "none"}
-                  strokeWidth={n.placeholder ? "1.2" : "1.6"}
-                  strokeDasharray={n.placeholder ? "2 1.5" : undefined}
-                />
+                {categoryShape(n.category, n.x, n.y, size)}
                 {visibleLabel && (
                   <text
                     x={n.x}
-                    y={
-                      n.y +
-                      (n.kind === "article" ? 20 : 13) /
-                        (screenScale * camera.k)
-                    }
+                    y={n.y + (size + 6) + 10 / scale}
                     textAnchor="middle"
-                    className={
-                      n.kind === "article" ? "hub-label" : "node-label"
-                    }
+                    className={article || hub ? "hub-label" : "node-label"}
                     style={{
-                      fontSize:
-                        (n.kind === "article" ? 12 : 11) /
-                        (screenScale * camera.k),
-                      strokeWidth: 3 / (screenScale * camera.k),
+                      fontSize: (article || hub ? 12.5 : 11) / scale,
+                      strokeWidth: 3.5 / scale,
                     }}
                   >
                     {n.label.length > labelLimit
@@ -303,10 +256,9 @@ export default memo(function KnowledgeGraph({
       </svg>
       {hoverNode && (
         <div className="graph-tooltip">
-          <span className={`type-dot ${hoverNode.kind}`} />
           <span>{hoverNode.label}</span>
           <small>
-            {hoverNode.placeholder ? "연결할 파일 없음" : TYPES[hoverNode.kind]}
+            {categoryLabel(hoverNode)} · 연결 {degree(hoverNode.id)}개
           </small>
         </div>
       )}
@@ -321,7 +273,7 @@ export default memo(function KnowledgeGraph({
               checked={labels}
               onChange={(e) => setLabels(e.target.checked)}
             />
-            상세 라벨
+            라벨 모두 보기
           </label>
           <button
             className="icon-button"

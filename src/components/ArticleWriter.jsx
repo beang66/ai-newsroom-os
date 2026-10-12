@@ -29,13 +29,14 @@ export default function ArticleWriter({
   onOpenSearch, 
   onModels,
   onPublish,
+  openEvidence, // 데스크의 '근거 확인'으로 들어오면 좁은 화면에서도 팩트체크·근거자료 서랍을 열어 둔다
   saveStatus // 자동 저장은 App 에서(어느 화면에 있든 저장된다)
 }) {
   // 1. 화면 뷰 모드: 'editor' (에디터만) | 'split' (에디터+미리보기 나란히) | 'preview' (미리보기 전체)
   const [viewMode, setViewMode] = useState("editor");
 
   // 팩트체크 & 근거자료 우측 슬라이더(Drawer) 열림 상태
-  const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches);
+  const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(() => Boolean(openEvidence) || (typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches));
   const [showHistory, setShowHistory] = useState(false);
   // 팩트체크 — 글쓰기가 멈추면 자동 실행. 서랍을 닫아도 본문 하이라이트가 남도록 여기에 둔다
   const factCheck = useFactCheck(article);

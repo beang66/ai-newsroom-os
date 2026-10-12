@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:pilot": "npm --prefix pilot run dev",
     "build": "vite build",
     "lint": "oxlint",
     "test": "npm run check:api-boundary && node --test article_editor/dev/tests/datamap-*.test.mjs article_editor/dev/tests/workspace.test.mjs",

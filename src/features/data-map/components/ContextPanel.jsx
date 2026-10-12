@@ -1,14 +1,12 @@
 import { useState } from "react";
 import {
   ArrowUpRight,
-  BookOpen,
   ChevronRight,
-  FileText,
   Folder,
-  Network,
   X,
 } from "lucide-react";
-import { TYPES } from "../constants.js";
+import { CATEGORIES, categoryLabel } from "../constants.js";
+import CategoryMark from "./CategoryMark.jsx";
 export default function ContextPanel({
   node,
   ranked,
@@ -17,71 +15,71 @@ export default function ContextPanel({
   onOpen,
   onProject,
   onClear,
+  onKind,
+  categoryCounts = {},
 }) {
   const [tab, setTab] = useState("context"),
     [all, setAll] = useState(false);
-  if (!node)
+  // 연결 수 = 이어진 서로 다른 노드 수(양방향 링크는 하나로 센다)
+  const degree = (id) => new Set(graph.edges.flatMap((e) => (e.source === id ? [e.target] : e.target === id ? [e.source] : []))).size;
+  if (!node) {
+    const articles = graph.nodes.filter((n) => n.category === "article");
+    const hubs = graph.nodes
+      .filter((n) => !n.placeholder)
+      .map((n) => ({ ...n, links: degree(n.id) }))
+      .filter((n) => n.links > 0)
+      .sort((a, b) => b.links - a.links || a.label.localeCompare(b.label, "ko"))
+      .slice(0, 4);
+    const nodeRow = (n, meta) => (
+      <button key={n.id} className="start-article" onClick={() => onSelect(n.id)}>
+        <CategoryMark category={n.category} />
+        <span>
+          {n.label}
+          <small>{meta}</small>
+        </span>
+        <ChevronRight size={14} />
+      </button>
+    );
     return (
-      <aside className="context-panel overview-panel">
+      <aside className="context-panel">
         <div className="panel-top">
-          <span className="eyebrow">YOUR KNOWLEDGE, CONNECTED</span>
-          <Network size={17} />
+          <h2>취재 맥락 요약</h2>
         </div>
-        <div className="intro-orbit">
-          <span />
-          <span />
-          <span />
-          <Network size={30} />
-        </div>
-        <h2>
-          흩어진 자료에서
-          <br />
-          하나의 맥락으로.
-        </h2>
-        <div className="overview-numbers">
-          <div>
-            <strong>{graph.projects.length}</strong>
-            <small>프로젝트</small>
-          </div>
-          <div>
-            <strong>
-              {graph.nodes.filter((n) => n.kind === "article").length}
-            </strong>
-            <small>기사 중심축</small>
-          </div>
-          <div>
-            <strong>
-              {
-                graph.nodes.filter(
-                  (n) => !n.placeholder && n.kind !== "article",
-                ).length
-              }
-            </strong>
-            <small>상세 자료</small>
-          </div>
-        </div>
-        <h3 className="subheading">이 기사에서 시작하기</h3>
-        {graph.nodes
-          .filter((n) => n.kind === "article")
-          .slice(0, 3)
-          .map((n) => (
-            <button
-              key={n.id}
-              className="start-article"
-              onClick={() => onSelect(n.id)}
-            >
-              <FileText size={16} />
-              <span>
-                {n.label}
-                <small>
-                  {graph.projects.find((p) => p.id === n.projectId)?.name}
-                </small>
-              </span>
-              <ChevronRight size={14} />
-            </button>
-          ))}
+        <dl className="overview-numbers">
+          <div><dt>기사</dt><dd>{categoryCounts.article || 0}</dd></div>
+          <div><dt>자료</dt><dd>{graph.nodes.filter((n) => !n.placeholder && n.category !== "article").length}</dd></div>
+          <div><dt>연결</dt><dd>{graph.edges.length}</dd></div>
+          <div><dt>미확보</dt><dd>{categoryCounts.missing || 0}</dd></div>
+        </dl>
+        <section>
+          <div className="section-label"><h3>분류</h3><small>눌러서 걸러 보기</small></div>
+          <ul className="category-list">
+            {Object.entries(CATEGORIES).map(([id, { label, description }]) => (
+              <li key={id}>
+                <button onClick={() => onKind?.(id)} disabled={!categoryCounts[id]}>
+                  <CategoryMark category={id} size={14} />
+                  <span><strong>{label}</strong><small>{description}</small></span>
+                  <em>{categoryCounts[id] || 0}</em>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+        {hubs.length > 0 && (
+          <section>
+            <div className="section-label"><h3>많이 연결된 자료</h3><small>연결 수</small></div>
+            {hubs.map((n) => nodeRow(n, `${categoryLabel(n)} · 연결 ${n.links}개`))}
+          </section>
+        )}
+        {articles.length > 0 && (
+          <section>
+            <div className="section-label"><h3>기사에서 시작하기</h3><small>{articles.length}건</small></div>
+            {articles.slice(0, 4).map((n) => nodeRow(n, n.updated || n.path || "기사"))}
+          </section>
+        )}
       </aside>
     );
+  }
   const direct = ranked.files.filter((n) => n.priority === "direct"),
     indirect = ranked.files.filter((n) => n.priority !== "direct");
   const isKnowledgeFile = node.kind === "note";
@@ -109,9 +107,7 @@ export default function ContextPanel({
   const fileRow = (n, i) => (
     <button className="ranked-file" key={n.id} onClick={() => onSelect(n.id)}>
       <span className="rank-number">{String(i + 1).padStart(2, "0")}</span>
-      <span className={`file-icon ${n.kind}`}>
-        <FileText size={14} />
-      </span>
+      <CategoryMark category={n.category} />
       <span className="rank-content">
         <strong>{n.label}</strong>
         <small>{n.reason}</small>
@@ -124,7 +120,11 @@ export default function ContextPanel({
   return (
     <aside className="context-panel">
       <div className="panel-top">
-        <span className="eyebrow">SELECTED CONTEXT</span>
+        <span className="type-label">
+          <CategoryMark category={node.category} />
+          {categoryLabel(node)}
+          {node.placeholder ? " · 아직 가져오지 않음" : ""}
+        </span>
         <button
           className="icon-button"
           aria-label="노드 선택 해제"
@@ -133,36 +133,27 @@ export default function ContextPanel({
           <X size={16} />
         </button>
       </div>
-      <span className={`type-label ${node.kind}`}>
-        {TYPES[node.kind]}
-        {node.placeholder ? " · 연결 대기" : ""}
-      </span>
       <h2>{node.label}</h2>
-      <div className="tag-row">
-        {node.tags.map((t) => (
-          <span key={t}>#{t}</span>
-        ))}
-      </div>
-      <section className="summary-card">
-        <div>
-          <BookOpen size={15} />
-          <h3>요약카드</h3>
+      <dl className="node-meta">
+        {node.path && <div><dt>경로</dt><dd>{node.path}</dd></div>}
+        {node.summary && node.summary !== node.path && <div><dt>요약</dt><dd>{node.summary}</dd></div>}
+        {node.updated && <div><dt>수정</dt><dd>{node.updated}</dd></div>}
+        <div><dt>연결</dt><dd>{degree(node.id)}개{isKnowledgeFile && !node.placeholder ? ` · 링크 ${node.outgoing?.length || 0} · 백링크 ${node.backlinks?.length || 0}` : ""}</dd></div>
+      </dl>
+      {node.tags.length > 0 && (
+        <div className="tag-row">
+          {node.tags.map((t) => (
+            <span key={t}>#{t}</span>
+          ))}
         </div>
-        <p>{node.summary}</p>
-        <footer>
-          <span>{node.author}</span>
-          <span>{node.updated}</span>
-        </footer>
-      </section>
-      <button
-        className="open-resource"
-        onClick={() => onOpen(node)}
-        disabled={!node.pages?.length}
-      >
-        {node.pages?.length ? "자료별 페이지 기록 열기" : "페이지 기록 없음"}
-        <ArrowUpRight size={15} />
-      </button>
-      <div className="panel-tabs">
+      )}
+      {node.pages?.length > 0 && (
+        <button className="open-resource" onClick={() => onOpen(node)}>
+          자료별 페이지 기록 열기
+          <ArrowUpRight size={15} />
+        </button>
+      )}
+      {node.pages?.length > 0 && <div className="panel-tabs">
         <button
           className={tab === "context" ? "active" : ""}
           onClick={() => setTab("context")}
@@ -175,7 +166,7 @@ export default function ContextPanel({
         >
           페이지 기록 <span>{node.pages?.length || 0}</span>
         </button>
-      </div>
+      </div>}
       {tab === "pages" ? (
         <div className="page-record-list">
           {node.pages?.length ? (
@@ -222,14 +213,14 @@ export default function ContextPanel({
               </section>
             </div>
           )}
-          <section className="related-projects">
+          {ranked.projects.length > 0 && <section>
             <div className="section-label">
               <h3>관련 프로젝트</h3>
               <small>{ranked.projects.length}</small>
             </div>
             {ranked.projects.slice(0, all ? 10 : 3).map((p, i) => (
               <button
-                className={`project-card ${i === 0 ? "primary-project" : ""}`}
+                className="project-card"
                 key={p.id}
                 onClick={() => onProject(p.id)}
               >
@@ -245,10 +236,7 @@ export default function ContextPanel({
                 )}
               </button>
             ))}
-            {!ranked.projects.length && (
-              <p className="muted">연결된 프로젝트 기록이 없습니다.</p>
-            )}
-          </section>
+          </section>}
           <section>
             <div className="section-label">
               <h3>가장 관련 있는 자료</h3>
@@ -260,10 +248,10 @@ export default function ContextPanel({
               <p className="muted">직접 연결된 자료가 없습니다.</p>
             )}
           </section>
-          <section className="indirect-files">
+          <section>
             <div className="section-label">
               <h3>다른 맥락에서 발견</h3>
-              <span className="subtle-pill">낮은 우선순위</span>
+              <small>참고</small>
             </div>
             {indirect.slice(0, all ? 8 : 2).map(fileRow)}
             {!indirect.length && (

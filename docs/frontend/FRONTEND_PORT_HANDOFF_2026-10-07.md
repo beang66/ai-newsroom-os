@@ -1,162 +1,61 @@
-# 프론트 디자인 요청 메모
+# 프론트 안내: 새로 추가한 화면(임시)과 호출 이름
 
-작성일: 2026-10-07 · 개정: 2026-10-12 (이식 이력 정리, 현재 `main` 기준)
-기준: `main` 브랜치
+작성일: 2026-10-07 · 개정: 2026-10-12 · 기준: `main`
 
-## 1. 이 문서가 무엇인가
+## 1. 이 문서의 범위
 
-앱의 기능은 코어(App Core)에 연결되어 동작하고 있습니다. 이 문서는 **프론트 담당자가 디자인을 다듬어 주어야 하는 화면과 요청**을 모은 목록입니다. 임시로 만든 화면에는 "(임시)"라고 적었습니다. 위치·모양·문구는 현재 `main`의 디자인 톤에 맞게 바꿔도 됩니다.
+원래 있던 기능(팩트체크 화면, 자동 저장, 자료 업로드, 제목·부제 추천 등)은 다루지 않습니다. 코어 기능을 추가하면서 **개발 쪽에서 임의로 만든 화면(임시)** 과 **그 화면이 부르는 호출 이름**만 정리했습니다.
+- 임시 화면의 위치·모양·문구는 현재 디자인에 맞게 자유롭게 바꿔도 됩니다.
+- **호출 이름(`src/api/`)과 `data-testid`는 유지**해 주세요. UI 스모크 테스트가 사용합니다. 바꿔야 하면 알려 주세요.
+- 화면 소스는 루트 `src/`이고, `npm run build`가 `article_editor/app/frontend`에 결과를 만듭니다. 이 폴더는 빌드 산출물이라 충돌이 나면 소스를 해결한 뒤 다시 빌드해 주세요.
 
-**현재 화면 구성** (`src/data/navigation.js`): 오늘의 데스크 · 기사 작성 · 인터뷰·녹취 · 변환·배포 · 데이터맵 · 보관함. 이 문서의 요청은 주로 **기사 작성(팩트체크 서랍 포함)**, **변환·배포**, **보관함·취재자료**, **로그인·설정**에 관한 것입니다.
+## 2. 지킬 규칙
 
-**소스와 빌드**
-- 화면 소스는 저장소 루트 `src/`입니다. `npm run build`가 `article_editor/app/frontend`에 결과를 만들고, 앱 코어가 그 결과를 그대로 보여 줍니다.
-- `article_editor/app/frontend/**`는 빌드 산출물입니다. 병합 중 충돌이 나면 손으로 합치지 말고 소스 충돌을 해결한 뒤 루트에서 `npm run build`로 다시 만들어 주세요.
+- 화면은 코어를 `src/api/`의 이름 붙은 메서드로만 부릅니다(`fetch(`나 `"/api/..."` 문자열을 화면 코드에 쓰지 않음). `npm run check:api-boundary`가 검사합니다.
+- 외부 AI·사진 서비스를 화면에서 직접 부르지 않고, API 키를 브라우저에 저장하지 않습니다.
+- 확인: 루트에서 `npm run build`, `npm test`, UI 스모크 `node article_editor/dev/tests/ui-smoke.mjs`
 
-## 2. 먼저 지킬 규칙
+## 3. 새로 추가한 화면 (임시)
 
-| 규칙 | 이유 |
-|---|---|
-| 화면은 코어를 `src/api/`의 **이름 붙은 메서드**로만 호출합니다. 화면 코드에 `fetch(`나 `"/api/..."` 문자열을 쓰지 않습니다. | 개발은 HTTP, 최종 EXE는 IPC로 같은 계약을 쓰기 때문입니다. `npm run check:api-boundary`가 검사합니다. |
-| 외부 AI·사진 서비스를 화면에서 직접 호출하지 않고, API 키를 브라우저(`localStorage`)에 저장하지 않습니다. | 앱에는 운영 키를 두지 않는 보안 규칙입니다. |
-| 아래 `data-testid` 값은 이름을 유지합니다. | UI 스모크 테스트가 사용합니다. |
+| # | 화면 | 위치(`src/`) | 호출 이름 | `data-testid` |
+|---|---|---|---|---|
+| 1 | **저장 이력**: 목록, 미리보기(읽기 전용), 이전 저장본으로 복원 | `components/VersionHistory.jsx` | `listRevisions`, `previewRevision`, `restoreRevision` (`api/editorial.js`) | `version-history`, `revision-list`, `revision-preview`, `revision-restore`, `revision-restore-confirm` |
+| 2 | **로그인 대화상자**(이메일·비밀번호), 공용 대화상자 틀 | `components/LoginDialog.jsx`, `components/AppDialog.jsx` | `signIn`, `signOut`, 세션 상태 (`api/editorial.js`) | `login-dialog`, `login-email`, `login-password`, `login-submit`, `login-error` |
+| 3 | **로그인 필요 시 로그인 창 자동 열기**: 서버 기능이 로그인을 요구하면 창이 열리고, 성공하면 하던 요청을 한 번 다시 보냄 | `App.jsx`, `api/auth-gate.js` | `setLoginHandler`, `askLogin` | |
+| 4 | **모델 설치 대화상자**: 목록·크기·설치/취소·진행 (사이드바 설정 버튼에서 열림) | `components/ModelsDialog.jsx` | `modelStatus`, `installModels`, `cancelModelInstall` | `models-dialog`, `models-install`, `models-cancel`, `models-progress` |
+| 5 | **생성 버튼 3종**: "선택 항목 생성", 지금 보는 탭만 만드는 "원고 생성/다시 생성", "카드뉴스만 생성" | `components/FormatConverter.jsx` | `suggestPlatformKeywords(article, snapshotId)`, `generatePlatform(platform, article, keywords, requirements, snapshotId)` (`api/platform.js`) | `generate-active` |
+| 6 | **고정본 기준 생성 안내**: 생성이 끝나면 메시지에 "(저장 N번 버전의 글 기준)"을 표시. 고정본을 못 만들면 "(고정본을 만들지 못해 현재 글로 생성했습니다)" | `components/FormatConverter.jsx` | `freezeArticle(article)` (`api/platform.js`) | |
+| 7 | **카드 이미지 만들기**: 버튼, 완성 이미지 미리보기, "카드를 고쳤어요" 안내(이미지 흐림), 오류 문구 | `components/FormatConverter.jsx` (카드뉴스 편집 영역 맨 아래) | `renderCardImage(card, photo, snapshotId)` (`api/platform.js`) | `card-image-make`, `card-image-preview`, `card-image-error` |
+| 8 | **취재자료 색인 상태**: 자료 목록 항목의 배지와 서랍 위쪽 안내문 | `components/FactCheckDrawer.jsx` | `listSources` → 항목의 `index: {state, chunks, progress}` (`api/core-api.js`) | `source-index-badge`, `factcheck-indexing` |
+| 9 | **전체 다시 검증의 기준 버전 표시**: 서랍 상태 줄 아래 "마지막 전체 검증: 저장 N번 버전의 글 기준" (글이 바뀌었으면 "(그 뒤 글이 바뀌었어요)") | `components/FactCheckDrawer.jsx`, `components/EditorialAssist.jsx`(`useFactCheck`의 `basis`) | `factcheckArticle(content, files, cache, snapshotId)`, `freezeArticle` | `factcheck-basis` |
 
-유지할 `data-testid`: `fact-highlight`, `factcheck-status`, `factcheck-error`, `factcheck-basis`, `evidence-quote`, `claim-details`, `recheck-tip`, `chunk-view`, `fact-sequence`, `save-status`, `flow-summary`, `photo-finder`, `auto-login-toggle`, `version-history`, `format-converter`, `generate-active`, `card-image-make`, `card-image-preview`, `card-image-error`
+**화면별로 알아 둘 점**
+- **고정본(3-6, 9):** 키워드 추천·생성·카드 이미지·전체 다시 검증을 누르면 코어가 지금 글을 저장해 고정본(그 시점의 글을 얼린 사본)으로 만들고, 그 기준으로 요청합니다. 글이 그대로면 같은 고정본을 다시 씁니다. 글이 멈출 때마다 도는 자동 검증은 고정본을 만들지 않습니다.
+- **카드 이미지(7):** 카드 값을 이미지 입력으로 바꾸는 규칙은 `api/platform.js`의 `cardRenderPayload`에 있습니다(사진이 있으면 표지는 `cover`, 나머지는 `photo_body`, 사진이 없으면 `text_only`). 이미지는 카드 데이터의 `rendered_image: {id, uri}`에 저장됩니다. 렌더에는 Edge나 Chrome이 필요합니다(Windows 기본 설치).
+- **색인 상태(8):** `indexing`(색인 중 NN%, 2초마다 새로 읽음) · `ready`(완료, 조각 수) · `failed`(실패, 팩트체크 때 다시 시도) · `pending`(안 됨: 서버 연결·로그인이 안 됐거나 옛 형식 자료). 색인이 끝나기 전에는 팩트체크가 자동으로 대기합니다.
+- **로그인 자동 열기(3):** 로그인이 필요한 서버 기능(사진 검색, 임베딩, AI 보조 등)을 쓸 때 열립니다.
 
-**확인 방법**
-- 루트에서 `npm run build`, `npm test`(API 경계 검사와 데이터맵 테스트)
-- UI 스모크: `node article_editor/dev/tests/ui-smoke.mjs` (코어를 띄우고 화면을 실제로 조작해 로그인·글쓰기·팩트체크·변환·저장 이력 복원 등을 확인합니다. 1분 안팎)
+## 4. 코어는 준비됐지만 화면이 없는 것
 
-## 3. 팩트체크
+### 취재자료 삭제 (경고 후 강제 삭제)
+정책: 쓰는 기사가 있으면 먼저 경고하고, 사용자가 확인하면 강제로 지울 수 있습니다.
 
-### 3-1. 본문 하이라이트
-- **동작:** 본문 안의 문장을 판정별 색으로 칠합니다. 글이 바뀌고 1초 멈추면 자동으로 검증합니다. 띄어쓰기만 바뀐 문장은 다시 판정하지 않습니다.
-- **구현:** `components/ArticleWriter.jsx`의 `HighlightedBody`(뒤쪽 글자 층 + 위를 덮는 textarea 구조), `components/EditorialAssist.jsx`의 `useFactCheck`
-- **판정과 색(현재 값, 디자인 시스템에 맞게 조정 요청):**
-
-| 판정 | 표시 이름 | 현재 색 | 비고 |
-|---|---|---|---|
-| CONFLICT | 자료와 불일치 | 장미(rose) + 안쪽 테두리 | 가장 강하게 |
-| EVIDENCE_GAP | 근거 부족 | 호박(amber) | |
-| REVIEW / EXTERNAL_REQUIRED | 검토 필요 | 보라(violet) | |
-| 일치(SUPPORTED) | 팩트 일치 | 평소엔 칠하지 않음 | 서랍 카드에 마우스를 올린 동안 초록 |
-| DETAIL | 날짜·기관·주체 별도 확인 | 호박 | 일치 문장 안의 세부 값 |
-
-- **디자인 요청:** 마우스를 올린 하이라이트의 외곽선, 하이라이트가 겹칠 때 규칙(앞의 것만), 판정 없음(회색 또는 칠하지 않음), 검증 중(진행 표시), 오류 메시지(`factcheck-error`)
-
-### 3-2. 서랍(`FactCheckDrawer`)의 판정 카드
-- **동작:** 문장별 카드에 판정, 일치율(%), 근거 인용문, 자료 이름을 보여 줍니다. 근거 인용문 안에서도 맞는 부분을 표시합니다.
-- **구현:** `components/FactCheckDrawer.jsx`, `api/editorial.js`(`factcheckArticle`이 카드 목록을 만듦), `api/claim-details.js`
-- **디자인 요청:** 판정별 카드 색과 아이콘, 일치율 표시, 근거 인용문(`evidence-quote`)과 세부 확인 목록(`claim-details`)의 시각 구분, 서랍이 닫혀 있을 때의 진입 버튼과 문제 개수 표시(`factcheck-status`)
-
-### 3-3. 하이라이트 위에서 "상위모델로 재검토"
-- **동작:** 로컬 판정기가 확정하지 못한 문장의 하이라이트에 마우스를 올리면 말풍선(`recheck-tip`)이 뜨고, 누르면 상위 모델이 다시 판정합니다. 결과는 카드에 "AI 재판정"으로 표시되고 하이라이트가 사라집니다. 원고를 다시 열면 이전에 받은 재판정을 자동으로 불러옵니다(`restoreExternal`, 비용 없음).
-- **구현:** `ArticleWriter.jsx`(말풍선 위치 계산), `EditorialAssist.jsx`의 `recheck`
-- **디자인 요청:** 말풍선 모양, 재검토 중 상태("상위모델 재검토 중…"), 재판정 결과 카드의 표시(재판정임을 알리는 배지), 실패 시 안내
-
-### 3-4. 순서형 검사 패널
-- **동작:** 코어의 실제 판정 결과를 문제 문장 한 건씩 보여 줍니다(유형, 문제 문장, 사유, 근거 인용, 이전/다음). 본문 하이라이트와 병행하며 지금 보는 문장만 진한 윤곽으로 표시합니다. **AI 수정안 칸과 "수정 적용"은 없습니다**(코어에 수정안 생성 기능이 없음).
-- **디자인 요청:** 패널 배치와 모양(`fact-sequence`)
-
-### 3-5. 전체 다시 검증의 기준 버전 표시 (임시)
-서랍의 새로고침(전체 문장 다시 검증) 버튼을 누르면 지금 글을 고정본(그 시점의 글을 얼린 사본)으로 만들어 그 기준으로 검증하고, 서랍 상태 줄 아래에 "마지막 전체 검증: 저장 N번 버전의 글 기준"(글이 그 뒤에 바뀌었으면 "(그 뒤 글이 바뀌었어요)")이 임시로 나옵니다(`factcheck-basis`). 글이 멈출 때마다 도는 자동 검증에는 표시하지 않습니다. 디자인 요청: 표시 위치·모양, 자동 검증 결과와 구분되는 방법.
-
-### 3-6. 청크 보기 (개발 모드 전용)
-자료 보기 창의 "청크 보기 (개발)" 탭(`chunk-view`)은 개발 실행에서만 보입니다. 일반 사용자 화면에는 나타나지 않게 유지해 주세요.
-
-## 4. 저장과 취재자료
-
-### 4-1. 자동 저장과 이어쓰기
-- **동작:** 쓰는 동안 자동 저장하고, 앱을 열면 마지막 원고를 이어서 불러옵니다. 문구: "자동 저장 중…", "자동 저장됨". 저장 이력(`VersionHistory`)에서 이전 저장본을 보고 복원할 수 있습니다.
-- **구현:** `EditorialAssist.jsx`의 `useAutosave`, `api/editorial.js`의 `saveDraft`·`loadLatestArticle`
-- **디자인 요청:** 저장 상태 표시 위치와 모양(`save-status`), 저장 실패 안내, 이어쓰기로 열렸음을 알리는 표시
-
-### 4-2. 취재자료 업로드, 추출, 보관, 원본 열기
-- **동작:** PDF·HWP·HWPX·DOCX·TXT를 올리면 본문 텍스트를 추출해 암호화 저장소에 보관하고, 서랍에서 원본을 앱 안 뷰어나 기본 프로그램으로 열 수 있습니다.
-- **구현:** `components/FactCheckDrawer.jsx`, `api/editorial.js`의 `registerSource`·`sourcePreview`·`openSourceFile`·`sourceChunks`
-- **디자인 요청:** 업로드 영역(드래그 앤 드롭), 파일별 진행·성공·실패 상태(지원하지 않는 형식, 30MB 초과, 스캔 PDF 글자 없음), 원본 보기
-
-### 4-3. 취재자료 색인 상태 표시 (임시)
-자료를 올리면 코어가 검색용으로 분석(색인)하고, 큰 자료는 1~3분이 걸립니다. 색인이 끝나기 전에는 팩트체크를 보내지 않고 기다립니다. 상태를 알 수 있도록 팩트체크 서랍에 임시 표시를 붙였습니다.
-
-| 상태 | 현재 표시(임시) | 의미 |
+| 동작 | 코어 | 화면에서 필요한 것 |
 |---|---|---|
-| 색인 중 NN% (파랑) | 서랍의 자료 목록 항목 오른쪽 배지 + 서랍 위쪽 안내문 "자료를 색인하는 중이에요 (NN%). 끝나면 팩트체크가 자동으로 시작됩니다." | 2초마다 새로 읽어 퍼센트가 오릅니다. 끝나면 팩트체크가 자동으로 이어서 돕니다 |
-| 색인 완료 (초록) | 배지(마우스를 올리면 검색용 조각 수) | 팩트체크에 바로 쓸 수 있습니다 |
-| 색인 실패 (빨강) | 배지 | 팩트체크 때 다시 시도합니다 |
-| 색인 안 됨 (회색) | 배지 | 서버 연결·로그인이 안 됐거나 옛 형식 자료입니다. 연결되면 자동으로 다시 색인합니다 |
+| 자료 목록 | `listSources` → `{sources:[{id, name, format, size, chars, createdAt, usedBy:[{articleId,title}]}]}` | 목록과 "N개 기사에서 사용 중" 표시 |
+| 삭제 시도 | `POST /api/sources/<id>/delete` 본문 `{}` | 삭제 버튼. 쓰는 기사가 없으면 바로 삭제 |
+| 경고 | 쓰는 기사가 있으면 **409** `{error, code:"SOURCE_IN_USE", details:{usedBy:[{articleId,title}]}}` | 경고 대화상자: 쓰는 기사 제목 목록 + [취소] [그래도 삭제] |
+| 강제 삭제 | `POST /api/sources/<id>/delete` 본문 `{"force": true}` | [그래도 삭제]를 누르면 이 요청 |
+| 삭제된 자료 표시 | 기사 안의 참조는 남고 원본·본문 요청은 404 | "삭제된 자료"로 표시(원본 열기·근거 보기 비활성) |
 
-디자인 요청: 배지 모양·색, 안내문의 위치(서랍 위쪽 고정 vs 자료 목록 안), 진행률 막대 여부. 데이터는 `GET /api/sources`의 `index: {state, chunks, progress?}`입니다(`src/api/core-api.js`의 `listSources`).
+경고 문구에 "이미 쓴 팩트체크 판정 기록은 남지만 근거 원본을 열 수 없게 된다"는 점을 한 줄로 알려 주세요. 화면에서 쓸 `deleteSource(id, {force})`는 `api/core-api.js`에 아직 없어서 화면을 만들 때 함께 추가합니다.
 
-### 4-4. 취재자료 삭제 UI — 경고 후 강제 삭제 (화면 없음, 디자인 요청)
-코어에 취재자료 목록·삭제 API가 있습니다. **화면은 아직 없습니다.** 정책: **쓰는 기사가 있으면 먼저 경고하고, 사용자가 확인하면 강제로 지울 수 있다.**
+### 회원가입과 로그인 유지 (예정)
+지금은 팀원이 개발용 공용 계정을 씁니다. 회원가입이 구현되면 각자 가입해서 쓰게 바꿉니다. 코어 기능(`signUp`)은 구현 전이라 화면 디자인을 먼저 받고 연결합니다.
+- 회원가입 화면: 이메일·비밀번호, 비밀번호 규칙, 가입 후 안내, 로그인 화면과의 전환
+- "이 PC에서 로그인 유지" 설정: 켜면 다음 실행 때 자동 로그인, 끄면 저장된 로그인 정보 삭제 (지금의 자동 로그인 토글 `AutoLoginToggle`을 대체)
 
-| 동작 | 코어 | 화면에서 해야 할 것 |
-|---|---|---|
-| 자료 목록 | `GET /api/sources` → `{sources:[{id, name, format, size, chars, createdAt, usedBy:[{articleId,title}]}]}` | 자료 목록(이름, 형식, 크기, 글자 수, 올린 날짜). "N개 기사에서 사용 중" 표시 |
-| 삭제 시도 | `POST /api/sources/<id>/delete` 본문 `{}` | 삭제 버튼. 쓰는 기사가 없으면 바로 지워짐(확인 한 번) |
-| 경고 | 쓰는 기사가 있으면 **409**, 본문 `{error, code:"SOURCE_IN_USE", details:{usedBy:[{articleId,title}]}}` | 경고 대화상자: "이 자료를 쓰는 기사가 있어요" + 기사 제목 목록 + [취소] [그래도 삭제] (파괴적 동작이라 색·문구로 구분) |
-| 강제 삭제 | `POST /api/sources/<id>/delete` 본문 `{"force": true}` | [그래도 삭제]를 누르면 이 요청. 성공하면 목록에서 제거 |
-| 삭제된 자료 표시 | 기사 안의 자료 참조는 남습니다. 원본·본문 요청은 404 | 기사의 자료 목록에서 지워진 자료를 "삭제된 자료"로 표시(원본 열기·팩트체크 근거 보기는 비활성) |
+## 5. 참고
 
-주의: 팩트체크에 이미 쓴 판정 기록은 남지만 근거 원본을 열 수 없게 됩니다. 이 점을 경고 문구에 한 줄로 알려 주세요. 화면에서 쓰는 API 이름은 `src/api/core-api.js`에 코어와 1:1로 추가합니다(`deleteSource(id, {force})`).
-
-## 5. 편집 보조
-
-| 기능 | 동작 | 구현 | 디자인 요청 |
-|---|---|---|---|
-| 제목·부제 추천 | 버튼을 누르면 후보 3개가 나오고 하나를 고름 | `useSuggestions`, `SuggestionList`, `SuggestButton` | 후보 목록 모양, 로딩·실패 상태 |
-| 흐름 요약 | 기사 흐름을 3~5문장으로 요약 | `FlowSummaryButton` (`flow-summary`) | 요약 표시 위치와 모양 |
-| 사진 찾기 | 본문에서 검색어를 뽑아 사진을 검색하고 가져옴 | `PhotoFinder` (`photo-finder`) | 검색 결과 격자, 출처 표기(촬영자·Unsplash), 가져오기 상태 |
-
-## 6. 계정과 설정
-
-**있는 것**
-- 로그인 대화상자(`components/LoginDialog.jsx`): 이메일·비밀번호 입력. 서버 기능을 쓰다 로그인이 필요하면 자동으로 열리고, 로그인에 성공하면 하던 요청을 한 번 다시 시도합니다.
-- 모델 설치 대화상자(`components/ModelsDialog.jsx`): 사이드바의 설정 버튼에서 열립니다(목록·크기·설치/취소·진행).
-- 자동 로그인 토글(`components/AutoLoginToggle.jsx`, `auto-login-toggle`): 개발 실행에서 코어가 가능하다고 알려줄 때만 보이는 스위치입니다. 디자인 요청: 헤더 어디에 둘지, 꺼짐·켜짐·실패 상태.
-
-**새로 필요한 것: 회원가입과 로그인 유지 (2026-10-12 결정, 화면 디자인 먼저 요청)**
-지금은 팀원이 개발용 공용 계정을 씁니다. 회원가입을 만들어서 각자 가입해 쓰게 바꿀 예정입니다. 코어 기능은 아직 구현 전이라, 화면 디자인을 먼저 받고 코어가 만들어지면 연결합니다.
-- **회원가입 화면:** 이메일·비밀번호 입력, 비밀번호 규칙 안내, 가입 후 안내(이메일 확인이 필요하면 그 안내), 로그인 화면과의 전환.
-- **"이 PC에서 로그인 유지" 설정:** 켜면 다음 실행 때 자동으로 로그인하고, 끄면 이 PC에 저장된 로그인 정보를 지웁니다. 설정 화면의 위치와 문구(지금의 자동 로그인 토글을 대체).
-- **일반 설정 화면:** 위 설정을 둘 곳. 모델 설치 대화상자와 한곳에 모을지 정해 주세요.
-
-## 7. 변환·배포 (`FormatConverter`)
-
-### 7-1. 생성 버튼 (임시)
-원본 `feature/platform-generator`의 생성 버튼 3종을 현재 화면에 아래처럼 임시로 대응시켰습니다.
-
-| 원본 버튼 | 원본 동작 | 현재 화면 (임시) | 디자인 요청 |
-|---|---|---|---|
-| **선택한 항목 생성** (`generate-selected`) | 체크한 플랫폼과 카드뉴스를 한 번에 생성 | 화면 오른쪽 위 "선택 항목 생성" | 현재 위치 유지 가능, 생성 중·진행 상태 표시 정리 |
-| **Instagram / Threads / Blog 원고 생성** | 플랫폼 하나만 개별 생성 | 가운데 작업 영역 제목 줄 오른쪽 버튼 하나("Instagram 원고 생성", 이미 있으면 "다시 생성"). 지금 보고 있는 탭만 만듭니다(`generate-active`) | 위치와 모양, "다시 생성하면 수정 내용이 새 결과로 바뀜"을 알리는 방식(지금은 마우스 올림 설명만) |
-| **카드뉴스만 생성** | 플랫폼을 체크하지 않아도 카드뉴스만 생성, 현재 카드 목록 교체 | 카드뉴스 탭에서 같은 버튼이 "카드뉴스만 생성"(있으면 "카드뉴스 다시 생성") | 위와 같음. 카드 목록이 교체됨을 알리는 방법 |
-
-원본 UI 코드는 `git show origin/feature/platform-generator:platform-generator/public/batch-generate-ui.js`, `generate-ui.js`, `text-editor-ui.js`에서 볼 수 있습니다. 생성 전 점검 문구(키워드를 선택하세요 등)는 지금 화면 왼쪽 아래 메시지 한 줄로 보여 줍니다.
-
-### 7-2. 고정본 기준 생성 (임시)
-키워드 추천, 원고·카드뉴스 생성, 카드 이미지 만들기를 누르면 화면이 **먼저 지금 글을 저장하고 고정본(그 시점의 글을 얼린 사본)으로 만든 뒤**, 그 고정본으로 요청합니다. 나중에 "어느 글로 만든 결과인지" 알 수 있습니다. 글이 바뀌지 않았으면 같은 고정본을 다시 씁니다.
-- **현재 표시:** 생성이 끝나면 화면 왼쪽 아래 메시지에 "N/N개 결과를 실제 생성 엔진에서 받아왔습니다. (저장 N번 버전의 글 기준)"이 나옵니다. 고정본을 만들지 못했으면 "(고정본을 만들지 못해 현재 글로 생성했습니다)"로 알립니다.
-- **디자인 요청:** 어느 버전 기준인지 보여 주는 위치와 모양(결과 카드마다 작은 표시 등), 고정본을 만들지 못했을 때의 안내.
-
-### 7-3. 카드뉴스 "완성 이미지" 만들기 (임시)
-카드 편집 화면은 카드의 **글**(제목·본문·키워드·사진 선택)을 만듭니다. 카드를 실제 **이미지(JPEG)** 로 만들어 암호화 저장소에 보관하는 기능(`POST /api/platform/render`)에 임시 버튼과 미리보기를 붙였습니다.
-
-| 요소 | 현재 화면(임시) | 동작 | 디자인 요청 |
-|---|---|---|---|
-| **카드 이미지 만들기** 버튼 (`card-image-make`) | 카드 편집 영역 오른쪽 아래 흰 패널 맨 아래, "완성 이미지" 구역 | 지금 보는 카드 한 장을 1080×1350 이미지로 만듭니다(보통 1~3초). 이미 있으면 "이미지 다시 만들기" | 위치 확정(카드 미리보기 근처가 자연스러움), 진행 중 표시 |
-| **완성 이미지 미리보기** (`card-image-preview`) | 버튼 아래 작은 썸네일(너비 220px) | 코어가 돌려준 `local_uri`(`/api/media-assets/<id>/file`)로 보여 줍니다 | 미리보기 크기와 배치 |
-| **"카드를 고쳤어요" 안내** | 글·사진·역할이 바뀌면 문구가 바뀌고 이미지가 흐려짐 | 이미지는 고치기 전 상태 그대로라 "다시 만들어 주세요"만 안내 | 흐림/경고 표현 |
-| **오류 문구** (`card-image-error`) | 버튼 아래 빨간 글씨 | 예: 렌더 브라우저(Edge/Chrome)가 없을 때 | 문구 톤 |
-
-알아 둘 점
-- **카드 값 → 이미지 규칙은 `src/api/platform.js`의 `cardRenderPayload`에 있습니다.** 사진이 있으면 표지는 `cover`, 나머지는 `photo_body`, 사진이 없으면 `text_only` 모양입니다. 화면은 이 규칙을 모릅니다.
-- 편집 화면 가운데의 카드는 화면용 모형이고, 완성 이미지(platform-generator 템플릿으로 그린 결과)와 모양이 다릅니다. 정보 배치(설명형·비교형 등)는 아직 이미지에 반영되지 않습니다. 사진을 쓰면 완성 이미지 오른쪽 아래에 "Photo by Unsplash"가 기본으로 붙습니다.
-- 이미지는 카드 데이터에 `rendered_image: {id, uri}`로 함께 저장되어 기사를 다시 열어도 남습니다. 지금은 HTTP 모드에서만 `uri`로 바로 보입니다(IPC 전환 시 이미지 읽는 방식을 바꿔야 함).
-- 렌더에는 이 PC에 **Edge나 Chrome이 설치돼 있어야** 합니다(Windows는 기본 설치).
-
-## 8. 참고
-
-- 코어가 제공하는 메서드의 전체 목록과 요청·응답 형식은 `src/api/core-api.js`와 `article_editor/docs/CORE_METHODS_v0.8.md`에 있습니다(이 문서에는 옮겨 적지 않습니다).
-- 서버 연결: 이번 `main`부터 자료 검색 임베딩은 서버(Render → Cloudflare)로만 처리하므로, 색인과 팩트체크에는 **로그인과 인터넷 연결이 필요**합니다. 로그인이 안 된 채 서버 기능(사진 검색, 임베딩 등)을 쓰면 로그인 창이 자동으로 열립니다.
+- 코어가 제공하는 메서드의 전체 목록과 요청·응답 형식은 `src/api/core-api.js`와 `article_editor/docs/CORE_METHODS_v0.8.md`에 있습니다.
+- 자료 검색 임베딩은 서버(Render → Cloudflare)로 처리하므로 색인과 팩트체크에는 로그인과 인터넷 연결이 필요합니다.

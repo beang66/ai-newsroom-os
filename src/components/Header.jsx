@@ -73,11 +73,11 @@ export default function Header({
           {/* 상태 배지 */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <span className={`inline-flex items-center gap-1.5 px-3 py-0.5 text-xs font-bold rounded-full border ${
-              status === "검증 완료" 
+              ["검증 완료", "송고 완료"].includes(status)
                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                 : "bg-amber-50/80 text-[#D97706] border-amber-200/80"
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${status === "검증 완료" ? "bg-emerald-500" : "bg-[#F4A940]"}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${["검증 완료", "송고 완료"].includes(status) ? "bg-emerald-500" : "bg-[#F4A940]"}`} />
               {status}
             </span>
           </div>

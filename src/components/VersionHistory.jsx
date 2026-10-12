@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { History, X, RotateCcw } from "lucide-react";
-import { listRevisions, previewRevision, restoreRevision } from "../api/editorial";
+import { listRevisionsWithLegacy, previewRevision, pruneLegacyRevisions, restoreRevision } from "../api/editorial";
 
 // 저장 이력 보기·복원. 이력은 지우지 않는다 — 복원하면 그 저장본이 새 최신 저장본이 되고, 복원 직전 상태도 이력에 남는다.
 const when = (iso) => {
@@ -10,7 +10,7 @@ const when = (iso) => {
     : date.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 };
 
-export default function VersionHistory({ article, emptyArticle, onClose, onRestored }) {
+export default function VersionHistory({ article, emptyArticle, onClose, onRestored, beforeRestore }) {
   const [items, setItems] = useState(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(null); // 선택한 revisionNo
@@ -18,13 +18,31 @@ export default function VersionHistory({ article, emptyArticle, onClose, onResto
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const [legacy, setLegacy] = useState(0); // 수동 저장 도입 전의 옛 자동 저장 이력 수
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     let alive = true;
-    listRevisions(article.articleId)
-      .then((list) => alive && setItems(list))
+    listRevisionsWithLegacy(article.articleId)
+      .then(({ revisions, legacyCount }) => { if (alive) { setItems(revisions); setLegacy(legacyCount); } })
       .catch((e) => alive && setError(e?.message || String(e)));
     return () => { alive = false; };
-  }, [article.articleId]);
+  }, [article.articleId, reload]);
+
+  const pruneLegacy = async () => {
+    if (!window.confirm(`수동 저장을 쓰기 전(10-10 이전)에 자동으로 쌓인 옛 이력 ${legacy}개를 지울까요?\n지운 이력은 되돌릴 수 없습니다. 수동 저장본과 송고본은 그대로 남습니다.`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      await pruneLegacyRevisions(article.articleId);
+      setSelected(null);
+      setPreview(null);
+      setReload((n) => n + 1);
+    } catch (e) {
+      setError(e?.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const choose = async (revisionNo) => {
     setSelected(revisionNo);
@@ -42,6 +60,7 @@ export default function VersionHistory({ article, emptyArticle, onClose, onResto
     setBusy(true);
     setError("");
     try {
+      await beforeRestore?.(); // 저장하지 않은 변경이 있으면 먼저 수동 저장 → 복원 직전 상태도 이력에 남는다
       const { article: restored, revisionNo } = await restoreRevision(article.articleId, selected, emptyArticle);
       onRestored(restored, revisionNo);
     } catch (e) {
@@ -67,12 +86,19 @@ export default function VersionHistory({ article, emptyArticle, onClose, onResto
           </button>
         </div>
 
+        {legacy > 0 && (
+          <div data-testid="legacy-history" className="mx-6 mt-3 flex items-center gap-3 px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+            <span className="flex-1">수동 저장을 쓰기 전에 자동으로 쌓인 옛 이력이 {legacy}개 있습니다.</span>
+            <button type="button" disabled={busy} onClick={pruneLegacy} data-testid="legacy-prune"
+              className="px-3 py-1 rounded-full bg-amber-900 text-white font-bold cursor-pointer disabled:opacity-50">옛 이력 지우기</button>
+          </div>
+        )}
         {error && <p role="alert" className="mx-6 mt-3 px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">{error}</p>}
 
         <div className="flex flex-col md:flex-row min-h-0 flex-1">
           <ul className="md:w-72 md:border-r border-slate-200 overflow-auto p-3 space-y-1.5" data-testid="revision-list">
             {!items && !error && <li className="px-3 py-2 text-xs text-slate-500">불러오는 중…</li>}
-            {items?.length === 0 && <li className="px-3 py-2 text-xs text-slate-500">저장된 이력이 없습니다.</li>}
+            {items?.length === 0 && <li className="px-3 py-2 text-xs text-slate-500">수동 저장한 이력이 없습니다. '저장'(Ctrl+S)을 누르면 여기에 남습니다.</li>}
             {items?.map((item) => (
               <li key={item.revisionNo}>
                 <button
@@ -100,7 +126,7 @@ export default function VersionHistory({ article, emptyArticle, onClose, onResto
             {preview && (
               <>
                 <h3 className="text-lg font-black text-slate-900">{preview.title || "(제목 없음)"}</h3>
-                {preview.subtitle && <p className="text-sm font-semibold text-slate-600">{preview.subtitle}</p>}
+                {preview.subtitle && <p className="whitespace-pre-line text-sm font-semibold text-slate-600">{preview.subtitle}</p>}
                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{preview.content || "(본문 없음)"}</p>
               </>
             )}

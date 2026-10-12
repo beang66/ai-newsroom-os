@@ -5,6 +5,7 @@ from .config import PIPELINE_VERSION, HEADLINE_MODEL, SUBTITLE_MODEL, LIMIT, FRO
 from .errors import RequestError
 from .ai.local_models import headline_dependencies_ready
 from .integrations.unsplash import unsplash_get, selected_unsplash
+from .integrations import donga_archive
 from .create_core import create_core
 from .documents import extract_text
 
@@ -39,6 +40,10 @@ class Handler(BaseHTTPRequestHandler):
             except RequestError as e:return self.send(e.status,error_body(e))
         if self.path in ('/api/articles/latest','/api/articles/latest?photos=ref'):
             try:return self.send(200,CORE.storage.latest_article(photo_refs=self.path.endswith('?photos=ref')))
+            except RequestError as e:return self.send(e.status,error_body(e))
+        found=re.fullmatch(r'/api/articles/([a-f0-9]{32})\?version=(saved|published)(&photos=ref)?',self.path)
+        if found:  # 보관소 '수정' → 그 판(마지막 수동 저장본 / 발행본)을 편집기로 연다
+            try:return self.send(200,CORE.storage.get_article(found.group(1),found.group(2),photo_refs=bool(found.group(3))))
             except RequestError as e:return self.send(e.status,error_body(e))
         found=re.fullmatch(r'/api/media/([a-f0-9]{32})',self.path)
         if found:
@@ -77,6 +82,20 @@ class Handler(BaseHTTPRequestHandler):
                 if not 1<=page<=10000:raise RequestError('올바른 사진 페이지를 선택해 주세요.')
                 result=unsplash_get('/search/photos?'+urllib.parse.urlencode({'query':q,'per_page':3,'page':page}))
                 return self.send(200,{'photos':result.get('results',[])[:3],'page':page,'totalPages':min(10000,result.get('total_pages',0)),'total':result.get('total',0)})
+            except RequestError as e:return self.send(e.status,error_body(e))
+        if path.path=='/api/donga/photos':  # 동아일보 DB(포토파노라마) 사진 검색 — 검색어로 거르고 전체/최신순/오래된순, 3장씩
+            try:
+                params=urllib.parse.parse_qs(path.query)
+                q=params.get('q',[''])[0].strip()
+                if len(q)>100:raise RequestError('검색어를 100자 이하로 입력해 주세요.')
+                try:
+                    page=int(params.get('page',['1'])[0])
+                except ValueError:raise RequestError('올바른 사진 페이지를 선택해 주세요.')
+                return self.send(200,donga_archive.search(q,params.get('sort',['all'])[0],page))
+            except RequestError as e:return self.send(e.status,error_body(e))
+        match=re.fullmatch(r'/api/donga/photo/(\d{1,12})',path.path)
+        if match:
+            try:return self.send(200,*donga_archive.photo_bytes(match.group(1)))
             except RequestError as e:return self.send(e.status,error_body(e))
         if path.path in ('/api/articles','/api/knowledge-map'):
             try:return self.send(200,CORE.storage.list_articles() if path.path=='/api/articles' else CORE.storage.knowledge_map())
@@ -135,16 +154,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.allowed() or self.headers.get('Origin') not in (f'http://localhost:{self.port()}',f'http://127.0.0.1:{self.port()}'):return self.send(403,{'error':'워크스페이스에서 요청해 주세요.'})
         restore=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions/(\d{1,6})/restore',self.path)
+        prune=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions/prune-legacy',self.path)
+        article_delete=re.fullmatch(r'/api/articles/([a-f0-9]{32})/delete',self.path)
         snapshot=re.fullmatch(r'/api/articles/([a-f0-9]{32})/snapshots',self.path)
         job_cancel=re.fullmatch(r'/api/jobs/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/cancel',self.path)
         source_delete=re.fullmatch(r'/api/sources/([a-f0-9]{32}|[a-f0-9]{16})/delete',self.path)
         knowledge_file_delete=re.fullmatch(r'/api/knowledge-files/('+UUID+')/delete',self.path)
-        if not restore and not snapshot and not job_cancel and not source_delete and not knowledge_file_delete and self.path not in ('/api/media-assets','/api/knowledge-files/import','/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate','/api/platform/render','/api/cms/publish','/api/vault/export','/api/vault/restore'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        if not restore and not prune and not article_delete and not snapshot and not job_cancel and not source_delete and not knowledge_file_delete and self.path not in ('/api/media-assets','/api/knowledge-files/import','/api/assist','/api/articles/save','/api/articles/publish','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate','/api/platform/render','/api/cms/publish','/api/vault/export','/api/vault/restore'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
             # shortcut: 백업을 JSON/base64로 받으므로 220MB로 제한, 저장소가 150MB에 가까워지면 스트리밍 업로드로 교체
-            if not 0<size<=(220_000_000 if self.path=='/api/vault/restore' else 80_000_000 if self.path=='/api/articles/save' else 40_000_000 if self.path in ('/api/interview/transcribe','/api/materials/extract') else 30_000_000):raise RequestError('요청 크기가 너무 큽니다.',413)
+            if not 0<size<=(220_000_000 if self.path=='/api/vault/restore' else 80_000_000 if self.path in ('/api/articles/save','/api/articles/publish') else 40_000_000 if self.path in ('/api/interview/transcribe','/api/materials/extract') else 30_000_000):raise RequestError('요청 크기가 너무 큽니다.',413)
             data=json.loads(self.rfile.read(size))
             if not isinstance(data,dict):raise RequestError('잘못된 요청입니다.')
             if self.path=='/api/session':return self.send(200,CORE.session.sign_in(data))
@@ -153,6 +174,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/models/install':return self.send(200,CORE.models.start_install(data))
             if self.path=='/api/models/cancel':return self.send(200,CORE.models.cancel())
             if self.path=='/api/articles/save':return self.send(200,CORE.storage.save_article(data))
+            if self.path=='/api/articles/publish':return self.send(200,CORE.storage.publish_article(data))
             if self.path=='/api/vault/export':return self.send(200,CORE.storage.export_backup(data))
             if self.path=='/api/vault/restore':return self.send(200,CORE.storage.restore_backup(data))
             if self.path=='/api/cms/publish':return self.send(200,CORE.platform.publish(data))
@@ -162,6 +184,8 @@ class Handler(BaseHTTPRequestHandler):
             if knowledge_file_delete:return self.send(200,CORE.storage.delete_knowledge_file(knowledge_file_delete.group(1)))
             if source_delete:return self.send(200,CORE.storage.delete_source(source_delete.group(1),data))
             if restore:return self.send(200,CORE.storage.restore_revision(restore.group(1),int(restore.group(2))))
+            if prune:return self.send(200,CORE.storage.prune_legacy_revisions(prune.group(1)))
+            if article_delete:return self.send(200,CORE.storage.delete_article(article_delete.group(1)))
             if snapshot:return self.send(200,CORE.storage.create_snapshot(snapshot.group(1),data))
             if self.path=='/api/materials/extract':return self.send(200,extract_text(data))
             if self.path=='/api/sources/open':return self.send(200,CORE.storage.open_source(data))

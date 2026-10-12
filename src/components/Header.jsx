@@ -101,7 +101,7 @@ export default function Header({
 
           <AutoLoginToggle session={session} onSession={onSession} />
 
-          <button onClick={onModels} className="px-4 py-1.5 bg-[#EFECE6] border border-[#DDD6CB] text-[#23211F] text-xs font-bold rounded-full cursor-pointer">환경 설정</button>
+          <button onClick={onModels} className="px-4 py-1.5 bg-[#EFECE6] border border-[#DDD6CB] text-[#23211F] text-xs font-bold rounded-full cursor-pointer">모델 설치</button>
 
           {/* 사용자 정보 Capsule */}
           {signedIn ? (

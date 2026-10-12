@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ainewsroom-proxy
+    runtime: python
+    plan: free
+    rootDir: backend
+    # Render 는 빈 Build Command 를 허용하지 않는다. requirements.txt 는 주석뿐이라 무해하다(의존성 0).
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: python server.py
+    healthCheckPath: /ai/health
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: UNSPLASH_ACCESS_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: CF_ACCOUNT_ID
+        sync: false
+      - key: CF_API_TOKEN
+        sync: false
+      - key: AUTH_REQUIRED
+        value: "true"
+      - key: RATE_LIMIT_PER_MIN
+        value: "120"

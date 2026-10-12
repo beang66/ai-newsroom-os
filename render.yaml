@@ -1,0 +1,29 @@
+# Render Blueprint — 앱(Render 프록시) 서비스 정의.
+#   Render → New → Blueprint → 이 저장소 선택 → 비밀값(OPENAI_API_KEY 등)만 입력하면 끝난다.
+#   (수동으로 만들려면 backend/README.md 의 3단계를 따른다)
+services:
+  - type: web
+    name: ainewsroom-proxy
+    runtime: python
+    plan: free
+    branch: feature/app-core
+    rootDir: backend
+    # Render 는 빈 Build Command 를 허용하지 않는다(대시보드 "Cannot be blank").
+    # requirements.txt 는 주석뿐이라 이 명령은 사실상 무해하다(의존성 0).
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: python server.py
+    healthCheckPath: /ai/health
+    autoDeploy: true
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: UNSPLASH_ACCESS_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: AUTH_REQUIRED
+        value: "true"
+      - key: RATE_LIMIT_PER_MIN
+        value: "120"

@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "note": "dev/checks/make_model_manifest.py 로 생성. base 를 호스팅 주소로 채우면 앱이 자동 다운로드한다. | 2026-10-08: 로컬 임베딩 모델(embedding-qwen3-0.6b-onnx)은 잠정 폐기 — 임베딩은 백엔드(/ai/embeddings)로만 한다.",
+  "models": [
+    {
+      "id": "factcheck-judge-0.6b-v3",
+      "label": "팩트체크 판정기 (Qwen3-0.6B v3, ONNX)",
+      "kind": "factcheck",
+      "dir": "factcheck-judge-0.6b-v3",
+      "base": "https://huggingface.co/Tig0w0/factcheck-judge-0.6b-v3/resolve/main",
+      "files": [
+        {
+          "path": "judge.json",
+          "size": 302,
+          "sha256": "65c8a0c5e284f11ae77d678f0f259803ae8515047ee312f24583262d1cce378d"
+        },
+        {
+          "path": "model.onnx",
+          "size": 1481060,
+          "sha256": "40dde7c25bddb25df4e1ef5a981bae4152db6cf05a5400f98fa3367f5361e3db"
+        },
+        {
+          "path": "model.onnx.data",
+          "size": 2384191488,
+          "sha256": "d41a1d1ac5f553da46d5d0a9a3dd48d33843fb1b6250085ec54ebd9edd74b5bc"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 11422650,
+          "sha256": "be75606093db2094d7cd20f3c2f385c212750648bd6ea4fb2bf507a6a4c55506"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 835,
+          "sha256": "75480b08d3715c7d92a81e6a6030277eef4ffc2797c7f36ef5164c0bbb4638c7"
+        }
+      ]
+    },
+    {
+      "id": "boundary-roberta-base-v3",
+      "label": "의미 청킹 경계 판정 (KLUE-RoBERTa ONNX)",
+      "kind": "semantic",
+      "dir": "boundary-roberta-base-v3",
+      "base": "https://huggingface.co/Tig0w0/boundary-roberta-base-v3/resolve/main",
+      "files": [
+        {
+          "path": "boundary_config.json",
+          "size": 133,
+          "sha256": "88bf0c680395e8b8804b3690780a4e043e76fca08a4b45674922e8924b785a6f"
+        },
+        {
+          "path": "model.onnx",
+          "size": 442715820,
+          "sha256": "fa7d70ba50d7290a59d4757ae99f5d35d937673827dca4640521d3b4ec5f6df4"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 751999,
+          "sha256": "cc02cedb56df2e4d3bb6b5478cef6aa0daa98930c96b46976c8acdd2432459a8"
+        }
+      ]
+    },
+    {
+      "id": "headline-ket5-onnx",
+      "label": "제목 초안 (KeT5 ONNX, 빔서치 내장)",
+      "kind": "headline",
+      "dir": "headline-ket5-onnx",
+      "base": "https://huggingface.co/Tig0w0/headline-ket5-onnx/resolve/main",
+      "files": [
+        {
+          "path": "beam.onnx",
+          "size": 382934365,
+          "sha256": "215f271b02a6a212e9e5183b759fedee0a7de513aa15bbffa8b5acb593ec8488"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 4369895,
+          "sha256": "1583f572a91206974a1dd08e6c14fcd853107cb57a6347373f2c1679d0fb3d5c"
+        }
+      ]
+    },
+    {
+      "id": "subtitle-kobart-onnx",
+      "label": "부제 초안 (KoBART ONNX)",
+      "kind": "subtitle",
+      "dir": "subtitle-kobart-onnx",
+      "base": "https://huggingface.co/Tig0w0/subtitle-kobart-onnx/resolve/main",
+      "files": [
+        {
+          "path": "cross_kv.onnx",
+          "size": 28362142,
+          "sha256": "080ddc240ef0ab8c3eca6dd7a62f272259ff892cbc34f6fc6360eba8b1954605"
+        },
+        {
+          "path": "decoder.onnx",
+          "size": 386246188,
+          "sha256": "131c887f91cacf8419938588e5ce24b35a66d942288e44e83f1b1495afcaa6e4"
+        },
+        {
+          "path": "encoder.onnx",
+          "size": 265527055,
+          "sha256": "964ad6d986980c5d357a5c2138f5fc1a3a3fe34257fb6bfcbed8fab0d9ef75e2"
+        },
+        {
+          "path": "generation.json",
+          "size": 167,
+          "sha256": "3ad161b4314ad24cb9324015dfd267d1f7f9b3e87b408a5cabe31dd4730b32b9"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 682152,
+          "sha256": "bbe85e16994a829e07452d71988917678cf788aa6cc11d0b32d9533c0968f109"
+        }
+      ]
+    }
+  ]
+}

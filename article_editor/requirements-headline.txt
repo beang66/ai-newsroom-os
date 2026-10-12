@@ -1,0 +1,6 @@
+# 로컬 제목(KeT5)·부제(KoBART) 실행 — ONNX 변환본(models/headline-ket5-onnx, subtitle-kobart-onnx)을 돌린다.
+# 2026-10-02: torch/transformers 불필요. 변환·재검증 환경("transformers==4.46.2" torch sentencepiece onnx)은
+# dev/tools/convert_seq2seq_onnx.py 머리말 참고.
+onnxruntime>=1.20
+tokenizers>=0.21
+numpy>=1.24

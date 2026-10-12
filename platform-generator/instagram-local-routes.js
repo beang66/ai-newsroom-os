@@ -1,6 +1,6 @@
 // 기존 Express 서버에 추가하는 로컬 전용 경로입니다.
 const express = require('express');
-const {getEditorOrigins}=require('./public/api');
+const {getEditorOrigins}=require('./lib/api');
 const { createInstagramService } = require('./instagram-local-service');
 
 module.exports = function registerInstagramLocalRoutes(app, service = createInstagramService()) {

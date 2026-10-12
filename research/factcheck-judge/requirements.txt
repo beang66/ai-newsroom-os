@@ -1,0 +1,8 @@
+# 학습 PC(4060 Ti 8GB) 용. torch 는 CUDA 빌드를 먼저 따로 설치한다(README 참고):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+transformers>=5.0   # warmup_steps 비율·dtype= 인자 (5.x 문법)
+peft>=0.13
+accelerate>=1.0
+bitsandbytes>=0.45
+safetensors
+numpy

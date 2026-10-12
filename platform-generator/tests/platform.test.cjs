@@ -2,10 +2,12 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),fsp=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
 const {JSDOM,ResourceLoader,VirtualConsole}=require('jsdom');
 const root=path.resolve(__dirname,'..');
+// Persistence tests explicitly opt into development storage; default 410 is tested separately.
+process.env.PLATFORM_LOCAL_STORAGE='1';
 const {createThreadsService,validateThreadsInput}=require('../threads-local-service');
 const {validateInput,selectOriginalRatio}=require('../instagram-local-service');
 const {getPlatformRules}=require('../platform-rules');
-const template=require('../public/card-template');
+const template=require('../lib/card-template');
 const jpg={mime:'image/jpeg',order:1,data_url:'data:image/jpeg;base64,/9j/2Q=='};
 function browserFixture(){
  let text='',photos=[],posted=0,closed=false;const empty={count:async()=>0,isVisible:async()=>false,waitFor:async()=>{throw Error('absent')},first(){return this;}};
@@ -19,6 +21,7 @@ function browserFixture(){
  return {chromium:{launchPersistentContext:async()=>context},get posted(){return posted;},editText:v=>{text=v;},get text(){return text;},photos:()=>photos};
 }
 test('지원 대상과 입력 제한',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  assert.throws(()=>getPlatformRules('blog'),/지원하지/);for(const p of ['instagram','threads','card_news'])assert(getPlatformRules(p).writing_rules);
  assert.deepEqual(validateThreadsInput({text:'📰 제목\n\n본문',assets:[]}).files,[]);
  assert.throws(()=>validateThreadsInput({text:'가'.repeat(501),assets:[]}),/500/);
@@ -28,6 +31,7 @@ test('지원 대상과 입력 제한',async()=>{
  await assert.rejects(selectOriginalRatio({},async()=>false),/다음 단계/);
 });
 test('Threads 작성 준비는 게시하지 않으며 사진·줄바꿈과 중복 게시 방지',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const dir=await fsp.mkdtemp(path.join(os.tmpdir(),'newsroom-profile-test-')),b=browserFixture(),s=createThreadsService({chromium:b.chromium,profileDir:dir});
  try{
   await s.connect();assert.equal((await s.status()).connected,true);
@@ -39,6 +43,7 @@ test('Threads 작성 준비는 게시하지 않으며 사진·줄바꿈과 중�
  }finally{await s.close();await fsp.rm(dir,{recursive:true,force:true});}
 });
 test('Threads 준비 후 본문 변경은 게시 차단',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const dir=await fsp.mkdtemp(path.join(os.tmpdir(),'newsroom-profile-test-')),b=browserFixture(),s=createThreadsService({chromium:b.chromium,profileDir:dir});
  try{await s.connect();const r=await s.prepare({text:'원고',assets:[]});b.editText('변경된 원고');await assert.rejects(s.publish({id:r.id,reviewed:true}),/다릅니다/);assert.equal(b.posted,0);}finally{await s.close();await fsp.rm(dir,{recursive:true,force:true});}
 });
@@ -47,6 +52,7 @@ test('사진 설정은 JSON 저장 후에도 공통 카드 출력에 보존',()=
  assert.equal(template.markup(JSON.parse(JSON.stringify(card))),template.markup(card));assert(template.markup(card).includes('scale(1.7)'));
 });
 test('Express 통합: 두 로컬 경로, 중단 경로 거부, 저장 왕복',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const {createApp}=require('../server');const dir=await fsp.mkdtemp(path.join(os.tmpdir(),'newsroom-storage-test-'));
  const stub={connect:async()=>({success:true}),status:async()=>({success:true,connected:true}),prepare:async()=>({success:true}),publish:async()=>({success:true}),close:async()=>({success:true})};
  const priorOrigin=process.env.NEWSROOM_EDITOR_ORIGIN;process.env.NEWSROOM_EDITOR_ORIGIN="http://localhost:5173";
@@ -58,13 +64,15 @@ test('Express 통합: 두 로컬 경로, 중단 경로 거부, 저장 왕복',as
   assert.equal((await post('/api/threads-local/connect',{}, {Origin:'https://other.invalid'})).status,403);
   assert.equal((await post('/api/threads-local/connect',{}, {Origin:'http://localhost:5173'})).status,200);
   assert.equal((await post('/api/generate/blog',{})).status,400);assert.equal((await post('/api/validate',{platform:'blog'})).status,400);
-  assert.equal((await fetch(base+'/sns-export-ui.js')).status,404);assert.equal((await post('/render',{})).status,404);
+  assert.equal((await fetch(base+'/sns-export-ui.js')).status,404);
+  const missingCard=await post('/render',{});assert.equal(missingCard.status,400);assert.equal((await missingCard.json()).error,'card_id is required');
   const draft={cards:[{card_id:'C1',headline:'저장',image:{url:'data:image/jpeg;base64,YQ==',presentation:{zoom:1.7}}}],text_drafts:{threads:{opening:'📰 제목',paragraphs:['본문'],closing:''}}};
   const saved=await (await post('/api/local/drafts',{draft})).json();assert(saved.success);const loaded=await (await fetch(base+'/api/local/drafts/'+saved.id)).json();assert.equal(loaded.draft.cards[0].image.presentation.zoom,1.7);
  }finally{if(priorOrigin===undefined)delete process.env.NEWSROOM_EDITOR_ORIGIN;else process.env.NEWSROOM_EDITOR_ORIGIN=priorOrigin;await new Promise(r=>server.close(r));await fsp.rm(dir,{recursive:true,force:true});}
 });
-class LocalScripts extends ResourceLoader{fetch(url){const p=new URL(url).pathname.slice(1);const file=path.join(root,'public',p);return fs.existsSync(file)&&fs.statSync(file).isFile()?Promise.resolve(fs.readFileSync(file)):null;}}
+class LocalScripts extends ResourceLoader{fetch(url){const p=new URL(url).pathname.slice(1);const file=fs.existsSync(path.join(root,'lib',p))?path.join(root,'lib',p):path.join(root,'public',p);return fs.existsSync(file)&&fs.statSync(file).isFile()?Promise.resolve(fs.readFileSync(file)):null;}}
 test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 없음',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const errors=[],vc=new VirtualConsole();vc.on('jsdomError',e=>errors.push(e.message));
  const dom=new JSDOM(fs.readFileSync(path.join(root,'public/index.html'),'utf8'),{url:'http://localhost:3001/',runScripts:'dangerously',resources:new LocalScripts(),pretendToBeVisual:true,virtualConsole:vc,beforeParse(w){w.structuredClone=structuredClone;w.ResizeObserver=class{observe(){}disconnect(){}};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=()=>{};}});
  try{
@@ -166,6 +174,7 @@ test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 �
  }finally{dom.window.close();}
 });
 test('사진 선택은 별도 편집창 없이 원본을 카드에 전달',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const {window:w}=new JSDOM('<body></body>',{runScripts:'outside-only',url:'http://localhost:3001'});w.structuredClone=structuredClone;
  try{
   const component=fs.readFileSync(path.join(root,'public/assets/photo-tools.js'),'utf8').replace('import.meta.url',"'http://localhost:3001/assets/photo-tools.js'").replace('export class','class');
@@ -180,6 +189,7 @@ test('사진 선택은 별도 편집창 없이 원본을 카드에 전달',async
  }finally{w.close();}
 });
 test('생성 경로는 빈 키워드와 미지정 키워드를 허용하고 잘못된 입력은 거부',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const paths=['card-news-generator','instagram-generator','text-generator'].map(n=>require.resolve('../'+n));
  const originals=paths.map(p=>require.cache[p]);
  const stub=async input=>({platform:'fixture',selected_keywords:input.selected_keywords});
@@ -197,6 +207,7 @@ test('생성 경로는 빈 키워드와 미지정 키워드를 허용하고 잘�
 });
 
 test('실제 카드·Threads 생성기는 빈 키워드로 AI 호출 단계까지 진행',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const adapter=require.resolve('../ai-provider'),saved=require.cache[adapter];
  class FakeAI {static apiKey='fixture';constructor(){this.responses={create:async options=>{assert(options.instructions.includes('선택 키워드가 비어'));throw Error('fixture-ai-called')}}}}
  require.cache[adapter]={id:adapter,filename:adapter,loaded:true,exports:FakeAI};
@@ -209,6 +220,7 @@ test('실제 카드·Threads 생성기는 빈 키워드로 AI 호출 단계까�
 });
 
 test('사진 검색은 기존 3장과 추천 4장을 지원하고 범위 밖 요청은 거부',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const {createApp}=require('../server');const nativeFetch=global.fetch,key=process.env.UNSPLASH_ACCESS_KEY;process.env.UNSPLASH_ACCESS_KEY='fixture';
  const sizes=[];global.fetch=async(url,options)=>{
   const u=new URL(url);if(u.hostname!=='api.unsplash.com')return nativeFetch(url,options);
@@ -223,6 +235,7 @@ test('사진 검색은 기존 3장과 추천 4장을 지원하고 범위 밖 요
  }finally{global.fetch=nativeFetch;if(key===undefined)delete process.env.UNSPLASH_ACCESS_KEY;else process.env.UNSPLASH_ACCESS_KEY=key;await new Promise(r=>server.close(r));}
 });
 test('추천 요청 중 카드 전환 시 오래된 사진은 새 카드에 표시되지 않음',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const errors=[],vc=new VirtualConsole();vc.on('jsdomError',e=>errors.push(e.message));
  const dom=new JSDOM(fs.readFileSync(path.join(root,'public/index.html'),'utf8'),{url:'http://localhost:3001/',runScripts:'dangerously',resources:new LocalScripts(),pretendToBeVisual:true,virtualConsole:vc,beforeParse(w){w.structuredClone=structuredClone;w.ResizeObserver=class{observe(){}disconnect(){}};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=()=>{}}});
  try {

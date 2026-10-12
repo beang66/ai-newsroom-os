@@ -1,0 +1,13 @@
+# EXE 빌드 도구와 동봉할 런타임 의존성입니다. 사용자는 Python 설치 없이 실행합니다.
+#
+#   python -m pip install -r packaging/requirements-build.txt
+#   python -m PyInstaller --noconfirm --clean packaging/AINewsroom.spec
+#
+# Windows 셸(pythonnet/WebView2), 암호화 저장소, ONNX 추론, 문서 읽기를 동봉합니다.
+pyinstaller>=6.22
+pywebview>=6.2.1
+-r ../requirements-storage.txt
+-r ../requirements-headline.txt
+# Source document readers used by the HTTP core (no torch/transformers).
+pypdf>=5.0
+olefile>=0.47

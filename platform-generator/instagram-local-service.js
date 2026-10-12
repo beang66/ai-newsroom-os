@@ -4,7 +4,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs/promises');
 const crypto = require('crypto');
-const {SNS_ENDPOINTS}=require('./public/api');
+const {SNS_ENDPOINTS}=require('./lib/api');
 
 function validateInput(input) {
   if (typeof input?.text !== 'string' || !input.text.trim() || [...input.text].length > 2200) {

@@ -6,6 +6,7 @@ const article={title:'도서관 주말 운영 확대 계획',content:'시는 두
 const make=(role,headline,answer,detail)=>({card_id:role,role,content_version:2,content:{keyword:'도서관',headline,answer,detail,body:'',show_keyword:true,farewell:role==='closing'?'읽어주셔서 감사합니다.':''},source_evidence:[article.content],design:{layout:'standard',highlights:[],compact:false}});
 const draft={platform:'card_news',cards:[make('cover','도서관 주말\n운영 확대 계획','','두 시간 확대를 계획합니다.'),make('body','무엇이 바뀌나요?','주말 운영을 두 시간 늘릴 계획입니다.','두 곳의 도서관이 대상입니다.\n\n시행일은 인력 배치 후 확정할 예정입니다.'),make('closing','인력 배치 후 시행일 확정','','확대는 계획 단계이며 인력 배치 후 시행일을 확정할 예정입니다.')],core_text:{headline:article.title,summary:article.content,source_evidence:[article.content]},recommended_card_count:3,card_count_reason:'사건·조건·현재 상태'};
 async function main(){
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  await fs.mkdir(output,{recursive:true});const server=createApp({storageOptions:{rootDir:path.join(output,'storage')}}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
  const base='http://127.0.0.1:'+server.address().port;let browser;
  try{

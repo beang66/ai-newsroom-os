@@ -1,0 +1,31 @@
+{
+  "name": "ai_newsroom",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "test": "npm run check:api-boundary && node --test article_editor/dev/tests/datamap-*.test.mjs article_editor/dev/tests/workspace.test.mjs article_editor/dev/tests/core-api-contract.test.mjs",
+    "check:api-boundary": "node article_editor/dev/checks/check-api-boundary.mjs",
+    "test:ui": "npm --prefix article_editor run test:ui",
+    "dev:core": "python article_editor/app/server.py",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ssabrojs/hwpxjs": "^0.4.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "lucide-react": "^1.49.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "vite": "^8.3.0"
+  }
+}

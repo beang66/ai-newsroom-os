@@ -1,0 +1,8 @@
+# Fact-check judge, embedding and semantic boundaries use ONNX Runtime.
+# torch/transformers are needed only for dev/tools conversion/reference checks.
+numpy>=2.0
+onnxruntime>=1.20
+tokenizers>=0.21
+# 자료 파일 텍스트 추출(core/documents.py): PDF·옛 HWP. DOCX·HWPX 는 표준 라이브러리
+pypdf>=5.0
+olefile>=0.47

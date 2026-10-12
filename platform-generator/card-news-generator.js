@@ -9,7 +9,7 @@
 const path = require("path");
 const OpenAI = require("./ai-provider");
 const { getPlatformRules } = require("./platform-rules");
-const CardModel = require("./public/card-model");
+const CardModel = require("./lib/card-model");
 
 require("dotenv").config({
   path: path.join(__dirname, ".env"),

@@ -3,9 +3,11 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),fsp=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),vm=require('node:vm');
 const {JSDOM,ResourceLoader,VirtualConsole}=require('jsdom');
-const Model=require('../public/card-model'),Template=require('../public/card-template');
+const Model=require('../lib/card-model'),Template=require('../lib/card-template');
 const {getPlatformRules}=require('../platform-rules');
 const root=path.resolve(__dirname,'..');
+// Persistence tests explicitly opt into development storage; default 410 is tested separately.
+process.env.PLATFORM_LOCAL_STORAGE='1';
 const article={article_id:'card-test',title:'서울시 도서관 주말 운영 확대',content:'서울시는 다음 달부터 세 곳의 도서관 주말 운영 시간을 두 시간 늘릴 계획입니다. 대상은 중앙·동부·서부 도서관입니다. 평일 운영 시간은 유지합니다. 시는 인력 배치를 마친 뒤 시행일을 확정할 예정이라고 밝혔습니다.'};
 function fixture(type='summary'){
  const evidence=[article.content];
@@ -18,6 +20,7 @@ function fixture(type='summary'){
 function planFixture(){return {card_count:3,main_topic:article.title,points:[{id:'P1',summary:article.content,body_page:2,source_evidence:[article.content]}],closing_summary:'주말 확대 계획과 시행일 확정 조건'};}
 function loadWithAI(file,FakeAI){const mod={exports:{}};vm.runInNewContext(fs.readFileSync(path.join(root,file),'utf8'),{module:mod,__dirname:root,process,console,require:n=>n==='./ai-provider'?FakeAI:n==='dotenv'?{config(){}}:n.startsWith('./')?require(path.join(root,n)):require(n)});return mod.exports;}
 test('카드뉴스 생성·검수 프롬프트는 한국어 문장 품질을 일관되게 확인',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const requests=[];
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
   requests.push(request);let result;
@@ -37,6 +40,7 @@ test('카드뉴스 생성·검수 프롬프트는 한국어 문장 품질을 일
  assert.match(prompts.requirement_validation,/같은 원문 사실·조건을 유지하면서 자연스러운 한국어/);
 });
 test('배분표의 인용 근거가 본문과 불일치하면 한 번 다시 생성해 계속 진행',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  let planCalls=0,retryRequest;
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
   let result;
@@ -64,6 +68,7 @@ test('배분표의 인용 근거가 본문과 불일치하면 한 번 다시 생
  assert.equal(draft.generation_review.status,'passed');
 });
 test('카드 근거 불일치 교정에는 실패 위치와 원문에 없는 인용을 전달',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  let drafts=0,correction;
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
   let result;
@@ -103,6 +108,7 @@ test('고정 카드 생성은 객체 순서와 무관하게 배분표의 번호�
  assert.throws(()=>readPlannedDraft({...source,cards:{page_1:source.cards[0]}},plan),/2번째/);
 });
 test('본문 배분 오류는 실패한 정보 ID와 예정·실제 카드 번호를 교정 입력에 제공',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  let drafts=0,correction;
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
   let result;
@@ -123,6 +129,7 @@ test('본문 배분 오류는 실패한 정보 ID와 예정·실제 카드 번�
  assert.equal(draft.generation_review.status,'passed');
 });
 test('서버가 정보 ID를 연결해도 실제 문장 누락은 의미 검수와 교정을 거침',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  let drafts=0,requirements=0,correction,reviewInput;
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
   let result;
@@ -148,6 +155,7 @@ test('서버가 정보 ID를 연결해도 실제 문장 누락은 의미 검수�
  assert.equal(draft.generation_review.status,'passed');
 });
 test('목록형 상세 설명 오류는 교정 요청 후 재검사하고 반환',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  let drafts=0,correction;
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async r=>{
   let result;
@@ -178,6 +186,7 @@ test('이전 본문을 재작성하지 않고 새 필드·역할·숨긴 키워�
  assert.equal(Template.markup(JSON.parse(JSON.stringify(fresh))),Template.markup(fresh));
 });
 test('마지막 카드 설정 없이 생성하고 선택 끝인사는 기사 근거와 분리',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  for(const farewell of ['', '읽어주셔서 감사합니다.']){
   let request;
   class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async r=>{request=r;const d=r.text.format.name.endsWith('_validation')?{issues:[]}:r.text.format.name==='card_news_information_plan'?planFixture():fixture();if(d.cards){d.cards.forEach((c,i)=>{c.content.farewell='';c.covered_point_ids=i===0?[]:['P1'];});d.cards.at(-1).content.farewell=farewell;}return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(d)}]}]};}};}
@@ -200,6 +209,7 @@ test('서비스 근거만 제외하고 다른 카드 누락·구버전·표지 �
  assert.equal(checkBasicRules('card_news',extractDraft('card_news',old),getPlatformRules('card_news'),createQuoteChecker(article)).requirement.length,0);
 });
 test('AI 의미 검수 입력에서는 사용자 안내를 제외하고 기사 카드 위치를 유지',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const requests=[];
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async r=>{requests.push(r);return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:'{"issues":[]}'}]}]};}};}
  const {validateDraft}=loadWithAI('draft-validator.js',FakeAI);
@@ -208,8 +218,9 @@ test('AI 의미 검수 입력에서는 사용자 안내를 제외하고 기사 �
  assert.equal(fact.draft.cards[2].excluded_from_article_fact_check,true);assert(!requests[0].input.includes('우리 편집실의 다음'));
  assert.equal(fact.draft.cards[1].content.answer,fixture().cards[1].content.answer);assert.equal(requirements.draft.cards[2].service_message,fixture('service').card_news_options.service_message);
 });
-class LocalScripts extends ResourceLoader{fetch(url){const file=path.join(root,'public',new URL(url).pathname.slice(1));return fs.existsSync(file)&&fs.statSync(file).isFile()?Promise.resolve(fs.readFileSync(file)):null;}}
+class LocalScripts extends ResourceLoader{fetch(url){const p=new URL(url).pathname.slice(1);const file=fs.existsSync(path.join(root,'lib',p))?path.join(root,'lib',p):path.join(root,'public',p);return fs.existsSync(file)&&fs.statSync(file).isFile()?Promise.resolve(fs.readFileSync(file)):null;}}
 test('실제 화면: 새 구조 저장·불러오기·순서 변경·기존 초안과 안내 편집',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const errors=[],vc=new VirtualConsole();vc.on('jsdomError',e=>errors.push(e.message));
  const dom=new JSDOM(fs.readFileSync(path.join(root,'public/index.html'),'utf8'),{url:'http://localhost:3001',runScripts:'dangerously',resources:new LocalScripts(),pretendToBeVisual:true,virtualConsole:vc,beforeParse(w){w.structuredClone=structuredClone;w.ResizeObserver=class{observe(){}};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=()=>{};}});
  try{
@@ -236,6 +247,7 @@ test('실제 화면: 새 구조 저장·불러오기·순서 변경·기존 초�
  }finally{dom.window.close();}
 });
 test('로컬 저장 API는 새 답변·설명·안내·사진 데이터를 그대로 왕복',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const {createApp}=require('../server');const dir=await fsp.mkdtemp(path.join(os.tmpdir(),'newsroom-card-contract-'));
  const server=createApp({storageOptions:{rootDir:dir}}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;
  try{
@@ -247,6 +259,7 @@ test('로컬 저장 API는 새 답변·설명·안내·사진 데이터를 그�
 });
 
 test('끝인사는 사실 검수에서 제외하고 마지막 정리의 근거는 계속 검사',async()=>{
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  const requests=[];class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async r=>{requests.push(r);return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:'{"issues":[]}'}]}]};}};}
  const d=fixture();d.cards.at(-1).content.farewell='함께 읽어주셔서 감사합니다.';
  const {validateDraft,extractDraft,checkBasicRules,createQuoteChecker}=loadWithAI('draft-validator.js',FakeAI);

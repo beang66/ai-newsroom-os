@@ -1,0 +1,18 @@
+{
+  "name": "article-workspace",
+  "version": "14.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Portable article editor with Donga preview and Unsplash photo editing",
+  "scripts": {
+    "test": "node dev/checks/check-api-boundary.mjs",
+    "test:python": "python -m unittest discover -s dev/tests -p 'test_*.py'",
+    "test:ui": "node dev/tests/ui-smoke.mjs",
+    "build:web": "npm --prefix .. run build",
+    "dev:web": "npm --prefix .. run dev",
+    "check:api-boundary": "node dev/checks/check-api-boundary.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

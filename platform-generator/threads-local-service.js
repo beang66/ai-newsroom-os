@@ -2,7 +2,7 @@
 // 로그인은 공식 창에서 직접 진행합니다. prepare는 작성만, publish는 명시적 확인 후 게시합니다.
 const path=require('path'),os=require('os'),fs=require('fs/promises'),crypto=require('crypto');
 const {validateInput:validateInstagramInput}=require('./instagram-local-service');
-const {SNS_ENDPOINTS}=require('./public/api');
+const {SNS_ENDPOINTS}=require('./lib/api');
 const THREADS_URL=SNS_ENDPOINTS.threads;
 function validateThreadsInput(input){
  if(typeof input?.text!=='string'||!input.text.trim()||input.text.length>500)throw new Error('Threads 게시글은 줄바꿈·URL을 포함해 500자 이내로 작성해주세요.');

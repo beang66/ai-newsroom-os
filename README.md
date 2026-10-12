@@ -1,31 +1,70 @@
-# 뉴스 카드 편집실
+# AI Newsroom OS
 
-기사에서 Instagram·Threads 원고와 카드뉴스를 생성하고 편집하는 로컬 웹 앱입니다. 카드뉴스 사진·텍스트 편집, 원문 검수, 초안 저장·불러오기, JPG 출력, Instagram·Threads 로컬 게시 기능을 포함합니다.
+기사 작성, 취재자료, 팩트체크, DataMap, 플랫폼 변환을 제공하는 로컬 뉴스룸 앱입니다.
 
-## 실행
+메인 UI 소스는 루트 `src/` 하나입니다. 이전 `article_editor/web/src`의 최신 UI와 DataMap을 이곳으로 이동했습니다. `pilot/`은 별도 프로토타입입니다. Python 코어는 `article_editor/app/core/`, 플랫폼 변환기의 공용 런타임은 `platform-generator/lib/`에 있습니다.
 
-Node.js를 설치한 후 다음 명령을 실행하세요.
+인터페이스는 프로토타입의 6개 작업 흐름을 사용합니다: 오늘의 데스크, 기사 작성, 인터뷰·녹취, 변환·배포, 데이터맵, 보관함. 기존 디자인 시스템을 유지하며 데이터맵과 보관함은 별도 화면입니다. 새 기사와 저장 원고를 열 때는 현재 저장이 끝난 뒤 전환합니다.
+
+편집 중 창을 닫거나 새로고침하면 저장을 먼저 시도하고, 저장되지 않은 변경이 있으면 브라우저가 확인합니다. 환경 설정에서는 기사·자료·녹음·녹취를 사용자 암호로 재암호화한 이동식 백업을 만들거나 복구할 수 있습니다. CMS 발행은 백엔드의 실제 `/cms/publish` 응답이 성공한 경우에만 완료로 표시됩니다.
+
+## Windows에서 실행
+
+프로젝트 폴더에서 최신 UI를 빌드하고 데스크톱 창을 엽니다. Python과 Node.js가 필요하며, 저장소 의존성은 배치 파일이 프로젝트 로컬에 설치합니다.
+
+```powershell
+cd C:\myproject\ai-newsroom-os-main
+.\article_editor\start_window_fresh.bat
+```
+
+브라우저 개발은 터미널 두 개를 사용합니다.
+
+```powershell
+# 터미널 1: 코어 API (기본 포트 8765)
+cd C:\myproject\ai-newsroom-os-main
+cmd /c article_editor\scripts\ensure_storage_deps.bat
+py -3 .\article_editor\app\server.py
+```
+
+```powershell
+# 터미널 2: 메인 UI
+cd C:\myproject\ai-newsroom-os-main
+npm ci
+npm run dev
+```
+
+브라우저에서 http://127.0.0.1:5173 을 엽니다. `npm run build` 결과는 `article_editor/app/frontend/`에 생성되고 Python 코어와 EXE 패키징이 같은 결과를 사용합니다.
+
+## 검증
+
+```powershell
+cd C:\myproject\ai-newsroom-os-main
+npm test
+npm run build
+npm test --prefix platform-generator
+$env:PYTHONPATH = "$pwd\article_editor\.runtime"
+npm --prefix article_editor run test:python
+npm run test:ui
+```
+
+화면 테스트는 Edge와 가짜 백엔드, 임시 저장소를 사용합니다. AI 기능에는 별도의 로그인·모델·서버 설정이 필요합니다. EXE 배포 준비는 `article_editor/packaging/README.md`를 참고하세요.
+
+실제 CMS 송고를 쓰려면 백엔드에 `CMS_PUBLISH_URL`과 필요 시 `CMS_BEARER_TOKEN`을 설정합니다. 비밀 토큰은 앱이나 저장소에 넣지 않습니다.
+
+## DataMap 테스트 자료와 복구점
+
+`sample-data/datamap/`의 마크다운 5개는 내부 링크, 백링크, 미해결 링크를 검증합니다. 보관함의 DataMap에서 가져올 수 있습니다.
+
+GitHub `origin/main` 이력을 연결했으며, UI 정리 직전 로컬 DataMap 변경은 `backup/local-before-ui-consolidation` 브랜치에 보존했습니다. 구형 UI는 이 브랜치에서 확인할 수 있습니다. 로컬 커밋은 별도 요청 전에는 GitHub로 push하지 않습니다.
+
+## 개발용 카드 편집실
+
+팀 메인 UI와 별도로 정민님의 카드·사진 편집 및 SNS 작성창 준비 기능을 유지합니다. 실제 게시에는 별도 사용자 동작이 필요합니다.
 
 ```powershell
 cd platform-generator
 npm ci
-Copy-Item .env.example .env
-```
-
-`.env`에 사용할 AI·사진 API 설정을 입력하세요. 이미 `.env`가 있으면 복사 명령은 생략합니다. 로컬 게시와 JPG 출력에 필요한 Chromium을 설치하고 서버를 시작합니다.
-
-```powershell
-npx playwright install chromium
 npm start
 ```
 
-브라우저에서 http://localhost:3001 을 여세요.
-
-## 테스트
-
-```powershell
-cd platform-generator
-npm test
-```
-
-API 키가 들어 있는 `.env`, `node_modules`, 출력 이미지 및 ZIP 파일은 Git에서 제외됩니다. 기사 검토 시제품(`localhost:8765`)은 포함하지 않습니다.
+http://localhost:3001 에서 사용합니다. 기존 `.env`를 보존하고 OpenAI 설정은 `.env.example`을 참고하세요. Documents 초안 저장은 개발 전용 `PLATFORM_LOCAL_STORAGE=1`로 명시적으로 켜며, 팀 Core의 암호화 저장과 별개입니다. 공용 API·카드 모델·템플릿은 `lib/`에서 제공됩니다.

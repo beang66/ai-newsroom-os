@@ -3,8 +3,8 @@ const path=require('path');
 const fs=require('fs');
 const {randomUUID}=require('crypto');
 const {chromium}=require('playwright');
-const template=require('./public/card-template');
-const CardModel=require('./public/card-model');
+const template=require('./lib/card-template');
+const CardModel=require('./lib/card-model');
 module.exports=function(app){
  if(fs.existsSync(path.join(__dirname,'.env')))require('dotenv').config({path:path.join(__dirname,'.env')});
  app.post('/editor/render',async(req,res)=>{let browser;try{

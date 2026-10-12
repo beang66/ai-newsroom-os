@@ -110,7 +110,7 @@ function evidence(value) {
 // 사진, 화면 설정, 과거 검수 상태는 제외합니다.
 // 카드뉴스는 중첩 content·평면 구조, Instagram은 게시글·해시태그 구조를 지원합니다.
 // ============================================================
-const CardModel = require('./public/card-model');
+const CardModel = require('./lib/card-model');
 function extractDraft(platform, draft) {
   if (!draft || typeof draft !== "object") {
     throw new Error("검수할 원고가 없습니다.");

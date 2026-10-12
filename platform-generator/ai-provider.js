@@ -1,15 +1,19 @@
 // AI 호출 호환 어댑터: 기존 생성/검수 규칙과 Responses 결과 해석을 유지합니다.
 // AI_PROVIDER=gemini 또는 openai. 자동으로 다른 유료 API로 전환하지 않습니다.
-const { AI_ENDPOINTS } = require('./public/api');
+const { AI_ENDPOINTS } = require('./lib/api');
 function provider() {
   const value = (process.env.AI_PROVIDER || 'openai').trim().toLowerCase();
   if (!['gemini', 'openai'].includes(value)) throw new Error('AI_PROVIDER는 gemini 또는 openai로 설정해주세요.');
   return value;
 }
+// App Core 가 띄운 경우(PLATFORM_AI_BRIDGE=core) 외부 AI 호출은 코어에 맡긴다 — 이 프로세스에는 키가 없다.
+function viaCore() { return process.env.PLATFORM_AI_BRIDGE === 'core'; }
 function apiKey() {
+  if (viaCore()) return 'core-bridge'; // 키 확인용 자리표시자(실제 키는 코어/백엔드 쪽)
   return (provider() === 'gemini' ? process.env.GEMINI_API_KEY : process.env.OPENAI_API_KEY)?.trim() || '';
 }
 function model() {
+  if (viaCore()) return 'core-managed'; // 실제 모델은 코어가 정한다
   return (provider() === 'gemini' ? process.env.GEMINI_MODEL : process.env.OPENAI_MODEL)?.trim() ||
     (provider() === 'gemini' ? 'gemini-3.5-flash-lite' : 'gpt-5');
 }
@@ -48,6 +52,10 @@ class AiProvider {
   static get apiKey() { return apiKey(); }
   static get model() { return model(); }
   constructor(options = {}) {
+    if (viaCore()) {
+      this.responses = { create: request => require('./core-bridge').call(request) };
+      return;
+    }
     if (provider() === 'openai') {
       const OpenAI = require('openai');
       const client = new OpenAI({ ...options, apiKey: apiKey() });

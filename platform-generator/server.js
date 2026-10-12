@@ -10,9 +10,10 @@ require("./instagram-local-routes")(app,instagramService);
 require("./threads-local-routes")(app,threadsService);
 
 app.use(express.json({ limit: "50mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname,"lib")));
+app.use(express.static(path.join(__dirname,"public")));
 
-// 내 문서 저장 기능과 JPG 보관 연결은 기존 생성 경로보다 먼저 등록합니다.
+// Development storage remains opt-in; test paths are injectable.
 require("./local-storage-routes")(app,storageOptions);
 
 // 공개 기사 URL에서 제목과 본문을 가져오는 입력 경로
@@ -46,6 +47,15 @@ if (!fs.existsSync(OUTPUT_DIR)) {
 app.use("/output", express.static(OUTPUT_DIR));
 
 app.get('/health',(req,res)=>res.json({status:'ok'}));
+app.post('/render',async(req,res)=>{try{
+ const payload=req.body;
+ if(typeof payload?.card_id!=='string'||!payload.card_id)return res.status(400).json({success:false,error:'card_id is required'});
+ const {renderCardJpeg}=require('./card-renderer');
+ const bytes=await renderCardJpeg(payload);
+ const fileName=require('crypto').randomUUID()+'.jpg';
+ await fs.promises.writeFile(path.join(OUTPUT_DIR,fileName),bytes);
+ res.json({success:true,card_id:payload.card_id,file_name:fileName,image_url:'/output/'+fileName});
+}catch(error){res.status(error.status||500).json({success:false,error:error.message});}});
 
 app.post("/api/article/keywords", async (req, res) => {
   const article = req.body?.article;
@@ -112,6 +122,6 @@ return app;
 }
 if(require.main===module){
  const port=Number(process.env.PORT||3001);
- createApp().listen(port,'127.0.0.1',()=>console.log(`편집실: http://localhost:${port}`));
+ createApp().listen(port,'127.0.0.1',()=>console.log('편집실: http://localhost:'+port));
 }
 module.exports={createApp};

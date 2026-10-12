@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path');
 const {chromium}=require('playwright');
 const {createApp}=require('../server');
-const Model=require('../public/card-model');
+const Model=require('../lib/card-model');
 const root=path.resolve(__dirname,'..'),qa=path.join(root,'output','qa-card-news');
 const article={article_id:'output-test',title:'서울시 도서관 주말 운영 확대 계획',content:'서울시는 다음 달부터 중앙·동부·서부 도서관의 주말 운영 시간을 두 시간 늘릴 계획입니다. 평일 운영 시간은 유지합니다. 시는 인력 배치를 마친 뒤 시행일을 확정할 예정이라고 밝혔습니다.'};
 const design=layout=>({layout,highlights:['두 시간'],compact:false});
@@ -15,6 +15,7 @@ const sample={platform:'card_news',draft_version:2,card_news_options:{closing_ty
  make('closing','인력 배치 후 시행일 확정','','서울시는 인력 배치를 마친 뒤 시행일을 확정할 예정이라고 밝혔습니다.'),
 ]};
 async function main(){
+ process.env.PLATFORM_LOCAL_STORAGE="1";
  await fs.mkdir(qa,{recursive:true});
  const app=createApp({storageOptions:{rootDir:path.join(qa,'storage')}}),server=app.listen(0,'127.0.0.1');
  await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;

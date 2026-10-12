@@ -38,6 +38,7 @@ class AIManager:
     def factcheck_status(self):
         """팩트체크에 필요한 모델·런타임 준비 상태."""
         from ..ai.factcheck import paths
+        from .settings_manager import local_factcheck
         deps = {name: importlib.util.find_spec(name) is not None
                 for name in paths.embedding_dependencies()}
         embedding_ready = False
@@ -49,8 +50,9 @@ class AIManager:
             'embedding': embedding_ready,
             'boundary': (paths.BOUNDARY_DIR / 'model.onnx').is_file(),  # 없으면 규칙만으로 청킹
         }
-        return {'ready': all(deps.values()) and models['judge'] and models['embedding'],
-                'models': models, 'runtime': deps}
+        local = local_factcheck()  # 끄면 판정은 외부 모델이 하므로 로컬 판정 모델은 필요 없다
+        return {'ready': all(deps.values()) and (models['judge'] or not local) and models['embedding'],
+                'mode': 'local' if local else 'external', 'models': models, 'runtime': deps}
 
     def factcheck_run(self, payload):
         """원고 문장(nodes)을 등록 자료(materials)에 비춰 판정한다.
@@ -100,22 +102,23 @@ class AIManager:
             status = self.factcheck_status()
             if not status['ready']:
                 models = status.get('models') or {}
-                if models.get('judge') and not models.get('embedding'):
+                if (models.get('judge') or status.get('mode') == 'external') and not models.get('embedding'):
                     raise RequestError('임베딩 서버(백엔드)에 연결할 수 없어요. 인터넷 연결과 로그인을 확인해 주세요.', 503)
                 raise RequestError('팩트체크 모델이 아직 설치되지 않았어요. 모델 설치 후 다시 시도해 주세요.', 503)
             from ..ai.factcheck.service import review_workspace
+            external = status.get('mode') == 'external'
             by_id = {str(nodes[i]['id']): keys[i] for i in pending}
             if keys:
                 # 5문장씩 끊어 판정하고 그때마다 기록한다 — 중간에 끊겨도 다음 실행은 이어서 한다
                 fresh = {'results': [], 'node_statuses': {}, 'critiques': []}
                 for n in range(0, len(pending), FACTCHECK_BATCH):
-                    part = review_workspace([nodes[i] for i in pending[n:n + FACTCHECK_BATCH]], materials)
+                    part = review_workspace([nodes[i] for i in pending[n:n + FACTCHECK_BATCH]], materials, **({'external': True} if external else {}))
                     self._memo_part(part, by_id, stored)
                     fresh = {**part, 'results': fresh['results'] + part['results'],
                              'node_statuses': {**fresh['node_statuses'], **part['node_statuses']},
                              'critiques': fresh['critiques'] + part['critiques']}
             else:
-                fresh = review_workspace(nodes, materials)
+                fresh = review_workspace(nodes, materials, **({'external': True} if external else {}))
         if not keys:
             return fresh
         from ..ai.factcheck.assertion import find_support_spans

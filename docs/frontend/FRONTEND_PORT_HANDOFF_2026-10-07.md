@@ -31,7 +31,7 @@
 | 10 | **본문 하이라이트**: 본문 안의 문장을 판정별 색으로 칠함. 글이 1초 멈추면 자동 검증 | `components/ArticleWriter.jsx`의 `HighlightedBody`, `components/EditorialAssist.jsx`의 `useFactCheck` | `useFactCheck(article)` → `factcheckArticle` (`api/editorial.js`) | `fact-highlight`, `factcheck-status`, `factcheck-error` |
 | 11 | **상위모델 재검토**: 로컬 판정기가 확정 못 한 문장의 하이라이트에 마우스를 올리면 말풍선이 뜨고, 누르면 다시 판정. 결과는 카드에 "AI 재판정"으로 표시되고 하이라이트가 사라짐. 서랍의 "AI 재판정 N건(임시)" 버튼으로 한꺼번에도 가능 | `ArticleWriter.jsx`(말풍선), `FactCheckDrawer.jsx`, `useFactCheck`의 `recheck`·`restoreExternal` | `externalRecheck`, `cachedExternalRecheck` (`api/editorial.js`) | `recheck-tip` |
 | 12 | **서랍의 새로고침 버튼**: 전체 문장을 다시 검증(평소에는 고친 문장만 자동 검증) | `components/FactCheckDrawer.jsx` | `useFactCheck`의 `run(true)` | |
-| 13 | **환경 설정 대화상자**(사이드바 "환경 설정" 버튼): 작성 중 기사 클라우드 백업 켜기/끄기(기본 켜짐), 사용자 자료 백업·복구. 모델 설치는 여기에 없음 | `components/SettingsDialog.jsx` | `getSettings`, `saveSettings({cloudBackup})`, `exportVault`, `restoreVault` (`api/editorial.js`) | `settings-dialog`, `settings-cloud-backup`, `settings-error` |
+| 13 | **환경 설정 대화상자**(사이드바 "환경 설정" 버튼): 작성 중 기사 클라우드 백업 켜기/끄기(기본 켜짐), 팩트체크 로컬 모델 사용 켜기/끄기(기본 켜짐; 끄면 모든 문장을 외부 모델이 판정), 사용자 자료 백업·복구. 모델 설치는 여기에 없음 | `components/SettingsDialog.jsx` | `getSettings`, `saveSettings({cloudBackup, localFactcheck})`, `exportVault`, `restoreVault` (`api/editorial.js`) | `settings-dialog`, `settings-cloud-backup`, `settings-local-factcheck`, `settings-error` |
 
 **화면별로 알아 둘 점**
 - **고정본(3-6, 9):** 키워드 추천·생성·카드 이미지·전체 다시 검증을 누르면 코어가 지금 글을 저장해 고정본(그 시점의 글을 얼린 사본)으로 만들고, 그 기준으로 요청합니다. 글이 그대로면 같은 고정본을 다시 씁니다. 글이 멈출 때마다 도는 자동 검증은 고정본을 만들지 않습니다.

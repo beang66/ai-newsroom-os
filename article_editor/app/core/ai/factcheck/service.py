@@ -307,13 +307,64 @@ def _critique(node_id, status, evidence, confidence):
             "nodeId": node_id,
         }
     return None
-def review_workspace(nodes, materials):
+EXTERNAL_BATCH = 10  # 외부 모델에 한 번에 보내는 문장 수
+_EXTERNAL_STATUS = {"SUPPORTED": "SUPPORTED", "CONFLICT": "CONFLICT", "NOT_ENOUGH_INFO": "EVIDENCE_GAP"}
+
+
+def _external_pass(nodes, chunks, materials, indexes):
+    """로컬 판정기 대신 외부 모델이 모든 문장을 판정한다(설정 localFactcheck=끔). 검색은 그대로 하고, 문장마다 상위 근거
+    최대 3개를 보낸다. → {node_id: (검색 후보 전체, 판정 묶음)}. 외부 호출이 실패하면 오류를 그대로 올린다(조용히 건너뛰지 않는다).
+    ponytail: 문장 묶음을 순서대로 보낸다. 느리면 묶음을 병렬로."""
+    from .external import MAX_EVIDENCE, judge
+    prepared, items = {}, []
+    for node in nodes or []:
+        node_id, claim = str(node.get("id") or ""), _clean(node.get("text") or "")
+        if not node_id or not claim or node.get("type") == "IMAGE" or _direct_span_match(claim, node, materials or []) is not None:
+            continue
+        candidates = _retrieve_qwen_candidates(claim, node, chunks, limit=DEFAULT_K, indexes=indexes)
+        if not candidates:
+            continue
+        top = candidates[:MAX_EVIDENCE]
+        prepared[node_id] = (claim, candidates, top)
+        items.append({"id": node_id, "claim": claim, "evidence": [c["text"] for c in top],
+                      "titles": [c.get("material_title") or "" for c in top]})
+    verdicts = {}
+    for n in range(0, len(items), EXTERNAL_BATCH):
+        for row in judge({"items": items[n:n + EXTERNAL_BATCH]}).get("results", []):
+            verdicts[str(row.get("id"))] = row
+    out = {}
+    for node_id, (claim, candidates, top) in prepared.items():
+        row = verdicts.get(node_id)
+        if row is None:
+            out[node_id] = (candidates, {"status": "REVIEW", "confidence": None, "evidence": top[0], "conflict_spans": [], "focus_spans": [],
+                                         "reason": "외부 모델이 이 문장의 판정을 돌려주지 않았어요. 다시 검증해 주세요.",
+                                         "provider": "external", "model_metadata": {}, "candidate_judgements": []})
+            continue
+        status = _EXTERNAL_STATUS.get(row.get("verdict"), "REVIEW")
+        quote = (row.get("evidence_text") or "").strip()
+        evidence = next((c for c in top if quote and quote in (c.get("text") or "")), top[0])
+        spans = []
+        wrong = (row.get("wrong_text") or "").strip()
+        if status == "CONFLICT" and wrong and wrong in claim:  # 화면이 틀린 부분만 칠하는 데 쓴다(문장에서 그대로 복사한 부분일 때만)
+            start = claim.find(wrong)
+            at = (evidence.get("text") or "").find(quote) if quote else -1
+            spans = [{"claim_start": start, "claim_end": start + len(wrong), "claim_text": wrong,
+                      "evidence_start": max(at, 0), "evidence_end": max(at, 0) + (len(quote) if at >= 0 else 0),
+                      "evidence_text": quote if at >= 0 else "", "field": "external"}]
+        out[node_id] = (candidates, {"status": status, "confidence": None, "evidence": evidence, "conflict_spans": spans,
+                                     "focus_spans": list(spans), "reason": row.get("reason") or "", "provider": "external",
+                                     "model_metadata": {"external": True}, "candidate_judgements": []})
+    return out
+
+
+def review_workspace(nodes, materials, external=False):
+    """external=True 면 로컬 판정기를 쓰지 않고 외부 모델이 모든 문장을 판정한다."""
     request_id = uuid.uuid4().hex
     chunks = []
     for material in materials or []:
         chunks.extend(_material_chunks(material))
 
-    provider = _get_provider()
+    provider = None if external else _get_provider()
     critiques = []
     results = []
     node_statuses = {}
@@ -326,6 +377,8 @@ def review_workspace(nodes, materials):
             [c for c in (_clean(n.get("text") or "") for n in nodes or [] if n.get("type") != "IMAGE") if c], "query")
     except Exception:
         pass
+
+    external_done = _external_pass(nodes, chunks, materials, indexes) if external else {}
 
     for node in nodes or []:
         node_id = str(node.get("id") or "")
@@ -349,19 +402,22 @@ def review_workspace(nodes, materials):
             conflict_spans = []
             focus_spans = []
         else:
-            evidence_candidates = _retrieve_qwen_candidates(
-                claim,
-                node,
-                chunks,
-                limit=DEFAULT_K,
-                indexes=indexes,
-            )
-            aggregate = _judge_qwen_candidates(
-                provider,
-                claim,
-                node,
-                evidence_candidates,
-            )
+            if external:
+                evidence_candidates, aggregate = external_done.get(node_id, ([], None))
+            else:
+                evidence_candidates = _retrieve_qwen_candidates(
+                    claim,
+                    node,
+                    chunks,
+                    limit=DEFAULT_K,
+                    indexes=indexes,
+                )
+                aggregate = _judge_qwen_candidates(
+                    provider,
+                    claim,
+                    node,
+                    evidence_candidates,
+                )
             if aggregate is None:
                 evidence = None
                 status = "EVIDENCE_GAP"

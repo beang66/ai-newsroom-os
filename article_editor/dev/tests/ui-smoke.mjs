@@ -403,6 +403,14 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
   assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), false, "끈 설정이 유지됨");
   await page.getByTestId("settings-cloud-backup").check();
+  // 팩트체크 로컬 모델 사용: 기본 켜짐, 끄면 유지(끄면 모든 문장을 외부 모델이 판정)
+  assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), true, "로컬 팩트체크 기본값은 켜짐");
+  await page.getByTestId("settings-local-factcheck").uncheck();
+  await settings.getByRole("button", { name: "닫기", exact: true }).click();
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-local-factcheck"]')?.disabled === false);
+  assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), false, "끈 로컬 팩트체크 설정이 유지됨");
+  await page.getByTestId("settings-local-factcheck").check();
   await settings.getByRole("button", { name: "닫기", exact: true }).click();
 
   // 목업 없이 빈 원고로 시작해야 한다

@@ -3,7 +3,7 @@ const path=require('path');
 const fs=require('fs');
 const {randomUUID}=require('crypto');
 const {chromium}=require('playwright');
-const template=require('./public/card-template');
+const template=require('./lib/card-template');
 module.exports=function(app){
  if(fs.existsSync(path.join(__dirname,'.env')))require('dotenv').config({path:path.join(__dirname,'.env')});
  async function unsplash(endpoint){

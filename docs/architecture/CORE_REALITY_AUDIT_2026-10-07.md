@@ -1,6 +1,6 @@
 # App Core 구현 현황과 계약 차이 (2026-10-07)
 
-상태: **코드 확인 결과 / v0.8.1 목표 계약과 구분**. 기준은 `feature/app-core`의 `article_editor/app/core/{api,storage,vault}.py`, `managers/{storage_manager,ai_manager}.py` 및 `article_editor/web/src/api/{index,core-api,http,client,ipc}.js`이다. 브랜치의 현재 파일을 정적으로 확인했으며 실제 EXE·IPC·전체 기능 연결을 실행 검증한 결과는 아니다. `main`의 [OpenAPI v0.8.1](./OPENAPI_v0.8.yaml)과 [ERD v0.8](./ERD_v0.8.md)은 목표 계약이다.
+상태: **코드 확인 결과 / v0.8.1 목표 계약과 구분**. 기준은 `feature/app-core`의 `article_editor/app/core/{api,storage,vault}.py`, `managers/{storage_manager,ai_manager}.py` 및 `src/api/{index,core-api,http,client,ipc}.js`이다. 브랜치의 현재 파일을 정적으로 확인했으며 실제 EXE·IPC·전체 기능 연결을 실행 검증한 결과는 아니다. `main`의 [OpenAPI v0.8.1](./OPENAPI_v0.8.yaml)과 [ERD v0.8](./ERD_v0.8.md)은 목표 계약이다.
 
 ## 1. 현재 실제 호출 경계
 
@@ -13,7 +13,7 @@ UI → createAppApi({mode="http"}) → createCoreApi named methods
 - `GET /api/articles/latest` → `latestArticle()` → `{draft: object|null}`. 가장 최근 저장한 **기사 한 건**을 반환하고, 참조된 `draft.sources[]`의 저장된 추출 텍스트를 붙인다.
 - `POST /api/articles/save` body `{draft}` → `saveArticle(draft)` → `{saved, articleId, revisionNo, fileName, folder}`. `fileName`·`folder`는 호환용 표시값이며 실제 평문 파일 경로가 아니다.
 - `POST /api/sources/open` body `{sourceId}` → 기본 프로그램 열기. `GET /api/sources/{16hex}/file` → 원본 바이트. `POST /api/materials/extract`는 텍스트 추출만 하며 공개된 Source 생성/목록 API가 아니다.
-- `factcheckRun(nodes, materials)`, `factcheckExternal(items)`, `semanticParse(text, source)`, `transcribe(filename, data)` 등은 현재 실행 메서드다. `factcheck_memo` 캐시는 암호화 DB에 있으나 Snapshot에 귀속된 정규화 `Claim/EvidenceLink/VerificationRun` 저장 계약은 없다.
+- `runFactcheck(nodes, materials)`(당시 이름 factcheckRun), `factcheckExternal(items)`, `semanticParse(text, source)`, `transcribe(filename, data)` 등은 현재 실행 메서드다. `factcheck_memo` 캐시는 암호화 DB에 있으나 Snapshot에 귀속된 정규화 `Claim/EvidenceLink/VerificationRun` 저장 계약은 없다.
 - `api.py`의 HTTP GET/POST 라우트가 실행 경로다. POST는 로컬 Host/Origin, JSON Content-Type, 크기 제한을 검사한다. `/api/core/v0.8/*`와 구 `/v1/*` 경로는 실행 경로가 아니다.
 - `ipc.js`는 `bridge.core(path,payload)`/`coreBytes(path)`의 **예정된** 어댑터다. 확인한 Python `api.py`에는 대응 pywebview 브리지 구현이 없다. `createAppApi({mode:"ipc"})`도 브리지의 `core` 메서드가 없으면 HTTP로 돌아가므로 IPC 전환을 완료로 표시할 수 없다.
 

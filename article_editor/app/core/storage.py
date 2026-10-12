@@ -22,10 +22,76 @@ from .errors import RequestError
 SAVE_LOCK = threading.Lock()
 MAX_REVISIONS = 200  # ponytail: 자동저장 이력은 원고마다 최근 200개만 둔다. 더 필요하면 간격 저장(예: 1분)이나 압축으로
 OPEN_DIR = APP_DATA / 'open'  # 외부 프로그램으로 열 때만 만드는 임시 복호화본(cleanup_open)
+MAX_TRANSCRIPT_AUDIO = 25_000_000
 
 
 def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def save_transcript(payload, result):
+    """STT 성공 결과와 원본 녹음을 같은 암호화 저장소에 영구 보관한다."""
+    filename = payload.get('filename')
+    mime = payload.get('mimeType') or 'application/octet-stream'
+    encoded = payload.get('data')
+    dialogues = result.get('dialogues') if isinstance(result, dict) else None
+    if not isinstance(filename, str) or not filename.strip() or len(filename) > 255:
+        raise RequestError('녹음 파일 이름을 확인해 주세요.')
+    known_audio = filename.lower().endswith(('.mp3', '.m4a', '.wav', '.aac', '.ogg', '.webm', '.mp4', '.mov'))
+    if not isinstance(mime, str) or len(mime) > 100 or not (mime.startswith('audio/') or mime.startswith('video/')
+                                                             or (mime == 'application/octet-stream' and known_audio)):
+        raise RequestError('지원하지 않는 녹음 형식입니다.', 415)
+    if not isinstance(encoded, str) or not isinstance(dialogues, list) or len(dialogues) > 10_000:
+        raise RequestError('녹취 결과 형식을 확인해 주세요.')
+    try:
+        audio = base64.b64decode(encoded.split(',', 1)[-1], validate=True)
+    except ValueError:
+        raise RequestError('녹음 파일을 읽지 못했어요.') from None
+    if not audio or len(audio) > MAX_TRANSCRIPT_AUDIO:
+        raise RequestError('녹음 파일은 25MB 이하만 보관할 수 있어요.', 413)
+    for item in dialogues:
+        if not isinstance(item, dict) or not isinstance(item.get('text'), str) or len(item['text']) > 20_000:
+            raise RequestError('녹취 발언 형식을 확인해 주세요.')
+    identifier, created = uuid.uuid4().hex, _now()
+    duration = result.get('duration')
+    if duration is not None and (isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0):
+        duration = None
+    with vault.connect() as db:
+        db.execute('INSERT INTO transcripts VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                   (identifier, vault.WORKSPACE_ID, filename.strip(), mime, audio,
+                    json.dumps(dialogues, ensure_ascii=False), duration, created))
+    return {**result, 'transcriptId': identifier, 'filename': filename.strip(), 'createdAt': created}
+
+
+def list_transcripts():
+    with vault.connect() as db:
+        rows = db.execute('SELECT id, filename, mime_type, duration, created_at, length(audio), dialogues_json '
+                          'FROM transcripts ORDER BY created_at DESC').fetchall()
+    return {'transcripts': [{'id': row[0], 'filename': row[1], 'mimeType': row[2], 'duration': row[3],
+                             'createdAt': row[4], 'bytes': row[5], 'segments': len(json.loads(row[6]))}
+                            for row in rows]}
+
+
+def get_transcript(identifier):
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    with vault.connect() as db:
+        row = db.execute('SELECT filename, mime_type, dialogues_json, duration, created_at FROM transcripts WHERE id = ?',
+                         (identifier,)).fetchone()
+    if not row:
+        raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+    return {'id': identifier, 'filename': row[0], 'mimeType': row[1], 'dialogues': json.loads(row[2]),
+            'duration': row[3], 'createdAt': row[4]}
+
+
+def transcript_audio(identifier):
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    with vault.connect() as db:
+        row = db.execute('SELECT audio, mime_type FROM transcripts WHERE id = ?', (identifier,)).fetchone()
+    if not row:
+        raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+    return bytes(row[0]), row[1]
 
 
 def cleanup_open():
@@ -183,11 +249,13 @@ def _append_revision(db, identifier, body, now, kind='manual'):
     - auto(자동 임시 저장): 이력을 늘리지 않고 '마지막 수동 저장 뒤의 한 칸'을 계속 덮어쓴다 — 앱이 갑자기 꺼져도
       이어서 작업할 수 있게 하는 작업본이다. 저장 이력·보관소에는 보이지 않는다.
     마지막 줄과 내용이 같으면 아무것도 늘리지 않는다."""
-    last = db.execute('SELECT revision_no, draft_json, kind FROM article_revisions WHERE article_id = ? '
+    last = db.execute('SELECT revision_no, draft_json, kind, id FROM article_revisions WHERE article_id = ? '
                       'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone()
     if last and last[1] == body and (kind == 'auto' or last[2] == 'manual'):
         return last[0]
-    if last and last[2] == 'auto':
+    # 고정본(스냅샷)이 가리키는 작업본은 덮어쓰지 않는다 — 그 뒤 저장은 새 줄로
+    pinned = last and db.execute('SELECT 1 FROM article_snapshots WHERE revision_id = ? LIMIT 1', (last[3],)).fetchone()
+    if last and last[2] == 'auto' and not pinned:
         if kind == 'manual':
             before = db.execute("SELECT revision_no, draft_json FROM article_revisions WHERE article_id = ? AND kind = 'manual' "
                                 'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone()
@@ -221,8 +289,11 @@ def _check_draft(data):
     return draft, identifier, expected
 
 
-def _save_in(db, draft, identifier, expected, kind, now):
-    """한 트랜잭션 안에서 원고를 저장한다 → (revision_no, 저장한 draft_json)."""
+def _save_in(db, draft, identifier, expected, kind, now, replace_latest=False):
+    """한 트랜잭션 안에서 원고를 저장한다 → (revision_no, 저장한 draft_json). 보관소에서 지운 기사에는 저장하지 않는다.
+    replace_latest=True 면 같은 편집 세션의 최신 이력 줄을 새 줄 없이 덮어쓴다(스냅샷이 가리키는 줄은 절대 덮어쓰지 않는다)."""
+    if is_deleted(db, identifier):
+        raise RequestError('보관소에서 삭제한 기사입니다. 새 기사로 작성해 주세요.', 409, code='ARTICLE_DELETED')
     if expected is not None:
         current = db.execute('SELECT max(revision_no) FROM article_revisions WHERE article_id = ?', (identifier,)).fetchone()[0] or 0
         if current != expected:
@@ -230,7 +301,19 @@ def _save_in(db, draft, identifier, expected, kind, now):
                                409, code='REVISION_CONFLICT')
     body = json.dumps(_pack(db, dict(draft, articleId=identifier, savedAt=None)), ensure_ascii=False, sort_keys=True)
     db.execute('INSERT OR IGNORE INTO articles VALUES (?, ?, ?, ?)', (identifier, vault.WORKSPACE_ID, now, now))
-    revision = _append_revision(db, identifier, body, now, kind)
+    latest = db.execute('SELECT revision_no, draft_json, id, kind FROM article_revisions WHERE article_id = ? '
+                        'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone() if replace_latest else None
+    can_replace = latest and not db.execute(
+        'SELECT 1 FROM article_snapshots WHERE revision_id = ? LIMIT 1', (latest[2],)).fetchone()
+    if can_replace:
+        # 수동 저장본은 임시 저장으로 덮어써도 수동 저장으로 남긴다(저장 이력에서 사라지지 않게)
+        new_kind = 'manual' if 'manual' in (kind, latest[3]) else 'auto'
+        if latest[1] != body or latest[3] != new_kind:
+            db.execute('UPDATE article_revisions SET draft_json = ?, created_at = ?, kind = ? WHERE article_id = ? AND revision_no = ?',
+                       (body, now, new_kind, identifier, latest[0]))
+        revision = latest[0]
+    else:
+        revision = _append_revision(db, identifier, body, now, kind)
     db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, identifier))
     if kind == 'manual':
         db.execute('INSERT OR IGNORE INTO article_first_saved VALUES (?, ?)', (identifier, now))
@@ -242,9 +325,12 @@ def save_article(data):
     kind = data.get('kind', 'manual')  # 화면의 자동 저장은 'auto', 저장 버튼은 'manual'(값이 없으면 예전처럼 이력에 남김)
     if kind not in SAVE_KINDS:
         raise RequestError("kind 는 'manual' 또는 'auto' 입니다.")
+    replace_latest = data.get('replaceLatest', False)
+    if not isinstance(replace_latest, bool):
+        raise RequestError('replaceLatest 는 true/false 여야 합니다.')
     now = _now()
     with SAVE_LOCK, vault.connect() as db:
-        revision, _ = _save_in(db, draft, identifier, expected, kind, now)
+        revision, _ = _save_in(db, draft, identifier, expected, kind, now, replace_latest)
         first = first_saved_at(db, identifier)
     return {'saved': True, 'articleId': identifier, 'revisionNo': revision, 'kind': kind, 'savedAt': now, 'firstSavedAt': first,
             'fileName': identifier + '.json', 'folder': '암호화 저장소'}  # fileName·folder 는 이전 응답과의 호환용 표시값
@@ -325,6 +411,8 @@ def get_article(article_id, version='saved', photo_refs=False):
     if version not in ARTICLE_VERSIONS:
         raise RequestError("version 은 'saved' 또는 'published' 입니다.")
     with vault.connect() as db:
+        if is_deleted(db, article_id):
+            raise _not_found('보관소에서 삭제한 기사입니다.')
         manual = _last_manual(db, article_id)
         pub = _published_row(db, article_id)
         if version == 'published':
@@ -347,7 +435,23 @@ def get_article(article_id, version='saved', photo_refs=False):
                 'editedAfterPublish': bool(pub and body != pub[4])}
 
 
-def latest_revisions(db, limit=None, manual=False):
+def is_deleted(db, article_id):
+    return bool(db.execute('SELECT 1 FROM article_deleted WHERE article_id = ?', (article_id,)).fetchone())
+
+
+def delete_article(article_id):
+    """보관소에서 기사 지우기 → {deleted: true, articleId}.
+    보관소·이어서 작업·자료 사용처에서 모두 빠진다. 고정본(article_snapshots)은 검증·변환 근거라 지울 수 없게 설계돼 있어,
+    이력·고정본 줄은 암호화 저장소에 그대로 두고 '지움' 표시만 남긴다(지운 기사에는 더 저장하지 않는다)."""
+    article_id = _article_id(article_id)
+    with SAVE_LOCK, vault.connect() as db:
+        if not db.execute('SELECT 1 FROM articles WHERE id = ?', (article_id,)).fetchone():
+            raise _not_found('기사를 찾지 못했습니다.')
+        db.execute('INSERT OR IGNORE INTO article_deleted VALUES (?, ?)', (article_id, _now()))
+    return {'deleted': True, 'articleId': article_id}
+
+
+def latest_revisions(db, limit=None, manual=False, article_id=None):
     """기사마다 **최신 저장본** 한 줄 (article_id, created_at, updated_at, revision_no, draft_json) — 최근 수정순.
     "기사가 지금 무엇을 쓰는가"(자료 사용처·읽기 모델·이어서 작업)는 모두 이 한 곳에서 읽는다.
     manual=True 면 마지막 **수동 저장본**(보관소 '작성 중'에 보이는 판). 수동 저장이 아직 없는 기사는 최신 임시 저장본."""
@@ -355,8 +459,17 @@ def latest_revisions(db, limit=None, manual=False):
             "ORDER BY kind = 'manual' DESC, revision_no DESC LIMIT 1)") if manual else \
         '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id)'
     sql = ('SELECT a.id, a.created_at, a.updated_at, r.revision_no, r.draft_json FROM articles a '
-           'JOIN article_revisions r ON r.article_id = a.id AND r.revision_no = ' + pick + ' ORDER BY a.updated_at DESC')
-    return db.execute(sql + ' LIMIT ?', (limit,)).fetchall() if limit else db.execute(sql).fetchall()
+           'JOIN article_revisions r ON r.article_id = a.id AND r.revision_no = ' + pick
+           + ' WHERE a.id NOT IN (SELECT article_id FROM article_deleted)')  # 보관소에서 지운 기사는 어디에도 보이지 않는다
+    params = []
+    if article_id is not None:
+        sql += ' AND a.id = ?'
+        params.append(_article_id(article_id))
+    sql += ' ORDER BY a.updated_at DESC'
+    if limit:
+        sql += ' LIMIT ?'
+        params.append(limit)
+    return db.execute(sql, params).fetchall()
 
 
 def draft_source_ids(draft):
@@ -366,19 +479,21 @@ def draft_source_ids(draft):
     return {i for i in found if isinstance(i, str)}
 
 
-def latest_article(photo_refs=False):
+def latest_article(photo_refs=False, article_id=None):
     """가장 최근에 저장된 원고(앱을 열면 이어서 작업). 취재자료 본문은 sources 테이블에서 다시 붙인다.
     photo_refs=True 면 사진을 data URL 로 되돌리지 않고 'media:<id>' 참조 그대로 준다 — 화면이 사진 바이트를
     media_file 로 따로 받는다(사진 몇 장이면 응답이 수십 MB 가 되던 것을 피한다)."""
     with vault.connect() as db:
-        rows = latest_revisions(db, limit=1)
+        rows = latest_revisions(db, limit=1, article_id=article_id)
         if not rows:
+            if article_id is not None:
+                raise RequestError('원고를 찾지 못했습니다.', 404)
             return {'draft': None}
         # 이어서 작업할 원고는 가장 최근 것(임시 저장 포함). 그게 수동 저장 뒤의 임시 저장본이면 화면이 '저장하지 않은 변경'을 알린다
         article_id = rows[0][0]
         kind = db.execute('SELECT kind FROM article_revisions WHERE article_id = ? AND revision_no = ?', (article_id, rows[0][3])).fetchone()[0]
         pub = _published_row(db, article_id)
-        return {'draft': _full_draft(db, rows[0][4], rows[0][2], unpack_photos=not photo_refs),
+        return {'draft': _full_draft(db, rows[0][4], rows[0][2], rows[0][3], unpack_photos=not photo_refs),
                 'revisionKind': kind, 'lastManual': _manual_summary(_last_manual(db, article_id)),
                 'published': published_info(db, article_id), 'editedAfterPublish': bool(pub and pub[4] != rows[0][4]),
                 'firstSavedAt': first_saved_at(db, article_id)}
@@ -396,9 +511,11 @@ def media_file(media_id):
     return bytes(row[1]), mime.group(1) if mime else 'application/octet-stream'
 
 
-def _full_draft(db, draft_json, saved_at, unpack_photos=True):
+def _full_draft(db, draft_json, saved_at, revision_no=None, unpack_photos=True):
     """이력 한 줄 → 화면이 쓰는 원고(사진 되돌리기 + 취재자료 본문 붙이기)."""
     draft = dict(json.loads(draft_json), savedAt=saved_at)
+    if revision_no is not None:
+        draft['revisionNo'] = revision_no
     if unpack_photos:
         draft = _unpack(db, draft)
     for source in draft.get('sources') or []:
@@ -486,7 +603,7 @@ def restore_revision(article_id, revision_no):
         body = json.dumps(dict(json.loads(row[0]), articleId=article_id, savedAt=None), ensure_ascii=False, sort_keys=True)
         latest = _append_revision(db, article_id, body, now, 'manual')  # 복원은 사용자가 고른 판이므로 수동 저장으로 남긴다
         db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, article_id))
-        draft = _full_draft(db, body, now)
+        draft = _full_draft(db, body, now, latest)
     return {'restored': True, 'articleId': article_id, 'fromRevision': revision_no, 'revisionNo': latest, 'draft': draft}
 
 

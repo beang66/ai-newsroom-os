@@ -12,7 +12,7 @@ from .. import factcheck_memo as memo
 from ..ai.router import assist as _assist
 from ..ai.transcribe import transcribe as _transcribe
 from ..errors import RequestError
-from ..storage import get_snapshot
+from ..storage import get_snapshot, save_transcript
 
 FACTCHECK_BATCH = 5  # 한 번에 판정하고 기록하는 문장 수
 
@@ -33,7 +33,7 @@ class AIManager:
 
     def transcribe(self, payload):
         """인터뷰 녹음 전사 → 녹취 스튜디오 대화 목록. payload: {filename, data(base64)}"""
-        return _transcribe(payload)
+        return save_transcript(payload, _transcribe(payload))
 
     def factcheck_status(self):
         """팩트체크에 필요한 모델·런타임 준비 상태."""
@@ -99,7 +99,8 @@ class AIManager:
         if pending or not keys:
             status = self.factcheck_status()
             if not status['ready']:
-                if status['models']['judge'] and not status['models']['embedding']:
+                models = status.get('models') or {}
+                if models.get('judge') and not models.get('embedding'):
                     raise RequestError('임베딩 서버(백엔드)에 연결할 수 없어요. 인터넷 연결과 로그인을 확인해 주세요.', 503)
                 raise RequestError('팩트체크 모델이 아직 설치되지 않았어요. 모델 설치 후 다시 시도해 주세요.', 503)
             from ..ai.factcheck.service import review_workspace

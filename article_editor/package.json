@@ -8,8 +8,8 @@
     "test": "node dev/checks/check-api-boundary.mjs",
     "test:python": "python -m unittest discover -s dev/tests -p 'test_*.py'",
     "test:ui": "node dev/tests/ui-smoke.mjs",
-    "build:web": "npm --prefix web run build",
-    "dev:web": "npm --prefix web run dev",
+    "build:web": "npm --prefix .. run build",
+    "dev:web": "npm --prefix .. run dev",
     "check:api-boundary": "node dev/checks/check-api-boundary.mjs"
   },
   "devDependencies": {

@@ -1,5 +1,12 @@
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css");
+/* 오프라인 데스크톱 앱: 외부 CDN을 쓰지 않는다. Pretendard(SIL OFL)는 src/assets/fonts 에 로컬 번들되어 있다. */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: local("Pretendard Variable"), url("./assets/fonts/PretendardVariable.woff2") format("woff2-variations");
+}
+
 @import "tailwindcss";
 
 @theme {
@@ -36,7 +43,7 @@
     background-color: #F8F7F4;
     background-image: 
       radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.65) 0%, transparent 65%),
-      url("/src/assets/warm-paper-texture.svg");
+      url("./assets/warm-paper-texture.svg");
     background-repeat: no-repeat, repeat;
     background-size: 100% 600px, 240px 240px;
     background-attachment: fixed;

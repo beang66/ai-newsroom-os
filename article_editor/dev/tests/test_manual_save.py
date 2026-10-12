@@ -62,6 +62,17 @@ class ManualSaveTests(unittest.TestCase):
         storage.save_article({'draft': {'articleId': aid, 'bodyHtml': '<p>b</p>', 'content': 'b'}})
         self.assertEqual(rows(aid), [(1, 'manual'), (2, 'manual')])
 
+    def test_auto_never_overwrites_a_snapshot_working_copy(self):
+        aid = save('auto', content='변환 전')['articleId']
+        storage.create_snapshot(aid)  # 카드뉴스·플랫폼 변환이 이 작업본을 고정본으로 가리킨다
+        save('auto', aid, content='변환 뒤 고침')
+        self.assertEqual(rows(aid), [(1, 'auto'), (2, 'auto')])
+
+    def test_replace_latest_keeps_a_manual_save_manual(self):
+        aid = save('manual', content='1차')['articleId']
+        storage.save_article({'draft': {'articleId': aid, 'bodyHtml': '<p>x</p>', 'content': '덮어씀'}, 'kind': 'auto', 'replaceLatest': True})
+        self.assertEqual(rows(aid), [(1, 'manual')])  # 자동 저장으로 덮어써도 저장 이력에서 사라지지 않는다
+
     def test_bad_kind_rejected(self):
         with self.assertRaises(RequestError):
             save('draft')

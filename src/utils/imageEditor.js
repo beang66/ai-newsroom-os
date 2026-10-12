@@ -8,13 +8,7 @@ export function cropForRatio(w, h, ratio) {
   }
   return { x: (w - cw) / 2, y: (h - ch) / 2, w: cw, h: ch };
 }
-export function clampCrop(c, w, h) {
-  c.w = Math.min(w, Math.max(1, c.w));
-  c.h = Math.min(h, Math.max(1, c.h));
-  c.x = Math.max(0, Math.min(w - c.w, c.x));
-  c.y = Math.max(0, Math.min(h - c.h, c.y));
-  return c;
-}
+
 export function renderDerivative(
   img,
   crop,
@@ -31,33 +25,6 @@ export function renderDerivative(
   const s = c.width / crop.w;
   renderMosaics(g, img, masks, s, crop.x, crop.y, opacity, hardness);
   return c.toDataURL("image/jpeg", 0.92);
-}
-
-// Resize from a corner, keeping the opposite corner anchored.
-export function resizeCrop(c, handle, p, w, h, ratio = 0) {
-  const west = handle.includes("w"),
-    north = handle.includes("n");
-  const ax = west ? c.x + c.w : c.x,
-    ay = north ? c.y + c.h : c.y;
-  const maxW = west ? ax : w - ax,
-    maxH = north ? ay : h - ay;
-  let cw = Math.max(
-    Math.min(16, maxW),
-    Math.min(maxW, west ? ax - p.x : p.x - ax),
-  );
-  let ch = Math.max(
-    Math.min(16, maxH),
-    Math.min(maxH, north ? ay - p.y : p.y - ay),
-  );
-  if (ratio) {
-    cw = Math.min(Math.max(cw, ch * ratio), maxW, maxH * ratio);
-    ch = cw / ratio;
-  }
-  return clampCrop(
-    { x: west ? ax - cw : ax, y: north ? ay - ch : ay, w: cw, h: ch },
-    w,
-    h,
-  );
 }
 
 export function maskPath(mask, scale = 1, ox = 0, oy = 0) {
@@ -89,78 +56,7 @@ export function maskPath(mask, scale = 1, ox = 0, oy = 0) {
   }
   return path;
 }
-export function maskBounds(mask) {
-  if (mask.type !== "brush")
-    return { x: mask.x, y: mask.y, w: mask.w, h: mask.h };
-  const xs = mask.points.map((p) => p.x),
-    ys = mask.points.map((p) => p.y),
-    r = mask.diameter / 2;
-  return {
-    x: Math.min(...xs) - r,
-    y: Math.min(...ys) - r,
-    w: Math.max(...xs) - Math.min(...xs) + 2 * r,
-    h: Math.max(...ys) - Math.min(...ys) + 2 * r,
-  };
-}
-function brushContains(mask, p) {
-  if (mask.type !== "brush")
-    return (
-      p.x >= mask.x &&
-      p.y >= mask.y &&
-      p.x <= mask.x + mask.w &&
-      p.y <= mask.y + mask.h
-    );
-  const points = mask.points || [],
-    r = mask.diameter / 2;
-  return points.some((b, i) => {
-    const a = points[i - 1] || b,
-      dx = b.x - a.x,
-      dy = b.y - a.y;
-    const t = Math.max(
-      0,
-      Math.min(
-        1,
-        ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1),
-      ),
-    );
-    return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy) <= r;
-  });
-}
-export function maskContains(mask, p) {
-  return (
-    brushContains(mask, p) &&
-    !(mask.erasures || []).some((e) => brushContains(e, p))
-  );
-}
-export function moveMask(mask, dx, dy, width, height) {
-  const bounds = maskBounds(mask);
-  dx =
-    bounds.w <= width
-      ? Math.max(-bounds.x, Math.min(width - bounds.x - bounds.w, dx))
-      : 0;
-  dy =
-    bounds.h <= height
-      ? Math.max(-bounds.y, Math.min(height - bounds.y - bounds.h, dy))
-      : 0;
-  const moved = structuredClone(mask);
-  if (moved.type === "brush")
-    moved.points.forEach((p) => {
-      p.x += dx;
-      p.y += dy;
-    });
-  else {
-    moved.x += dx;
-    moved.y += dy;
-  }
-  (moved.erasures || []).forEach((e) =>
-    e.points.forEach((p) => {
-      p.x += dx;
-      p.y += dy;
-    }),
-  );
-  return moved;
-}
-// Erase each shape before combining masks, then apply the opacity only once.
+
 export function renderMosaics(
   g,
   img,

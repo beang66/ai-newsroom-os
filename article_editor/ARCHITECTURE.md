@@ -42,7 +42,7 @@ article_editor/                ← 프로젝트 루트 (데이터·설정·문�
 
 - **실행 코드는 `app/` 안에만 둔다.** 데이터·설정(`.env`, `.article-workspace/`)·문서·도구는 루트에 둔다.
 - The **frontend never imports core code**. It only calls the core over HTTP,
-  through `web/src/api/` — `createAppApi()` (see `web/src/api/README.md`).
+  through `src/api/` — `createAppApi()` (see `src/api/README.md`).
 - UI code must not bypass that boundary: no `fetch(`, no `"/api/…"` literals,
   no `<img src="/api/…">`. Enforced by `npm run check:api-boundary`.
 - The **core never imports frontend code**. It only serves `app/frontend/` read-only.
@@ -56,7 +56,7 @@ article_editor/                ← 프로젝트 루트 (데이터·설정·문�
   Internal module layout can change freely; these contracts stay.
 - **Local transport is a detail.** Development uses HTTP (works in a browser too);
   the release build switches the same contract to the pywebview IPC bridge by changing
-  `web/src/api/index.js` only. Plan and risks: `docs/IPC_MIGRATION.md`.
+  `src/api/index.js` only. Plan and risks: `docs/IPC_MIGRATION.md`.
 - 임시 스크립트는 `temp/` 안에만 만들고, 되풀이 쓸 도구는 `dev/`(tests·checks·spikes)로 승격한다.
 
 ## Sensitive configuration (keys) — backend-managed (hard rule)

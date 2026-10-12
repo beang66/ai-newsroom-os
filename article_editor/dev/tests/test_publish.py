@@ -132,6 +132,7 @@ class FirstSavedTests(unittest.TestCase):
         with vault.connect() as db:
             db.execute('DELETE FROM article_first_saved')
             db.execute('UPDATE article_revisions SET created_at = ?', ('2026-10-07T10:51:04+00:00',))
+            db.execute('PRAGMA user_version = 2')  # 처음 저장 시각이 생기기 전의 저장소 — 다음 연결에서 한 번 채운다
         self.assertEqual(storage.latest_article()['firstSavedAt'], '2026-10-07T10:51:04+00:00')
 
 

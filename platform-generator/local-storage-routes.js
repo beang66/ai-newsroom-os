@@ -1,10 +1,10 @@
 // 이 파일의 역할: 초안 저장·조회와 기존 JPG 결과의 내 문서 보관.
-// 서버 주소와 내 문서 위치는 public/api.js의 공통 설정을 사용합니다.
+// 서버 주소와 내 문서 위치는 lib/api.js의 공통 설정을 사용합니다.
 const express = require('express');
 const fs = require('fs/promises');
 const path = require('path');
 const { randomUUID } = require('crypto');
-const { PATHS, STORAGE_FOLDERS, getStorageRoot } = require('./public/api');
+const { PATHS, STORAGE_FOLDERS, getStorageRoot } = require('./lib/api');
 
 module.exports = function registerLocalStorage(app, options = {}) {
   // 개발 환경에서 명시적으로 켠 경우에만 평문 파일 저장과 JPG 보관을 연결합니다.

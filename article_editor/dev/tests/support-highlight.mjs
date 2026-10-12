@@ -4,13 +4,14 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const require = createRequire(new URL('../../web/package.json', import.meta.url));
+const require = createRequire(new URL('../../../package.json', import.meta.url));
 const { createServer } = await import(pathToFileURL(require.resolve('vite')).href);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const server = await createServer({
-  root: fileURLToPath(new URL('../../web', import.meta.url)),
+  root: fileURLToPath(new URL('../../..', import.meta.url)),
   server: { middlewareMode: true },
+  ssr: { external: ['react', 'react-dom', 'react-dom/server', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'lucide-react'] },
   appType: 'custom',
 });
 try {
@@ -26,7 +27,7 @@ try {
     // 예전 차이 위치가 남아 있어도 일치 근거로 잘못 쓰지 않는다.
     focus_spans: [{ claim_start: 0, claim_end: 2, evidence_start: 0, evidence_end: 2 }],
   }]]);
-  core.factcheckRun = () => { throw Error('저장된 판정을 다시 실행하면 안 됩니다'); };
+  core.runFactcheck = () => { throw Error('저장된 판정을 다시 실행하면 안 됩니다'); };
   const results = await factcheckArticle(claim, [], cache);
   assert.deepEqual(results[0].quoteSpans, [{ start: 0, end: quote.length }]);
   assert.deepEqual(results[0].spans, []);

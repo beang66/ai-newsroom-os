@@ -7,6 +7,9 @@
 import contextlib
 import datetime
 import os
+import shutil
+import tempfile
+import threading
 
 import keyring
 from sqlcipher3 import dbapi2 as sqlite
@@ -21,6 +24,10 @@ SERVICE = os.environ.get('AI_NEWSROOM_KEY_SERVICE') or 'AI Newsroom'  # 테스�
 ACCOUNT = 'device-key'
 MANUAL_SAVE_INTRODUCED = '2026-10-10T06:00:00+00:00'  # 수동 저장 도입(10-10 15:00 KST) — 그 전 이력은 모두 자동 저장
 WORKSPACE_ID = '10000000-0000-4000-8000-000000000001'  # 단일 워크스페이스(계약 ERD 의 workspace_id)
+_INIT_LOCK = threading.RLock()
+SCHEMA_VERSION = 4  # 3: 저장 종류(kind)·발행본(article_published)·처음 수동 저장(article_first_saved) / 4: 보관소에서 지운 기사(article_deleted)
+# api.py 의 /api/vault/restore 요청 한도(220MB)에 base64(4/3배)·JSON 여유를 뺀 값. 넘는 백업은 받아도 복구할 수 없다.
+MAX_BACKUP_BYTES = 160_000_000
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS articles (
@@ -35,6 +42,7 @@ CREATE TABLE IF NOT EXISTS article_published (
   first_published_at TEXT NOT NULL, published_at TEXT NOT NULL, publish_count INTEGER NOT NULL DEFAULT 1);
 -- 처음 수동 저장한 시각(미리보기 '입력', 송고 전). 이력이 정리돼도 남도록 따로 둔다
 CREATE TABLE IF NOT EXISTS article_first_saved (article_id TEXT PRIMARY KEY, first_saved_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS article_deleted (article_id TEXT PRIMARY KEY REFERENCES articles(id), deleted_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS media (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, header TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT NOT NULL);
@@ -56,6 +64,17 @@ CREATE TABLE IF NOT EXISTS source_index (
   source_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, state TEXT NOT NULL,
   text_sha256 TEXT NOT NULL, chunker_version TEXT NOT NULL, chunk_count INTEGER NOT NULL,
   error_code TEXT, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS knowledge_files (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, path TEXT NOT NULL, path_key TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL, content TEXT NOT NULL, sha256 TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS knowledge_links (
+  source_id TEXT NOT NULL REFERENCES knowledge_files(id), ordinal INTEGER NOT NULL,
+  kind TEXT NOT NULL, raw_text TEXT NOT NULL, target_ref TEXT NOT NULL,
+  fragment TEXT NOT NULL, target_id TEXT, target_key TEXT NOT NULL, line INTEGER NOT NULL,
+  is_embed INTEGER NOT NULL, PRIMARY KEY (source_id, ordinal));
+CREATE INDEX IF NOT EXISTS knowledge_links_target_id ON knowledge_links(target_id);
+CREATE INDEX IF NOT EXISTS knowledge_links_target_key ON knowledge_links(target_key);
 CREATE TABLE IF NOT EXISTS article_snapshots (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, article_id TEXT NOT NULL REFERENCES articles(id),
   revision_id TEXT NOT NULL, revision_no INTEGER NOT NULL, title TEXT NOT NULL, body_html TEXT NOT NULL,
@@ -73,6 +92,9 @@ CREATE TABLE IF NOT EXISTS processing_jobs (
   error_code TEXT, error_message TEXT, retryable INTEGER,
   cancel_requested INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT, finished_at TEXT);
+CREATE TABLE IF NOT EXISTS transcripts (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, filename TEXT NOT NULL, mime_type TEXT NOT NULL,
+  audio BLOB NOT NULL, dialogues_json TEXT NOT NULL, duration REAL, created_at TEXT NOT NULL);
 """
 # article_snapshots: 검증·변환용 고정본(계약 ArticleSnapshot). 이력 줄을 참조하지 않고 내용을 **복사해** 둔다 —
 # 이력이 MAX_REVISIONS 로 정리돼도 남는다. 두 트리거 때문에 한 번 쓴 줄은 고치거나 지울 수 없다(코드 실수로도).
@@ -122,28 +144,122 @@ def _device_key():
         raise RequestError('이 PC 의 보안 저장소(키)를 사용할 수 없어 저장소를 열지 못했습니다.', 500)
 
 
+def _password(value):
+    if not isinstance(value, str) or not 12 <= len(value) <= 200:
+        raise RequestError('백업 암호는 12~200자로 입력해 주세요.')
+    return value
+
+
+def _quote(_db, value):
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _export(db, target, key, raw_key=False):
+    target.unlink(missing_ok=True)
+    key_sql = '"x\'' + key + '\'"' if raw_key else _quote(db, key)
+    db.execute(f'ATTACH DATABASE {_quote(db, target)} AS portable KEY {key_sql}')
+    try:
+        db.execute("SELECT sqlcipher_export('portable')").fetchone()
+    finally:
+        db.execute('DETACH DATABASE portable')
+
+
+def export_backup(password):
+    """기기 키 대신 사용자가 정한 암호로 다시 암호화한 이동식 SQLCipher 백업."""
+    password = _password(password)
+    if not DB_PATH.is_file():
+        raise RequestError('백업할 사용자 자료가 없습니다.', 404)
+    handle, name = tempfile.mkstemp(prefix='ai-newsroom-backup-', suffix='.db')
+    os.close(handle)
+    target = type(DB_PATH)(name)
+    try:
+        with connect() as db:
+            db.execute('PRAGMA wal_checkpoint(FULL)')
+            _export(db, target, password)
+        if target.stat().st_size > MAX_BACKUP_BYTES:
+            raise RequestError('자료가 너무 커서 복구할 수 있는 백업을 만들 수 없습니다(최대 160MB). 오래된 녹음·자료를 정리해 주세요.', 413)
+        return target.read_bytes()
+    finally:
+        target.unlink(missing_ok=True)
+
+
+def restore_backup(raw, password):
+    """이동식 백업을 검증한 뒤 이 기기의 새 키로 재암호화해 교체한다."""
+    password = _password(password)
+    if not isinstance(raw, bytes) or not raw:
+        raise RequestError('복구할 백업 파일을 선택해 주세요.')
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with _INIT_LOCK:
+        source_handle, source_name = tempfile.mkstemp(prefix='ai-newsroom-restore-', suffix='.db')
+        target_handle, target_name = tempfile.mkstemp(prefix='ai-newsroom-restored-', suffix='.db')
+        os.close(source_handle)
+        os.close(target_handle)
+        source, target = type(DB_PATH)(source_name), type(DB_PATH)(target_name)
+        rollback = DB_PATH.with_name('vault.before-restore.db')
+        try:
+            source.write_bytes(raw)
+            target.unlink(missing_ok=True)
+            db = sqlite.connect(str(source), timeout=10)
+            try:
+                db.execute('PRAGMA cipher_log_level = NONE')
+                db.execute(f'PRAGMA key = {_quote(db, password)}')
+                tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if not {'articles', 'article_revisions', 'sources'} <= tables:
+                    raise RequestError('AI Newsroom 백업 파일이 아니거나 암호가 맞지 않습니다.')
+                _export(db, target, _device_key(), raw_key=True)
+            except sqlite.DatabaseError as error:
+                raise RequestError('백업 암호가 맞지 않거나 파일이 손상됐습니다.') from error
+            finally:
+                db.close()
+            if DB_PATH.is_file():
+                # 옛 -wal 이 새 DB 옆에 남으면 다음 실행에서 옛 쓰기가 새 DB 위에 재생돼 깨진다: 먼저 비운다.
+                with contextlib.suppress(RequestError, sqlite.DatabaseError), connect() as live_db:
+                    live_db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+            rollback.unlink(missing_ok=True)
+            for suffix in ('', '-wal', '-shm'):
+                live = DB_PATH.with_name(DB_PATH.name + suffix)
+                copy = rollback.with_name(rollback.name + suffix)
+                copy.unlink(missing_ok=True)
+                if live.exists():
+                    shutil.copy2(live, copy)
+            for suffix in ('-wal', '-shm'):  # 교체 전에 지운다(체크포인트가 실패했어도 안전 복사본에 남아 있다)
+                DB_PATH.with_name(DB_PATH.name + suffix).unlink(missing_ok=True)
+            os.replace(target, DB_PATH)  # atomic: the live DB path is never empty
+            return {'restored': True, 'safetyCopy': str(rollback) if rollback.exists() else None,
+                    'restoredAt': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+        finally:
+            source.unlink(missing_ok=True)
+            target.unlink(missing_ok=True)
+
+
 @contextlib.contextmanager
 def connect():
     """암호화 DB 연결(호출마다 열고 닫는다). 정상 종료하면 커밋, 예외면 롤백."""
-    # TODO(debt: DEBT-001): 키/스키마 초기화가 동시 연결마다 실행된다. 업로드 시험에서 WAL 설정 시 잠금 오류 관찰.
-    # 초기화 직렬화·이미 WAL인 DB의 재설정 생략·마이그레이션 트랜잭션 조기 종료를 검토할 것.
-    key = _device_key()
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite.connect(str(DB_PATH))
+    db = None
     try:
-        db.execute('PRAGMA cipher_log_level = NONE')  # 키가 틀려도 C 라이브러리가 stderr 에 로그를 쏟지 않게
-        db.execute(f"PRAGMA key = \"x'{key}'\"")
-        try:
-            db.execute('SELECT count(*) FROM sqlite_master').fetchone()
-        except sqlite.DatabaseError:
-            raise RequestError('암호화 저장소를 열 수 없습니다. 키가 맞지 않거나 파일이 손상됐습니다.', 500)
-        db.execute('PRAGMA journal_mode = WAL')
-        db.executescript(SCHEMA)
-        _migrate(db)
-        yield db
-        db.commit()
+        with _INIT_LOCK:
+            key = _device_key()
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            db = sqlite.connect(str(DB_PATH), timeout=10)
+            db.execute('PRAGMA cipher_log_level = NONE')
+            db.execute(f"PRAGMA key = \"x'{key}'\"")
+            try:
+                db.execute('SELECT count(*) FROM sqlite_master').fetchone()
+            except sqlite.DatabaseError:
+                raise RequestError('암호화 저장소를 열 수 없습니다. 키가 맞지 않거나 파일이 손상됐습니다.', 500)
+            if db.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'wal':
+                db.execute('PRAGMA journal_mode = WAL')
+            if db.execute('PRAGMA user_version').fetchone()[0] < SCHEMA_VERSION:
+                db.executescript(SCHEMA)
+                _migrate(db)
+                db.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
+                db.commit()
+            yield db
+            db.commit()
     except BaseException:
-        db.rollback()
+        if db is not None:
+            db.rollback()
         raise
     finally:
-        db.close()
+        if db is not None:
+            db.close()

@@ -199,13 +199,23 @@ def run_in_background(job_id, worker):
     시작한 Thread 를 돌려준다."""
     job_id = _job_id(job_id)
 
+    def record_storage_failure():
+        try:
+            fail(job_id, 'STORAGE_ERROR', GENERIC_FAILURE, True)
+        except (RequestError, vault.sqlite.Error, OSError):
+            with _LOCK:
+                _OWN.discard(job_id)  # 저장소가 복구되면 interrupted 복구 대상에 포함한다.
+
     def run():
         try:
             set_running(job_id)
-        # TODO(debt: DEBT-004): DB 잠금/OS 오류는 이 예외 처리에서 빠져 워커 스레드 밖으로 샌다.
-        # 시작/완료 기록 실패를 처리하고 다음 실행의 중단 작업 복구와 함께 확인할 것.
-        except RequestError:
+        except RequestError as error:
+            if error.status >= 500:
+                record_storage_failure()
             return  # 시작 전에 취소됐거나 이미 끝난 작업
+        except (vault.sqlite.Error, OSError):
+            record_storage_failure()
+            return
         try:
             output_ref = worker(JobContext(job_id))
             outcome = ('cancel',) if is_cancel_requested(job_id) else ('finish', output_ref)
@@ -229,9 +239,10 @@ def run_in_background(job_id, worker):
                     fail(job_id, 'WORKER_ERROR', '작업 결과 형식이 올바르지 않습니다.', False)
             else:
                 fail(job_id, 'WORKER_ERROR', outcome[1], outcome[2])
-        # TODO(debt: DEBT-004): 완료/취소 상태 기록에서도 sqlite.Error/OSError가 처리되지 않는다.
         except RequestError:
-            pass  # 저장소를 못 열었으면 다음 시작 때 recover_interrupted_jobs 가 정리한다
+            record_storage_failure()
+        except (vault.sqlite.Error, OSError):
+            record_storage_failure()
 
     thread = threading.Thread(target=run, name='job-' + job_id[:8], daemon=True)
     thread.start()

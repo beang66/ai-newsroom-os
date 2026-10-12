@@ -5,13 +5,16 @@ Current implementation: encrypted SQLite (``core/storage.py`` on ``core/vault.py
 Planned: project files + attachments.
 """
 from ..diagnostics import guarded
+from ..knowledge_files import delete_file as _delete_knowledge_file, get_file as _get_knowledge_file, import_files as _import_knowledge_files
 from ..media_assets import get_media_asset as _get_media_asset, media_asset_file as _media_asset_file, register_media_asset as _register_media_asset
 from ..read_models import knowledge_map as _knowledge_map, list_articles as _list_articles
 from ..sources import delete_source as _delete_source, get_source as _get_source, list_sources as _list_sources
 from ..storage import (create_snapshot as _create_snapshot, get_revision as _get_revision, get_snapshot as _get_snapshot,
+                       get_transcript as _get_transcript, list_transcripts as _list_transcripts,
                        latest_article as _latest_article, get_article as _get_article, publish_article as _publish_article, media_file as _media_file, list_revisions as _list_revisions, list_snapshots as _list_snapshots,
-                       open_source as _open_source, restore_revision as _restore_revision, prune_legacy_revisions as _prune_legacy_revisions, save_article as _save_article,
-                       source_file as _source_file)
+                       open_source as _open_source, restore_revision as _restore_revision, prune_legacy_revisions as _prune_legacy_revisions, save_article as _save_article, delete_article as _delete_article,
+                       source_file as _source_file, transcript_audio as _transcript_audio)
+from .. import vault
 
 
 class StorageManager:
@@ -23,8 +26,11 @@ class StorageManager:
         """CMS 최종 발행 ``{"draft": {...}}`` — 수동 저장 + 기사당 하나인 발행본 덮어쓰기(발행 시각 갱신)."""
         return guarded('article_publish', _publish_article, data)
 
-    def get_article(self, article_id, version='saved', photo_refs=False):
-        """보관소에서 연 기사 — version 'saved'(마지막 수동 저장본) | 'published'(발행본). 모양은 latest_article 과 같다."""
+    def get_article(self, article_id, version=None, photo_refs=False):
+        """기사 하나를 편집기로 연다. 모양은 latest_article 과 같다.
+        version 없음 = 그 기사의 최신 저장본(임시 저장 포함) | 'saved'(마지막 수동 저장본) | 'published'(발행본)."""
+        if version is None:
+            return _latest_article(photo_refs, article_id)
         return _get_article(article_id, version, photo_refs)
 
     def open_source(self, data):
@@ -54,6 +60,10 @@ class StorageManager:
     def restore_revision(self, article_id, revision_no):
         """옛 저장본을 새 최신 저장본으로 복원한다(이력은 지우지 않음)."""
         return guarded('version_restore', _restore_revision, article_id, revision_no)
+
+    def delete_article(self, article_id):
+        """보관소에서 기사 지우기(보관소·이어서 작업에서 빠지고 더 저장되지 않는다. 고정본은 그대로) → {deleted, articleId}."""
+        return _delete_article(article_id)
 
     def prune_legacy_revisions(self, article_id):
         """수동 저장 도입 전의 옛 자동 저장 이력을 지운다(저장 이력 화면의 '정리')."""
@@ -102,3 +112,42 @@ class StorageManager:
     def knowledge_map(self):
         """기사·자료·고정본과 실제 근거 있는 연결의 읽기 전용 묶음(Data Map·보관함용)."""
         return _knowledge_map()
+
+    def import_knowledge_files(self, data):
+        """앱 관리 저장소에 Markdown 지식 파일을 가져오고 링크를 다시 해석한다."""
+        return guarded('knowledge_files_import', _import_knowledge_files, data)
+
+    def get_knowledge_file(self, file_id):
+        """Markdown 지식 파일 한 건과 실제 링크·백링크를 반환한다."""
+        return _get_knowledge_file(file_id)
+
+    def delete_knowledge_file(self, file_id):
+        """Markdown 지식 파일을 삭제하고 남은 링크를 다시 해석한다."""
+        return guarded('knowledge_file_delete', _delete_knowledge_file, file_id)
+
+    def list_transcripts(self):
+        return _list_transcripts()
+
+    def get_transcript(self, transcript_id):
+        return _get_transcript(transcript_id)
+
+    def transcript_audio(self, transcript_id):
+        return _transcript_audio(transcript_id)
+
+    def export_backup(self, data):
+        import base64
+        raw = vault.export_backup(data.get('password'))
+        return {'filename': 'ai-newsroom-backup.db', 'data': base64.b64encode(raw).decode()}
+
+    def restore_backup(self, data):
+        import base64
+        encoded = data.get('data')
+        if not isinstance(encoded, str):
+            from ..errors import RequestError
+            raise RequestError('복구할 백업 파일을 선택해 주세요.')
+        try:
+            raw = base64.b64decode(encoded.split(',', 1)[-1], validate=True)
+        except ValueError:
+            from ..errors import RequestError
+            raise RequestError('백업 파일을 읽지 못했습니다.') from None
+        return guarded('vault_restore', vault.restore_backup, raw, data.get('password'))

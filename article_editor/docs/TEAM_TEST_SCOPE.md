@@ -1,5 +1,7 @@
 # 첫 팀 테스트 필수 범위 (2026-10-07)
 
+2026-10-11 갱신: 저장·업로드 수정 유예는 해제했습니다. 메인 UI는 저장소 루트 `src/`이며, 아래 DEBT-001~004와 DEBT-007을 수정했습니다. DEBT-006은 기존 직렬화 코드를 실제 지연 응답으로 검증했습니다. 이전 날짜의 작업 순서는 이 갱신에 우선하지 않습니다.
+
 사용자 결정: 남은 작업은 꼭 필요한 것만 먼저 하고 나머지는 후순위로 미룬다.
 추가 테스트는 현재 진행하지 않는다. 구현을 마친 뒤 전달 직전에 기본 흐름을 한 번 점검한다.
 기존에 구현한 기능은 유지하며, 아래 기준으로 신규 개발의 우선순위만 줄인다.
@@ -52,13 +54,13 @@ HTTP 방식 Windows EXE에서 팀 계정으로 로그인하고, 기사 한 건�
 
 | ID | 위치 | 부채 |
 |---|---|---|
-| DEBT-001 | `app/core/vault.py:connect` | 동시 DB 초기화/WAL 설정의 잠금 충돌, 초기화와 마이그레이션 트랜잭션 정리 |
-| DEBT-002 | `app/core/ai/factcheck/retrieval.py:VectorCache.encode` | 모델 계산 중 열린 DB 연결/마이그레이션 쓰기 잠금 수명 |
-| DEBT-003 | `app/core/documents.py:extract_text` | 자료가 저장된 뒤 색인 시작 실패를 업로드 전체 실패로 응답 |
-| DEBT-004 | `app/core/jobs.py:run_in_background` | 시작·완료 상태 기록의 SQL/OS 오류가 워커 밖으로 전파 |
+| ~~DEBT-001~~ | `app/core/vault.py:connect` | 해결: 초기화 직렬화, schema version 확인, WAL 재설정 생략, 초기화 트랜잭션 조기 커밋 |
+| ~~DEBT-002~~ | `app/core/ai/factcheck/retrieval.py:VectorCache.encode` | 해결: 조회 연결 해제 후 모델 계산, 짧은 별도 저장 트랜잭션 |
+| ~~DEBT-003~~ | `app/core/documents.py:extract_text` | 해결: 저장 성공 유지, 색인 시작 실패는 pending과 안내 메시지로 반환 |
+| ~~DEBT-004~~ | `app/core/jobs.py:run_in_background` | 해결: SQL/OS 오류를 STORAGE_ERROR로 기록, 기록 불가 시 복구 대상에 포함 |
 | ~~DEBT-005~~ | `dev/tests/vault_fixture.py:use_temp_vault`, `test_server.py:test_materials_extract` | ~~워커 종료 전 임시 DB/키 복구·삭제; 잠금/WinError 32 관찰~~ — 해결: `use_temp_vault` 가 정리 전에 백그라운드 작업(job-*) 스레드를 기다린다 |
-| DEBT-006 | `web/src/components/EditorialAssist.jsx:useAutosave` | 저장 요청 중첩·첫 ID 재사용·응답 순서 위험(실사용 재현 후속) |
-| DEBT-007 | `web/src/App.jsx:App` | 최근 원고 조회 실패를 빈 저장소로 취급 |
+| ~~DEBT-006~~ | `src/components/EditorialAssist.jsx:useAutosave` | 기존 직렬화 구현 유지. ui-smoke에서 첫 요청 지연 중 추가 편집·동일 ID·최신 저장 내용 검증 |
+| ~~DEBT-007~~ | `src/App.jsx:App` | 해결: 조회 오류 표시와 재시도, 조회 실패 중 편집·자동 저장 차단 |
 | ~~DEBT-008~~ | `app/core/api.py:Handler.do_GET` | ~~latestArticle의 RequestError를 JSON 오류로 변환하지 않음~~ — 해결: 다른 GET 처럼 오류 본문(JSON)으로 응답 |
 
 새 테스트를 실행하지 않는다. 직전 작성한 회귀 시나리오는 자동 수집에서 제외하고

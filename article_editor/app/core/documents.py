@@ -1,6 +1,6 @@
 """자료 파일 → 텍스트 (팩트체크 서랍 업로드). PDF·DOCX·HWPX·HWP·텍스트.
 
-추출에 성공한 파일은 원본과 텍스트를 내 문서/AI Newsroom/sources 에 보관한다(storage.save_source).
+추출에 성공한 파일은 원본과 텍스트를 암호화 저장소에 보관한다(storage.save_source).
 
 PDF 는 pypdf, 옛 HWP(한글 5.x 바이너리)는 olefile 로 열고 본문 레코드를 직접 읽는다.
 DOCX·HWPX 는 zip 안의 XML 이라 표준 라이브러리로 충분하다. 스캔 PDF(이미지)는 글자가 없어 OCR 이 필요하다.
@@ -186,7 +186,10 @@ def extract_text(payload):
         raise RequestError('글자를 찾지 못했습니다. 스캔한 이미지 PDF 는 OCR 이 필요합니다.', 422)
     source_id, path = storage.save_source(name, raw, text)
     from .source_index import start_indexing
-    # TODO(debt: DEBT-003): 원본/추출 텍스트 저장 후 색인 시작이 실패해도 업로드 전체가 오류 응답한다.
-    # 이미 저장된 자료를 실패로 오인해 재업로드할 수 있다. 색인 시작 실패는 pending으로 분리할 것.
-    index = start_indexing(source_id)
+    try:
+        index = start_indexing(source_id)
+    except Exception:
+        # 자료 저장은 끝났다. 색인은 재시도할 수 있지만 업로드를 실패로 돌리지 않는다.
+        index = {'indexJobId': None, 'indexState': 'pending',
+                 'indexError': '자료는 저장됐지만 색인을 시작하지 못했습니다. 색인을 다시 시도해 주세요.'}
     return {'text': text, 'chars': len(text), 'format': fmt, 'sourceId': source_id, 'path': path, **index}

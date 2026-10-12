@@ -68,6 +68,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path=='/api/models':
             try:return self.send(200,CORE.models.status())
             except RequestError as e:return self.send(e.status,error_body(e))
+        if self.path=='/api/transcripts':
+            try:return self.send(200,CORE.storage.list_transcripts())
+            except RequestError as e:return self.send(e.status,error_body(e))
         path=urllib.parse.urlsplit(self.path)
         if path.path=='/api/unsplash/search':
             try:
@@ -97,8 +100,20 @@ class Handler(BaseHTTPRequestHandler):
         if path.path in ('/api/articles','/api/knowledge-map'):
             try:return self.send(200,CORE.storage.list_articles() if path.path=='/api/articles' else CORE.storage.knowledge_map())
             except RequestError as e:return self.send(e.status,error_body(e))
+        match=re.fullmatch(r'/api/articles/([a-f0-9]{32})',path.path)
+        if match:
+            try:return self.send(200,CORE.storage.get_article(match.group(1),photo_refs=True))
+            except RequestError as e:return self.send(e.status,error_body(e))
         if path.path=='/api/sources':
             try:return self.send(200,CORE.storage.list_sources())
+            except RequestError as e:return self.send(e.status,error_body(e))
+        match=re.fullmatch(r'/api/knowledge-files/('+UUID+')',path.path)
+        if match:
+            try:return self.send(200,CORE.storage.get_knowledge_file(match.group(1)))
+            except RequestError as e:return self.send(e.status,error_body(e))
+        match=re.fullmatch(r'/api/transcripts/([a-f0-9]{32})(/audio)?',path.path)
+        if match:
+            try:return self.send(200,*CORE.storage.transcript_audio(match.group(1))) if match.group(2) else self.send(200,CORE.storage.get_transcript(match.group(1)))
             except RequestError as e:return self.send(e.status,error_body(e))
         match=re.fullmatch(r'/api/sources/([a-f0-9]{32}|[a-f0-9]{16})',path.path)
         if match:
@@ -140,14 +155,17 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed() or self.headers.get('Origin') not in (f'http://localhost:{self.port()}',f'http://127.0.0.1:{self.port()}'):return self.send(403,{'error':'워크스페이스에서 요청해 주세요.'})
         restore=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions/(\d{1,6})/restore',self.path)
         prune=re.fullmatch(r'/api/articles/([a-f0-9]{32})/revisions/prune-legacy',self.path)
+        article_delete=re.fullmatch(r'/api/articles/([a-f0-9]{32})/delete',self.path)
         snapshot=re.fullmatch(r'/api/articles/([a-f0-9]{32})/snapshots',self.path)
         job_cancel=re.fullmatch(r'/api/jobs/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/cancel',self.path)
         source_delete=re.fullmatch(r'/api/sources/([a-f0-9]{32}|[a-f0-9]{16})/delete',self.path)
-        if not restore and not prune and not snapshot and not job_cancel and not source_delete and self.path not in ('/api/media-assets','/api/assist','/api/articles/save','/api/articles/publish','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        knowledge_file_delete=re.fullmatch(r'/api/knowledge-files/('+UUID+')/delete',self.path)
+        if not restore and not prune and not article_delete and not snapshot and not job_cancel and not source_delete and not knowledge_file_delete and self.path not in ('/api/media-assets','/api/knowledge-files/import','/api/assist','/api/articles/save','/api/articles/publish','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate','/api/platform/render','/api/cms/publish','/api/vault/export','/api/vault/restore'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
-            if not 0<size<=(80_000_000 if self.path in ('/api/articles/save','/api/articles/publish') else 40_000_000 if self.path in ('/api/interview/transcribe','/api/materials/extract') else 30_000_000):raise RequestError('요청 크기가 너무 큽니다.',413)
+            # shortcut: 백업을 JSON/base64로 받으므로 220MB로 제한, 저장소가 150MB에 가까워지면 스트리밍 업로드로 교체
+            if not 0<size<=(220_000_000 if self.path=='/api/vault/restore' else 80_000_000 if self.path in ('/api/articles/save','/api/articles/publish') else 40_000_000 if self.path in ('/api/interview/transcribe','/api/materials/extract') else 30_000_000):raise RequestError('요청 크기가 너무 큽니다.',413)
             data=json.loads(self.rfile.read(size))
             if not isinstance(data,dict):raise RequestError('잘못된 요청입니다.')
             if self.path=='/api/session':return self.send(200,CORE.session.sign_in(data))
@@ -157,11 +175,17 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/models/cancel':return self.send(200,CORE.models.cancel())
             if self.path=='/api/articles/save':return self.send(200,CORE.storage.save_article(data))
             if self.path=='/api/articles/publish':return self.send(200,CORE.storage.publish_article(data))
+            if self.path=='/api/vault/export':return self.send(200,CORE.storage.export_backup(data))
+            if self.path=='/api/vault/restore':return self.send(200,CORE.storage.restore_backup(data))
+            if self.path=='/api/cms/publish':return self.send(200,CORE.platform.publish(data))
             if job_cancel:return self.send(200,CORE.jobs.cancel(job_cancel.group(1)))
             if self.path=='/api/media-assets':return self.send(200,CORE.storage.register_media_asset(data))
+            if self.path=='/api/knowledge-files/import':return self.send(200,CORE.storage.import_knowledge_files(data))
+            if knowledge_file_delete:return self.send(200,CORE.storage.delete_knowledge_file(knowledge_file_delete.group(1)))
             if source_delete:return self.send(200,CORE.storage.delete_source(source_delete.group(1),data))
             if restore:return self.send(200,CORE.storage.restore_revision(restore.group(1),int(restore.group(2))))
             if prune:return self.send(200,CORE.storage.prune_legacy_revisions(prune.group(1)))
+            if article_delete:return self.send(200,CORE.storage.delete_article(article_delete.group(1)))
             if snapshot:return self.send(200,CORE.storage.create_snapshot(snapshot.group(1),data))
             if self.path=='/api/materials/extract':return self.send(200,extract_text(data))
             if self.path=='/api/sources/open':return self.send(200,CORE.storage.open_source(data))
@@ -173,6 +197,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path=='/api/interview/transcribe':result=CORE.ai.transcribe(data)
                 elif self.path=='/api/platform/keywords':result=CORE.platform.keywords(data)
                 elif self.path=='/api/platform/generate':result=CORE.platform.generate(data)
+                elif self.path=='/api/platform/render':result=CORE.platform.render(data)
                 else:result=CORE.ai.assist(data)
             finally:LIMIT.release()
             self.send(200,result)

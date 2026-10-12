@@ -17,6 +17,78 @@ function fixture(type='summary'){
 }
 function planFixture(){return {card_count:3,main_topic:article.title,points:[{id:'P1',summary:article.content,body_page:2,source_evidence:[article.content]}],closing_summary:'주말 확대 계획과 시행일 확정 조건'};}
 function loadWithAI(file,FakeAI){const mod={exports:{}};vm.runInNewContext(fs.readFileSync(path.join(root,file),'utf8'),{module:mod,__dirname:root,process,console,require:n=>n==='./ai-provider'?FakeAI:n==='dotenv'?{config(){}}:n.startsWith('./')?require(path.join(root,n)):require(n)});return mod.exports;}
+test('카드뉴스 생성·검수 프롬프트는 한국어 문장 품질을 일관되게 확인',async()=>{
+ const requests=[];
+ class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
+  requests.push(request);let result;
+  if(request.text.format.name.endsWith('_validation'))result={issues:[]};
+  else if(request.text.format.name==='card_news_information_plan')result=planFixture();
+  else{
+   result=fixture();result.cards.forEach((card,index)=>{card.content.farewell='';card.covered_point_ids=index===1?['P1']:[];});
+  }
+  return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(result)}]}]};
+ }};}
+ const {generateCardNews}=loadWithAI('card-news-generator.js',FakeAI);
+ await generateCardNews({article,selected_keywords:[],requirements:''});
+ const prompts=Object.fromEntries(requests.map(request=>[request.text.format.name,request.instructions]));
+ assert.match(prompts.card_news_information_plan,/모든 headline·answer·detail은 자연스러운 한국어/);
+ assert.match(prompts.card_news_draft,/조사와 어미를 확인/);
+ assert.match(prompts.requirement_validation,/조사·어미 호응이 틀리거나/);
+ assert.match(prompts.requirement_validation,/같은 원문 사실·조건을 유지하면서 자연스러운 한국어/);
+});
+test('배분표의 인용 근거가 본문과 불일치하면 한 번 다시 생성해 계속 진행',async()=>{
+ let planCalls=0,retryRequest;
+ class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
+  let result;
+  if(request.text.format.name.endsWith('_validation'))result={issues:[]};
+  else if(request.text.format.name==='card_news_information_plan'){
+   planCalls++;
+   if(planCalls===1){
+    result=planFixture();
+    result.points[0].source_evidence=['서울시 도서관 주말 운영 확대'];
+   }else{
+    retryRequest=JSON.parse(request.input);
+    result=planFixture();
+   }
+  }else{
+   result=fixture();
+   result.cards.forEach((card,index)=>{card.content.farewell='';card.covered_point_ids=index===1?['P1']:[];});
+  }
+  return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(result)}]}]};
+ }};}
+ const {generateCardNews}=loadWithAI('card-news-generator.js',FakeAI);
+ const draft=await generateCardNews({article,selected_keywords:[],requirements:''});
+ assert.equal(planCalls,2);
+ assert.match(retryRequest.validation_error,/근거가 기사 본문과 일치하지 않습니다/);
+ assert.deepEqual(retryRequest.previous_information_plan.points[0].source_evidence,['서울시 도서관 주말 운영 확대']);
+ assert.equal(draft.generation_review.status,'passed');
+});
+test('카드 근거 불일치 교정에는 실패 위치와 원문에 없는 인용을 전달',async()=>{
+ let drafts=0,correction;
+ class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
+  let result;
+  if(request.text.format.name.endsWith('_validation'))result={issues:[]};
+  else if(request.text.format.name==='card_news_information_plan')result=planFixture();
+  else{
+   drafts++;
+   if(drafts===2)correction=JSON.parse(request.input);
+   result=fixture();
+   result.cards.forEach((card,index)=>{
+    card.content.farewell='';
+    card.covered_point_ids=index===1?['P1']:[];
+   });
+   if(drafts===1)result.cards[1].source_evidence=['본문에 없는 근거 문장입니다.'];
+  }
+  return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(result)}]}]};
+ }};}
+ const {generateCardNews}=loadWithAI('card-news-generator.js',FakeAI);
+ const draft=await generateCardNews({article,selected_keywords:[],requirements:''});
+ assert.equal(drafts,2);
+ assert.equal(correction.review.requirement.issues[0].location,'cards[1].source_evidence');
+ assert.equal(correction.review.requirement.issues[0].problematic_text,'본문에 없는 근거 문장입니다.');
+ assert.match(correction.review.requirement.issues[0].suggestion,/article.title 또는 article.content/);
+ assert.equal(draft.generation_review.status,'passed');
+});
 test('고정 카드 생성은 객체 순서와 무관하게 배분표의 번호·역할·ID를 보존',()=>{
  const {createPlannedDraftSchema,readPlannedDraft,checkInformationCoverage}=require('../card-news-generator');
  const plan=planFixture(),source=fixture(),schema=createPlannedDraftSchema(plan);

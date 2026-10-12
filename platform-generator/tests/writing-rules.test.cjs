@@ -9,7 +9,9 @@ test('Threads 해시태그와 질문의 근거를 보존하며 새 지침을 전
  vm.runInNewContext(fs.readFileSync(path.join(root,'text-generator.js'),'utf8'),{module,__dirname:root,process,console,require:name=>name==='./ai-provider'?FakeAI:name==='dotenv'?{config(){}}:name.startsWith('./')?require(path.join(root,name)):require(name)});
  const draft=await module.exports.generateTextPlatform('threads',{article,selected_keywords:[],requirements:'반말로 작성'});
  assert.deepEqual(Array.from(draft.hashtags),tags);assert.equal(draft.evidence_valid,true);
- assert.match(request.instructions,/설명형 반말/);assert.match(request.instructions,/문단 사이 연결/);assert.match(request.instructions,/명사형 제목/);assert.match(request.instructions,/문장 흐름 비교 예시/);
+ assert.match(request.instructions,/자연스럽게 설명하는 반말/);assert.match(request.instructions,/앞 문장과 실제 관계/);assert.match(request.instructions,/짧은 명사형/);
+ assert.match(request.instructions,/조사와 어미를 확인/);assert.match(request.instructions,/문장 수를 맞추려고 어색하게 줄이지 않습니다/);
+ assert.doesNotMatch(request.instructions,/문장 흐름 비교 예시|A2O SOUL/);
  assert.match(request.instructions,/100~180/);assert.doesNotMatch(request.instructions,/기본 4~5/);
  assert.match(request.instructions,/최소 기준 안에서 사용자/);
  assert.equal(JSON.parse(request.input).requirements,'반말로 작성');
@@ -26,6 +28,8 @@ test('Instagram 명사형 도입·본문 연결 지침과 사용자 조건을 �
  assert.equal(draft.opening,'📰 '+block.text);assert.equal(draft.evidence_valid,true);
  assert.match(request.instructions,/명사형 도입/);assert.match(request.instructions,/본문 연결/);
  assert.match(request.instructions,/핵심 정리와 원문의 최종 결론/);assert.match(request.instructions,/한 문장에는 하나의 주요 주장/);
+ assert.match(request.instructions,/기본 2~4개 문단/);assert.match(request.instructions,/서로 연결된 사실은 한 문단에서 함께 설명/);
+ assert.match(request.instructions,/같은 수치·일정·사실을 다른 표현으로 다시 설명/);assert.match(request.instructions,/마지막 본문을 다시 요약하는 칸이 아닙니다/);
  assert.match(request.instructions,/관심이 모아집니다/);assert.doesNotMatch(request.instructions,/Threads 전용 말투/);
  assert.equal(JSON.parse(request.input).requirements,'쉽게 작성');
  assert.deepEqual(Array.from(request.text.format.schema.required),['emoji','opening','paragraphs','closing','hashtags']);

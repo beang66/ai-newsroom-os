@@ -73,7 +73,7 @@ const cardNewsSchema = objectSchema({
 });
 
 const hasText = (value) => typeof value === "string" && value.trim().length > 0;
-const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+const normalize = (value) => String(value ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
 const hasEvidence = (value) => Array.isArray(value) && value.length > 0 && value.every(hasText);
 
 function readResponse(response){
@@ -82,11 +82,19 @@ function readResponse(response){
   try{return JSON.parse(content.filter(i=>i.type==='output_text').map(i=>i.text).join(''));}
   catch{throw new Error('카드뉴스 응답을 JSON으로 읽지 못했습니다.');}
 }
+function invalidInformationPlan(message){
+  return Object.assign(new Error(message),{code:'INVALID_INFORMATION_PLAN'});
+}
 function checkInformationPlan(plan,article){
-  if(!plan||!Number.isInteger(plan.card_count)||plan.card_count<3||plan.card_count>10||!hasText(plan.main_topic)||!hasText(plan.closing_summary)||!Array.isArray(plan.points)||!plan.points.length)throw new Error('기사 주요 정보 배분표가 올바르지 않습니다.');
+  if(!plan||!Number.isInteger(plan.card_count)||plan.card_count<3||plan.card_count>10||!hasText(plan.main_topic)||!hasText(plan.closing_summary)||!Array.isArray(plan.points)||!plan.points.length)throw invalidInformationPlan('기사 주요 정보 배분표의 필수 항목이나 카드 수가 올바르지 않습니다.');
   const ids=new Set();
   for(const point of plan.points){
-    if(!hasText(point.id)||ids.has(point.id)||!hasText(point.summary)||!Number.isInteger(point.body_page)||point.body_page<2||point.body_page>=plan.card_count||!hasEvidence(point.source_evidence)||point.source_evidence.some(q=>!normalize(article.content).includes(normalize(q))))throw new Error('주요 정보는 본문 카드와 실제 기사 본문 근거에 연결해야 합니다.');
+    if(!hasText(point.id)||ids.has(point.id)||!hasText(point.summary)||!Number.isInteger(point.body_page)||point.body_page<2||point.body_page>=plan.card_count||!hasEvidence(point.source_evidence)){
+      throw invalidInformationPlan('주요 정보의 ID, 요약, 본문 카드 번호 또는 근거 형식이 올바르지 않습니다.');
+    }
+    if(point.source_evidence.some(q=>!normalize(article.content).includes(normalize(q)))){
+      throw invalidInformationPlan(`주요 정보 ${point.id}의 근거가 기사 본문과 일치하지 않습니다. 제목이나 요약이 아니라 본문에서 그대로 인용해야 합니다.`);
+    }
     ids.add(point.id);
   }
 }
@@ -185,13 +193,35 @@ async function generateCardNews(input) {
   // Instagram 작성 규칙과 생성 함수를 사용하지 않습니다.
   const commonRules = getPlatformRules("card_news").common_rules;
   const client = new OpenAI({ apiKey, timeout: 180000, maxRetries: 0 });
-  const informationPlan=readResponse(await client.responses.create({
-    model:OpenAI.model?.trim()||'gpt-5',store:false,max_output_tokens:6000,
-    instructions:`${commonRules}\n${CARD_NEWS_RULES}\n원고를 쓰기 전에 기사 주요 정보와 필수 맥락을 추출하고 본문 카드에 배분하세요. 각 정보는 고유 id와 실제 기사 본문 source_evidence, 처음 충분히 설명할 body_page를 가집니다. 표지 1장과 마지막 1장을 제외한 본문 안에서 주요 정보가 완결되어야 합니다. 사용자 장수 요청을 지킵니다. closing_summary는 표지 주제와 주요 내용을 종합하고 새로운 정보는 없습니다.`,
-    input:JSON.stringify({article:input.article,selected_keywords:input.selected_keywords,requirements:input.requirements??''}),
-    text:{format:{type:'json_schema',name:'card_news_information_plan',strict:true,schema:informationPlanSchema}},
-  }));
-  checkInformationPlan(informationPlan,input.article);
+  const planInstructions=`${commonRules}\n${CARD_NEWS_RULES}\n원고를 쓰기 전에 기사 주요 정보와 필수 맥락을 추출하고 본문 카드에 배분하세요. 각 정보는 고유 id와 실제 기사 본문 source_evidence, 처음 충분히 설명할 body_page를 가집니다. source_evidence는 입력 article.content에서 연속된 문장 또는 구절을 글자 그대로 복사하세요. 제목, 요약, 바꿔 쓴 표현, 기사 본문에 없는 문구는 근거로 쓰지 마세요. 표지 1장과 마지막 1장을 제외한 본문 안에서 주요 정보가 완결되어야 합니다. 사용자 장수 요청을 지킵니다. closing_summary는 표지 주제와 주요 내용을 종합하고 새로운 정보는 없습니다.`;
+  let informationPlan;
+  let previousPlan;
+  let previousPlanError;
+  for(let attempt=0;attempt<2;attempt++){
+    const response=await client.responses.create({
+      model:OpenAI.model?.trim()||'gpt-5',store:false,max_output_tokens:6000,
+      instructions:attempt===0?planInstructions:`${planInstructions}\n직전 배분표에 검증 오류가 있었습니다. 오류 내용과 이전 결과를 참고 자료로만 사용하고, 기사 본문에서 직접 복사한 실제 근거로 오류가 없는 배분표 전체를 다시 작성하세요.\n검증 오류: ${previousPlanError.message}`,
+      input:JSON.stringify({
+        article:input.article,
+        selected_keywords:input.selected_keywords,
+        requirements:input.requirements??'',
+        ...(attempt===0?{}:{previous_information_plan:previousPlan,validation_error:previousPlanError.message}),
+      }),
+      text:{format:{type:'json_schema',name:'card_news_information_plan',strict:true,schema:informationPlanSchema}},
+    });
+    informationPlan=readResponse(response);
+    try{
+      checkInformationPlan(informationPlan,input.article);
+      break;
+    }catch(error){
+      if(error.code!=='INVALID_INFORMATION_PLAN'||attempt===1){
+        if(error.code==='INVALID_INFORMATION_PLAN')throw new Error(`카드뉴스 주요 정보 배분표를 확인하지 못했습니다. ${error.message} 원문을 확인한 뒤 다시 시도해주세요.`);
+        throw error;
+      }
+      previousPlan=informationPlan;
+      previousPlanError=error;
+    }
+  }
   const plannedSchema=createPlannedDraftSchema(informationPlan);
   const cardAssignments=Array.from({length:informationPlan.card_count},(_,index)=>{
     const page=index+1;
@@ -241,6 +271,19 @@ async function generateCardNews(input) {
   const checkEvidence = (quotes) => hasEvidence(quotes) && quotes.every(
     (quote) => sources.some((source) => source.includes(normalize(quote)))
   );
+  const invalidEvidence = (quotes, location) => {
+    if (checkEvidence(quotes)) return null;
+    const invalidQuotes = (Array.isArray(quotes) ? quotes : [])
+      .filter(quote => !hasText(quote) || !sources.some(source => source.includes(normalize(quote))));
+    return {
+      location,
+      category:'structure_violation',
+      problematic_text:invalidQuotes.join('\n'),
+      reason:`${location}에 기사 제목·본문에서 그대로 확인할 수 없는 근거가 있습니다.`,
+      source_evidence:[],
+      suggestion:'근거를 article.title 또는 article.content에 실제로 있는 연속된 문장·구절로 교체하세요. 요약하거나 다듬은 문장을 근거로 사용하지 마세요.',
+    };
+  };
 
   // 원고 문장과 배분표를 함께 의미 검수하고, 새 생성본만 최대 두 번 교정합니다.
   // 사용자가 편집하거나 불러온 기존 초안을 자동으로 다시 쓰지 않습니다.
@@ -250,10 +293,17 @@ async function generateCardNews(input) {
     let structuralError;
     try{
       checkStructure(draft);checkInformationCoverage(informationPlan,draft);
-      if(!checkEvidence(draft.core_text.source_evidence)||draft.cards.some(card=>!checkEvidence(card.source_evidence)))throw new Error('생성된 기사 근거가 원문에 그대로 존재하지 않습니다.');
+      const invalidReferences=[
+        invalidEvidence(draft.core_text.source_evidence,'core_text.source_evidence'),
+        ...draft.cards.map((card,index)=>invalidEvidence(card.source_evidence,`cards[${index}].source_evidence`)),
+      ].filter(Boolean);
+      if(invalidReferences.length){
+        const first=invalidReferences[0];
+        throw Object.assign(new Error(`${first.reason} 문제가 된 인용: ${first.problematic_text || '(근거 누락)'}`),{evidenceIssue:first});
+      }
     }catch(error){structuralError=error;}
     if(structuralError&&attempt===2)throw structuralError;
-    generationReview=structuralError?{status:'needs_revision',fact:{issue_count:0,issues:[]},requirement:{issue_count:1,issues:[{reason:structuralError.message,suggestion:'information_plan.points의 각 id는 정해진 body_page의 본문 카드 한 곳에 배정합니다. 표지와 마지막 장의 재언급은 본문 최초 배분과 별도입니다. 원문 근거와 3~10장 구조를 유지하세요.'}]}}:
+    generationReview=structuralError?{status:'needs_revision',fact:{issue_count:0,issues:[]},requirement:{issue_count:1,issues:[structuralError.evidenceIssue||{location:'information_plan',category:'structure_violation',problematic_text:'',reason:structuralError.message,source_evidence:[],suggestion:'각 정보 ID는 정해진 본문 카드 한 곳에 배정하고 근거는 기사 본문에서 그대로 인용하세요. 원문 근거와 3~10장 구조를 유지하세요.'}]}}:
       await validateDraft({...input,platform:'card_news',draft:{...draft,information_plan:informationPlan}},{client,apiKey});
     if(generationReview.status==='passed'||attempt===2)break;
     draft=readPlannedDraft(readResponse(await client.responses.create({

@@ -2,7 +2,7 @@
 // AI_PROVIDER=gemini 또는 openai. 자동으로 다른 유료 API로 전환하지 않습니다.
 const { AI_ENDPOINTS } = require('./public/api');
 function provider() {
-  const value = (process.env.AI_PROVIDER || 'gemini').trim().toLowerCase();
+  const value = (process.env.AI_PROVIDER || 'openai').trim().toLowerCase();
   if (!['gemini', 'openai'].includes(value)) throw new Error('AI_PROVIDER는 gemini 또는 openai로 설정해주세요.');
   return value;
 }

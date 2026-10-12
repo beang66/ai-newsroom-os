@@ -365,13 +365,28 @@ try {
   await models.waitFor({ state: "detached" });
   await noMorePolling();
   installOutcome = "complete";
-  await page.getByRole("button", { name: "모델 설치 설정", exact: true }).click();
+  await page.locator("header").getByRole("button", { name: "모델 설치", exact: true }).click();
   await models.getByText("미설치 모델 전체 용량: 2.0 MB", { exact: true }).waitFor();
   await page.getByTestId("models-install").click();
   await models.getByText("모두 설치됨", { exact: true }).waitFor();
   assert.equal(await page.getByTestId("models-install").count(), 0);
   await noMorePolling();
   await models.getByRole("button", { name: "닫기", exact: true }).click();
+
+  // 환경 설정은 모델 설치와 별개 창: 클라우드 백업은 기본 켜짐이고 끄면 다시 열어도 꺼져 있다
+  const settings = page.getByTestId("settings-dialog");
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await settings.waitFor();
+  assert.equal(await page.getByTestId("models-install").count(), 0, "환경 설정 창에는 모델 설치가 없어야 합니다");
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
+  assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), true, "클라우드 백업 기본값은 켜짐");
+  await page.getByTestId("settings-cloud-backup").uncheck();
+  await settings.getByRole("button", { name: "닫기", exact: true }).click();
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
+  assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), false, "끈 설정이 유지됨");
+  await page.getByTestId("settings-cloud-backup").check();
+  await settings.getByRole("button", { name: "닫기", exact: true }).click();
 
   // 목업 없이 빈 원고로 시작해야 한다
   const body = page.getByPlaceholder("기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다...");

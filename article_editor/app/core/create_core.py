@@ -8,6 +8,7 @@ from .managers.job_manager import JobManager
 from .managers.model_manager import ModelManager
 from .managers.platform_manager import PlatformManager
 from .managers.session_manager import SessionManager
+from .managers.settings_manager import SettingsManager
 from .managers.storage_manager import StorageManager
 
 
@@ -17,6 +18,7 @@ class Core:
         self.ai = AIManager()
         self.session = SessionManager()
         self.models = ModelManager()
+        self.settings = SettingsManager()
         self.platform = PlatformManager()
         self.jobs = JobManager()
         try:

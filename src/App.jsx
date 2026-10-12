@@ -12,6 +12,7 @@ const DeskView = lazy(() => import("./components/DeskView"));
 const DataMapView = lazy(() => import("./features/data-map/DataMapView"));
 const LoginDialog = lazy(() => import("./components/LoginDialog"));
 const ModelsDialog = lazy(() => import("./components/ModelsDialog"));
+const SettingsDialog = lazy(() => import("./components/SettingsDialog"));
 
 import { createEmptyArticle } from "./data/article";
 import { core, coreSnapshot } from "./api/core";
@@ -123,6 +124,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   const [showLogin, setShowLogin] = useState(false);
   const [loginHintHidden, setLoginHintHidden] = useState(hintDismissed);
   const [showModels, setShowModels] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const loginWait = useRef([]); // 로그인 창 결과를 기다리는 요청들(AUTH_REQUIRED 로 멈춘 것)
   const loggedIn = useRef(false);
   useEffect(() => {
@@ -207,7 +209,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           session={coreState.session}
-          onModels={() => setShowModels(true)}
+          onSettings={() => setShowSettings(true)}
         />
 
         {/* Main Content Workspace */}
@@ -263,7 +265,8 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
 
       <Suspense fallback={null}>
         {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} />}
-        {showModels && <ModelsDialog onClose={() => setShowModels(false)} onBeforeRestore={() => (dirty ? flush() : Promise.resolve())} />}
+        {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
+        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} onBeforeRestore={() => (dirty ? flush() : Promise.resolve())} />}
 
       {/* Quick Source Search Modal during Writing */}
       {showSearchModal && (

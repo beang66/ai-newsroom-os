@@ -22,7 +22,7 @@
 | 1 | **저장 이력**: 목록, 미리보기(읽기 전용), 이전 저장본으로 복원 | `components/VersionHistory.jsx` | `listRevisions`, `previewRevision`, `restoreRevision` (`api/editorial.js`) | `version-history`, `revision-list`, `revision-preview`, `revision-restore`, `revision-restore-confirm` |
 | 2 | **로그인 대화상자**(이메일·비밀번호), 공용 대화상자 틀 | `components/LoginDialog.jsx`, `components/AppDialog.jsx` | `signIn`, `signOut`, 세션 상태 (`api/editorial.js`) | `login-dialog`, `login-email`, `login-password`, `login-submit`, `login-error` |
 | 3 | **로그인 필요 시 로그인 창 자동 열기**: 서버 기능이 로그인을 요구하면 창이 열리고, 성공하면 하던 요청을 한 번 다시 보냄 | `App.jsx`, `api/auth-gate.js` | `setLoginHandler`, `askLogin` | |
-| 4 | **모델 설치 대화상자**: 목록·크기·설치/취소·진행 (사이드바 설정 버튼에서 열림) | `components/ModelsDialog.jsx` | `modelStatus`, `installModels`, `cancelModelInstall` | `models-dialog`, `models-install`, `models-cancel`, `models-progress` |
+| 4 | **모델 설치 대화상자**: 목록·크기·설치/취소·진행 (헤더의 "모델 설치" 버튼과 팩트체크 서랍의 안내 버튼에서 열림. 환경 설정과는 별개 창) | `components/ModelsDialog.jsx` | `modelStatus`, `installModels`, `cancelModelInstall` | `models-dialog`, `models-install`, `models-cancel`, `models-progress` |
 | 5 | **생성 버튼 3종**: "선택 항목 생성", 지금 보는 탭만 만드는 "원고 생성/다시 생성", "카드뉴스만 생성" | `components/FormatConverter.jsx` | `suggestPlatformKeywords(article, snapshotId)`, `generatePlatform(platform, article, keywords, requirements, snapshotId)` (`api/platform.js`) | `generate-active` |
 | 6 | **고정본 기준 생성 안내**: 생성이 끝나면 메시지에 "(저장 N번 버전의 글 기준)"을 표시. 고정본을 못 만들면 "(고정본을 만들지 못해 현재 글로 생성했습니다)" | `components/FormatConverter.jsx` | `freezeArticle(article)` (`api/platform.js`) | |
 | 7 | **카드 이미지 만들기**: 버튼, 완성 이미지 미리보기, "카드를 고쳤어요" 안내(이미지 흐림), 오류 문구 | `components/FormatConverter.jsx` (카드뉴스 편집 영역 맨 아래) | `renderCardImage(card, photo, snapshotId)` (`api/platform.js`) | `card-image-make`, `card-image-preview`, `card-image-error` |
@@ -31,12 +31,14 @@
 | 10 | **본문 하이라이트**: 본문 안의 문장을 판정별 색으로 칠함. 글이 1초 멈추면 자동 검증 | `components/ArticleWriter.jsx`의 `HighlightedBody`, `components/EditorialAssist.jsx`의 `useFactCheck` | `useFactCheck(article)` → `factcheckArticle` (`api/editorial.js`) | `fact-highlight`, `factcheck-status`, `factcheck-error` |
 | 11 | **상위모델 재검토**: 로컬 판정기가 확정 못 한 문장의 하이라이트에 마우스를 올리면 말풍선이 뜨고, 누르면 다시 판정. 결과는 카드에 "AI 재판정"으로 표시되고 하이라이트가 사라짐. 서랍의 "AI 재판정 N건(임시)" 버튼으로 한꺼번에도 가능 | `ArticleWriter.jsx`(말풍선), `FactCheckDrawer.jsx`, `useFactCheck`의 `recheck`·`restoreExternal` | `externalRecheck`, `cachedExternalRecheck` (`api/editorial.js`) | `recheck-tip` |
 | 12 | **서랍의 새로고침 버튼**: 전체 문장을 다시 검증(평소에는 고친 문장만 자동 검증) | `components/FactCheckDrawer.jsx` | `useFactCheck`의 `run(true)` | |
+| 13 | **환경 설정 대화상자**(사이드바 "환경 설정" 버튼): 작성 중 기사 클라우드 백업 켜기/끄기(기본 켜짐), 사용자 자료 백업·복구. 모델 설치는 여기에 없음 | `components/SettingsDialog.jsx` | `getSettings`, `saveSettings({cloudBackup})`, `exportVault`, `restoreVault` (`api/editorial.js`) | `settings-dialog`, `settings-cloud-backup`, `settings-error` |
 
 **화면별로 알아 둘 점**
 - **고정본(3-6, 9):** 키워드 추천·생성·카드 이미지·전체 다시 검증을 누르면 코어가 지금 글을 저장해 고정본(그 시점의 글을 얼린 사본)으로 만들고, 그 기준으로 요청합니다. 글이 그대로면 같은 고정본을 다시 씁니다. 글이 멈출 때마다 도는 자동 검증은 고정본을 만들지 않습니다.
 - **카드 이미지(7):** 카드 값을 이미지 입력으로 바꾸는 규칙은 `api/platform.js`의 `cardRenderPayload`에 있습니다(사진이 있으면 표지는 `cover`, 나머지는 `photo_body`, 사진이 없으면 `text_only`). 이미지는 카드 데이터의 `rendered_image: {id, uri}`에 저장됩니다. 렌더에는 Edge나 Chrome이 필요합니다(Windows 기본 설치).
 - **색인 상태(8):** `indexing`(색인 중 NN%, 2초마다 새로 읽음) · `ready`(완료, 조각 수) · `failed`(실패, 팩트체크 때 다시 시도) · `pending`(안 됨: 서버 연결·로그인이 안 됐거나 옛 형식 자료). 색인이 끝나기 전에는 팩트체크가 자동으로 대기합니다.
 - **본문 하이라이트(10)의 판정별 색(현재 값):** 자료와 불일치(CONFLICT)는 장미색에 안쪽 테두리로 가장 강하게, 근거 부족(EVIDENCE_GAP)은 호박색, 검토 필요(REVIEW·EXTERNAL_REQUIRED)는 보라색, 일치(SUPPORTED)는 평소에 칠하지 않고 서랍 카드에 마우스를 올린 동안만 초록색, 일치 문장 안의 날짜·기관·주체 세부 값(DETAIL)은 호박색입니다. 하이라이트가 겹치면 앞의 것만 칠합니다. 재검토(11)는 한 번 받은 결과를 원고를 다시 열어도 자동으로 불러오며(비용 없음) 문장을 고치면 지워집니다.
+- **클라우드 백업(13):** 지금은 설정값만 저장하고 실제 클라우드 저장은 아직 연결되지 않았습니다(안내 문구에 같은 내용이 있음). 취재자료는 이 설정과 관계없이 이 PC에만 저장됩니다.
 - **로그인 자동 열기(3):** 로그인이 필요한 서버 기능(사진 검색, 임베딩, AI 보조 등)을 쓸 때 열립니다.
 
 ## 4. 코어는 준비됐지만 화면이 없는 것

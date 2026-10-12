@@ -6,6 +6,8 @@ import { claimDetails } from "./claim-details.js";
 // 로그인·설치 화면도 같은 코어 계약을 사용한다. 자격 증명은 요청 동안만 전달한다.
 export const signIn = (email, password) => core.signIn(email, password);
 export const signOut = () => core.signOut();
+export const getSettings = (signal) => core.getSettings(signal);
+export const saveSettings = (patch, signal) => core.saveSettings(patch, signal);
 export const modelStatus = (signal) => core.models(signal);
 export const installModels = (modelId, signal) => core.installModels({ modelId }, signal);
 export const cancelModelInstall = (signal) => core.cancelModelInstall(signal);

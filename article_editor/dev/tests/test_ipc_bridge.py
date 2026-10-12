@@ -62,5 +62,18 @@ class IpcBridgeTests(unittest.TestCase):
             self.bridge.coreBytes('/api/media/' + 'a' * 32)
 
 
+
+class TransportChoiceTests(unittest.TestCase):
+    def test_env_then_file_then_default(self):
+        import os
+        from unittest import mock
+        from desktop import shell
+        with mock.patch.dict(os.environ, {'AI_NEWSROOM_TRANSPORT': 'http'}):
+            self.assertEqual(shell.transport(), 'http')
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('AI_NEWSROOM_TRANSPORT', None)
+            self.assertEqual(shell.transport(), 'ipc')  # 개발 실행(frozen 아님): 파일을 보지 않는다
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -61,6 +61,17 @@ def webview2_version():
     return versions[-1] if versions else None
 
 
+def transport():
+    """'http' 또는 'ipc'. 환경변수 AI_NEWSROOM_TRANSPORT 가 우선이고, 없으면 EXE 옆 transport.txt(HTTP 빌드가 만든다), 둘 다 없으면 ipc."""
+    value = os.environ.get('AI_NEWSROOM_TRANSPORT')
+    if not value and getattr(sys, 'frozen', False):
+        try:
+            value = (Path(sys.executable).with_name('transport.txt')).read_text(encoding='utf-8')
+        except OSError:
+            value = ''
+    return 'http' if (value or '').strip().lower() == 'http' else 'ipc'
+
+
 def run_window(url: str, *, debug: bool = False, on_ready=None, on_closed=None) -> None:
     """url 을 네이티브 창으로 연다. 창을 닫으면 반환한다. on_closed: 창이 닫힐 때 한 번 부른다(종료 정리용)."""
     import webview
@@ -70,7 +81,7 @@ def run_window(url: str, *, debug: bool = False, on_ready=None, on_closed=None) 
     # 화면은 브리지가 보이면 IPC, 아니면 HTTP 로 코어를 부른다(src/api/index.js mode "auto").
     # AI_NEWSROOM_TRANSPORT=http 로 브리지를 끄고 HTTP 로 돌아갈 수 있다(문제 생겼을 때의 우회로).
     api = None
-    if os.environ.get('AI_NEWSROOM_TRANSPORT') != 'http':
+    if transport() != 'http':
         from desktop.ipc_bridge import Bridge
         api = Bridge()
     window = webview.create_window(

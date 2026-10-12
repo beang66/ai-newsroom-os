@@ -4,7 +4,7 @@ import { createDataMapApi } from "../features/data-map/api.js";
 
 export const dataMapApi = createDataMapApi({
   coreApi: {
-    knowledgeMap: (signal) => core.knowledgeMap(signal),
+    getKnowledgeMap: (signal) => core.getKnowledgeMap(signal),
     importKnowledgeFiles: (payload, signal) => core.importKnowledgeFiles(payload, signal),
     getKnowledgeFile: (id, signal) => core.getKnowledgeFile(id, signal),
     deleteKnowledgeFile: (id, signal) => core.deleteKnowledgeFile(id, signal),

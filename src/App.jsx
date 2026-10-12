@@ -16,8 +16,8 @@ const SettingsDialog = lazy(() => import("./components/SettingsDialog"));
 
 import { createEmptyArticle } from "./data/article";
 import { core, coreSnapshot } from "./api/core";
-import { loadLatestArticle, loadStoredArticle } from "./api/editorial";
-import { clearBackup, readBackup, setBackupOwner, sameDraft } from "./lib/draftBackup.js";
+import { loadLatestArticle, loadStoredArticle, getBackupKey } from "./api/editorial";
+import { clearBackup, readBackup, setBackupOwner, setBackupKey, sameDraft } from "./lib/draftBackup.js";
 import { useAutosave } from "./components/EditorialAssist";
 import { isRestoring } from "./restoreState";
 import PageHeader from "./components/PageHeader";
@@ -78,6 +78,10 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   // 앱이 강제 종료돼 코어에 못 간 원고가 이 PC 에 남아 있으면 복구할지 묻는다(같은 내용이면 조용히 지운다)
   const ownerId = coreState.session?.userId || "";
   setBackupOwner(ownerId); // 렌더 중에 먼저 정해 둔다: 자식이 쓰는 백업에도 같은 계정이 적힌다
+  // 원고 백업을 암호화할 키(계정별)를 코어에서 받아 메모리에만 둔다. 못 받으면 백업을 건너뛴다
+  useEffect(() => {
+    if (ownerId) getBackupKey().then(({ key }) => setBackupKey(key, ownerId)).catch(() => {});
+  }, [ownerId]);
   useEffect(() => {
     if (loading || initialArticle?.restoredFromBackup || !ownerId) return undefined;
     let alive = true;

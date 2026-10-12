@@ -4,8 +4,11 @@
 키는 이 PC 의 사용자 계정에 묶이므로 폴더를 통째로 복사해도 다른 PC 에서는 열리지 않는다.
 실패하면 열지 않는다(fail closed). 특히 DB 가 이미 있는데 키가 없으면 새 키를 만들지 않는다 — 만들면 기존 원고가 영영 안 열린다.
 """
+import base64
 import contextlib
 import datetime
+import hashlib
+import hmac
 import os
 import re
 import shutil
@@ -50,6 +53,16 @@ def active_path():
     if user == _fixed_user():  # 시험용 고정 사용자는 DB_PATH 자체를 쓴다(시험이 DB_PATH 를 직접 다룬다)
         return DB_PATH
     return _path_for(user)
+
+
+def backup_key():
+    """강제 종료 대비 원고 백업(브라우저 저장소)을 암호화하는 키: 기기 키와 계정 id 에서 파생한 32바이트(base64).
+    계정마다 다르고, 이 PC 의 기기 키가 같으면 늘 같다(재시작 후에도 복호화된다). 로그인하지 않았으면 주지 않는다."""
+    user = _user_id()
+    if not user:
+        raise RequestError('로그인이 필요합니다.', 401, code='AUTH_REQUIRED')
+    digest = hmac.new(bytes.fromhex(_device_key()), b'draft-backup:' + user.encode('utf-8'), hashlib.sha256).digest()
+    return base64.b64encode(digest).decode('ascii')
 
 
 def _any_db_exists():

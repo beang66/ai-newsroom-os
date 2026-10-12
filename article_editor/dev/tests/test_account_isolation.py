@@ -61,5 +61,23 @@ class AccountIsolationTests(unittest.TestCase):
             self.assertEqual(read_models.list_articles()['articles'], [])
 
 
+class BackupKeyTests(unittest.TestCase):
+    def test_backup_key_is_per_account_stable_and_needs_login(self):
+        import base64
+        with mock.patch.object(vault, '_device_key', lambda: vault_fixture.TEST_KEY):
+            with mock.patch.object(vault, '_user_id', lambda: 'user-a'):
+                first, again = vault.backup_key(), vault.backup_key()
+            with mock.patch.object(vault, '_user_id', lambda: 'user-b'):
+                other = vault.backup_key()
+            with mock.patch.object(vault, '_user_id', lambda: ''):
+                with self.assertRaises(RequestError) as caught:
+                    vault.backup_key()
+        self.assertEqual(first, again, '재시작해도 같은 키(복호화 가능)')
+        self.assertNotEqual(first, other, '계정마다 다른 키')
+        self.assertEqual(len(base64.b64decode(first)), 32)
+        self.assertEqual(caught.exception.code, 'AUTH_REQUIRED')
+        self.assertNotIn(vault_fixture.TEST_KEY, first, '기기 키 자체를 주지 않는다')
+
+
 if __name__ == '__main__':
     unittest.main()

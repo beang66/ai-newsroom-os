@@ -23,5 +23,28 @@ class ExitCleanupTests(unittest.TestCase):
         self.assertFalse(storage.OPEN_DIR.exists(), '종료하면 임시 복호화본이 남지 않아야 한다')
 
 
+class WebviewScrubTests(unittest.TestCase):
+    def test_scrub_removes_autofill_and_old_indexeddb_once(self):
+        import tempfile
+        from desktop import shell
+        with tempfile.TemporaryDirectory() as temp:
+            store = Path(temp)
+            profile = store / 'EBWebView' / 'Default'
+            (profile / 'IndexedDB' / 'x.leveldb').mkdir(parents=True)
+            (profile / 'IndexedDB' / 'x.leveldb' / '000003.log').write_bytes(b'old plaintext')
+            (profile / 'Web Data').write_bytes(b'autofill')
+            (profile / 'Preferences').write_bytes(b'keep')
+            shell.scrub_webview_store(store)
+            self.assertFalse((profile / 'Web Data').exists())
+            self.assertFalse((profile / 'IndexedDB').exists())
+            self.assertTrue((profile / 'Preferences').exists(), '그 밖의 설정은 건드리지 않는다')
+            (profile / 'IndexedDB').mkdir()
+            (profile / 'IndexedDB' / 'new.log').write_bytes(b'encrypted backup')
+            (profile / 'Web Data').write_bytes(b'autofill again')
+            shell.scrub_webview_store(store)
+            self.assertFalse((profile / 'Web Data').exists(), '자동 완성 기록은 매번 지운다')
+            self.assertTrue((profile / 'IndexedDB' / 'new.log').exists(), 'IndexedDB 는 한 번만 비운다(암호화된 백업은 남는다)')
+
+
 if __name__ == '__main__':
     unittest.main()

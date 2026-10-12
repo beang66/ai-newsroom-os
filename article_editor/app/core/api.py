@@ -139,7 +139,7 @@ class Handler(BaseHTTPRequestHandler):
         job_cancel=re.fullmatch(r'/api/jobs/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/cancel',self.path)
         source_delete=re.fullmatch(r'/api/sources/([a-f0-9]{32}|[a-f0-9]{16})/delete',self.path)
         knowledge_file_delete=re.fullmatch(r'/api/knowledge-files/('+UUID+')/delete',self.path)
-        if not restore and not snapshot and not job_cancel and not source_delete and not knowledge_file_delete and self.path not in ('/api/media-assets','/api/knowledge-files/import','/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate','/api/cms/publish','/api/vault/export','/api/vault/restore'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        if not restore and not snapshot and not job_cancel and not source_delete and not knowledge_file_delete and self.path not in ('/api/media-assets','/api/knowledge-files/import','/api/assist','/api/articles/save','/api/session','/api/session/signout','/api/session/auto','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate','/api/platform/render','/api/cms/publish','/api/vault/export','/api/vault/restore'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
@@ -173,6 +173,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif self.path=='/api/interview/transcribe':result=CORE.ai.transcribe(data)
                 elif self.path=='/api/platform/keywords':result=CORE.platform.keywords(data)
                 elif self.path=='/api/platform/generate':result=CORE.platform.generate(data)
+                elif self.path=='/api/platform/render':result=CORE.platform.render(data)
                 else:result=CORE.ai.assist(data)
             finally:LIMIT.release()
             self.send(200,result)

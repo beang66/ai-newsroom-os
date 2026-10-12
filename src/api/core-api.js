@@ -16,6 +16,7 @@ export const ROUTES = Object.freeze({
   modelsCancel: "/api/models/cancel",
   assist: "/api/assist",
   articlesSave: "/api/articles/save",
+  articleSnapshots: (id) => "/api/articles/" + encodeURIComponent(id) + "/snapshots",
   articles: "/api/articles",
   article: (id) => "/api/articles/" + encodeURIComponent(id.replaceAll("-", "")),
   articlesLatest: "/api/articles/latest?photos=ref", // 사진은 'media:<id>' 참조로 받고 바이트는 mediaBytes 로 따로
@@ -48,6 +49,7 @@ export const ROUTES = Object.freeze({
   photoTrack: (id) => "/api/unsplash/photo/" + encodeURIComponent(id) + "/track",
   platformKeywords: "/api/platform/keywords",
   platformGenerate: "/api/platform/generate",
+  platformRender: "/api/platform/render",
 });
 
 /**
@@ -84,8 +86,8 @@ export function createCoreApi(transport) {
     /** 팩트체크 준비 상태(모델·런타임 설치 여부) */
     factcheckStatus: (signal) => transport.json(ROUTES.factcheckStatus, null, signal),
     /** 팩트체크: nodes=[{id,type,text,linkedSourceIds?}], materials=[{id,title,content,date?,speaker?}] */
-    factcheckRun: (nodes, materials, signal) =>
-      transport.json(ROUTES.factcheckRun, { nodes, materials }, signal),
+    factcheckRun: (nodes, materials, snapshotId, signal) =>
+      transport.json(ROUTES.factcheckRun, snapshotId ? { nodes, materials, snapshotId } : { nodes, materials }, signal),
     /** 외부 재판정(임시·OpenAI): items=[{id, claim, evidence:[str], titles?:[str]}] → { results:[{id, verdict, reason, wrong_text, evidence_text}] }
      *  options.cachedOnly 가 참이면 저장된 재판정만 돌려주고 OpenAI 는 부르지 않는다(저장 없는 문장은 results 에서 빠짐) —
      *  원고를 다시 열 때 이미 받은 AI 판정을 화면에 복원하는 용도. items 는 클릭 재검토 때와 똑같은 형식이어야 기록을 찾는다. */
@@ -154,10 +156,17 @@ export function createCoreApi(transport) {
     /** 다운로드 추적(Unsplash 가이드라인) */
     trackPhoto: (id, signal) => transport.json(ROUTES.photoTrack(id), null, signal),
     /** 플랫폼 콘텐츠용 핵심 키워드 후보 */
-    platformKeywords: (article, signal) =>
-      transport.json(ROUTES.platformKeywords, { article }, signal),
+    platformKeywords: (article, snapshotId, signal) =>
+      transport.json(ROUTES.platformKeywords, snapshotId ? { snapshotId } : { article }, signal),
     /** platform-generator 실제 생성 엔진 호출 */
-    generatePlatform: (platform, payload, signal) =>
-      transport.json(ROUTES.platformGenerate, { platform, payload }, signal),
+    generatePlatform: (platform, payload, snapshotId, signal) =>
+      transport.json(ROUTES.platformGenerate, snapshotId ? { platform, payload, snapshotId } : { platform, payload }, signal),
+    /** 원고의 최신 저장 이력을 고정본(ArticleSnapshot)으로 만든다 → { id, article_id, revision_no, title, body_text, content_hash, created_at }.
+     *  내용이 같으면 새로 만들지 않고 같은 고정본을 돌려준다 */
+    createSnapshot: (articleId, signal) => transport.json(ROUTES.articleSnapshots(articleId), {}, signal),
+    /** 카드뉴스 카드 하나를 이미지로 그려 코어(암호화 저장소)에 등록 → { cardId, asset:{ id, local_uri, mime_type, ... } }.
+     *  payload: { card_id, template, content:{ keyword, headline, body }, image?:{ url, photographer } }. 결과 이미지는 asset.local_uri 로 보여 준다 */
+    renderPlatformCard: (payload, snapshotId, signal) =>
+      transport.json(ROUTES.platformRender, snapshotId ? { payload, snapshotId } : { payload }, signal),
   };
 }

@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import threading
 from pathlib import Path
 
+from .. import media_assets
 from ..errors import RequestError
 from ..storage import get_snapshot
 
@@ -161,7 +163,7 @@ class PlatformManager:
         if snapshot_id is None:
             return None, None
         snapshot = get_snapshot(snapshot_id)  # 형식 오류 400, 없으면 404
-        return snapshot["id"], {"title": snapshot["title"], "content": snapshot["body_text"]}
+        return snapshot["id"], {"article_id": snapshot["article_id"], "title": snapshot["title"], "content": snapshot["body_text"]}
 
     def keywords(self, data: dict):
         snapshot_id, snapshot_article = self._from_snapshot(data)
@@ -188,6 +190,29 @@ class PlatformManager:
             result = self._call({"action": "generate", "platform": platform, "payload": {**payload, "article": snapshot_article}})
             return {**result, "snapshotId": snapshot_id} if isinstance(result, dict) else result
         return self._call({"action": "generate", "platform": platform, "payload": payload})
+
+    def render(self, data: dict):
+        """카드뉴스 카드 하나를 이미지로 그려 암호화 저장소에 MediaAsset 으로 등록한다. → {cardId, asset[, snapshotId]}
+        data: {payload: {card_id, template, content:{keyword, headline, body}, image?:{url, photographer}}, snapshotId?}
+        결과는 파일(output/)이나 localhost 주소로 남기지 않는다 — Node 는 이미지 바이트만 돌려주고 코어가 vault 에 넣는다.
+        생성 이미지는 generated=true 로 표시되고 asset.local_uri(/api/media-assets/<id>/file)로 화면에 보여 준다."""
+        payload = data.get("payload")
+        if not isinstance(payload, dict) or not isinstance(payload.get("card_id"), str) or not payload["card_id"].strip():
+            raise RequestError("카드 정보(payload.card_id)가 필요합니다.")
+        snapshot_id, _ = self._from_snapshot(data)  # 있으면 존재 확인만(형식 오류 400, 없으면 404) 하고 응답에 싣는다
+        result = self._call({"action": "render", "payload": payload})
+        image = result.get("data") if isinstance(result, dict) else None
+        if not isinstance(image, str) or result.get("mime_type") != "image/jpeg":
+            raise RequestError("카드 이미지를 만들지 못했습니다.", 502)
+        card_id = payload["card_id"].strip()
+        headline = (payload.get("content") or {}).get("headline") if isinstance(payload.get("content"), dict) else ""
+        asset = media_assets.register_media_asset({
+            "kind": "image", "mime_type": "image/jpeg", "generated": True,
+            "filename": re.sub(r"[^0-9A-Za-z가-힣._-]", "_", card_id)[:200] + ".jpg",
+            "caption": headline.strip()[:2000] if isinstance(headline, str) else "",
+            "data": "data:image/jpeg;base64," + image,
+        })
+        return {"cardId": card_id, "asset": asset, **({"snapshotId": snapshot_id} if snapshot_id else {})}
 
     def publish(self, data: dict):
         """검증된 사용자 세션으로 백엔드의 CMS 어댑터를 호출한다. 성공 응답 전에는 발행 상태를 만들지 않는다."""

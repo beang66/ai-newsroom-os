@@ -105,6 +105,9 @@ require("readline").createInterface({ input: process.stdin }).once("line", (line
         design: { layout: "standard", highlights: [], compact: false }
       }))
     }};
+  } else if (input.action === "render") {
+    // 카드 이미지: 2x2 JPEG 를 base64 로 돌려준다(코어가 암호화 저장소에 MediaAsset 으로 등록)
+    result = { card_id: input.payload.card_id, mime_type: "image/jpeg", data: "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAACAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDk6KKKAP/Z" };
   } else {
     process.stdout.write(JSON.stringify({ ok: false, status: 400, error: "unknown action" }) + "\\n", () => process.exit(0));
     return;
@@ -449,7 +452,9 @@ try {
   await page.getByTestId("fact-highlight").waitFor({ state: "attached" });
   // 순서형 검사: 코어가 불일치로 판정한 문장이 있으면 한 건씩 보여 준다(엔진 결과에 기대지 않도록 응답을 고정한다)
   await page.route("**/api/factcheck/run", (route) => {
-    const nodes = JSON.parse(route.request().postData()).nodes;
+    const sent = JSON.parse(route.request().postData());
+    globalThis.__fcSnapshot = sent.snapshotId; // 전체 다시 검증이 보낸 고정본 id(아래에서 확인)
+    const nodes = sent.nodes;
     route.fulfill({ contentType: "application/json", body: JSON.stringify({ results: nodes.map((n) => ({
       node_id: n.id, status: "CONFLICT", claim: n.text, reason: "스모크 불일치 사유", evidence: { text: "스모크 근거 문장", material_title: "자료.txt" },
     })) }) });
@@ -461,8 +466,29 @@ try {
   await sequence.getByText("문제 문장:").waitFor({ timeout: 15_000 });
   await sequence.getByText("스모크 불일치 사유").waitFor();
   await sequence.getByRole("button", { name: /다음|검사 종료/ }).click();
+  // 전체 다시 검증: 지금 글을 고정본으로 만들어 그 기준으로 검증한다 — 요청에 snapshotId 가 실리고 서랍에 기준 버전이 보인다
+  await page.getByTitle("전체 문장 다시 검증(평소에는 고친 문장만 자동으로 검증)").click();
+  await page.getByTestId("factcheck-basis").waitFor({ timeout: 15_000 });
+  assert.match(await page.getByTestId("factcheck-basis").innerText(), /저장 \d+번 버전의 글 기준/);
+  assert.match(String(globalThis.__fcSnapshot), /^[0-9a-f-]{36}$/);
   await page.unroute("**/api/factcheck/run");
   // 저장 이력: 목록 → 미리보기(읽기 전용) → 옛 저장본으로 복원(이력은 그대로 남는다)
+  // "자동 저장됨" 문구는 이전 저장 때 이미 떠 있을 수 있고, 최신 원고(latest)는 이력 목록보다 몇 ms 먼저 바뀔 수 있다.
+  // 방금 쓴 문장이 **저장 이력의 최신 저장본**에 들어간 뒤에 이력을 연다 — 아니면 nth(1) 이 취재자료를 올리기 전의
+  // 옛 저장본(#1)이 되어 복원 뒤 단계(취재자료 1건)가 깨진다.
+  // (page.waitForFunction 은 async 조건의 Promise 를 기다리지 않고 바로 통과하므로, 노드 쪽에서 evaluate 로 반복 확인한다)
+  for (let tries = 0; ; tries += 1) {
+    const saved = await page.evaluate(async () => {
+      const id = (await (await fetch("/api/articles/latest")).json()).draft?.articleId;
+      const list = id ? (await (await fetch(`/api/articles/${id}/revisions`)).json()).revisions : [];
+      if (!list?.length) return false;
+      const newest = await (await fetch(`/api/articles/${id}/revisions/${list[0].revisionNo}`)).json();
+      return JSON.stringify(newest).includes("순서형 검사용 새 문장을 하나 더 씁니다.");
+    });
+    if (saved) break;
+    assert.ok(tries < 150, "새 문장이 저장 이력에 들어가지 않았습니다");
+    await page.waitForTimeout(100);
+  }
   await page.getByTestId("save-status").getByText("자동 저장됨").waitFor({ timeout: 15_000 });
   await page.getByRole("button", { name: "저장 이력" }).click();
   const history = page.getByTestId("version-history");
@@ -492,9 +518,21 @@ try {
   await converter.getByRole("button", { name: "선택 항목 생성" }).click();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value === "스모크 인스타그램 도입"), null, { timeout: 15_000 });
   await converter.getByText("2/2개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();
+  await converter.getByText(/저장 \d+번 버전의 글 기준/).waitFor(); // 생성은 저장된 글의 고정본(snapshot) 기준으로 이루어진다
   // 보고 있는 항목만 다시 생성(원본 platform-generator 의 개별 생성 버튼)
   await converter.getByTestId("generate-active").click();
   await converter.getByText("1/1개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();
+  // 카드뉴스 완성 이미지(임시 UI): 카드뉴스 생성 → "카드 이미지 만들기" → 코어 render → MediaAsset → 미리보기
+  await converter.getByText("카드뉴스도 생성").click();
+  await converter.getByRole("button", { name: "카드뉴스", exact: true }).click();
+  await converter.getByTestId("generate-active").click();
+  await converter.getByTestId("card-image-make").click();
+  const cardImage = converter.getByTestId("card-image-preview");
+  await cardImage.waitFor();
+  assert.match(await cardImage.getAttribute("src"), /^\/api\/media-assets\/[0-9a-f-]{36}\/file$/); // localhost 주소가 아니라 코어 경로
+  await page.waitForFunction(() => { const img = document.querySelector('[data-testid="card-image-preview"]'); return img && img.complete && img.naturalWidth > 0; });
+  await converter.getByPlaceholder("카드 제목").fill("고친 카드 제목"); // 카드를 고치면 다시 만들라고 안내
+  await converter.getByText("카드를 고쳤어요").waitFor();
 
   await go("보관함");
   await see("미디어 & 변환 자산");

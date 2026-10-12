@@ -9,8 +9,13 @@
 export const ROUTES = Object.freeze({
   status: "/api/status",
   session: "/api/session",
+  signUp: "/api/session/signup",
+  sessionKeep: "/api/session/keep",
   signOut: "/api/session/signout",
   sessionAuto: "/api/session/auto",
+  settings: "/api/settings",
+  diagnostics: "/api/diagnostics",
+  backupKey: "/api/backup-key",
   models: "/api/models",
   modelsInstall: "/api/models/install",
   modelsCancel: "/api/models/cancel",
@@ -80,13 +85,26 @@ export function createCoreApi(transport) {
     /** 로그인 상태 — **토큰은 오지 않는다**(프론트는 토큰을 모른다) */
     session: (signal) => transport.json(ROUTES.session, null, signal),
     /** 로그인 (Supabase Auth). 성공하면 session() 과 같은 모양을 돌려준다 */
-    signIn: (email, password, signal) =>
-      transport.json(ROUTES.session, { email, password }, signal),
+    signIn: (email, password, { remember = false } = {}, signal) =>
+      transport.json(ROUTES.session, { email, password, remember }, signal),
     /** 로그아웃 */
+    /** 회원가입. 이메일 확인이 꺼져 있으면 로그인된 session() 모양, 켜져 있으면 signedIn=false 로 오고 둘 다 needsConfirmation 이 붙는다 */
+    signUp: (email, password, { remember = false } = {}, signal) =>
+      transport.json(ROUTES.signUp, { email, password, remember }, signal),
+    /** 이 PC 에서 로그인 유지(앱을 열면 로그인된 상태). 켜면 갱신 토큰만 OS 자격 증명 저장소에 두고, 끄면 지운다 → session() 모양 */
+    setKeepLogin: (enabled, signal) => transport.json(ROUTES.sessionKeep, { enabled }, signal),
     signOut: (signal) => transport.json(ROUTES.signOut, {}, signal),
     /** 공용 테스트 계정 자동 로그인 켜기/끄기(개발 실행 전용) → session() 과 같은 모양 */
     setAutoLogin: (enabled, signal) => transport.json(ROUTES.sessionAuto, { enabled }, signal),
     /** 로컬 모델 상태(설치 여부·진행률·마지막 오류) — 첫 사용 때 내려받는다 */
+    /** 원고 백업(브라우저 저장소) 암호화 키 → { key: base64 }. 계정별로 다르다. 화면은 메모리에만 두고 저장하지 않는다 */
+    getBackupKey: (signal) => transport.json(ROUTES.backupKey, null, signal),
+    /** 문제 보고용 진단 정보(앱 버전·모델 설치 상태·설정 요약). 원고·자료·이메일은 없다 */
+    getDiagnostics: (signal) => transport.json(ROUTES.diagnostics, null, signal),
+    /** 환경 설정(이 PC) → { cloudBackup }. 모델 설치와는 별개 */
+    getSettings: (signal) => transport.json(ROUTES.settings, null, signal),
+    /** 환경 설정 변경. 준 항목만 바뀐다 → 바뀐 뒤의 설정 전체 */
+    saveSettings: (patch, signal) => transport.json(ROUTES.settings, patch, signal),
     models: (signal) => transport.json(ROUTES.models, null, signal),
     /** 모델 설치 시작(백그라운드). 진행률은 models() 로 폴링한다 */
     installModels: (options, signal) =>

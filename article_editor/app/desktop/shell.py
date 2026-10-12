@@ -61,12 +61,50 @@ def webview2_version():
     return versions[-1] if versions else None
 
 
+def transport():
+    """'http' 또는 'ipc'. 환경변수 AI_NEWSROOM_TRANSPORT 가 우선이고, 없으면 EXE 옆 transport.txt(HTTP 빌드가 만든다), 둘 다 없으면 ipc."""
+    value = os.environ.get('AI_NEWSROOM_TRANSPORT')
+    if not value and getattr(sys, 'frozen', False):
+        try:
+            value = (Path(sys.executable).with_name('transport.txt')).read_text(encoding='utf-8')
+        except OSError:
+            value = ''
+    return 'http' if (value or '').strip().lower() == 'http' else 'ipc'
+
+
+def scrub_webview_store(store: Path) -> None:
+    """웹뷰(WebView2) 저장소에 원고가 평문으로 남을 수 있는 곳을 치운다. 앱을 열기 전과 닫은 뒤에 부른다.
+    - Web Data: Chromium 자동 완성 기록(입력란에 쓴 제목 같은 값이 평문으로 남는다) — 앱이 쓰지 않으니 지워도 된다.
+    - IndexedDB: 원고 백업 칸. 암호화 도입 전 빌드가 평문으로 남긴 흔적을 한 번 비운다(.scrubbed-v2 표식). 그 뒤의 백업은 암호화돼 있다.
+    열려 있는 동안에는 잠겨 못 지울 수 있으므로 실패는 무시한다(다음 실행 때 다시)."""
+    import shutil
+    profile = store / 'EBWebView' / 'Default'
+    for name in ('Web Data', 'Web Data-journal'):
+        try:
+            (profile / name).unlink(missing_ok=True)
+        except OSError:
+            pass
+    mark = store / '.scrubbed-v2'
+    if profile.is_dir() and not mark.exists():
+        shutil.rmtree(profile / 'IndexedDB', ignore_errors=True)
+        try:
+            mark.write_text('1', encoding='ascii')
+        except OSError:
+            pass
+
+
 def run_window(url: str, *, debug: bool = False, on_ready=None, on_closed=None) -> None:
     """url 을 네이티브 창으로 연다. 창을 닫으면 반환한다. on_closed: 창이 닫힐 때 한 번 부른다(종료 정리용)."""
     import webview
 
     store = storage_dir()
     store.mkdir(parents=True, exist_ok=True)
+    # 화면은 브리지가 보이면 IPC, 아니면 HTTP 로 코어를 부른다(src/api/index.js mode "auto").
+    # AI_NEWSROOM_TRANSPORT=http 로 브리지를 끄고 HTTP 로 돌아갈 수 있다(문제 생겼을 때의 우회로).
+    api = None
+    if transport() != 'http':
+        from desktop.ipc_bridge import Bridge
+        api = Bridge()
     window = webview.create_window(
         WINDOW_TITLE,
         url,
@@ -74,9 +112,11 @@ def run_window(url: str, *, debug: bool = False, on_ready=None, on_closed=None) 
         height=WINDOW_SIZE[1],
         min_size=MIN_SIZE,
         text_select=True,
+        js_api=api,
     )
     if on_closed:
         window.events.closed += on_closed
+    scrub_webview_store(store)
     webview.start(
         func=on_ready,
         args=(window,) if on_ready else None,
@@ -84,6 +124,7 @@ def run_window(url: str, *, debug: bool = False, on_ready=None, on_closed=None) 
         storage_path=str(store),
         debug=debug,
     )
+    scrub_webview_store(store)  # 닫은 뒤에도 한 번 더(자동 완성 기록 등)
 
 
 def main() -> int:

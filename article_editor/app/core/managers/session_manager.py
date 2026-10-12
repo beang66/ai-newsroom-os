@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import json
 import sys
+import time
+import uuid
 
 from app_paths import APP_DATA
 
-from .. import auth, config
+from .. import auth, config, saved_login, vault
 from ..errors import RequestError
 from ..integrations import supabase
 
@@ -63,7 +65,10 @@ class SessionManager:
                 self._auto_sign_in()
             except RequestError as e:
                 error = e.message
+        if not auth.status()['signedIn']:
+            self._restore_saved()
         state = auth.status()
+        state['keepLogin'] = saved_login.load() is not None
         state['supabase'] = supabase.configured()
         state['backend'] = bool(config.AI_BACKEND_URL)
         state['autoLogin'] = {'available': self.auto_login_available(), 'enabled': self.auto_login_enabled(),
@@ -79,8 +84,27 @@ class SessionManager:
         if not isinstance(password, str) or not 6 <= len(password) <= 200:
             raise RequestError('비밀번호를 확인해 주세요.')
         result = supabase.sign_in(email.strip(), password)
-        self._store(result, email.strip())
+        self._store(result, email.strip(), remember=bool((payload or {}).get('remember')))
         return self.status()
+
+    def sign_up(self, payload):
+        """회원가입. 이메일 확인이 꺼져 있으면 바로 로그인된 상태로, 켜져 있으면 확인 메일 안내({needsConfirmation: True})."""
+        email = (payload or {}).get('email', '')
+        password = (payload or {}).get('password', '')
+        if not isinstance(email, str) or '@' not in email or len(email) > 200:
+            raise RequestError('이메일을 확인해 주세요.')
+        if not isinstance(password, str) or not 8 <= len(password) <= 200:
+            raise RequestError('비밀번호는 8자 이상으로 입력해 주세요.')
+        result = supabase.sign_up(email.strip(), password)
+        if result.get('access_token'):
+            self._store(result, email.strip(), remember=bool((payload or {}).get('remember')))
+            return {**self.status(), 'needsConfirmation': False}
+        user = result.get('user') or result
+        if not user.get('id'):
+            raise RequestError('가입 응답을 확인하지 못했어요.', 502)
+        if user.get('identities') == []:  # 이메일 확인이 켜져 있을 때 Supabase 가 이미 가입된 주소를 알리는 방식
+            raise RequestError('이미 가입된 이메일이에요. 로그인해 주세요.')
+        return {**self.status(), 'needsConfirmation': True}
 
     def sign_out(self):
         token = auth.current_token()
@@ -90,6 +114,20 @@ class SessionManager:
             except RequestError:
                 pass  # 이미 만료된 토큰이어도 로컬 상태는 지운다
         auth.clear()
+        saved_login.clear()  # 로그아웃하면 로그인 유지도 끝낸다
+        return self.status()
+
+    def set_keep_login(self, payload):
+        """payload: {enabled: bool} — 켜면 지금 로그인한 계정의 갱신 토큰을 이 PC 에 저장, 끄면 지운다."""
+        enabled = (payload or {}).get('enabled')
+        if not isinstance(enabled, bool):
+            raise RequestError('enabled 는 true/false 여야 합니다.')
+        if enabled:
+            if not auth.status()['signedIn'] or not auth.refresh_token():
+                raise RequestError('로그인한 상태에서만 로그인 유지를 켤 수 있어요.', 401, code='AUTH_REQUIRED')
+            self._remember()
+        else:
+            saved_login.clear()
         return self.status()
 
     def token(self) -> str:
@@ -100,7 +138,7 @@ class SessionManager:
         refresh = auth.refresh_token()
         if refresh:
             try:
-                self._store(supabase.refresh(refresh), '')
+                self._store(supabase.refresh(refresh), '', prepare=False)
                 return auth.current_token()
             except RequestError:
                 auth.clear()
@@ -112,7 +150,54 @@ class SessionManager:
                 return ''
         return token  # 만료됐고 갱신도 안 되면 '' (호출부가 401 처리)
 
-    def _store(self, result: dict, email: str) -> None:
+    @staticmethod
+    def _remember() -> None:
+        state = auth.status()
+        try:
+            saved_login.save(auth.refresh_token(), state.get('email') or '', state.get('userId') or '')
+        except Exception:
+            pass  # 자격 증명 저장소를 못 쓰면 이번 실행에서만 로그인된다
+
+    _restore_at = 0.0
+
+    def _restore_saved(self) -> None:
+        """저장된 갱신 토큰으로 로그인 상태를 되살린다(앱을 열 때). 토큰이 거절되면 지우고, 네트워크 문제면 남겨 두고 30초 뒤 다시 시도한다."""
+        saved = saved_login.load()
+        if not saved or time.time() - self._restore_at < 30:
+            return
+        self._restore_at = time.time()
+        try:
+            result = supabase.refresh(saved['refresh'])
+        except RequestError as e:
+            if e.status in (400, 401, 403):
+                saved_login.clear()
+            return
+        try:
+            self._store(result, saved.get('email', ''), remember=True)
+        except RequestError:
+            saved_login.clear()
+
+    @staticmethod
+    def _after_login(user_id: str) -> None:
+        """로그인할 때 그 계정의 저장소를 준비한다: 계정 도입 전 저장소 이전(처음 로그인한 계정이 받는다), 예전 평문 가져오기,
+        중단된 작업 정리. 실패해도 로그인은 막지 않는다."""
+        try:  # Supabase 의 사용자 id 는 UUID 다. 아니면(시험의 가짜 계정 등) 저장소를 건드리지 않는다 — 실제 자료를 엉뚱한 계정에 넘기지 않으려는 안전장치
+            uuid.UUID(user_id)
+        except (ValueError, AttributeError, TypeError):
+            return
+        try:
+            from .. import jobs, storage
+            vault.adopt_legacy(user_id)
+            moved = storage.import_legacy_files()
+            storage.pack_existing_photos()
+            storage.import_legacy_embedding_cache()
+            jobs.recover_interrupted_jobs()
+            if moved['articles'] or moved['sources'] or moved['failed']:
+                print(f'예전 저장물 가져오기: {moved}', flush=True)
+        except Exception as error:
+            print(f'저장소 준비 중 문제: {error}', flush=True)
+
+    def _store(self, result: dict, email: str, prepare: bool = True, remember=None) -> None:
         access = result.get('access_token', '')
         if not access:
             raise RequestError('로그인 응답을 확인하지 못했어요.', 502)
@@ -124,3 +209,11 @@ class SessionManager:
             email=email or user.get('email', ''),
             user_id=user.get('id', ''),
         )
+        if remember is True:
+            self._remember()
+        elif remember is False:
+            saved_login.clear()
+        elif saved_login.load():  # 토큰 갱신: 갱신 토큰이 바뀌었으니 저장해 둔 것도 새 것으로
+            self._remember()
+        if prepare:  # 토큰 갱신에서는 저장소 준비를 다시 하지 않는다
+            self._after_login(user.get('id', ''))

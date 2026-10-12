@@ -1,6 +1,33 @@
-# App Core 구현 현황과 계약 차이 (2026-10-07)
+# App Core 구현 현황과 계약 차이 (2026-10-07, 2026-10-12 갱신)
 
 상태: **코드 확인 결과 / v0.8.1 목표 계약과 구분**. 기준은 `feature/app-core`의 `article_editor/app/core/{api,storage,vault}.py`, `managers/{storage_manager,ai_manager}.py` 및 `src/api/{index,core-api,http,client,ipc}.js`이다. 브랜치의 현재 파일을 정적으로 확인했으며 실제 EXE·IPC·전체 기능 연결을 실행 검증한 결과는 아니다. `main`의 [OpenAPI v0.8.1](./OPENAPI_v0.8.yaml)과 [ERD v0.8](./ERD_v0.8.md)은 목표 계약이다.
+
+## 0. 2026-10-12 갱신: 이 문서 작성(10-07) 뒤 달라진 점
+
+아래 1~3장은 10-07 기준 기록이며, 이 장이 최신이다. 호출 이름 대응은 [CONTRACT_VS_IMPLEMENTATION_v0.8.md](./CONTRACT_VS_IMPLEMENTATION_v0.8.md)에 있다.
+
+**해소된 항목**
+
+| 3장의 항목 | 현재 |
+|---|---|
+| 지도/라이브러리 읽기 | `GET /api/knowledge-map`(`getKnowledgeMap`), 기사 목록·상세·이력(`listArticles`, `getArticle`, `listRevisions`, `getRevision`), 자료 목록(`listSources`), 지식 파일(`/api/knowledge-files/*`) 추가 |
+| 안정된 실행 기준 | `article_snapshots` 테이블, `POST /api/articles/<id>/snapshots`(`createSnapshot`), `GET /api/snapshots/<uuid>`. 키워드·생성·렌더·팩트체크가 `snapshotId`를 받음. `article_revisions.id`는 UUID(`ids.revision_uuid`), `saveArticle`은 `expectedRevisionNo` 불일치 시 409 `REVISION_CONFLICT` |
+| 자료 수명 주기 | 공개 생성(`createSource` = `/api/materials/extract`)·목록·한 건 조회(`GET /api/sources/<id>`)·삭제(`POST /api/sources/<id>/delete`, 사용 중이면 409 `SOURCE_IN_USE`, `force`로 강제). `source_chunks`·`source_index` 테이블로 색인(SourceChunk) 영속화 |
+| 공통 미디어·작업 | `media_assets`(`registerMediaAsset`, `getMediaAsset`)와 `processing_jobs`(`getJob`, `cancelJob`) 추가. 색인이 작업으로 기록됨 |
+| 전사 저장 | `transcripts` 테이블, `listTranscripts`, `getTranscript`, `transcriptAudio` |
+| ID 매핑 | `ids.py`가 32hex/UUID 변환과 UUID v5(`legacy_uuid`)를 제공. 기사 ID는 32hex로 유지하고 계약 ID는 변환해서 쓴다 |
+| 팩트체크 임베딩 | 로컬 모델 대신 백엔드 `/ai/embeddings`(Cloudflare Workers AI)로 원격 임베딩이 기본. 판정 모델은 로컬 ONNX |
+
+계정별 저장소(2026-10-12): 로그인한 계정마다 암호화 저장소 파일이 따로(`vault-<id>.db`)라 다른 계정의 기사·자료에 닿지 않고, 로그인하지 않으면 자료 요청은 401 `AUTH_REQUIRED`다. 도입 전 `vault.db`는 처음 로그인한 계정이 이어받는다. 팀 공유(S1)와는 별개다.
+
+**계약과 아직 다른 항목 (결정: 앱 구현이 정본, 계약 문서의 `x-implementation`에 실제 경로·본문 기록 — 2026-10-12)**
+- 경로: 계약은 `/api/core/v0.8/workspaces/{id}/...`, 구현은 `/api/*`(작업공간은 단일 상수 `vault.WORKSPACE_ID`). 다중 작업공간·접근 권한은 없다.
+- `saveArticle`: 계약은 별도 본문 형식, 구현은 `POST /api/articles/save` 본문 `{draft, expectedRevisionNo?}`.
+- 검증·전사는 계약이 비동기(202 + 조회)지만 구현은 동기(`runFactcheck`, `transcribe`)로 결과를 바로 돌려준다. `Claim/EvidenceLink/VerificationRun` 정규화 저장은 없고 `factcheck_memo` 캐시만 있다.
+- 구현되지 않은 계약 4개: `searchEvidence`, `getVerificationRun`, `listPlatformOutputs`, `getPlatformOutput` (`x-status: deferred`). 플랫폼 결과는 기사 안의 `platformDrafts/cardNews`에 저장된다.
+- 인증은 로컬 호스트 검사 + 백엔드 로그인(JWT)이며 계약의 bearer/workspace 권한 규칙과 대응하지 않는다.
+- IPC(pywebview)는 아직 구현 전이다. `ipc.js`는 예정된 어댑터이고 HTTP가 유일한 실행 경로다.
+- 실제 EXE·IPC에서 기사 한 건을 저장 → 자료 연결 → 검증 → 지도 조회까지 통과한 확인은 아직 없다(v1.0 확정 조건).
 
 ## 1. 현재 실제 호출 경계
 
@@ -13,7 +40,7 @@ UI → createAppApi({mode="http"}) → createCoreApi named methods
 - `GET /api/articles/latest` → `latestArticle()` → `{draft: object|null}`. 가장 최근 저장한 **기사 한 건**을 반환하고, 참조된 `draft.sources[]`의 저장된 추출 텍스트를 붙인다.
 - `POST /api/articles/save` body `{draft}` → `saveArticle(draft)` → `{saved, articleId, revisionNo, fileName, folder}`. `fileName`·`folder`는 호환용 표시값이며 실제 평문 파일 경로가 아니다.
 - `POST /api/sources/open` body `{sourceId}` → 기본 프로그램 열기. `GET /api/sources/{16hex}/file` → 원본 바이트. `POST /api/materials/extract`는 텍스트 추출만 하며 공개된 Source 생성/목록 API가 아니다.
-- `runFactcheck(nodes, materials)`(당시 이름 factcheckRun), `factcheckExternal(items)`, `semanticParse(text, source)`, `transcribe(filename, data)` 등은 현재 실행 메서드다. `factcheck_memo` 캐시는 암호화 DB에 있으나 Snapshot에 귀속된 정규화 `Claim/EvidenceLink/VerificationRun` 저장 계약은 없다.
+- `runFactcheck(nodes, materials)`(10-07 당시 이름 `factcheckRun`), `factcheckExternal(items)`, `semanticParse(text, source)`, `transcribe(filename, data)` 등은 현재 실행 메서드다. `factcheck_memo` 캐시는 암호화 DB에 있으나 Snapshot에 귀속된 정규화 `Claim/EvidenceLink/VerificationRun` 저장 계약은 없다.
 - `api.py`의 HTTP GET/POST 라우트가 실행 경로다. POST는 로컬 Host/Origin, JSON Content-Type, 크기 제한을 검사한다. `/api/core/v0.8/*`와 구 `/v1/*` 경로는 실행 경로가 아니다.
 - `ipc.js`는 `bridge.core(path,payload)`/`coreBytes(path)`의 **예정된** 어댑터다. 확인한 Python `api.py`에는 대응 pywebview 브리지 구현이 없다. `createAppApi({mode:"ipc"})`도 브리지의 `core` 메서드가 없으면 HTTP로 돌아가므로 IPC 전환을 완료로 표시할 수 없다.
 

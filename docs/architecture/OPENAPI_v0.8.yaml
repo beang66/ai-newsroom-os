@@ -10,7 +10,9 @@ info:
     openSource(sourceId), sourceBytes(sourceId) 등만 확인되었다. getKnowledgeMap,
     createSnapshot 및 공통 UUID 조회는 미구현이다.
     2026-10-12 통일: 이름은 구현·문서 중 바꾸기 쉽고 직관적인 쪽으로 맞췄다. 결정과 호출 대응표는
-    CONTRACT_VS_IMPLEMENTATION_v0.8.md 참조. x-status: deferred 는 코어 미구현 항목.
+    CONTRACT_VS_IMPLEMENTATION_v0.8.md 참조.
+    경로·요청 본문은 앱 구현이 정본이다: 각 operation 의 x-implementation 에 실제 경로와 본문을 적었다.
+    아래 paths(/workspaces/...)와 스키마는 다중 작업공간을 가정한 목표 형태라 구현과 다르다(앱을 바꾸는 비용이 커서 문서 쪽을 맞춤). x-status: deferred 는 코어 미구현 항목.
     실제 호출·저장 및 계약 차이는 CORE_REALITY_AUDIT_2026-10-07.md를 참조한다.
 servers:
   - url: /api/core/v0.8
@@ -20,6 +22,7 @@ paths:
   /workspaces/{workspace_id}/articles/{article_id}:
     get:
       operationId: getArticle
+      x-implementation: "GET /api/articles/<32hex> (작업공간은 단일 상수라 경로에 없음)"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/ArticleId'}]
       responses:
         '200': {description: Article, content: {application/json: {schema: {$ref: '#/components/schemas/Article'}}}}
@@ -27,6 +30,7 @@ paths:
   /workspaces/{workspace_id}/articles/{article_id}/revisions:
     post:
       operationId: saveArticle
+      x-implementation: "POST /api/articles/save, 본문 {draft, expectedRevisionNo?} → {saved, articleId, revisionNo}, 불일치 409 REVISION_CONFLICT"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/ArticleId'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ArticleRevisionInput'}}}}
       responses:
@@ -36,6 +40,7 @@ paths:
   /workspaces/{workspace_id}/articles/{article_id}/snapshots:
     post:
       operationId: createSnapshot
+      x-implementation: "POST /api/articles/<id>/snapshots, 본문 {} (가장 최근 저장본을 고정하므로 revision_id 를 받지 않음)"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/ArticleId'}]
       requestBody:
         required: true
@@ -46,6 +51,7 @@ paths:
   /workspaces/{workspace_id}/sources:
     post:
       operationId: createSource
+      x-implementation: "POST /api/materials/extract, 본문 파일 이름·바이트 (글자 추출·자료 등록·색인 작업 시작, 동기 응답)"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SourceInput'}}}}
       responses:
@@ -74,6 +80,7 @@ paths:
   /workspaces/{workspace_id}/snapshots/{snapshot_id}/verification-runs:
     post:
       operationId: runFactcheck
+      x-implementation: "POST /api/factcheck/run, 본문 {nodes, materials, snapshotId?} (동기, 결과를 바로 반환)"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/SnapshotId'}]
       requestBody:
         content: {application/json: {schema: {type: object, properties: {source_ids: {type: array, items: {$ref: '#/components/schemas/Uuid'}}, options: {type: object, additionalProperties: true}}}}}
@@ -91,6 +98,7 @@ paths:
   /workspaces/{workspace_id}/knowledge/map:
     get:
       operationId: getKnowledgeMap
+      x-implementation: "GET /api/knowledge-map"
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
         - {name: article_id, in: query, required: false, schema: {$ref: '#/components/schemas/Uuid'}}
@@ -100,6 +108,7 @@ paths:
   /workspaces/{workspace_id}/snapshots/{snapshot_id}/platform-outputs:
     post:
       operationId: generatePlatform
+      x-implementation: "POST /api/platform/generate, 본문 {platform, payload, snapshotId?} (동기)"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/SnapshotId'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlatformOutputInput'}}}}
       responses:
@@ -123,6 +132,7 @@ paths:
   /workspaces/{workspace_id}/transcripts:
     post:
       operationId: transcribe
+      x-implementation: "POST /api/interview/transcribe (동기, 전사 결과를 바로 반환)"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
       requestBody:
         required: true
@@ -133,6 +143,7 @@ paths:
   /workspaces/{workspace_id}/transcripts/{transcript_id}:
     get:
       operationId: getTranscript
+      x-implementation: "GET /api/transcripts/<id>"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/TranscriptId'}]
       responses:
         '200': {description: Transcript, content: {application/json: {schema: {$ref: '#/components/schemas/Transcript'}}}}
@@ -140,6 +151,7 @@ paths:
   /workspaces/{workspace_id}/media-assets:
     post:
       operationId: registerMediaAsset
+      x-implementation: "POST /api/media-assets"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MediaAssetInput'}}}}
       responses:
@@ -148,6 +160,7 @@ paths:
   /workspaces/{workspace_id}/media-assets/{media_asset_id}:
     get:
       operationId: getMediaAsset
+      x-implementation: "GET /api/media-assets/<id>"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/MediaAssetId'}]
       responses:
         '200': {description: Media asset, content: {application/json: {schema: {$ref: '#/components/schemas/MediaAsset'}}}}
@@ -155,6 +168,7 @@ paths:
   /workspaces/{workspace_id}/jobs/{job_id}:
     get:
       operationId: getJob
+      x-implementation: "GET /api/jobs/<id>"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/JobId'}]
       responses:
         '200': {description: Job state, content: {application/json: {schema: {$ref: '#/components/schemas/ProcessingJob'}}}}
@@ -162,6 +176,7 @@ paths:
   /workspaces/{workspace_id}/jobs/{job_id}/cancel:
     post:
       operationId: cancelJob
+      x-implementation: "POST /api/jobs/<id>/cancel"
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/JobId'}]
       responses:
         '200': {description: Cancelled job, content: {application/json: {schema: {$ref: '#/components/schemas/ProcessingJob'}}}}

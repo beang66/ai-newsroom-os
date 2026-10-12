@@ -99,7 +99,8 @@ class AIManager:
         if pending or not keys:
             status = self.factcheck_status()
             if not status['ready']:
-                if status['models']['judge'] and not status['models']['embedding']:
+                models = status.get('models') or {}
+                if models.get('judge') and not models.get('embedding'):
                     raise RequestError('임베딩 서버(백엔드)에 연결할 수 없어요. 인터넷 연결과 로그인을 확인해 주세요.', 503)
                 raise RequestError('팩트체크 모델이 아직 설치되지 않았어요. 모델 설치 후 다시 시도해 주세요.', 503)
             from ..ai.factcheck.service import review_workspace

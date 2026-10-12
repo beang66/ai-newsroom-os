@@ -183,7 +183,7 @@ export function splitSentences(content) {
 /** 기사 문장을 등록 자료(텍스트)에 비춰 팩트체크 → 팩트체크 서랍 카드 목록. files: [{ id, name, text }]
  *  cache(Map: 공백 정리된 문장 → 코어 결과)를 주면 **이미 검증한 문장은 다시 보내지 않는다** — 새로 쓰거나 고친 문장만.
  *  자료가 바뀌면 cache 를 비워야 한다(useFactCheck). */
-export async function factcheckArticle(content, files, cache = new Map()) {
+export async function factcheckArticle(content, files, cache = new Map(), snapshotId) {
   // 문장마다 본문 위치를 기억해 두면 결과를 원고에 하이라이트할 수 있다(위치는 매번 새로 — 앞 문장이 바뀌면 밀린다)
   const nodes = splitSentences(content).slice(0, 200).map((s, i) => ({ ...s, id: `s${i + 1}` }));
   if (!nodes.length) throw Error("검증할 본문 문장이 없어요. 본문을 먼저 작성해 주세요.");
@@ -194,7 +194,7 @@ export async function factcheckArticle(content, files, cache = new Map()) {
   const todo = [...new Map(nodes.filter((n) => !cache.has(n.text)).map((n) => [n.text, n])).values()];
   if (todo.length) {
     const materials = files.map((f) => ({ id: f.id, title: f.name, content: f.text }));
-    const d = await core.factcheckRun(todo.map((n) => ({ id: n.id, type: "TEXT", text: n.text })), materials);
+    const d = await core.factcheckRun(todo.map((n) => ({ id: n.id, type: "TEXT", text: n.text })), materials, snapshotId);
     const byId = Object.fromEntries(todo.map((n) => [n.id, n]));
     for (const r of d.results || []) if (byId[r.node_id]) cache.set(byId[r.node_id].text, r);
   }

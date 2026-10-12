@@ -17,6 +17,7 @@ import {
   externalRecheck,
   cachedExternalRecheck,
 } from "../api/editorial";
+import { freezeArticle } from "../api/platform";
 import { core } from "../api/core.js";
 import { isRestoring } from "../restoreState";
 
@@ -51,12 +52,13 @@ async function restoreExternal(state, content) {
 /** 팩트체크 — 본문·취재자료가 바뀌고 1.5초 멈추면 자동으로 돈다(옛 UI 의 '작성 멈춤 감지').
  *  실행 중에 또 바뀌면 끝난 뒤 한 번 더 — 요청이 겹치지 않는다.
  *  이미 검증한 문장은 결과를 기억해 두고 **새로 쓰거나 고친 문장만** 코어에 보낸다. 취재자료가 바뀌면 기억을 비운다.
- *  → { results, busy, error, run } (run(true) = 기억을 비우고 전체 다시 검증 — 서랍의 새로고침 버튼) */
+ *  → { results, busy, indexing, basis, error, run } (run(true) = 기억을 비우고 전체 다시 검증 — 서랍의 새로고침 버튼) */
 export function useFactCheck(article) {
   const [results, setResults] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [indexing, setIndexing] = useState(false); // false | { percent: 0~1 }
+  const [basis, setBasis] = useState(null); // 마지막 "전체 다시 검증"이 기준으로 삼은 저장 버전 { revisionNo, content }
   const latest = useRef(article);
   latest.current = article;
   const state = useRef({ running: false, again: false, cacheKey: "", cache: new Map(), tried: new Set() });
@@ -103,7 +105,16 @@ export function useFactCheck(article) {
     setBusy(true);
     setError("");
     try {
-      const items = await factcheckArticle(content, materials, state.current.cache);
+      // 전체 다시 검증은 지금 글을 고정본으로 만들어 그 기준으로 한다(나중에 "어느 글을 검증했는지" 알 수 있게).
+      // 자동 검증(글이 멈출 때마다)은 고정본을 만들지 않는다 — 고정본이 너무 많아지고, 판정 기록(memo)은 문장·자료 기준이라 영향이 없다.
+      // 저장 ID 가 아직 없는 새 글은 건너뛴다(여기서 저장하면 자동 저장이 같은 글을 또 만든다).
+      let frozen = null;
+      if (fresh === true && latest.current.articleId) {
+        frozen = await freezeArticle(latest.current);
+        if (!mounted.current) return;
+        setBasis(frozen ? { revisionNo: frozen.revisionNo, content: latest.current.content } : null);
+      }
+      const items = await factcheckArticle(content, materials, state.current.cache, frozen?.snapshotId);
       if (!mounted.current) return;
       // 다시 열었을 때 이미 받은 AI 재판정을 붙인다 — 붙으면 기억에서 화면만 다시 그린다(코어 판정 없음)
       const restored = await restoreExternal(state.current, content);
@@ -159,7 +170,7 @@ export function useFactCheck(article) {
   // 서랍의 '팩트 일치' 카드에 마우스를 올리는 동안 본문의 그 문장을 초록으로(focus = 결과 id)
   const [focus, setFocus] = useState(null);
 
-  return { results, busy, indexing, error, run, recheck, recheckBusy, recheckCount: results.filter((r) => r.needsRecheck).length, focus, setFocus };
+  return { results, busy, indexing, basis: basis ? { revisionNo: basis.revisionNo, changed: basis.content !== article.content } : null, error, run, recheck, recheckBusy, recheckCount: results.filter((r) => r.needsRecheck).length, focus, setFocus };
 }
 
 const MIN_BODY = 20; // 코어 assist 하한(본문 20자)

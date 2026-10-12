@@ -452,7 +452,9 @@ try {
   await page.getByTestId("fact-highlight").waitFor({ state: "attached" });
   // 순서형 검사: 코어가 불일치로 판정한 문장이 있으면 한 건씩 보여 준다(엔진 결과에 기대지 않도록 응답을 고정한다)
   await page.route("**/api/factcheck/run", (route) => {
-    const nodes = JSON.parse(route.request().postData()).nodes;
+    const sent = JSON.parse(route.request().postData());
+    globalThis.__fcSnapshot = sent.snapshotId; // 전체 다시 검증이 보낸 고정본 id(아래에서 확인)
+    const nodes = sent.nodes;
     route.fulfill({ contentType: "application/json", body: JSON.stringify({ results: nodes.map((n) => ({
       node_id: n.id, status: "CONFLICT", claim: n.text, reason: "스모크 불일치 사유", evidence: { text: "스모크 근거 문장", material_title: "자료.txt" },
     })) }) });
@@ -464,6 +466,11 @@ try {
   await sequence.getByText("문제 문장:").waitFor({ timeout: 15_000 });
   await sequence.getByText("스모크 불일치 사유").waitFor();
   await sequence.getByRole("button", { name: /다음|검사 종료/ }).click();
+  // 전체 다시 검증: 지금 글을 고정본으로 만들어 그 기준으로 검증한다 — 요청에 snapshotId 가 실리고 서랍에 기준 버전이 보인다
+  await page.getByTitle("전체 문장 다시 검증(평소에는 고친 문장만 자동으로 검증)").click();
+  await page.getByTestId("factcheck-basis").waitFor({ timeout: 15_000 });
+  assert.match(await page.getByTestId("factcheck-basis").innerText(), /저장 \d+번 버전의 글 기준/);
+  assert.match(String(globalThis.__fcSnapshot), /^[0-9a-f-]{36}$/);
   await page.unroute("**/api/factcheck/run");
   // 저장 이력: 목록 → 미리보기(읽기 전용) → 옛 저장본으로 복원(이력은 그대로 남는다)
   // "자동 저장됨" 문구는 이전 저장 때 이미 떠 있을 수 있고, 최신 원고(latest)는 이력 목록보다 몇 ms 먼저 바뀔 수 있다.

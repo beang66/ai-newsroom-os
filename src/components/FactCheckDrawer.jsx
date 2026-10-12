@@ -297,6 +297,11 @@ export default function FactCheckDrawer({
                   기사 문장과 업로드된 원문 문서를 AI가 자동 대조한 결과입니다
                 </p>
                 {factCheck.indexing && <p className="text-[11px] text-slate-500 mt-1" data-testid="factcheck-indexing">자료를 색인하는 중이에요 ({Math.round(factCheck.indexing.percent * 100)}%). 끝나면 팩트체크가 자동으로 시작됩니다.</p>}
+                {factCheck.basis && (
+                  <p className="text-[11px] text-slate-500 mt-1" data-testid="factcheck-basis">
+                    마지막 전체 검증: 저장 {factCheck.basis.revisionNo}번 버전의 글 기준{factCheck.basis.changed ? " (그 뒤 글이 바뀌었어요)" : ""}
+                  </p>
+                )}
                 {checkError && <div role="alert" className="text-[11px] text-rose-600 mt-1" data-testid="factcheck-error">
                   <p>{checkError}</p>
                   {/모델|설치/.test(checkError) && <button onClick={onModels}

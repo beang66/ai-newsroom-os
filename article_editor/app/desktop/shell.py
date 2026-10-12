@@ -67,6 +67,12 @@ def run_window(url: str, *, debug: bool = False, on_ready=None, on_closed=None) 
 
     store = storage_dir()
     store.mkdir(parents=True, exist_ok=True)
+    # 화면은 브리지가 보이면 IPC, 아니면 HTTP 로 코어를 부른다(src/api/index.js mode "auto").
+    # AI_NEWSROOM_TRANSPORT=http 로 브리지를 끄고 HTTP 로 돌아갈 수 있다(문제 생겼을 때의 우회로).
+    api = None
+    if os.environ.get('AI_NEWSROOM_TRANSPORT') != 'http':
+        from desktop.ipc_bridge import Bridge
+        api = Bridge()
     window = webview.create_window(
         WINDOW_TITLE,
         url,
@@ -74,6 +80,7 @@ def run_window(url: str, *, debug: bool = False, on_ready=None, on_closed=None) 
         height=WINDOW_SIZE[1],
         min_size=MIN_SIZE,
         text_select=True,
+        js_api=api,
     )
     if on_closed:
         window.events.closed += on_closed

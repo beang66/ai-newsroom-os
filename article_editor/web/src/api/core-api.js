@@ -16,6 +16,7 @@ export const ROUTES = Object.freeze({
   modelsCancel: "/api/models/cancel",
   assist: "/api/assist",
   articlesSave: "/api/articles/save",
+  articleSnapshots: (id) => "/api/articles/" + encodeURIComponent(id) + "/snapshots",
   articlesLatest: "/api/articles/latest?photos=ref", // 사진은 'media:<id>' 참조로 받고 바이트는 mediaBytes 로 따로
   media: (id) => "/api/media/" + encodeURIComponent(id),
   mediaAssets: "/api/media-assets",
@@ -126,11 +127,14 @@ export function createCoreApi(transport) {
     /** 다운로드 추적(Unsplash 가이드라인) */
     trackPhoto: (id, signal) => transport.json(ROUTES.photoTrack(id), null, signal),
     /** 플랫폼 콘텐츠용 핵심 키워드 후보 */
-    platformKeywords: (article, signal) =>
-      transport.json(ROUTES.platformKeywords, { article }, signal),
+    platformKeywords: (article, snapshotId, signal) =>
+      transport.json(ROUTES.platformKeywords, snapshotId ? { snapshotId } : { article }, signal),
     /** platform-generator 실제 생성 엔진 호출 */
-    generatePlatform: (platform, payload, signal) =>
-      transport.json(ROUTES.platformGenerate, { platform, payload }, signal),
+    generatePlatform: (platform, payload, snapshotId, signal) =>
+      transport.json(ROUTES.platformGenerate, snapshotId ? { platform, payload, snapshotId } : { platform, payload }, signal),
+    /** 원고의 최신 저장 이력을 고정본(ArticleSnapshot)으로 만든다 → { id, article_id, revision_no, title, body_text, content_hash, created_at }.
+     *  내용이 같으면 새로 만들지 않고 같은 고정본을 돌려준다 */
+    createSnapshot: (articleId, signal) => transport.json(ROUTES.articleSnapshots(articleId), {}, signal),
     /** 카드뉴스 카드 하나를 이미지로 그려 코어(암호화 저장소)에 등록 → { cardId, asset:{ id, local_uri, mime_type, ... } }.
      *  payload: { card_id, template, content:{ keyword, headline, body }, image?:{ url, photographer } }. 결과 이미지는 asset.local_uri 로 보여 준다 */
     renderPlatformCard: (payload, snapshotId, signal) =>

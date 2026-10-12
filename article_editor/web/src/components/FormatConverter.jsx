@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
-import { generatePlatform, renderCardImage, suggestPlatformKeywords } from "../api/platform";
+import { freezeArticle, generatePlatform, renderCardImage, suggestPlatformKeywords } from "../api/platform";
 
 const PLATFORM_LIST = [
   { id: "instagram", label: "Instagram", badge: "피드 원고" },
@@ -264,7 +264,7 @@ function CardNewsEditor({ draft, article, onChange }) {
     setRendering(true);
     setRenderError("");
     try {
-      const asset = await renderCardImage(active, selectedPhoto);
+      const asset = await renderCardImage(active, selectedPhoto, draft?.snapshot_id);
       if (!asset?.local_uri) throw Error("카드 이미지를 만들지 못했어요.");
       const next = structuredClone(draft);
       next.cards[activeIndex] = { ...next.cards[activeIndex], rendered_image: { id: asset.id, uri: asset.local_uri, key: renderKey } };
@@ -518,6 +518,16 @@ export default function FormatConverter({ article, setArticle }) {
     });
   };
 
+  // 변환을 시작할 때 지금 글을 저장해 고정본으로 만든다(같은 글이면 코어가 같은 고정본을 돌려줘 이력이 늘지 않는다).
+  // 실패하면 null — 현재 글로 계속하고 안내 문구만 덧붙인다.
+  const freeze = async () => {
+    const frozen = await freezeArticle(article);
+    if (frozen?.articleId && frozen.articleId !== article.articleId && setArticle) {
+      setArticle((previous) => ({ ...previous, articleId: frozen.articleId })); // 처음 저장된 글이면 저장 ID 를 화면에도 알린다
+    }
+    return frozen;
+  };
+
   const suggestKeywords = async () => {
     if (!article.title?.trim() || !article.content?.trim()) {
       setMessage("기사 제목과 본문을 먼저 작성해 주세요.");
@@ -526,7 +536,8 @@ export default function FormatConverter({ article, setArticle }) {
     setKeywordLoading(true);
     setMessage("");
     try {
-      const candidates = await suggestPlatformKeywords(article);
+      const frozen = await freeze();
+      const candidates = await suggestPlatformKeywords(article, frozen?.snapshotId);
       setKeywordCandidates(candidates);
       if (!candidates.length) setMessage("추천할 키워드를 찾지 못했습니다.");
     } catch (error) {
@@ -559,6 +570,7 @@ export default function FormatConverter({ article, setArticle }) {
     let nextDrafts = structuredClone(drafts);
     let nextCardNews = cardNews;
     const success = [];
+    const frozen = await freeze();
 
     for (const target of list) {
       nextProgress[target] = "생성 중";
@@ -569,6 +581,7 @@ export default function FormatConverter({ article, setArticle }) {
           article,
           selectedKeywords,
           requirements,
+          frozen?.snapshotId,
         );
         if (!generated) throw new Error("생성 결과가 비어 있습니다.");
         if (target === "card_news") nextCardNews = generated;
@@ -594,7 +607,9 @@ export default function FormatConverter({ article, setArticle }) {
     }
     setMessage(
       success.length
-        ? `${success.length}/${list.length}개 결과를 실제 생성 엔진에서 받아왔습니다.`
+        ? `${success.length}/${list.length}개 결과를 실제 생성 엔진에서 받아왔습니다.${
+            frozen ? ` (저장 ${frozen.revisionNo}번 버전의 글 기준)` : " (고정본을 만들지 못해 현재 글로 생성했습니다)"
+          }`
         : "생성된 결과가 없습니다. 오류 내용을 확인해 주세요.",
     );
     setGenerating(false);

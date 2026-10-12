@@ -431,7 +431,8 @@ export default function ArticleWriter({
                   type="text"
                   value={article.title}
                   onChange={(e) => {
-                    setArticle({ ...article, title: e.target.value });
+                    const title = e.target.value;
+                    setArticle((prev) => ({ ...prev, title })); // 렌더 시점의 article 을 통째로 복사하면 그 사이에 추가된 취재자료 등을 옛 값으로 덮어쓴다
                     setIsTitleConfirmed(true);
                   }}
                   placeholder="기사 제목을 입력하거나 AI 추천을 확인하세요"
@@ -481,7 +482,10 @@ export default function ArticleWriter({
               <input
                 type="text"
                 value={article.subtitle}
-                onChange={(e) => setArticle({ ...article, subtitle: e.target.value })}
+                onChange={(e) => {
+                  const subtitle = e.target.value;
+                  setArticle((prev) => ({ ...prev, subtitle }));
+                }}
                 placeholder="기사 부제를 입력하세요"
                 className="w-full text-sm md:text-base font-bold text-slate-700 border-b border-slate-200 pb-2 outline-none focus:border-slate-800 bg-transparent transition-colors"
               />
@@ -568,7 +572,7 @@ export default function ArticleWriter({
 
               <HighlightedBody
                 value={article.content}
-                onChange={(content) => setArticle({ ...article, content })}
+                onChange={(content) => setArticle((prev) => ({ ...prev, content }))}
                 results={factCheck.results}
                 onRecheck={factCheck.recheck}
                 focus={factCheck.focus}

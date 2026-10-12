@@ -406,6 +406,22 @@ try {
   await sequence.getByRole("button", { name: /다음|검사 종료/ }).click();
   await page.unroute("**/api/factcheck/run");
   // 저장 이력: 목록 → 미리보기(읽기 전용) → 옛 저장본으로 복원(이력은 그대로 남는다)
+  // "자동 저장됨" 문구는 이전 저장 때 이미 떠 있을 수 있고, 최신 원고(latest)는 이력 목록보다 몇 ms 먼저 바뀔 수 있다.
+  // 방금 쓴 문장이 **저장 이력의 최신 저장본**에 들어간 뒤에 이력을 연다 — 아니면 nth(1) 이 취재자료를 올리기 전의
+  // 옛 저장본(#1)이 되어 복원 뒤 단계(취재자료 1건)가 깨진다.
+  // (page.waitForFunction 은 async 조건의 Promise 를 기다리지 않고 바로 통과하므로, 노드 쪽에서 evaluate 로 반복 확인한다)
+  for (let tries = 0; ; tries += 1) {
+    const saved = await page.evaluate(async () => {
+      const id = (await (await fetch("/api/articles/latest")).json()).draft?.articleId;
+      const list = id ? (await (await fetch(`/api/articles/${id}/revisions`)).json()).revisions : [];
+      if (!list?.length) return false;
+      const newest = await (await fetch(`/api/articles/${id}/revisions/${list[0].revisionNo}`)).json();
+      return JSON.stringify(newest).includes("순서형 검사용 새 문장을 하나 더 씁니다.");
+    });
+    if (saved) break;
+    assert.ok(tries < 150, "새 문장이 저장 이력에 들어가지 않았습니다");
+    await page.waitForTimeout(100);
+  }
   await page.getByTestId("save-status").getByText("자동 저장됨").waitFor({ timeout: 15_000 });
   await page.getByRole("button", { name: "저장 이력" }).click();
   const history = page.getByTestId("version-history");
@@ -435,6 +451,7 @@ try {
   await converter.getByRole("button", { name: "선택 항목 생성" }).click();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value === "스모크 인스타그램 도입"), null, { timeout: 15_000 });
   await converter.getByText("2/2개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();
+  await converter.getByText(/저장 \d+번 버전의 글 기준/).waitFor(); // 생성은 저장된 글의 고정본(snapshot) 기준으로 이루어진다
   // 보고 있는 항목만 다시 생성(원본 platform-generator 의 개별 생성 버튼)
   await converter.getByTestId("generate-active").click();
   await converter.getByText("1/1개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();

@@ -18,7 +18,7 @@
 | ID 매핑 | `ids.py`가 32hex/UUID 변환과 UUID v5(`legacy_uuid`)를 제공. 기사 ID는 32hex로 유지하고 계약 ID는 변환해서 쓴다 |
 | 팩트체크 임베딩 | 로컬 모델 대신 백엔드 `/ai/embeddings`(Cloudflare Workers AI)로 원격 임베딩이 기본. 판정 모델은 로컬 ONNX |
 
-**계약과 아직 다른 항목 (결정 d2: 경로는 `/api/*` 유지, 어댑터가 흡수)**
+**계약과 아직 다른 항목 (결정: 앱 구현이 정본, 계약 문서의 `x-implementation`에 실제 경로·본문 기록 — 2026-10-12)**
 - 경로: 계약은 `/api/core/v0.8/workspaces/{id}/...`, 구현은 `/api/*`(작업공간은 단일 상수 `vault.WORKSPACE_ID`). 다중 작업공간·접근 권한은 없다.
 - `saveArticle`: 계약은 별도 본문 형식, 구현은 `POST /api/articles/save` 본문 `{draft, expectedRevisionNo?}`.
 - 검증·전사는 계약이 비동기(202 + 조회)지만 구현은 동기(`runFactcheck`, `transcribe`)로 결과를 바로 돌려준다. `Claim/EvidenceLink/VerificationRun` 정규화 저장은 없고 `factcheck_memo` 캐시만 있다.

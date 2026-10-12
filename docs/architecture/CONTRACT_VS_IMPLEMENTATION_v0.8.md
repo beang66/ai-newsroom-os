@@ -20,5 +20,8 @@
 | cancelJob | cancelJob | `POST /api/jobs/<id>/cancel` | **구현 추가** |
 | searchEvidence · getVerificationRun · listPlatformOutputs · getPlatformOutput | 없음 | 없음 | 문서에 `x-status: deferred` 표시(필요해지면 구현) |
 
+## 경로·요청 본문 차이 (결정)
+앱 구현을 정본으로 하고 문서를 맞춘다. 이유: 경로에 `workspace_id`가 없고(단일 작업공간), 본문이 UI가 쓰는 형식(`draft` 통째 저장 등)이라 앱을 계약 형태로 바꾸면 화면·코어·테스트·EXE를 모두 고쳐야 한다. 그래서 OPENAPI의 각 operation 에 `x-implementation`으로 실제 경로와 본문을 적었고, `/workspaces/...` 경로와 스키마는 다중 작업공간을 도입할 때의 목표 형태로 남긴다. 비동기(202) 응답을 가정한 검증·전사·자료 생성은 구현이 동기라 `x-implementation`에 "동기"로 표시했다.
+
 ## 계약에 없지만 구현에 있는 호출 (추가분)
 `getSource`, `deleteSource(id, {force})`, `listSnapshots`, `getSnapshot` (이번에 추가), 그 밖에 상태·로그인(`status`, `session`, `signIn`, `signOut`, `setAutoLogin`), 모델(`models`, `installModels`, `cancelModelInstall`), 보조(`assist`, `semanticParse`), 팩트체크(`factcheckStatus`, `factcheckExternal`), 자료(`listSources`, `openSource`, `sourceBytes`, `importKnowledgeFiles`, `getKnowledgeFile`, `deleteKnowledgeFile`), 기사(`latestArticle`, `listArticles`, `listRevisions`, `getRevision`, `restoreRevision`), 사진(`searchPhotos`, `photoBytes`, `mediaBytes`, `trackPhoto`), 플랫폼(`platformKeywords`, `renderPlatformCard`), 백업(`exportVault`, `restoreVault`), 녹취(`listTranscripts`, `transcriptAudio`), 발행(`publishCms`). 계약 문서에 올릴지는 필요할 때 결정한다.

@@ -76,7 +76,7 @@ def _call(request: urllib.request.Request, expect_json: bool = True):
         if error.code in (400, 422):  # 가입·로그인 입력 오류(이미 가입, 약한 비밀번호 등)는 사용자 오류로 돌려준다
             raise RequestError(_korean(message) or '입력을 확인해 주세요.', 400) from None
         if error.code == 429:
-            raise RequestError(message or '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.', 502) from None
+            raise RequestError(_korean(message) or '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.', 502) from None
         raise RequestError(message or 'Supabase 요청이 실패했습니다.', 502) from None
     except (TimeoutError, urllib.error.URLError):
         raise RequestError('Supabase에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.', 504) from None
@@ -85,6 +85,8 @@ def _call(request: urllib.request.Request, expect_json: bool = True):
 def _korean(message):
     """Supabase Auth 의 대표 영어 메시지만 한국어로(나머지는 그대로)."""
     text = (message or '').lower()
+    if 'rate limit' in text:
+        return '인증 메일을 너무 많이 보내서 잠시 막혔어요. 잠시 뒤(약 1시간)에 다시 시도하거나 관리자에게 알려 주세요.'
     if 'invalid login credentials' in text:
         return '이메일 또는 비밀번호를 확인해 주세요.'
     if 'already registered' in text or 'already been registered' in text:

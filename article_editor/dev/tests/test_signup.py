@@ -45,6 +45,7 @@ class SignUpTests(unittest.TestCase):
     def test_korean_messages(self):
         self.assertIn('이미 가입', supabase._korean('User already registered'))
         self.assertIn('이메일 또는 비밀번호', supabase._korean('Invalid login credentials'))
+        self.assertIn('인증 메일', supabase._korean('email rate limit exceeded'))
 
 
 if __name__ == '__main__':

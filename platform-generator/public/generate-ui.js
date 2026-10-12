@@ -42,7 +42,7 @@
   // 3. 기사 원문에서 카드 초안 생성
   button.addEventListener("click", async () => {
     if (busy) return;
-    if (get("generate-selected")?.disabled || get("import-article")?.disabled) {
+    if (get("generate-selected")?.disabled || get("db-article")?.disabled) {
       status.textContent = "현재 진행 중인 요청이 끝난 뒤 실행해주세요.";
       return;
     }
@@ -62,7 +62,7 @@
     const expectedRevision = window.CardEditor.getRevision();
     // 4. 입력, 생성 버튼, 편집 영역을 잠그고 기존 상태를 보관
     const fields = [...document.querySelectorAll(
-      "#article-url, #import-article, #include-card-news, #article-title, #custom-keywords, " +
+      "#db-article, #refresh-db-articles, #include-card-news, #custom-keywords, " +
       "#article-requirements, " +
       ".platform input, #generate-selected, #load-local-draft, #save, #load"
     )];
@@ -79,8 +79,10 @@
     status.textContent = "기사 원문에서 카드뉴스 초안을 생성하고 있습니다…";
 
     try {
-      // 5. 카드뉴스 전용 요청: 서버에서 generateCardNews를 실행합니다.
+      await window.NewsInput.freeze(input);
+      // 5. Core의 DB 고정본으로 카드뉴스를 생성합니다.
       const result = await window.NewsApi.generateCardNews(input);
+      if(!window.NewsInput.isCurrent(input))throw Error('기사가 변경되어 결과를 적용하지 않았습니다.');
 
       window.CardEditor.applyCardNewsDraft(result.draft, expectedRevision, input);
 

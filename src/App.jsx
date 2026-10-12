@@ -50,7 +50,7 @@ export default function App() {
   // 원고를 불러오는 동안에도 앱 틀(헤더·사이드바)은 바로 그린다. 불러오면 작업 영역을 한 번 새로 연다(key) —
   // 불러온 원고가 '변경'으로 잡히지 않아 자동 저장이 돌지 않는다.
   return <Workspace key={initial ? `ready-${workspaceVersion}` : "loading"} initialArticle={initial} core={core} setCore={setCore}
-    onReplaceArticle={(next) => { writeTab("writer"); setInitial(next); setWorkspaceVersion((version) => version + 1); }}
+    onReplaceArticle={(next, tab = "writer") => { writeTab(tab); setInitial(next); setWorkspaceVersion((version) => version + 1); }}
     loadError={loadError} onRetry={() => { setLoadError(""); setLoadAttempt((attempt) => attempt + 1); }} />;
 }
 
@@ -107,10 +107,13 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   const [listAttempt, setListAttempt] = useState(0);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
+  const switchJob = useRef(null);
+  useEffect(() => () => { switchJob.current?.abort(); }, []);
   useEffect(() => {
     if (loading) return;
     const controller = new AbortController();
     core.listArticles(controller.signal).then(({ articles }) => {
+      if (controller.signal.aborted) return;
       setStoredArticles(articles.map((item) => ({ ...item, id: item.id.replaceAll("-", "") })));
       setListError("");
     }).catch((error) => { if (!controller.signal.aborted) setListError(error.message); });
@@ -125,9 +128,13 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
     published: save.published || storedCurrent?.published || null,
     updated_at: storedCurrent?.updated_at || article.updatedAt };
   const articles = storedCurrent ? storedArticles.map((item) => item.id === currentId ? currentSummary : item) : [currentSummary, ...storedArticles];
-  const changeArticle = async (id = null) => {
-    if (switching) return;
-    if (id === currentId) { setActiveTab("writer"); return; }
+  const changeArticle = async (id = null, destination = "writer") => {
+    if (switchJob.current) return;
+    if (id === currentId) { setActiveTab(destination); return; }
+    // 동기 잠금 + 조회 취소: 늦은 응답은 새 작업 영역을 덮어쓰지 않는다.
+    const controller = new AbortController(); switchJob.current = controller;
+    setSwitching(true); setSwitchError("");
+    try {
     // 수동 저장하지 않은 변경이 있으면 먼저 묻는다(임시 저장은 아래에서 어차피 끝낸다)
     if (save.dirty) {
       if (!window.confirm("저장하지 않은 변경이 있습니다.\n지금 쓰던 내용을 저장한 뒤 열까요? (취소하면 열지 않습니다)")) return;
@@ -136,16 +143,15 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
         return;
       }
     }
-    setSwitching(true);
-    setSwitchError("");
-    try {
       if (article.articleId || article.title || article.content || article.sources.length || article.photos.length
         || article.linkedSources.length || article.linkedInterviews.length || article.cardNews || Object.keys(article.platformDrafts).length) await flush();
-      const next = id ? await loadStoredArticle(id, createEmptyArticle()) : createEmptyArticle();
-      onReplaceArticle(next);
+      const next = id ? await loadStoredArticle(id, createEmptyArticle(), controller.signal) : createEmptyArticle();
+      if (!controller.signal.aborted) onReplaceArticle(next, destination);
     } catch (error) {
-      setSwitchError(`원고를 전환하지 못했습니다. 현재 원고는 유지됩니다. ${error.message}`);
-    } finally { setSwitching(false); }
+      if (!controller.signal.aborted) setSwitchError(`기사 조회 실패 · 원고를 전환하지 못했습니다. 현재 원고는 유지됩니다. ${error.message}`);
+    } finally {
+      if (switchJob.current === controller) { switchJob.current = null; setSwitching(false); }
+    }
   };
   // 보관소의 × — 기사를 지운다. 지금 쓰던 기사면 새 기사로 바꾼다(남은 백업도 지운다)
   const deleteArticle = async (id) => {
@@ -318,7 +324,11 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
             )}
 
             {!loading && activeTab === "convert" && (
-              <FormatConverter article={article} setArticle={setArticle} />
+              <FormatConverter article={article} setArticle={setArticle} flush={flush}
+                articles={articles.filter(item => !item.id.startsWith("art-"))}
+                onSelectArticle={id => changeArticle(id, "convert")} onEditArticle={() => setActiveTab("writer")}
+                sourceLoading={switching} sourceError={switchError || listError}
+                onReloadArticles={() => setListAttempt(attempt => attempt + 1)} />
             )}
 
             {!loading && activeTab === "archive" && (

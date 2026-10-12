@@ -227,7 +227,8 @@ class PlatformManager:
         if snapshot_id is None:
             return None, None
         snapshot = get_snapshot(snapshot_id)  # 형식 오류 400, 없으면 404
-        return snapshot["id"], {"article_id": snapshot["article_id"], "title": snapshot["title"], "content": snapshot["body_text"]}
+        return snapshot["id"], {"article_id": snapshot["article_id"], "title": snapshot["title"],
+                                "subtitle": snapshot["subtitle"], "url": snapshot["url"], "content": snapshot["body_text"]}
 
     def keywords(self, data: dict):
         snapshot_id, snapshot_article = self._from_snapshot(data)

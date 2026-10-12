@@ -213,6 +213,7 @@ function extractDraft(platform, draft) {
 function createQuoteChecker(article) {
   const sourceParts = [
     normalizeText(article.title),
+    normalizeText(article.subtitle || ""),
     normalizeText(article.content),
   ].filter(Boolean);
   const quoteExists=function(quote) {

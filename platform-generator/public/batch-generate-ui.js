@@ -64,7 +64,7 @@
     const otherGenerationButtons = [cardButton];
 
     if (
-      get("import-article")?.disabled || otherGenerationButtons.some((item) => item.disabled)
+      get("db-article")?.disabled || otherGenerationButtons.some((item) => item.disabled)
     ) {
       status.textContent =
         "현재 진행 중인 요청이 끝난 뒤 실행해주세요.";
@@ -98,7 +98,7 @@
 
     const fields = [
       ...document.querySelectorAll(
-        "#article-url, #import-article, #include-card-news, #article-title, #custom-keywords, " +
+        "#db-article, #refresh-db-articles, #include-card-news, #custom-keywords, " +
         "#article-requirements, " +
         ".platform input, #load-local-draft, #save, #load"
       ),
@@ -146,6 +146,7 @@
     updateProgress();
 
     try {
+      await window.NewsInput.freeze(generationInput);
       for (const platform of platforms) {
         if (window.CardEditor.getRevision() !== expectedRevision) {
           progress[platform] =
@@ -162,10 +163,12 @@
           // 카드뉴스 선택과 플랫폼 원고 선택을 구분합니다.
           if (platform === "card_news") {
             const result = await window.NewsApi.generateCardNews(generationInput);
+            if(!window.NewsInput.isCurrent(generationInput))throw Error('기사가 변경되어 결과를 적용하지 않았습니다.');
             cardReview=result.draft.generation_review;
             window.CardEditor.applyCardNewsDraft(result.draft, expectedRevision, generationInput);
           } else {
             const result = await window.NewsApi.generateDraft(platform, generationInput);
+            if(!window.NewsInput.isCurrent(generationInput))throw Error('기사가 변경되어 결과를 적용하지 않았습니다.');
             window.TextEditor.applyDraft(platform, result.draft, generationInput, expectedRevision);
           }
 
@@ -215,6 +218,7 @@
           "\n가운데 위의 플랫폼 버튼으로 결과를 확인하세요." +
           "\n전체 내용 검수는 아직 진행하지 않았습니다.";
       }
+    } catch (error) { status.textContent = '생성 중단: '+error.message;
     } finally {
       fields.forEach((field, index) => {
         field.disabled = previousDisabled[index];

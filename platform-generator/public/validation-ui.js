@@ -184,6 +184,7 @@
     return structuredClone({
       platform,
       article: context.article,
+      snapshot_id: context.snapshot_id,
       selected_keywords: context.selected_keywords,
       requirements: context.requirements || "",
       draft,
@@ -349,9 +350,9 @@
     // 10. 검수 중 입력·생성·저장·불러오기 버튼 잠금
     const fields = [
       ...document.querySelectorAll(
-        "#article-title, #custom-keywords, " +
+        "#custom-keywords, " +
           "#article-requirements, " +
-          ".platform input, #article-url, #import-article, #include-card-news, #load-local-draft, #save, #load",
+          ".platform input, #db-article, #refresh-db-articles, #include-card-news, #load-local-draft, #save, #load",
       ),
       ...generationButtons,
       button,

@@ -93,6 +93,7 @@
       errorMessage = "원고 생성에 실패했습니다.",
     } = {},
   ) {
+    if (payload.snapshot_id) return requestJson('/api/core/generate',postJson({platform,payload,snapshot_id:payload.snapshot_id}),{errorMessage,checkSuccess:true});
     return requestJson(PATHS.generate + encodeURIComponent(platform), postJson(payload), {
       jsonError,
       errorMessage,
@@ -145,14 +146,10 @@
       return requestJson("/api/unsplash/photo/" + encodeURIComponent(id) + "/track", {signal});
     },
 
-    // 기사 URL의 HTML에서 제목·본문 추출 (AI를 호출하지 않습니다.)
-    importArticle(url) {
-      return requestJson("/api/article/import", postJson({ url }), {
-        jsonError: "기사 수집 서버 응답을 읽지 못했습니다. 서버를 재시작해주세요.",
-        errorMessage: "기사 URL을 불러오지 못했습니다.",
-        checkSuccess: true,
-      });
-    },
+    // 팀 Core의 기존 기사 조회와 고정본 계약. JSON 업로드·URL 수집은 제공하지 않는다.
+    listDbArticles: () => requestJson('/api/core/articles'),
+    getDbArticle: id => requestJson('/api/core/articles/'+encodeURIComponent(id)),
+    freezeDbArticle: article => requestJson('/api/core/freeze',postJson({article})),
 
     // 기사 키워드 추천
     suggestKeywords(article) {
@@ -186,6 +183,8 @@
 
     // 검수 시점에 고정한 JSON 문자열을 그대로 전송
     validateDraft(snapshot) {
+      const payload=JSON.parse(snapshot);
+      if(payload.snapshot_id) return requestJson('/api/core/validate',postJson(payload),{checkSuccess:true});
       return requestJson(
         "/api/validate",
         {

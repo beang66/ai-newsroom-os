@@ -173,7 +173,7 @@ class PlatformManagerSnapshotTests(unittest.TestCase):
 
     def test_generate_uses_snapshot_text_and_echoes_id(self):
         from core import storage
-        aid = storage.save_article({"draft": {"bodyHtml": "<p>고정본 본문입니다.</p>", "content": "고정본 본문입니다.", "title": "고정본 제목"}})["articleId"]
+        aid = storage.save_article({"draft": {"bodyHtml": "<p>고정본 본문입니다.</p>", "content": "고정본 본문입니다.", "title": "고정본 제목", "subtitle": "고정 부제", "url": "https://example.test/source"}})["articleId"]
         snapshot = storage.create_snapshot(aid)
         sent = []
 
@@ -185,7 +185,7 @@ class PlatformManagerSnapshotTests(unittest.TestCase):
             result = PlatformManager().generate({"platform": "threads", "snapshotId": snapshot["id"],
                                                  "payload": {"article": {"title": "화면의 다른 제목", "content": "다른 본문"}, "selected_keywords": ["핵심"]}})
         self.assertEqual(result["snapshotId"], snapshot["id"])
-        self.assertEqual(sent[0]["article"], {"article_id": aid, "title": "고정본 제목", "content": "고정본 본문입니다."})  # 기사 id 는 고정본 것
+        self.assertEqual(sent[0]["article"], {"article_id": aid, "title": "고정본 제목", "subtitle": "고정 부제", "url": "https://example.test/source", "content": "고정본 본문입니다."})  # 화면 값 대신 고정본의 기사 정보
         self.assertEqual(sent[0]["selected_keywords"], ["핵심"])
 
     def test_unknown_snapshot_is_404_before_node_runs(self):

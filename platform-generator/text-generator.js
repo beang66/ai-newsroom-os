@@ -150,6 +150,7 @@ function validateDraftStructure(platform, draft) {
 function createEvidenceChecker(article) {
   const sourceParts = [
     normalizeText(article.title),
+    normalizeText(article.subtitle || ""),
     normalizeText(article.content),
   ].filter(Boolean);
   return function checkEvidence(quotes) {
@@ -315,7 +316,7 @@ ${GENERATION_GUIDES[platform]}
 
 }
 
-// URL은 출처 정보만 보관합니다. 원문 수집은 /api/article/import에서 처리합니다.
+// DB의 URL은 출처 링크로만 보관합니다. 본문은 Core의 기사 고정본을 사용합니다.
 function getSourceUrl(value) {
   if (!value) return "";
   try {

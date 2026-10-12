@@ -74,7 +74,7 @@ ${correction}`,
     continue;
   }
   // 4. 인용 존재 확인은 의미의 정확성을 보증하지 않습니다. 전체 검수는 별도입니다.
-  const sources = [input.article.title, input.article.content].map(normalize);
+  const sources = [input.article.title, input.article.subtitle || "", input.article.content].map(normalize);
   const exists = quote => sources.some(source => source.includes(normalize(quote)));
   const allQuotes = [...new Set(blocks.flatMap(x => x.source_evidence))];
   return {

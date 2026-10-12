@@ -104,7 +104,8 @@ test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 �
   assert(w.document.getElementById('stage').closest('.panel').contains(w.document.getElementById('validate-current-draft')));
   const source={article_id:'db-ready',url:'https://example.com/article',title:'기사',content:'보관 원문'};
   w.NewsInput.restore({article:source});assert.equal(w.NewsInput.getRequest().article.content,'보관 원문');assert.equal(w.NewsInput.getRequest().article.article_id,'db-ready');assert.equal(w.NewsInput.getRequest().selected_keywords.length,0);
-  w.NewsApi.importArticle=async()=>({article:source});w.document.getElementById('import-article').click();await new Promise(r=>setTimeout(r,0));assert.equal(w.NewsInput.getRequest().article.content,'보관 원문');
+  assert.equal(w.document.getElementById('article-url'),null);assert.equal(w.document.getElementById('import-article'),null);
+  assert.equal(w.document.getElementById('article-title').textContent,'기사');assert.equal(w.document.getElementById('article-subtitle').textContent,'부제목 없음');
   const component=fs.readFileSync(path.join(root,'public/assets/photo-tools.js'),'utf8').replace('import.meta.url',"'http://localhost:3001/assets/photo-tools.js'").replace('export class','class');w.eval(component);
   w.HTMLDialogElement.prototype.close=function(){this.open=false};w.HTMLDialogElement.prototype.showModal=function(){this.open=true};
   w.eval(fs.readFileSync(path.join(root,'public/assets/photo-bridge.js'),'utf8').replace("import './photo-tools.js';",''));
@@ -112,7 +113,7 @@ test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 �
   assert(!w.document.getElementById('platform-panel').contains(w.document.querySelector('.photo-tools')));
   w.eval("current().image={url:'data:image/jpeg;base64,YQ=='};draw();");
   const zoom=w.document.querySelector('[data-photo="zoom"]');zoom.value='175';zoom.dispatchEvent(new w.Event('input'));assert.equal(w.eval('current().image.presentation.zoom'),1.75);assert(w.document.getElementById('canvas').innerHTML.includes('scale(1.75)'));
-  w.document.getElementById('article-url').value='https://example.com/other';w.document.getElementById('article-url').dispatchEvent(new w.Event('input'));assert.equal(w.NewsInput.getRequest().article.content,'');
+  w.NewsInput.restore({article:{article_id:'other',title:'다른 기사',subtitle:'실제 부제',content:''}});assert.equal(w.NewsInput.getRequest().article.content,'');assert.equal(w.document.getElementById('article-subtitle').textContent,'실제 부제');
 
   // 카드별 추천 4장, 자동 삽입 금지, 선택/취소/되돌리기와 캐시 확인.
   let searches=0,keywordCalls=0,blobCalls=0;
@@ -129,7 +130,9 @@ test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 �
   await new Promise(r=>setTimeout(r,10));assert.equal(keywordCalls,2);assert.equal(searches,2);
   w.document.querySelector('[data-recommend-query]').value='manual search';
   w.document.querySelector('[data-recommend-search]').click();await new Promise(r=>setTimeout(r,10));assert.equal(keywordCalls,2);assert.equal(searches,3);
-  w.document.querySelector('.recommended-photo').click();await new Promise(r=>setTimeout(r,20));
+  w.document.querySelector('.recommended-photo').click();
+  // FileReader의 실제 완료를 기다린다. CPU 부하에 따라 20ms 타이머 전에 끝난다고 가정하지 않는다.
+  for(let attempt=0; !w.eval('current().image?.url') && attempt<200; attempt++)await new Promise(r=>setTimeout(r,10));
   assert.equal(blobCalls,1);assert(w.eval('current().image.url').startsWith('data:image/jpeg;base64,'));
   assert.equal(w.document.querySelector('[data-photo-edit]').hidden,false);
   const savedImage=w.eval('current().image.url');w.document.querySelector('[data-replace]').click();
@@ -170,7 +173,9 @@ test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 �
   w.eval(`applySavedDraft({cards:state.cards,platforms:['instagram','threads','blog'],text_drafts:{threads:state.text_drafts.threads,blog:{title:'이전 자료'}},validation_results:{blog:{status:'passed'}}});`);
   assert.equal(w.eval('state.text_drafts.blog'),undefined);assert.equal(w.eval('state.platforms.includes("blog")'),false);
   // 개별 버튼 없이도 선택한 플랫폼의 일괄 생성은 유지됩니다.
-  w.NewsInput.restore({article:{title:'기사',content:'원문'},selected_keywords:[],requirements:''});
+  const dbArticle={article_id:'a'.repeat(32),title:'기사',subtitle:'실제 부제',content:'원문',url:''};
+  w.NewsInput.restore({article:dbArticle,selected_keywords:[],requirements:''});
+  w.NewsApi.freezeDbArticle=async article=>{assert.deepEqual(article,dbArticle);return {id:'fixed-db-snapshot',article_id:article.article_id,title:article.title,subtitle:article.subtitle,url:'',body_text:article.content}};
   [...w.document.querySelectorAll('.platform input')].forEach(el=>el.checked=true);
   const generated=[];w.NewsApi.generateDraft=async(platform,input)=>{generated.push(platform);assert.equal(input.selected_keywords.length,0);return {draft:platform==='instagram'?{platform,opening:'제목',paragraphs:['본문'],closing:'정리',hashtags:['#기사','#뉴스','#핵심'],source_evidence:[]}:{platform,opening:'📰 제목',paragraphs:['요약'],closing:'',source_evidence:[]}}};
   selectedButton.click();await new Promise(r=>setTimeout(r,10));assert.deepEqual(generated,['instagram','threads']);assert.equal(selectedButton.disabled,false);
@@ -200,17 +205,21 @@ test('생성 경로는 빈 키워드와 미지정 키워드를 허용하고 잘�
  process.env.PLATFORM_LOCAL_STORAGE="1";
  const paths=['card-news-generator','instagram-generator','text-generator'].map(n=>require.resolve('../'+n));
  const originals=paths.map(p=>require.cache[p]);
- const stub=async input=>({platform:'fixture',selected_keywords:input.selected_keywords});
+ const stub=async input=>({platform:'fixture',selected_keywords:input.selected_keywords,article:input.article});
  paths.forEach((p,i)=>require.cache[p]={id:p,filename:p,loaded:true,exports:i===0?{generateCardNews:stub}:i===1?{generateInstagram:stub}:{generateTextPlatform:async(_,input)=>stub(input)}});
  const route=require.resolve('../generate-routes');const prior=require.cache[route];delete require.cache[route];
  try{
   let handler;require(route)({post:(_,fn)=>handler=fn});
   for(const keywords of [undefined,[]]){
    let code=200,result;const res={status(c){code=c;return this},json(v){result=v;return this}};
-   await handler({params:{platform:'card_news'},body:{article:{title:'제목',content:'본문'},...(keywords===undefined?{}:{selected_keywords:keywords})}},res);
+   await handler({params:{platform:'card_news'},body:{article:{article_id:'db-id',title:'제목',subtitle:'DB 부제',content:'본문'},...(keywords===undefined?{}:{selected_keywords:keywords})}},res);
    assert.equal(code,200);assert.deepEqual(result.draft.selected_keywords,[]);
+   assert.equal(result.draft.article.article_id,'db-id');assert.equal(result.draft.article.subtitle,'DB 부제');assert.equal(result.draft.article.url,'');
   }
-  let code;await handler({params:{platform:'card_news'},body:{article:{title:'제목',content:'본문'},selected_keywords:'invalid'}},{status(c){code=c;return this},json(){}});assert.equal(code,400);
+  let code;await handler({params:{platform:'card_news'},body:{article:{article_id:'db-id',title:'제목',content:'본문'},selected_keywords:'invalid'}},{status(c){code=c;return this},json(){}});assert.equal(code,400);
+  for(const article of [{title:'제목',content:'본문'},{article_id:'db-id',title:'제목',content:{type:'doc'}},{article_id:'db-id',title:'제목',content:'본문',subtitle:{text:'부제'}}]) {
+   await handler({params:{platform:'card_news'},body:{article}},{status(c){code=c;return this},json(){}});assert.equal(code,400);
+  }
  }finally{paths.forEach((p,i)=>{if(originals[i])require.cache[p]=originals[i];else delete require.cache[p]});if(prior)require.cache[route]=prior;else delete require.cache[route];}
 });
 

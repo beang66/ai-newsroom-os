@@ -90,7 +90,7 @@ def adopt_legacy(user_id):
         marker.write_text(user_id, encoding='utf-8')
         return moved
 _INIT_LOCK = threading.RLock()
-SCHEMA_VERSION = 4  # 3: 저장 종류(kind)·발행본(article_published)·처음 수동 저장(article_first_saved) / 4: 보관소에서 지운 기사(article_deleted)
+SCHEMA_VERSION = 5  # 4: article_deleted / 5: 고정본의 부제·출처 사본(기존 해시·불변 트리거 유지)
 # api.py 의 /api/vault/restore 요청 한도(220MB)에 base64(4/3배)·JSON 여유를 뺀 값. 넘는 백업은 받아도 복구할 수 없다.
 MAX_BACKUP_BYTES = 160_000_000
 
@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS article_snapshots (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, article_id TEXT NOT NULL REFERENCES articles(id),
   revision_id TEXT NOT NULL, revision_no INTEGER NOT NULL, title TEXT NOT NULL, body_html TEXT NOT NULL,
   body_text TEXT NOT NULL, content_hash TEXT NOT NULL, created_at TEXT NOT NULL,
+  subtitle TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '',
   UNIQUE (article_id, revision_id, content_hash));
 CREATE TRIGGER IF NOT EXISTS article_snapshots_no_update BEFORE UPDATE ON article_snapshots
 BEGIN SELECT RAISE(ABORT, 'article_snapshots are immutable'); END;
@@ -168,6 +169,11 @@ CREATE TABLE IF NOT EXISTS transcripts (
 
 def _migrate(db):
     """옛 저장소에 없는 열을 채운다(여러 번 불러도 안전). 새 DB 는 SCHEMA 에 이미 있다."""
+    # 원고 JSON의 부제·출처도 고정한다. 기존 고정본을 덮어쓰거나 해시 레시피를 바꾸지 않는다.
+    snapshot_columns = {row[1] for row in db.execute('PRAGMA table_info(article_snapshots)')}
+    for column in ('subtitle', 'url'):
+        if column not in snapshot_columns:
+            db.execute(f"ALTER TABLE article_snapshots ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
     if not any(row[1] == 'id' for row in db.execute('PRAGMA table_info(article_revisions)')):
         db.execute('ALTER TABLE article_revisions ADD COLUMN id TEXT')
     for article_id, revision_no in db.execute('SELECT article_id, revision_no FROM article_revisions WHERE id IS NULL').fetchall():

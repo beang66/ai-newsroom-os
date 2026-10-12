@@ -4,7 +4,9 @@ const excluded = new Set(["validation_status", "evidence_status", "validation_re
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
   ? Object.fromEntries(Object.keys(value).sort().filter(key => !excluded.has(key)).map(key => [key, canonical(value[key])])) : value;
 export const fingerprint = value => JSON.stringify(canonical(value));
-export const sourceText = article => JSON.stringify([String(article?.title || "").trim(), textWithoutPhotos(article?.content || "").trim()]);
+// 부제·출처가 바뀌어도 기존 플랫폼 결과는 별도로 남고 새 원문의 결과로 재사용하지 않는다.
+export const sourceText = article => JSON.stringify([String(article?.title || "").trim(), String(article?.subtitle || "").trim(),
+  typeof article?.content === "string" ? textWithoutPhotos(article.content).trim() : "", String(article?.url || "").trim()]);
 export const articleId = article => String(article?.articleId || article?.article_id || article?.id || "");
 export const reviewLabel = status => ({passed:"검수 통과", needs_revision:"수정 필요", needs_recheck:"재검수 필요", not_checked:"미검수"}[status] || "미검수");
 export function reviewStatus(draft) {

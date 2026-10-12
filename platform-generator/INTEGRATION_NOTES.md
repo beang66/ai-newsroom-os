@@ -1,6 +1,46 @@
 # 플랫폼 로컬 통합 및 검증 기록
 
-## 현재 로컬 통합 기준 — 2026-10-12
+## DB 기사 입력 변경 — 현재 기준 (2026-10-12)
+
+이 절은 아래의 **DB 입력 변경 전 통합 기록과 과거 마일스톤보다 우선**합니다. `25e73af` 통합은 `4d3ec8b`에서 완료됐고 이번 변경은 같은 작업 브랜치에서 이어갑니다. 새 merge·abort·reset·clean·push·PR은 실행하지 않았습니다.
+
+새 DB·기사 JSON 업로드·URL 수집을 만들지 않았습니다. 기존 계정별 SQLCipher 저장소의 기사 JSON을 Core `listArticles/getArticle/saveArticle/createSnapshot`으로 사용합니다. 목록의 수동 저장 요약 정책은 유지하고 선택 조회는 임시 저장을 포함한 최신 원고입니다.
+
+| DB/화면 원고 JSON | 생성·검수 입력 | 고정본 |
+|---|---|---|
+| `articleId` (Core 저장 후 실제 32자리 ID) | `article.article_id` | 기존 `article_id` |
+| `title` | `article.title` | `title` 사본 |
+| `subtitle` (없으면 빈 문자열) | `article.subtitle` | `subtitle` 사본, 표시만 ‘부제목 없음’ |
+| `content` 문자열 / 기존 `bodyHtml` HTML | 사진 자리 줄을 제외한 기사 글자 | 기존 `body_html` 및 `_text_of`의 `body_text` |
+| 선택적 `url` | `article.url` (출처 링크만) | `url` 사본 |
+| Core snapshot의 `id` | 생성·검수·렌더 `snapshotId`, 결과 `snapshot_id` | 기존 UUID |
+
+실제 팀 본문은 문자열 `content` + HTML `bodyHtml`입니다. 문자열이 아닌 과거/구조화 본문은 기존 HTML 변환을 사용하고 사진 설명·삭제된 글을 기사 내용에 넣지 않습니다. HTML도 없는 알 수 없는 객체는 조회 오류로 안내합니다. 객체 문자열화·JSON 전체 전달·임의 ID/부제 생성은 하지 않습니다.
+
+### 화면·호출·저장 및 비동기 보호
+
+- **실제 팀 화면**: 루트 `src/App.jsx`의 기존 `Workspace.changeArticle`을 ‘변환·배포 → 왼쪽 최상단 → DB 기사 선택’에서도 재사용합니다. 전환 전 기존 수동 저장 확인/flush 정책으로 플랫폼 편집을 보호하고 선택 후 변환 화면에 머뭅니다. ‘불러온 기사’의 제목·부제는 읽기 전용이며 전체 줄바꿈으로 표시합니다. 수정은 ‘기사 편집’으로 이동합니다. 기사 미선택·본문 없음·조회 실패·불러오는 중 상태와 요청 진행 중 기준 기사 제목/부제를 표시합니다. 사용자 키워드·제작 요구사항은 유지합니다. 별도 본문 입력칸은 없습니다.
+- **고정본**: `freezeArticle(article, {flush, strict:true})`가 기존 저장 큐를 끝내고 Core로 고정합니다. 표시/요청 원문과 고정본의 제목·부제·HTML·출처를 비교하며 저장/고정 실패 시 생성은 중단합니다. DB schema **v5**는 기존 `article_snapshots`에 원고의 `subtitle`, `url` 사본 열만 추가합니다. v4 고정본은 수정하지 않고 없는 메타데이터는 빈 값으로 유지합니다. 기존 `content_hash(title, body_html)` 레시피·ID·불변 트리거·명시적 `revision_id` 동작을 유지합니다. 최신 고정의 재사용은 제목·HTML 해시와 부제·출처를 함께 비교합니다. 플랫폼 결과만 저장한 이력은 같은 원문 고정본을 재사용하고 생성 정보가 바뀌면 새 고정본을 사용합니다. 수정한 플랫폼 결과는 기존 `platformDrafts/cardNews/platformGeneration`에 따로 보존합니다.
+- **비동기**: 조회의 동기 잠금·AbortController·작업 영역 해제 검사로 늦은 응답이 새 화면을 덮어쓰지 않습니다. 생성은 실행 시점 원문/조건/원고 서명, 화면 생존 여부 및 반환 article/snapshot ID를 검사합니다. 기사 전환·원문/조건/플랫폼 편집 중 변경된 결과는 적용하지 않습니다. 실패한 선택은 기존 기사 유지임을 명시합니다.
+- **개발용 편집실**: `public/article-input.js`도 DB 선택과 읽기 전용 제목·부제를 제공합니다. `db-article-routes.js`는 루트 `createCoreApi`를 재사용해 Core JSON API만 중계하며 DB에 직접 접근하지 않습니다. `NEWSROOM_CORE_ORIGIN=http://127.0.0.1:8765`에서 Core 실행/로그인이 필요합니다. 기존 로컬 SNS와 같은 loopback/Origin 정책과 Core POST Origin 전제조건을 지킵니다. 단일/일괄 생성은 같은 Core 고정본을 사용합니다. 실제 편집이 있으면 기존 opt-in 로컬 초안 저장이 성공한 뒤 전환하고 실패하면 보존합니다. 조회 실패 시 원문을 비워 실패 상태를 표시합니다. 개발용 JPG/Documents 저장과 팀 Core 암호화 저장은 별개입니다. 기존 플랫폼 초안 JSON 복원은 유지하지만 기사 JSON 업로드를 추가하지 않았습니다.
+- **URL 정리**: `/api/article/import`·`article-source.js`의 실제 호출은 개발용 server/API/article-input뿐이었고 다른 팀 기능·CI 호출이나 KEEP 표시는 없었습니다. 수집 파일·라우트/API·URL 입력/버튼·잠금 참조/불필요 스타일만 제거했습니다. DB `url`은 저장·복원·고정·생성 입력과 출처 링크에 보존합니다. workflows와 이전 미사용 수동 테스트의 삭제 상태는 유지합니다.
+- **빌드**: 화면 소스는 루트 `src/`, 명령은 루트 `npm run build`입니다. `article_editor/app/frontend/**`는 해당 소스 재빌드 결과만 포함합니다. 생성 파일 삭제는 이전 해시 자산 교체이며 팀 기능 삭제가 아닙니다.
+
+### 이번 검증과 실행 한계
+
+루트 `npm test` **36개**, 플랫폼 `npm test --prefix platform-generator` **37개 및 로컬 저장 검사**, 전체 Python unittest **399개(기존 skip 6개)**, 루트 `npm run build`, `npm run test:ui`가 통과했습니다. Core HTTP 중계의 실제 POST Origin/기사 ID 경로 검사와 개발용 편집 보존도 통과했습니다. 변경 파일 lint는 오류 없이 useEffect 의존성 경고 2개를 표시했습니다. 초기 spawn/네이티브 모듈/SQLCipher 읽기 실패는 샌드박스 실행 제한으로 허용된 환경에서 재실행했습니다.
+
+실제 팀 빌드/브라우저/Core 암호화 DB를 사용한 UI smoke는 기사 선택 → 제목·부제 → 고정본 → 원고/카드 → 편집/검수 → 저장/복원 → Core 렌더를 검사합니다. URL/부제 유무, 긴 제목·부제 전체 표시, HTML 본문 호환, 본문 없음, 조회 실패/삭제, 기사 전환, 늦은 조회/생성/검수/렌더 응답, 부제 변경 시 새 고정본, 플랫폼 결과 저장 후 고정본 재사용도 포함합니다. 이전 고정본 혼합 테스트는 실제 원문 변경으로 다른 고정본을 만들어 차단을 검사하며 검증을 삭제/skip/완화하지 않았습니다. 플랫폼 UI의 수동 저장은 실제 Core manual 응답과 헤더 저장 표시로 확인합니다. UI 실패 시에도 SNS를 닫고 서버 종료 후 시험 임시 디렉터리만 정리합니다.
+
+UI smoke의 AI·사진·SNS·인증 응답은 시험용입니다. 실제 운영 계정/AI/backend와 최신 EXE는 미검증입니다. 아래 실제 Instagram·Threads 계정/사진 순서/줄바꿈 확인은 **4d3ec8b 당시 과거 검증**이며 이번 DB 입력의 운영 계정 재검증으로 표시하지 않습니다. 실제 게시·push·PR은 실행하지 않았습니다.
+
+추가 UI 검증에서 기사 미선택의 제목/부제 안내·생성 비활성화·플랫폼 본문 입력칸 없음과 생성 도중 제작 요구사항을 고친 경우의 결과 폐기까지 통과했습니다. 최종 UI smoke의 브라우저 오류는 0개입니다.
+
+최종 확인은 2026-10-13(Asia/Seoul)에 마쳤습니다. 변경한 파일은 루트 기사 전환/조회/변환 UI·API·상태 서명, Core 저장/스키마/플랫폼 매니저, Node 생성 입력/인용 검사/개발용 DB 연결/입력 UI, 관련 회귀 테스트·계약 문서·본 문서, 루트 빌드 생성물입니다. 확인용 실제 팀 Core `http://127.0.0.1:8765`와 Chrome 창을 열어 두었습니다. 이 실행 환경에는 팀 로그인이 없으므로 사용자가 로그인한 뒤 ‘변환·배포’에서 DB 기사를 선택해야 합니다. 이 창에는 시험용 인증을 삽입하지 않았습니다. .env·세션·runtime·QA DB·이미지·서버 로그는 커밋에서 제외합니다.
+
+## DB 입력 변경 전 통합 기록 (과거 상태)
+
+## 로컬 통합 기준 — 2026-10-12 (DB 입력 변경 전)
 
 현재 기준 main은 `25e73af63116e46269452542e3df37b487e0c489`입니다. 초기 `8ee7a3b` 병합은 `1762e61`, 원래 작업 보존은 `6fd20c6` 및 `backup/platform-before-main-20261012-openai`입니다. 추가 연결 작업은 `6e663a2`에 보존했고 추가 main 병합 전 백업은 `backup/platform-before-main-25e73af-20261012`입니다. main에 직접 커밋하거나 push·PR을 실행하지 않았습니다.
 

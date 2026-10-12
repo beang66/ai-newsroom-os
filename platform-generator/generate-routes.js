@@ -21,6 +21,12 @@ module.exports = function registerGenerateRoutes(app) {
     const input = req.body;
     const article = input?.article;
     const keywords = input?.selected_keywords ?? []; // 선택 입력: 미입력도 허용
+    if (typeof article?.article_id !== "string" || !article.article_id.trim()) {
+      return res.status(400).json({success:false,error:"Core에서 저장된 기사 ID를 확인해주세요."});
+    }
+    if (article.subtitle !== undefined && (typeof article.subtitle !== "string" || article.subtitle.length > 30000)) {
+      return res.status(400).json({success:false,error:"기사 부제목 형식을 확인해주세요."});
+    }
 
     if (
       typeof article?.title !== "string" ||
@@ -88,9 +94,10 @@ module.exports = function registerGenerateRoutes(app) {
           typeof article.article_id === "string" &&
           article.article_id.trim()
             ? article.article_id.trim()
-            : "article_01",
+            : "",
 
         title: article.title.trim(),
+        subtitle: (article.subtitle || "").trim(),
         content: article.content.trim(),
       },
 

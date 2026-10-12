@@ -17,20 +17,8 @@ app.use(express.static(path.join(__dirname,"public")));
 // Development storage remains opt-in; test paths are injectable.
 require("./local-storage-routes")(app,storageOptions);
 
-// 공개 기사 URL에서 제목과 본문을 가져오는 입력 경로
-const { importArticle } = require("./article-source");
-app.post("/api/article/import", async (req, res) => {
-  try {
-    const article = await importArticle(req.body?.url);
-    res.json({ success: true, article });
-  } catch (error) {
-    const status = [400, 422, 502, 504].includes(error.status) ? error.status : 502;
-    res.status(status).json({
-      success: false,
-      error: error.status ? error.message : "기사 본문을 추출하지 못했습니다. 원문을 직접 붙여넣어주세요.",
-    });
-  }
-});
+// 개발용 편집실도 팀 Core의 기존 기사 DB·고정본만 사용한다.
+require("./db-article-routes")(app);
 
 // 팀원 Python 사진 API의 기능·응답 형식을 Node 경로로 연결합니다.
 require("./photo-routes")(app);

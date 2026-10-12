@@ -8,6 +8,8 @@ test('기사·고정본을 조용히 섞지 않고 카드 편집과 원본 변�
  assert.throws(()=>assertSameSource({...draft,article_id:'other'},draft,article),/기사/);
  assert.throws(()=>assertSameSource(draft,{...draft,snapshot_id:'other'},article),/고정본/);
  assert.throws(()=>assertSameSource(draft,draft,{...article,content:'변경된 원문입니다.'}),/원본/);
+ assert.throws(()=>assertSameSource(draft,draft,{...article,subtitle:'새 부제'}),/원본/);
+ assert.throws(()=>assertSameSource(draft,draft,{...article,url:'https://example.test/new'}),/원본/);
  const edited=structuredClone(draft);edited.cards[0].content.detail='사용자 편집';assert.doesNotThrow(()=>assertSameSource(edited,null,article));
 });
 test('본문·사진 바이트·출처·위치·순서 변경은 이전 렌더를 무효화',()=>{

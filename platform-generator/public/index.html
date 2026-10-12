@@ -855,6 +855,12 @@
     // 실제 편집 카드 목록은 기존 state.cards를 계속 사용합니다.
     // ========================================================
     window.CardEditor = {
+      // 기사 전환 전에 플랫폼 편집 전체를 보존한다(원문 DB는 따로 복사하지 않는다).
+      snapshot() { return structuredClone({...state,source_input:window.NewsInput?.getRequest(),include_card_news:$('include-card-news').checked}); },
+      resetForArticle() {
+        state={schema_version:1,platforms:['instagram'],text_drafts:{},validation_results:{},cards:Array.from({length:3},(_,i)=>({card_id:uuid(),role:i===0?'cover':i===2?'closing':'body',headline:'',body:'',keyword:''}))};
+        active=0; revision++; draw(); window.dispatchEvent(new Event('news:cards-changed')); window.TextEditor?.showPlatform('instagram');
+      },
       // 1. 요청 중 편집 변경 여부를 확인할 버전
       getRevision() {
         return revision;

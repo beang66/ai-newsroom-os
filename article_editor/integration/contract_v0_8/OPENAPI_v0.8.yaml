@@ -191,7 +191,7 @@ components:
     ArticleSnapshot:
       type: object
       required: [id, article_id, revision_id, content_hash, title, body_html, created_at]
-      properties: {id: {$ref: '#/components/schemas/Uuid'}, article_id: {$ref: '#/components/schemas/Uuid'}, revision_id: {$ref: '#/components/schemas/Uuid'}, content_hash: {type: string}, title: {type: string}, body_html: {type: string}, body_text: {type: string}, created_at: {type: string, format: date-time}}
+      properties: {id: {$ref: '#/components/schemas/Uuid'}, article_id: {$ref: '#/components/schemas/Uuid'}, revision_id: {$ref: '#/components/schemas/Uuid'}, content_hash: {type: string}, title: {type: string}, subtitle: {type: string, default: ''}, url: {type: string, default: ''}, body_html: {type: string}, body_text: {type: string}, created_at: {type: string, format: date-time}}
     ReportingProject:
       type: object
       required: [id, workspace_id, name]

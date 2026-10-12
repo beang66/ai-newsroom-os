@@ -221,7 +221,8 @@ function PlatformDraftEditor({ platform, draft, onChange, onCopy, copied }) {
   );
 }
 
-export default function FormatConverter({ article, setArticle }) {
+export default function FormatConverter({ article, setArticle, flush, articles = [], onSelectArticle, onEditArticle,
+  sourceLoading = false, sourceError = "", onReloadArticles }) {
   const savedConfig = article.platformGeneration || {};
   const [selectedPlatforms, setSelectedPlatforms] = useState(
     Array.isArray(savedConfig.selectedPlatforms) && savedConfig.selectedPlatforms.length
@@ -243,6 +244,10 @@ export default function FormatConverter({ article, setArticle }) {
   const [progress, setProgress] = useState({});
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState("");
+  const [requestSource, setRequestSource] = useState(null);
+  const [customKeyword, setCustomKeyword] = useState("");
+  const mounted = useRef(true), pending = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const live=useRef({article,drafts,cardNews,requirements,selectedKeywords});
   useLayoutEffect(()=>{live.current={article,drafts,cardNews,requirements,selectedKeywords};},[article,drafts,cardNews,requirements,selectedKeywords]);
@@ -337,9 +342,10 @@ export default function FormatConverter({ article, setArticle }) {
   };
 
   // 변환을 시작할 때 지금 글을 저장해 고정본으로 만든다. 한 생성 작업의 모든 결과는 같은 고정본을 쓴다.
-  // 실패하면 null — 현재 글로 계속하고 안내 문구만 덧붙인다.
+  // 고정본을 만들지 못하면 중단한다. 저장 큐와 표시 중인 원문이 일치해야 한다.
   const freeze = async () => {
-    const frozen = await freezeArticle(article);
+    const frozen = await freezeArticle(article, {flush, strict:true});
+    if (!mounted.current || sourceText(article) !== sourceText(live.current.article)) throw Error("고정 중 기사가 변경됐습니다. 다시 실행해 주세요.");
     if (frozen?.articleId && frozen.articleId !== article.articleId && setArticle) {
       setArticle((previous) => articleId(previous)!==articleId(article)||sourceText(previous)!==sourceText(article)?previous:({ ...previous, articleId: frozen.articleId }));
     }
@@ -347,35 +353,33 @@ export default function FormatConverter({ article, setArticle }) {
   };
 
   const suggestKeywords = async () => {
+    if (pending.current) return;
     if (!article.title?.trim() || !article.content?.trim()) {
       setMessage("기사 제목과 본문을 먼저 작성해 주세요.");
       return;
     }
-    setKeywordLoading(true);
+    pending.current = true; setKeywordLoading(true); setRequestSource({title:article.title,subtitle:article.subtitle});
     setMessage("");
     try {
       const frozen = await freeze();
       const source=sourceText(article);
-      const candidates = await suggestPlatformKeywords(article, frozen?.snapshotId);
-      if(source!==sourceText(live.current.article))throw Error("키워드 추천 중 원본이 변경됐습니다. 다시 추천해 주세요.");
+      const candidates = await suggestPlatformKeywords({...article,articleId:frozen.articleId}, frozen.snapshotId);
+      if(!mounted.current || source!==sourceText(live.current.article) || frozen.articleId!==articleId(live.current.article))throw Error("키워드 추천 중 원본이 변경됐습니다. 다시 추천해 주세요.");
       setKeywordCandidates(candidates);
       if (!candidates.length) setMessage("추천할 키워드를 찾지 못했습니다.");
     } catch (error) {
-      setMessage(error.message || "키워드 추천에 실패했습니다.");
+      if (mounted.current) setMessage(error.message || "키워드 추천에 실패했습니다.");
     } finally {
-      setKeywordLoading(false);
+      pending.current = false; if (mounted.current) { setKeywordLoading(false); setRequestSource(null); }
     }
   };
 
   // only: 한 항목만 만들 때(["instagram"] / ["card_news"]). 없으면 왼쪽에서 체크한 항목 전부
   const runGeneration = async (only) => {
+    if (pending.current) return;
     const list = Array.isArray(only) ? only : targets;
     if (!article.title?.trim() || !article.content?.trim()) {
       setMessage("기사 제목과 본문을 먼저 작성해 주세요.");
-      return;
-    }
-    if (!selectedKeywords.length) {
-      setMessage("콘텐츠 방향을 잡을 키워드를 하나 이상 선택해 주세요.");
       return;
     }
     if (!list.length) {
@@ -383,38 +387,47 @@ export default function FormatConverter({ article, setArticle }) {
       return;
     }
 
-    setGenerating(true);
+    pending.current = true; setGenerating(true); setRequestSource({title:article.title,subtitle:article.subtitle});
     setMessage("");
     const nextProgress = Object.fromEntries(list.map((id) => [id, "대기 중"]));
     setProgress({ ...nextProgress });
     const success = [];
     const inputSource=sourceText(article),inputConfig=fingerprint({requirements,selectedKeywords});
-    const frozen = await freeze();
+    let frozen;
+    try { frozen = await freeze(); }
+    catch (error) {
+      pending.current = false;
+      if (mounted.current) { setMessage(error.message); setGenerating(false); setRequestSource(null); setProgress({}); }
+      return;
+    }
 
     for (const target of list) {
+      if (!mounted.current) break;
       nextProgress[target] = "생성 중";
       setProgress({ ...nextProgress });
       try {
         const before=fingerprint(target==='card_news'?live.current.cardNews:live.current.drafts[target]);
         const generated = await generatePlatform(
           target,
-          article,
+          {...article,articleId:frozen.articleId},
           selectedKeywords,
           requirements,
           frozen?.snapshotId,
         );
         if (!generated) throw new Error("생성 결과가 비어 있습니다.");
         if(!generated.article_id)throw Error("기사 ID를 확인할 수 없습니다. 기사를 저장한 뒤 다시 생성해 주세요.");
-        if(inputSource!==sourceText(live.current.article)||articleId(live.current.article)!==(frozen?.articleId||articleId(article))||inputConfig!==fingerprint({requirements:live.current.requirements,selectedKeywords:live.current.selectedKeywords})||before!==fingerprint(target==='card_news'?live.current.cardNews:live.current.drafts[target]))throw Error("생성 중 원문·조건·원고가 바뀌어 결과를 적용하지 않았습니다. 다시 생성해 주세요.");
+        if(generated.article_id!==frozen.articleId || generated.snapshot_id!==frozen.snapshotId)throw Error("생성 결과의 기사·고정본이 요청과 다릅니다. 결과를 적용하지 않았습니다.");
+        if(!mounted.current||inputSource!==sourceText(live.current.article)||articleId(live.current.article)!==frozen.articleId||inputConfig!==fingerprint({requirements:live.current.requirements,selectedKeywords:live.current.selectedKeywords})||before!==fingerprint(target==='card_news'?live.current.cardNews:live.current.drafts[target]))throw Error("생성 중 원문·조건·원고가 바뀌어 결과를 적용하지 않았습니다. 다시 생성해 주세요.");
         if(target==='card_news')updateCardNews(generated);else updateDraft(target,generated);
         nextProgress[target] = "완료";
         success.push(target);
       } catch (error) {
         nextProgress[target] = `실패 · ${error.message || "생성 오류"}`;
       }
-      setProgress({ ...nextProgress });
+      if (mounted.current) setProgress({ ...nextProgress });
     }
-
+    pending.current = false;
+    if (!mounted.current) return;
     if (success.length) {
       setActiveView(success[0]);
     }
@@ -426,6 +439,7 @@ export default function FormatConverter({ article, setArticle }) {
         : "생성된 결과가 없습니다. 오류 내용을 확인해 주세요.",
     );
     setGenerating(false);
+    setRequestSource(null);
   };
 
   const updateDraft = (platform, change) => {
@@ -469,7 +483,7 @@ export default function FormatConverter({ article, setArticle }) {
         <button
           type="button"
           onClick={() => runGeneration()}
-          disabled={generating}
+          disabled={generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
           className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-[#292929] px-5 py-2.5 text-xs font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
@@ -483,10 +497,28 @@ export default function FormatConverter({ article, setArticle }) {
             <div className="flex items-start gap-3 border-b border-[#EFECE6] pb-4">
               <FileText className="mt-0.5 h-4 w-4 text-[#8E8982]" />
               <div className="min-w-0">
-                <span className="text-[10px] font-bold text-[#8E8982]">작성 중인 기사</span>
-                <p className="mt-0.5 line-clamp-2 text-sm font-black leading-5">
-                  {article.title || "제목 없는 기사"}
-                </p>
+                <h3 className="text-xs font-black">불러온 기사</h3>
+                {sourceLoading ? <p role="status">기사 불러오는 중…</p> : <div data-testid="loaded-article" className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                  <span className="mt-3 block text-[10px] font-bold">기사 제목</span>
+                  <p data-testid="loaded-title" className="mt-0.5 text-sm font-black leading-6">{article.title || "기사 미선택"}</p>
+                  <span className="mt-3 block text-[10px] font-bold">부제목</span>
+                  <p data-testid="loaded-subtitle" className="mt-0.5 text-xs leading-6">{article.subtitle || "부제목 없음"}</p>
+                  {!article.content?.trim() && <p role="status" className="mt-2 text-xs">{article.title ? "기사 본문 없음 · 기사 편집 화면에서 확인해 주세요." : "DB 기사를 선택해 주세요."}</p>}
+                  {/^https?:\/\//iu.test(article.url || "") && <a href={article.url} target="_blank" rel="noreferrer" className="mt-2 block text-xs underline">원문 출처 링크</a>}
+                </div>}
+                {sourceError && <p role="alert" className="mt-2 text-xs text-red-700">{sourceError}</p>}
+                {onSelectArticle && <><label className="mt-3 block text-xs" htmlFor="platform-article">DB 기사 선택</label>
+                  <select id="platform-article" data-testid="platform-article" value={article.articleId || ""} disabled={sourceLoading}
+                    onChange={event => event.target.value && onSelectArticle(event.target.value)} className="mt-1 w-full rounded-lg border p-2 text-xs">
+                    <option value="">기사 선택</option>{articles.map(item => <option key={item.id} value={item.id}>{item.title || "제목 없는 기사"}</option>)}
+                  </select></>}
+                <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                  {onEditArticle && <button onClick={onEditArticle} className="underline">기사 편집</button>}
+                  {onReloadArticles && <button onClick={onReloadArticles} className="underline">목록 새로고침</button>}
+                </div>
+                {requestSource && <div role="status" data-testid="request-source" className="mt-3 whitespace-pre-wrap break-words text-xs leading-6">
+                  처리 기준 기사: {requestSource.title}<br />부제목: {requestSource.subtitle || "부제목 없음"}
+                </div>}
                 <span className="mt-1 block text-[10px] text-[#8E8982]">
                   본문 {(article.content || "").length.toLocaleString()}자
                 </span>
@@ -570,7 +602,7 @@ export default function FormatConverter({ article, setArticle }) {
               <button
                 type="button"
                 onClick={suggestKeywords}
-                disabled={keywordLoading}
+                disabled={keywordLoading || generating || sourceLoading || !article.content?.trim()}
                 className="inline-flex items-center gap-1 text-[10px] font-bold text-[#57514A] disabled:opacity-50"
               >
                 {keywordLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
@@ -610,10 +642,16 @@ export default function FormatConverter({ article, setArticle }) {
               </div>
             ) : (
               <p className="rounded-xl bg-[#FAF8F5] p-3 text-[10px] leading-4 text-[#8E8982]">
-                ‘추천’을 누르면 platform-generator가 기사 원문에서 후보를 만듭니다.
+                ‘추천’을 누르면 불러온 기사에서 핵심 키워드를 제안합니다.
               </p>
             )}
 
+            <label className="block text-xs" htmlFor="platform-keyword">사용자 키워드 (선택)</label>
+            <div className="flex gap-2">
+              <input id="platform-keyword" value={customKeyword} maxLength={100} onChange={event => setCustomKeyword(event.target.value)}
+                className="min-w-0 flex-1 rounded-lg border px-2 py-2 text-xs" placeholder="키워드 입력" />
+              <button type="button" onClick={() => { const word=customKeyword.trim(); if(word && !selectedKeywords.includes(word) && selectedKeywords.length<20) toggleKeyword(word); setCustomKeyword(""); }} className="text-xs">추가</button>
+            </div>
             {selectedKeywords.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {selectedKeywords.map((keyword) => (
@@ -713,7 +751,7 @@ export default function FormatConverter({ article, setArticle }) {
               type="button"
               data-testid="generate-active"
               onClick={() => runGeneration([activeView])}
-              disabled={generating || activeView==="blog"}
+              disabled={generating || keywordLoading || sourceLoading || activeView==="blog" || !article.title?.trim() || !article.content?.trim()}
               title="이 항목만 생성합니다. 이미 있는 결과와 수정 내용은 새 결과로 바뀝니다."
               className="inline-flex items-center gap-1.5 rounded-full bg-[#292929] px-3 py-2 text-[11px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >

@@ -77,7 +77,6 @@ header button:disabled, .layout button:disabled, dialog button:disabled { opacit
 .layout input::placeholder, .layout textarea::placeholder { color: #718390; opacity: 1; }
 .layout input[type=checkbox], .layout input[type=radio], .layout input[type=range] { accent-color: #32796f; }
 #article-source-panel label, #card-design-tools label { color: #304957; }
-#article-source-panel #import-article { width: 100%; }
 #article-source-panel #article-source-preview { border-color: #bdccd5; background: #eff4f7; }
 .layout .platform { border-color: #b9c8d1; background: #f1f5f8; padding: 13px; }
 .layout .platform:has(input:checked) { background: linear-gradient(135deg, #e3faf3, #c8e8df); color: #1d4b43; border-color: #76b5a6; }

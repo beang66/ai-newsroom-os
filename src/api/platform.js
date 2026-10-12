@@ -2,25 +2,35 @@
 // UI는 platform-generator의 구현/경로를 모르고 App Core 계약만 사용한다.
 import { core } from "./core.js";
 import { textWithoutPhotos } from "../lib/photoMarks.js";
-import { saveDraft } from "./editorial.js";
+import { saveDraft, bodyHtmlOf } from "./editorial.js";
 import { articleId, renderKey, selectedCardPhoto } from "../lib/platformState.js";
 
 // 본문 속 사진 자리 줄([사진:id])은 플랫폼·카드뉴스 글과 근거 검사에 들어가지 않게 뺀다
 const cleanArticle = (article = {}) => ({
   article_id: articleId(article),
   title: String(article.title || "").trim(),
-  content: textWithoutPhotos(article.content).trim(),
+  subtitle: String(article.subtitle || "").trim(),
+  url: typeof article.url === "string" ? article.url : "",
+  content: typeof article.content === "string" ? textWithoutPhotos(article.content).trim() : "",
 });
 
 /** 지금 글을 저장하고 고정본(그 시점의 글을 얼린 사본)으로 만든다. 키워드·원고·카드 이미지를 이 고정본 기준으로 만들면
  *  나중에 "어느 글로 만들었는지"를 정확히 알 수 있다. → { snapshotId, articleId, revisionNo } | null.
- *  저장·고정본 생성이 실패해도 던지지 않고 null 을 돌려준다 — 이때는 변환이 현재 글 그대로 진행된다. */
-export async function freezeArticle(article) {
+ *  플랫폼 생성은 strict:true로 실패를 표시하고 중단한다. 기존 편집 보조 호출은 null 반환을 유지한다. */
+export async function freezeArticle(article, { flush, strict = false } = {}) {
   try {
-    const articleId = await saveDraft(article, article?.articleId);
+    // 팀 화면은 기존 자동 저장 큐를 먼저 비운다. 편집 보조의 기존 호출도 유지한다.
+    const articleId = flush ? await flush() : await saveDraft(article, article?.articleId);
+    if (!articleId) throw Error("저장된 기사 ID를 확인할 수 없습니다.");
     const snapshot = await core.createSnapshot(articleId);
-    return snapshot?.id ? { snapshotId: snapshot.id, articleId, revisionNo: snapshot.revision_no } : null;
-  } catch {
+    if (!snapshot?.id) throw Error("기사 고정본을 만들지 못했습니다.");
+    if (strict && (snapshot.title !== (article.title || "") || snapshot.subtitle !== (article.subtitle || "")
+      || snapshot.url !== (article.url || "") || snapshot.body_html !== bodyHtmlOf(article.content, article.photos || []))) {
+      throw Error("저장 중 원문이 변경됐습니다. 현재 기사를 확인한 뒤 다시 실행해 주세요.");
+    }
+    return { snapshotId: snapshot.id, articleId, revisionNo: snapshot.revision_no };
+  } catch (error) {
+    if (strict) throw error;
     return null;
   }
 }

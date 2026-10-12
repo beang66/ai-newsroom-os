@@ -147,6 +147,26 @@ def destroy(window):
         pass
 
 
+IPC_JS = """JSON.stringify((() => {
+  const s = (window.__smoke = window.__smoke || {});
+  if (s.ipc === undefined) {
+    s.ipc = 'pending';
+    const api = window.pywebview && window.pywebview.api;
+    if (!api || typeof api.core !== 'function') { s.ipc = 'no-bridge'; }
+    else {
+      Promise.all([
+        api.core('/api/status'),
+        api.core('/api/articles/latest'),
+        api.core('/api/jobs/00000000-0000-4000-8000-000000000000'),
+      ]).then(([status, latest, missing]) => {
+        s.ipc = { status: status.status, latest: latest.status, latestCode: latest.body && latest.body.code, missing: missing.status, missingCode: missing.body && missing.body.code, missingError: !!(missing.body && missing.body.error) };
+      }).catch((e) => { s.ipc = 'error:' + e; });
+    }
+  }
+  return s.ipc;
+})())"""
+
+
 def runner(window, mode, checks, timeout):
     watchdog = threading.Timer(timeout, lambda: destroy(window))
     watchdog.start()
@@ -173,6 +193,14 @@ def runner(window, mode, checks, timeout):
 
         status = wait_value(window, STATUS_JS, 20)
         checks.append(('코어 연결: GET /api/status', isinstance(status, dict), status))
+
+        ipc = wait_value(window, IPC_JS, 20)
+        # 로그아웃 상태(스모크의 기본)에서는 자료 요청이 401 AUTH_REQUIRED 로 거절된다 — 로그인 상태면 200/404.
+        # 어느 쪽이든 오류 본문(code)까지 HTTP 와 같은 형태로 오면 통과.
+        def answered(status, code, expected):
+            return status == expected or (status == 401 and code == 'AUTH_REQUIRED')
+        ok_ipc = isinstance(ipc, dict) and ipc.get('status') == 200 and answered(ipc.get('latest'), ipc.get('latestCode'), 200)             and answered(ipc.get('missing'), ipc.get('missingCode'), 404) and ipc.get('missingError')
+        checks.append(('IPC 브리지: core() 로 상태·읽기·오류(AUTH_REQUIRED 포함) 응답이 HTTP 와 같은 형태로 옴', bool(ok_ipc), ipc))
 
         if mode == 'write':
             written = wait_value(window, IDB_WRITE_JS, 15)
@@ -209,7 +237,8 @@ def run(mode='write', timeout=45.0, debug=False):
     try:
         runtime.wait_ready(url, server)
         store.mkdir(parents=True, exist_ok=True)
-        window = webview.create_window('shell-smoke', url, width=1100, height=820, min_size=(900, 600))
+        from desktop.ipc_bridge import Bridge
+        window = webview.create_window('shell-smoke', url, width=1100, height=820, min_size=(900, 600), js_api=Bridge())
         webview.start(
             runner,
             args=(window, mode, checks, timeout),

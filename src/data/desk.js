@@ -62,16 +62,11 @@ export function focusStory(items) {
   return deadlineQueue(items)[0] || null;
 }
 
-// 코어 원고 상태(article.js: 작성 중·검증 완료·발행 준비·발행 완료) → 데스크 단계
-const STAGE_OF_STATUS = { "작성 중": "편집 중", "검증 완료": "송고 준비", "발행 준비": "송고 준비", "발행 완료": "출고 완료" };
-export function stageOf(status) {
-  return DESK_STAGES.includes(status) ? status : STAGE_OF_STATUS[status] || "편집 중";
-}
-
-/** 보관함에 함께 보이는 데스크 편성 예시 — 코어 원고가 아니라 읽기 전용(sample: true). 출고·마감 늦은 순 */
+/** 보관함에 함께 보이는 데스크 편성 예시 — 코어 원고가 아니라 읽기 전용(sample: true). 출고·마감 늦은 순.
+ * 보관함의 원고/송고 구분(state)에 맞춰 출고 완료는 송고(published), 나머지는 원고로 둔다. */
 export function deskArchiveItems(items = deskSchedule) {
   return [...items].sort((a, b) => minutes(b.deadline) - minutes(a.deadline)).map((item) => ({
-    id: `desk:${item.id}`, sample: true, title: item.title || item.slug, subtitle: item.deck || "",
-    status: item.stage, deadline: item.deadline, desk: item.desk, owner: item.owner, next: item.next,
+    id: `desk:${item.id}`, sample: true, state: item.stage === "출고 완료" ? "published" : "draft", stage: item.stage, title: item.title || item.slug, subtitle: item.deck || "",
+    deadline: item.deadline, desk: item.desk, owner: item.owner, next: item.next,
   }));
 }

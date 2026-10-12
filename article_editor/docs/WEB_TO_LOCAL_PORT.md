@@ -32,7 +32,7 @@ article_editor/
 
 1. **목업 → 코어 연결**(가장 큰 작업): `mockData.js` 는 삭제(2026-10-02, 빈 상태 시작). 남은 화면을 계약으로 교체
    - 기사 저장/불러오기(`saveArticle`), 제목·부제(`assist` metadata), 요약(`assist` flow),
-     사진 검색·선택(`searchPhotos`·`photoBytes`), 팩트체크(`factcheckRun`), 녹취 저장(`storage` 경로 추가 필요)
+     사진 검색·선택(`searchPhotos`·`photoBytes`), 팩트체크(`runFactcheck`), 녹취 저장(`storage` 경로 추가 필요)
    - 코어에 없는 기능은 계약에 **추가**한다(예: `/api/interviews/*`, `/api/platform/convert`)
 2. ~~녹취(STT) 정리~~ — 완료(2026-10-02): `transcribe.js` 를 지우고 코어 `POST /api/interview/transcribe`
    (`core/ai/transcribe.py`, Whisper `whisper-1`)로 옮김. 외부 호출은 providers 경로(local=.env 키 / remote=백엔드

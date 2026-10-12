@@ -12,8 +12,13 @@ class FinalEditor(unittest.TestCase):
         self.assertIn('보고서식 종결',issues)
         self.assertIn('글과 단어의 관계가 모호한 명사 나열',issues)
     def test_final_editor_rejects_invented_numbers(self):
+        # 2026-10-08: 교열이 숫자를 지어내면 근거 검사를 거친 교열 전 문장으로 되돌린다(지어낸 숫자는 절대 출력하지 않음)
         with patch.object(server,'structured_call',return_value={'subtitle_1':'단어의 25%를 바꾸자 검출률 3%로 하락'}):
-            with self.assertRaises(server.RequestError):server.polish_subtitle_lines(['초안'],self.evidence,'제목',[{'evidence_sentence':self.evidence}])
+            out=server.polish_subtitle_lines(['단어의 25%를 바꾸자 검출률 17%로 하락'],self.evidence,'제목',[{'evidence_sentence':self.evidence}])
+        self.assertEqual(out,['단어의 25%를 바꾸자 검출률 17%로 하락'])
+        # 교열 전 문장도 근거와 다르면 막는다
+        with patch.object(server,'structured_call',return_value={'subtitle_1':'단어의 25%를 바꾸자 검출률 3%로 하락'}):
+            with self.assertRaises(server.RequestError):server.polish_subtitle_lines(['검출률 5%로 하락'],self.evidence,'제목',[{'evidence_sentence':self.evidence}])
     def test_real_subheadline_route_invokes_final_editor_and_preserves_title(self):
         fact={'subject':'워터마크','affected':'검출률','action':'단어의 25% 변경','result':'검출률 17%로 하락','time':'','place':'','model_input':self.evidence,'evidence_sentence':self.evidence}
         angle={'focus':'AI 글 워터마크','rationale':'새 기술','preferred_subject':'워터마크','subject_aliases':[], 'required_terms':['워터마크'], 'angle_core_facts':['새 기술'], 'headline_covered_facts':['AI 작성 여부 식별'], 'subtitle_gap_facts':['수정에 따른 검출률 변화'], 'evidence_sentences':[self.evidence],'subtitle_facts':[fact],'model_input':self.evidence}

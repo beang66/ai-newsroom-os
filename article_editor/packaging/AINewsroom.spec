@@ -78,6 +78,9 @@ node = vendor / 'node' / 'node.exe'
 binaries.append((str(node), 'node'))
 datas.append((str(vendor / 'node' / 'LICENSE'), 'node'))
 datas.append((str(vendor / 'bundle.json'), '.'))
+build_info = APP_DIR / 'app' / 'build_info.json'  # packaging/write_build_info.py 가 빌드 때 만든다(문제 보고의 앱 버전)
+if build_info.is_file():
+    datas.append((str(build_info), '.'))
 generator = vendor / 'platform-generator'
 generator_files = [path for path in generator.rglob('*') if path.is_file()]
 datas += [(str(path), str(Path('platform-generator') / path.relative_to(generator).parent))

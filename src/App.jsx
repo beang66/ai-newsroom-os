@@ -12,11 +12,12 @@ const DeskView = lazy(() => import("./components/DeskView"));
 const DataMapView = lazy(() => import("./features/data-map/DataMapView"));
 const LoginDialog = lazy(() => import("./components/LoginDialog"));
 const ModelsDialog = lazy(() => import("./components/ModelsDialog"));
+const SettingsDialog = lazy(() => import("./components/SettingsDialog"));
 
 import { createEmptyArticle } from "./data/article";
 import { core, coreSnapshot } from "./api/core";
-import { loadLatestArticle, loadStoredArticle } from "./api/editorial";
-import { publishCms } from "./api/editorial";
+import { loadLatestArticle, loadStoredArticle, getBackupKey } from "./api/editorial";
+import { clearBackup, readBackup, setBackupOwner, setBackupKey, sameDraft } from "./lib/draftBackup.js";
 import { useAutosave } from "./components/EditorialAssist";
 import { isRestoring } from "./restoreState";
 import PageHeader from "./components/PageHeader";
@@ -27,10 +28,6 @@ import "./workspace.css";
 const TAB_KEY = "ai-newsroom:lastTab";
 const readTab = () => { try { const tab = localStorage.getItem(TAB_KEY); return destinations.some((item) => item.id === tab) ? tab : "desk"; } catch { return "desk"; } };
 const writeTab = (tab) => { try { localStorage.setItem(TAB_KEY, tab); } catch { /* 저장 못 해도 그만 */ } };
-// 로그인 안내 띠를 닫았는지 — 이 PC 화면 설정(닫으면 다시 띄우지 않는다. 로그인은 헤더 버튼으로 언제든)
-const HINT_KEY = "ai-newsroom:loginHintDismissed";
-const hintDismissed = () => { try { return localStorage.getItem(HINT_KEY) === "1"; } catch { return false; } };
-const dismissHint = () => { try { localStorage.setItem(HINT_KEY, "1"); } catch { /* 저장 못 해도 그만 */ } };
 
 /** 앱을 열면 가장 최근에 저장된 원고를 불러와 이어서 작업한다(없으면 새 원고) */
 export default function App() {
@@ -41,12 +38,13 @@ export default function App() {
   const [workspaceVersion, setWorkspaceVersion] = useState(0);
   useEffect(() => {
     let alive = true;
-    loadLatestArticle(createEmptyArticle())
-      .then((a) => alive && setInitial(a || createEmptyArticle()))
-      .catch((error) => alive && setLoadError(error?.message || "최근 원고를 불러오지 못했습니다."));
+    // 로그인 상태를 먼저 알아본다: 로그인 유지가 켜져 있으면 이 요청에서 로그인이 되살아나, 이어서 불러오는 원고가 바로 열린다
     coreSnapshot()
       .then((snapshot) => alive && setCore(snapshot))
-      .catch(() => alive && setCore({ ok: false }));
+      .catch(() => alive && setCore({ ok: false }))
+      .then(() => alive && loadLatestArticle(createEmptyArticle()))
+      .then((a) => alive && a !== false && setInitial(a || createEmptyArticle()))
+      .catch((error) => alive && setLoadError(error?.message || "최근 원고를 불러오지 못했습니다."));
     return () => { alive = false; };
   }, [loadAttempt]);
   // 원고를 불러오는 동안에도 앱 틀(헤더·사이드바)은 바로 그린다. 불러오면 작업 영역을 한 번 새로 연다(key) —
@@ -69,7 +67,41 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   };
   const [article, setArticle] = useState(() => initialArticle || createEmptyArticle());
   const [mapArticleId, setMapArticleId] = useState(null);
-  const { status: saveStatus, flush, dirty } = useAutosave(article, setArticle);
+  // 저장: 자동 임시 저장 + 수동 저장(저장 버튼·Ctrl+S) + 실시간 백업. 보관소 '원고'는 마지막 수동 저장본
+  const save = useAutosave(article, setArticle);
+  const { status: saveStatus, flush, unsynced } = save;
+  // Ctrl+S(맥은 Cmd+S) — 어느 화면에서든 수동 저장
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        save.saveNow();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [save]);
+  // 앱이 강제 종료돼 코어에 못 간 원고가 이 PC 에 남아 있으면 복구할지 묻는다(같은 내용이면 조용히 지운다)
+  const ownerId = coreState.session?.userId || "";
+  setBackupOwner(ownerId); // 렌더 중에 먼저 정해 둔다: 자식이 쓰는 백업에도 같은 계정이 적힌다
+  // 원고 백업을 암호화할 키(계정별)를 코어에서 받아 메모리에만 둔다. 못 받으면 백업을 건너뛴다
+  useEffect(() => {
+    if (ownerId) getBackupKey().then(({ key }) => setBackupKey(key, ownerId)).catch(() => {});
+  }, [ownerId]);
+  useEffect(() => {
+    if (loading || initialArticle?.restoredFromBackup || !ownerId) return undefined;
+    let alive = true;
+    readBackup().then((backup) => {
+      if (!alive || !backup?.article) return;
+      if (sameDraft(backup.article, article)) { void clearBackup(); return; }
+      const when = new Date(backup.at).toLocaleString("ko-KR");
+      if (window.confirm(`저장되지 않은 원고가 남아 있습니다.\n(${when} · ${backup.article.title || "제목 없음"})\n\n프로그램이 갑자기 종료되기 전의 내용입니다. 복구할까요?\n취소하면 남은 내용을 지웁니다.`)) {
+        onReplaceArticle({ ...backup.article, restoredFromBackup: true });
+      } else void clearBackup();
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, ownerId]);
   const [storedArticles, setStoredArticles] = useState([]);
   const [listError, setListError] = useState("");
   const [listAttempt, setListAttempt] = useState(0);
@@ -86,13 +118,24 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   }, [loading, activeTab, saveStatus, listAttempt]);
   const currentId = article.articleId || article.id;
   const storedCurrent = storedArticles.find((item) => item.id === currentId);
+  // 지금 편집 중인 기사는 화면의 값으로 보인다(보관소 원고/송고 구분도 지금 상태 기준)
   const currentSummary = { ...storedCurrent, id: currentId,
     title: article.title, subtitle: article.subtitle, status: article.status,
+    state: { "작성 중": "draft", "송고 완료": "published", "수정 중": "editing" }[save.phase],
+    published: save.published || storedCurrent?.published || null,
     updated_at: storedCurrent?.updated_at || article.updatedAt };
   const articles = storedCurrent ? storedArticles.map((item) => item.id === currentId ? currentSummary : item) : [currentSummary, ...storedArticles];
   const changeArticle = async (id = null) => {
     if (switching) return;
     if (id === currentId) { setActiveTab("writer"); return; }
+    // 수동 저장하지 않은 변경이 있으면 먼저 묻는다(임시 저장은 아래에서 어차피 끝낸다)
+    if (save.dirty) {
+      if (!window.confirm("저장하지 않은 변경이 있습니다.\n지금 쓰던 내용을 저장한 뒤 열까요? (취소하면 열지 않습니다)")) return;
+      if (!(await save.saveNow())) {
+        setSwitchError("저장하지 못해 열지 않았습니다. 현재 원고는 유지됩니다. 상단의 저장 상태를 확인해 주세요.");
+        return;
+      }
+    }
     setSwitching(true);
     setSwitchError("");
     try {
@@ -104,12 +147,27 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       setSwitchError(`원고를 전환하지 못했습니다. 현재 원고는 유지됩니다. ${error.message}`);
     } finally { setSwitching(false); }
   };
-  const publishArticle = async () => {
-    const articleId = await flush();
-    return publishCms({ ...article, articleId });
+  // 보관소의 × — 기사를 지운다. 지금 쓰던 기사면 새 기사로 바꾼다(남은 백업도 지운다)
+  const deleteArticle = async (id) => {
+    const target = articles.find((item) => item.id === id);
+    if (!window.confirm(`'${target?.title || "제목 없는 기사"}' 기사를 보관소에서 삭제할까요?
+삭제하면 보관소와 이어서 작업에서 사라집니다.`)) return;
+    setSwitchError("");
+    try {
+      await core.deleteArticle(id);
+    } catch (error) {
+      setSwitchError(`기사를 삭제하지 못했습니다. ${error.message}`);
+      return;
+    }
+    if (id === currentId) {
+      await clearBackup();
+      onReplaceArticle(createEmptyArticle());
+    } else {
+      setStoredArticles((list) => list.filter((item) => item.id !== id));
+    }
   };
   useEffect(() => {
-    if (!dirty) return undefined;
+    if (!unsynced) return undefined;
     const beforeUnload = (event) => {
       if (isRestoring()) return;
       void flush();
@@ -123,12 +181,12 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       window.removeEventListener("beforeunload", beforeUnload);
       document.removeEventListener("visibilitychange", saveWhenHidden);
     };
-  }, [dirty, flush]);
+  }, [unsynced, flush]);
 
   // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
   const [showLogin, setShowLogin] = useState(false);
-  const [loginHintHidden, setLoginHintHidden] = useState(hintDismissed);
   const [showModels, setShowModels] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const loginWait = useRef([]); // 로그인 창 결과를 기다리는 요청들(AUTH_REQUIRED 로 멈춘 것)
   const loggedIn = useRef(false);
   useEffect(() => {
@@ -140,6 +198,8 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   }, []);
   const onSession = (session) => {
     loggedIn.current = Boolean(session?.signedIn);
+    // 로그아웃하면 화면에 남은 이전 계정의 기사·자료를 비운다(다시 열면 로그인부터 한다)
+    if (coreState.session?.signedIn && !session?.signedIn) { window.location.reload(); return; }
     setCore((prev) => ({ ...prev, session }));
   };
   const closeLogin = () => {
@@ -149,8 +209,14 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
     loginWait.current.splice(0).forEach((resolve) => resolve(ok));
   };
   const session = coreState.session;
-  const showLoginHint = !loading && !loginHintHidden && session && !session.signedIn
-    && !session.autoLogin?.available && !session.autoLogin?.enabled;
+  // 개발 자동 로그인처럼 로그인이 다른 경로로 끝나면 열려 있던 로그인 창을 닫고 기다리던 요청을 이어 간다
+  useEffect(() => {
+    if (session?.signedIn && showLogin) { loggedIn.current = true; closeLogin(); }
+  }, [session?.signedIn, showLogin]);
+  // 로그인하지 않았으면 자료를 볼 수 없으므로 로그인 창을 연다(코어가 자료 요청을 거절하기 전에도)
+  useEffect(() => {
+    if (session && !session.signedIn) setShowLogin(true);
+  }, [session?.signedIn, Boolean(session)]);
 
   // Sidebar collapse state (main 디자인: 기본은 세로로 긴 슬림 사이드바 접힘)
 
@@ -182,28 +248,19 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       {/* 1. Top Header */}
       <Header
         currentArticleTitle={article.title}
-        status={article.status}
+        status={save.phase}
         coreReady={coreState.ok}
         coreLabel={coreState.ok ? "코어 연결됨" : "코어 대기"}
         session={coreState.session}
         onSession={onSession}
         onLogin={() => setShowLogin(true)}
+        beforeLogout={() => (unsynced ? flush() : Promise.resolve())}
         onModels={() => setShowModels(true)}
         saveStatus={saveStatus}
         onHome={() => setActiveTab("desk")}
         onSearch={() => setActiveTab("archive")}
       />
 
-      {showLoginHint && !coreState.session?.signedIn && (
-        <div role="status" data-testid="login-hint"
-          className="mx-3 md:mx-5 mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-[#E7E4DE] bg-white px-4 py-2 text-xs text-[#666666]">
-          <span className="flex-1 min-w-[200px]">로그인하면 AI 추천 같은 서버 기능을 쓸 수 있어요. 글쓰기·저장·팩트체크는 로그인 없이도 됩니다.</span>
-          <button type="button" onClick={() => setShowLogin(true)}
-            className="px-3 py-1 font-bold text-white bg-[#292929] rounded-full cursor-pointer hover:bg-black">로그인</button>
-          <button type="button" onClick={() => { dismissHint(); setLoginHintHidden(true); }}
-            className="px-2 py-1 font-bold text-[#666666] hover:text-[#292929] cursor-pointer">다시 보지 않기</button>
-        </div>
-      )}
 
       {/* 2. Main Workspace Layout: Floating Slim Sidebar & Warm Minimal Workspace */}
       {switchError && <p role="alert" className="workspace-global-error">{switchError}</p>}
@@ -213,7 +270,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           session={coreState.session}
-          onModels={() => setShowModels(true)}
+          onSettings={() => setShowSettings(true)}
         />
 
         {/* Main Content Workspace */}
@@ -239,8 +296,13 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
                 setArticle={setArticle}
                 onOpenSearch={() => setShowSearchModal(true)}
                 saveStatus={saveStatus}
+                onSave={save.saveNow}
+                unsaved={save.dirty}
+                onRestoredSaved={save.markSaved}
+                onPublish={save.publishNow}
+                published={save.published}
+                saveTimes={save.times}
                 onModels={() => setShowModels(true)}
-                onPublish={publishArticle}
               />
             )}
 
@@ -260,7 +322,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
             )}
 
             {!loading && activeTab === "archive" && (
-              <ArchiveView article={article} articles={articles} onOpen={changeArticle}
+              <ArchiveView article={article} articles={articles} onOpen={changeArticle} onDelete={deleteArticle}
                 onMap={(id) => { setActiveTab("map"); setMapArticleId(id === article.id ? null : id); }} busy={switching} />
             )}
           </main>
@@ -269,8 +331,9 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       </div>
 
       <Suspense fallback={null}>
-        {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} />}
-        {showModels && <ModelsDialog onClose={() => setShowModels(false)} onBeforeRestore={() => (dirty ? flush() : Promise.resolve())} />}
+        {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} required={!session?.signedIn} />}
+        {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
+        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} onBeforeRestore={() => (unsynced ? flush() : Promise.resolve())} session={session} onSession={onSession} />}
 
       {/* Quick Source Search Modal during Writing */}
       {showSearchModal && (

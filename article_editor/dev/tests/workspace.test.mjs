@@ -60,14 +60,11 @@ test("every desk next step opens a real destination", async () => {
   }
 });
 
-test("archive shows desk schedule samples read-only with desk stage names", async () => {
-  const { deskArchiveItems, deskSchedule, stageOf } = await import("../../../src/data/desk.js");
-  assert.equal(stageOf("작성 중"), "편집 중");
-  assert.equal(stageOf("검증 완료"), "송고 준비");
-  assert.equal(stageOf("발행 완료"), "출고 완료");
-  assert.equal(stageOf("출고 완료"), "출고 완료");
+test("archive shows desk schedule samples read-only inside the 원고/송고 split", async () => {
+  const { deskArchiveItems, deskSchedule } = await import("../../../src/data/desk.js");
   const items = deskArchiveItems();
   assert.equal(items.length, deskSchedule.length);
-  assert.ok(items.every((item) => item.sample && item.id.startsWith("desk:")));
-  assert.equal(items.filter((item) => item.status === "출고 완료").length, 13);
+  assert.ok(items.every((item) => item.sample && item.id.startsWith("desk:") && !item.revision_no), "예시는 저장본이 아니어서 삭제·수정 대상이 아니다");
+  assert.equal(items.filter((item) => item.state === "published").length, 13, "출고 완료는 송고로 분류");
+  assert.ok(items.filter((item) => item.state !== "published").every((item) => item.stage !== "출고 완료"));
 });

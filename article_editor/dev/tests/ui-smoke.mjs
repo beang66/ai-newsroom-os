@@ -125,6 +125,7 @@ const server = spawn(process.env.PYTHON || "python", ["app/server.py"], {
     AI_NEWSROOM_DOCUMENTS: SMOKE_DOCS,
     AI_NEWSROOM_APPDATA: path.join(SMOKE_DOCS, "appdata"),
     AI_NEWSROOM_SKIP_DOTENV: "1", // 개발자의 실제 키·테스트 계정을 읽지 않는다
+    AI_NEWSROOM_FIXED_USER: "ui-smoke-user", // 계정마다 저장소가 따로라 코어는 이 사용자로 로그인한 것으로 본다(브라우저의 세션 목업과 별개)
     AI_NEWSROOM_KEY_SERVICE: "AI Newsroom (ui-smoke)",
     USE_LOCAL_MODELS: "false",
     PYTHONIOENCODING: "utf-8",
@@ -162,7 +163,8 @@ try {
     if (r.url().includes("/api/") && r.status() >= 500 && r.status() !== 503) problems.push(`${r.status()} ${r.url()}`);
     if (r.url().endsWith("/api/articles/save") && r.ok()) savedIds.add((await r.json()).articleId);
   });
-  page.on("dialog", (d) => d.dismiss()); // 화면의 alert 가 테스트를 멈추지 않게
+  // 화면의 alert 가 테스트를 멈추지 않게. 기사 전환 때 '저장하고 열까요?'는 수락(수동 저장 뒤 전환)
+  page.on("dialog", (d) => (/저장하지 않은 변경|삭제할까요/.test(d.message()) ? d.accept() : d.dismiss()));
 
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
   // 사이드바(main 디자인)의 메뉴 이름 — 접힌 상태에서는 버튼 title 로 보인다
@@ -175,13 +177,16 @@ try {
   const snapshot = (name) => page.screenshot({ path: fileURLToPath(new URL(`temp/${name}.png`, ROOT)), fullPage: true });
 
   // 로그인·모델 설치는 브라우저에서 고정 응답: 실제 인증·다운로드를 전혀 호출하지 않는다.
-  let session = { signedIn: false, email: null, userId: null, expiresIn: 0, supabase: true, backend: true,
+  let session = { signedIn: true, email: "reporter@example.test", userId: "smoke-user", expiresIn: 3600, supabase: true, backend: true,
     autoLogin: { available: false, enabled: false, email: "", error: "" } };
   let finishSignIn, onSignInStarted;
+  const signupCalls = [];
+  const signInRemember = [];
   const reply = (route, data, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(data) });
   await page.route("**/api/session", async (route) => {
     if (route.request().method() === "POST") {
-      const { email, password } = route.request().postDataJSON();
+      const { email, password, remember } = route.request().postDataJSON();
+      signInRemember.push(remember);
       await new Promise((resolve) => { finishSignIn = resolve; onSignInStarted(); }); // 응답 전에 busy·비밀번호 초기화 확인
       if (password === "bad-password") return reply(route, { error: "이메일 또는 비밀번호를 확인해 주세요." }, 401);
       session = { ...session, signedIn: true, email, userId: "smoke-user", expiresIn: 3600 };
@@ -189,6 +194,15 @@ try {
     return reply(route, session);
   });
   await page.route("**/api/session/**", (route) => {
+    if (route.request().url().endsWith("/signup")) {
+      const { email, password } = route.request().postDataJSON();
+      signupCalls.push({ email, passwordLength: password.length });
+      return reply(route, { ...session, signedIn: false, needsConfirmation: true });
+    }
+    if (route.request().url().endsWith("/keep")) {
+      session = { ...session, keepLogin: route.request().postDataJSON().enabled };
+      return reply(route, session);
+    }
     if (route.request().url().endsWith("/auto")) {
       const { enabled } = route.request().postDataJSON();
       session = { ...session, signedIn: enabled, email: enabled ? "dev@example.test" : null,
@@ -282,7 +296,7 @@ try {
   await page.waitForTimeout(1700);
   assert.equal(savePayloads.length, 1, "첫 요청이 끝나기 전에 두 번째 저장을 시작하지 않는다");
   releaseFirst();
-  await page.getByTestId("save-status").getByText("자동 저장됨").waitFor();
+  await page.getByTestId("save-status").getByText("임시 저장됨").waitFor();
   assert.equal(savePayloads.length, 2);
   assert.equal(savePayloads[1].draft.articleId, [...savedIds][0]);
   const queueSaved = await (await page.request.get(`${BASE}/api/articles/latest`)).json();
@@ -291,22 +305,35 @@ try {
   const cleared = page.waitForResponse((response) => response.url().endsWith('/api/articles/save') && response.ok());
   await queueBody.fill("");
   await cleared;
-  await page.getByTestId("save-status").getByText("자동 저장됨").waitFor();
+  await page.getByTestId("save-status").getByText("임시 저장됨").waitFor();
   // 1. 코어 연결 — UI 가 계약(web/src/api)으로 /api/status·/api/session 을 받아 헤더에 반영
   await see("코어 연결됨");
   const login = page.getByTestId("login-dialog");
-  // 시작할 때 로그인 창으로 가로막지 않고, 작업을 막지 않는 안내 띠만 보인다(포커스를 빼앗지 않음)
-  const loginHint = page.getByTestId("login-hint");
-  await loginHint.waitFor();
-  assert.equal(await login.count(), 0, "시작할 때 로그인 창이 작업을 가로막지 않아야 합니다");
-  await loginHint.getByRole("button", { name: "로그인", exact: true }).click();
+  // 로그인한 상태에서는 로그인 창이 열리지 않고, 로그아웃하면 화면을 비우고(새로고침) 닫을 수 없는 로그인 창이 뜬다
+  assert.equal(await login.count(), 0, "로그인한 상태에서는 로그인 창이 없어야 합니다");
+  await page.locator("header").getByText("reporter@example.test", { exact: true }).waitFor();
+  await page.getByTestId("logout-button").click();
   await login.waitFor();
+  assert.equal(await login.getByRole("button", { name: "나중에", exact: true }).count(), 0, "로그인 전에는 건너뛸 수 없어야 합니다");
+  assert.equal(await login.getByRole("button", { name: "닫기", exact: true }).count(), 0, "로그인 전에는 창을 닫을 수 없어야 합니다");
+  await page.keyboard.press("Escape");
+  assert.equal(await login.count(), 1, "Esc 로도 닫히지 않아야 합니다");
   assert.equal(await page.getByTestId("login-email").evaluate((el) => el === document.activeElement), true);
-  await login.getByRole("button", { name: "나중에", exact: true }).click();
-  await go("보관함");
-  await go("기사 작성");
-  assert.equal(await login.count(), 0, "닫은 로그인 창이 다시 열리지 않아야 합니다");
-  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).click();
+  // 회원가입: 비밀번호 확인이 다르면 보내지 않고, 이메일 확인이 켜져 있으면 안내 후 로그인 화면으로 돌아온다
+  await page.getByTestId("login-mode-toggle").click();
+  await page.getByTestId("signup-confirm").waitFor();
+  await page.getByTestId("login-email").fill("new@example.test");
+  await page.getByTestId("login-password").fill("long-enough-1");
+  await page.getByTestId("signup-confirm").fill("different-1");
+  await page.getByTestId("login-submit").click();
+  await page.getByTestId("login-error").getByText("비밀번호 확인이 일치하지 않아요.").waitFor();
+  assert.equal(signupCalls.length, 0, "확인이 다르면 가입 요청을 보내지 않습니다");
+  await page.getByTestId("login-password").fill("long-enough-1");
+  await page.getByTestId("signup-confirm").fill("long-enough-1");
+  await page.getByTestId("login-submit").click();
+  await page.getByTestId("login-notice").getByText(/확인 메일/).waitFor();
+  assert.deepEqual(signupCalls, [{ email: "new@example.test", passwordLength: 13 }]);
+  assert.equal(await page.getByTestId("signup-confirm").count(), 0, "안내 뒤에는 로그인 화면으로 돌아옵니다");
   await page.getByTestId("login-email").fill("reporter@example.test");
   await page.getByTestId("login-password").fill("bad-password");
   let signInStarted = new Promise((resolve) => { onSignInStarted = resolve; });
@@ -318,20 +345,18 @@ try {
   await page.getByTestId("login-error").getByText("이메일 또는 비밀번호를 확인해 주세요.").waitFor();
   assert.equal(await page.getByTestId("login-error").getAttribute("role"), "alert");
   await page.getByTestId("login-password").fill("valid-password");
+  await page.getByTestId("login-remember").check();
   signInStarted = new Promise((resolve) => { onSignInStarted = resolve; });
   await page.getByTestId("login-submit").click();
   await signInStarted;
   assert.equal(await page.getByTestId("login-password").inputValue(), "");
   finishSignIn();
   await login.waitFor({ state: "detached" });
+  assert.deepEqual(signInRemember, [false, true], "로그인 유지 체크는 기본 꺼짐이고, 켜면 요청에 실린다");
   await page.locator("header").getByText("reporter@example.test", { exact: true }).waitFor();
-  await page.getByTestId("logout-button").click();
-  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).waitFor();
-  assert.equal(await login.count(), 0, "로그아웃 뒤에는 안내를 다시 강제로 열지 않습니다");
-  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).click();
-  assert.equal(await page.getByTestId("login-password").inputValue(), "", "성공한 로그인 뒤에도 비밀번호를 보관하지 않습니다");
-  await page.keyboard.press("Escape");
-  await login.waitFor({ state: "detached" });
+  await go("보관함");
+  await go("기사 작성");
+  assert.equal(await login.count(), 0, "로그인한 뒤에는 로그인 창이 다시 열리지 않아야 합니다");
   // 나머지 기존 단계의 새로고침에서는 로그인한 상태로 유지한다.
   session = { ...session, signedIn: true, email: "reporter@example.test" };
 
@@ -365,13 +390,51 @@ try {
   await models.waitFor({ state: "detached" });
   await noMorePolling();
   installOutcome = "complete";
-  await page.getByRole("button", { name: "모델 설치 설정", exact: true }).click();
+  await page.locator("header").getByRole("button", { name: "모델 설치", exact: true }).click();
   await models.getByText("미설치 모델 전체 용량: 2.0 MB", { exact: true }).waitFor();
   await page.getByTestId("models-install").click();
   await models.getByText("모두 설치됨", { exact: true }).waitFor();
   assert.equal(await page.getByTestId("models-install").count(), 0);
   await noMorePolling();
   await models.getByRole("button", { name: "닫기", exact: true }).click();
+
+  // 환경 설정은 모델 설치와 별개 창: 클라우드 백업은 기본 켜짐이고 끄면 다시 열어도 꺼져 있다
+  const settings = page.getByTestId("settings-dialog");
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await settings.waitFor();
+  assert.equal(await page.getByTestId("models-install").count(), 0, "환경 설정 창에는 모델 설치가 없어야 합니다");
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
+  assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), true, "클라우드 백업 기본값은 켜짐");
+  await page.getByTestId("settings-cloud-backup").uncheck();
+  await settings.getByRole("button", { name: "닫기", exact: true }).click();
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
+  assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), false, "끈 설정이 유지됨");
+  await page.getByTestId("settings-cloud-backup").check();
+  // 로그인 유지: 로그인 때 켠 상태가 반영되고, 설정에서 끄고 켤 수 있다
+  session = { ...session, keepLogin: true };
+  await page.reload();
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await page.getByTestId("settings-keep-login").waitFor();
+  assert.equal(await page.getByTestId("settings-keep-login").isChecked(), true);
+  await page.getByTestId("settings-keep-login").uncheck();
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-keep-login"]')?.checked === false);
+  assert.equal(session.keepLogin, false, "끄면 코어에 알린다");
+  // 문제 보고: 진단 정보를 만들어 보여 주고, 개인 정보(이메일)는 들어 있지 않다
+  await page.getByTestId("settings-copy-diagnostics").click();
+  const diagText = await page.getByTestId("settings-diagnostics-text").inputValue();
+  assert.match(diagText, /앱 버전: /);
+  assert.match(diagText, /파이프라인: /);
+  assert.equal(diagText.includes("reporter@example.test"), false, "진단 정보에 이메일이 없어야 합니다");
+  // 팩트체크 로컬 모델 사용: 기본 켜짐, 끄면 유지(끄면 모든 문장을 외부 모델이 판정)
+  assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), true, "로컬 팩트체크 기본값은 켜짐");
+  await page.getByTestId("settings-local-factcheck").uncheck();
+  await settings.getByRole("button", { name: "닫기", exact: true }).click();
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-local-factcheck"]')?.disabled === false);
+  assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), false, "끈 로컬 팩트체크 설정이 유지됨");
+  await page.getByTestId("settings-local-factcheck").check();
+  await settings.getByRole("button", { name: "닫기", exact: true }).click();
 
   // 목업 없이 빈 원고로 시작해야 한다
   const body = page.getByPlaceholder("기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다...");
@@ -381,41 +444,43 @@ try {
   await body.fill("스모크 테스트 본문입니다. ".repeat(8));
 
   // 2. 편집 보조(옛 시험 UI 기능 이식): 제목·부제 추천, 흐름 요약, 자동 저장
-  await page.getByRole("button", { name: "다시 생성" }).click();
+  await page.getByRole("button", { name: "AI 추천" }).first().click(); // 제목 추천(부제와 같은 방식)
   await page.getByRole("button", { name: "스텁 제목 둘" }).click();
   assert.equal(await page.getByPlaceholder("기사 제목을 입력하거나 AI 추천을 확인하세요").inputValue(), "스텁 제목 둘");
-  await page.getByRole("button", { name: "AI 추천" }).click();
+  await page.getByRole("button", { name: "AI 추천" }).nth(1).click(); // 부제 추천
   await page.getByRole("button", { name: "스텁 부제 하나" }).click();
   assert.equal(await page.getByPlaceholder("기사 부제를 입력하세요").inputValue(), "스텁 부제 하나");
-  await see("자동 저장됨"); // 제목·부제가 바뀌었으니 1.5초 뒤 코어에 저장
-  await page.getByRole("button", { name: "흐름 요약" }).click();
-  await page.getByTestId("flow-summary").getByText("스텁 흐름 둘").waitFor();
-  await page.getByTestId("flow-summary").getByRole("button", { name: "×" }).click();
+  await see("임시 저장됨"); // 제목·부제가 바뀌었으니 1.5초 뒤 코어에 저장
+  // (흐름 요약은 10-08 미리보기 정리 때 뺐다)
 
-  // 3. 사진 찾기: 기사 기반 검색어 → Unsplash 검색 결과 3장
-  await page.getByRole("button", { name: /사진·미디어 편집/ }).click();
-  await page.getByTestId("photo-finder").getByRole("button", { name: "stub wafer" }).click();
-  await page.getByTestId("photo-finder").locator("img").nth(2).waitFor();
-  await page.getByRole("button", { name: "닫기", exact: true }).click();
+  // 3. 사진 검색하기: 본문 기반 검색어 → Unsplash 검색 결과 3장
+  await page.getByRole("button", { name: "사진 넣기", exact: true }).click();
+  await page.getByRole("menuitem", { name: "사진 검색하기" }).click();
+  const photoSearch = page.getByTestId("photo-search");
+  await photoSearch.getByRole("button", { name: "stub wafer" }).click();
+  await photoSearch.getByTestId("photo-card").nth(2).locator("img").waitFor();
+  await photoSearch.getByRole("button", { name: "닫기" }).click();
 
-  // 3-1. 로컬 사진 → PhotoEditor → 편집본을 기사에 반영
-  await page.getByRole("button", { name: /사진·미디어 편집/ }).click();
-  await page.locator('input[type="file"][accept="image/jpeg,image/png,image/webp"]').setInputFiles({
+  // 3-1. 사진 첨부하기: 내 파일 → 사진 편집 → 본문에 넣기(본문에 사진 자리 한 줄)
+  await page.getByRole("button", { name: "사진 넣기", exact: true }).click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("menuitem", { name: "사진 첨부하기" }).click();
+  await (await chooser).setFiles({
     name: "smoke.png",
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8//8/AwMDEwMDAwMDAwAkBgMB/DXemwAAAABJRU5ErkJggg==", "base64"),
   });
-  const photoEditor = page.getByTestId("photo-editor");
-  await photoEditor.waitFor();
-  await photoEditor.getByRole("button", { name: "1:1" }).click();
-  await photoEditor.getByLabel("사진 설명").fill("스모크 사진");
-  await photoEditor.getByRole("button", { name: "본문에 넣기" }).click();
-  await see("편집본을 반영하고 본문 끝에 사진 태그를 삽입했습니다.");
+  const imageEditor = page.getByTestId("image-editor");
+  await imageEditor.waitFor();
+  await imageEditor.getByLabel("사진 설명").fill("스모크 사진");
+  await imageEditor.getByTestId("image-apply").click();
+  await imageEditor.waitFor({ state: "detached" });
+  await page.getByTestId("body-with-photos").locator("img").first().waitFor(); // 본문 속 사진 자리에 사진이 보인다
 
   // 4. 작성·검토 → 팩트체크 서랍
   await page.getByText("기사 팩트체크 & 근거자료").first().click();
   await see("팩트체크 & 근거자료 검증");
-  // 텍스트 자료 → 코어 factcheckRun. 모델·런타임이 없는 PC 에서는 설치 안내가 나와야 한다
+  // 텍스트 자료 → 코어 runFactcheck. 모델·런타임이 없는 PC 에서는 설치 안내가 나와야 한다
   const factcheckReady = (await (await fetch(`${BASE}/api/factcheck/status`)).json()).ready;
   // PDF·HWP·DOCX 는 코어가 추출한다 — 깨진 파일이면 파일 목록에 사유가 보여야 한다
   await page.locator('input[type="file"][accept*=".hwp"]').setInputFiles({
@@ -460,7 +525,9 @@ try {
     })) }) });
   });
   // 자료 등록이 따로 저장돼야 아래 이력 복원(바로 앞 저장본)이 취재자료를 잃지 않는다
-  await page.getByTestId("save-status").getByText("자동 저장됨").waitFor({ timeout: 15_000 });
+  await page.getByTestId("save-status").getByText("임시 저장됨").waitFor({ timeout: 15_000 });
+  await page.keyboard.press("Control+s"); // 저장 이력에는 수동 저장만 남는다 — 취재자료가 들어간 판을 이력에 남긴다
+  await page.getByTestId("save-status").getByText(/^저장됨/).waitFor({ timeout: 15_000 });
   await body.fill((await body.inputValue()) + " 순서형 검사용 새 문장을 하나 더 씁니다.");
   const sequence = page.getByTestId("fact-sequence");
   await sequence.getByText("문제 문장:").waitFor({ timeout: 15_000 });
@@ -473,10 +540,11 @@ try {
   assert.match(String(globalThis.__fcSnapshot), /^[0-9a-f-]{36}$/);
   await page.unroute("**/api/factcheck/run");
   // 저장 이력: 목록 → 미리보기(읽기 전용) → 옛 저장본으로 복원(이력은 그대로 남는다)
-  // "자동 저장됨" 문구는 이전 저장 때 이미 떠 있을 수 있고, 최신 원고(latest)는 이력 목록보다 몇 ms 먼저 바뀔 수 있다.
+  // "임시 저장됨" 문구는 이전 저장 때 이미 떠 있을 수 있고, 최신 원고(latest)는 이력 목록보다 몇 ms 먼저 바뀔 수 있다.
   // 방금 쓴 문장이 **저장 이력의 최신 저장본**에 들어간 뒤에 이력을 연다 — 아니면 nth(1) 이 취재자료를 올리기 전의
   // 옛 저장본(#1)이 되어 복원 뒤 단계(취재자료 1건)가 깨진다.
   // (page.waitForFunction 은 async 조건의 Promise 를 기다리지 않고 바로 통과하므로, 노드 쪽에서 evaluate 로 반복 확인한다)
+  await page.keyboard.press("Control+s");
   for (let tries = 0; ; tries += 1) {
     const saved = await page.evaluate(async () => {
       const id = (await (await fetch("/api/articles/latest")).json()).draft?.articleId;
@@ -489,7 +557,7 @@ try {
     assert.ok(tries < 150, "새 문장이 저장 이력에 들어가지 않았습니다");
     await page.waitForTimeout(100);
   }
-  await page.getByTestId("save-status").getByText("자동 저장됨").waitFor({ timeout: 15_000 });
+  await page.getByTestId("save-status").getByText(/^저장됨/).waitFor({ timeout: 15_000 });
   await page.getByRole("button", { name: "저장 이력" }).click();
   const history = page.getByTestId("version-history");
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="revision-list"] button').length >= 2);
@@ -584,24 +652,20 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value === "스모크 인스타그램 도입"), null, { timeout: 10_000 });
   await go("기사 작성");
   // 7. 좁은 화면에서도 첫 화면이 오류 없이 그려지는지
-  // 개발 계정 자동 로그인이 사용 가능하면 로그인 안내를 띄우지 않고 기존 토글도 동작한다.
-  session = { ...session, signedIn: false, email: null,
-    autoLogin: { available: true, enabled: false, email: "dev@example.test", error: "" } };
+  // 개발 계정 자동 로그인이 켜져 있으면 로그인된 상태이고, 끄면 로그아웃되어 로그인 창이 뜬다
+  session = { ...session, signedIn: true, email: "dev@example.test",
+    autoLogin: { available: true, enabled: true, email: "dev@example.test", error: "" } };
   await page.reload();
   const autoLogin = page.getByTestId("auto-login-toggle");
   await autoLogin.waitFor();
-  assert.equal(await login.count(), 0);
-  await autoLogin.click();
-  await page.locator("header").getByText("dev@example.test", { exact: true }).waitFor();
-  await autoLogin.click();
-  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).waitFor();
-  assert.equal(await login.count(), 0);
-  session = { ...session, autoLogin: { ...session.autoLogin, enabled: true } };
-  await page.reload();
   await autoLogin.getByText(/켜짐/).waitFor();
-  assert.equal(await login.count(), 0, "자동 로그인이 켜져 있으면 실패 상태여도 안내를 강제로 열지 않습니다");
+  assert.equal(await login.count(), 0, "자동 로그인으로 로그인된 상태에서는 로그인 창이 없어야 합니다");
+  await autoLogin.click();
+  await login.waitFor();
   session = { ...session, signedIn: true, email: "reporter@example.test",
     autoLogin: { available: false, enabled: false, email: "", error: "" } };
+  await page.reload();
+  await page.locator("header").getByText("reporter@example.test", { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await go('오늘의 데스크');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -631,7 +695,7 @@ try {
   await page.getByRole("dialog", { name: "취재자료 보기" }).getByTitle("닫기").click();
   await drawer.getByRole("button", { name: "확인 및 닫기" }).click();
 
-  for (const name of ["headlines", "subtitles", "article_flow_summary", "photo_keywords", "search:stub wafer", "stt:multipart/form-data"])
+  for (const name of ["headlines", "subtitles", "photo_keywords", "search:stub wafer", "stt:multipart/form-data"])
     assert.ok(stubCalls.includes(name), `코어가 백엔드로 ${name} 를 요청하지 않았습니다: ${stubCalls}`);
   assert.equal(savedIds.size, 1, "같은 원고는 화면을 오가도 한 파일에 저장돼야 합니다: " + [...savedIds]);
   // 새 기사로 전환할 때 디바운스가 남아 있어도 현재 원고를 먼저 저장한다.
@@ -643,11 +707,11 @@ try {
   await page.waitForFunction(() => document.querySelector('textarea[placeholder="기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다..."]')?.value === '');
   await page.getByPlaceholder('기사 제목을 입력하거나 AI 추천을 확인하세요').fill('전환 검증 두 번째 기사');
   await body.fill('두 번째 기사 본문입니다. 저장 ID를 분리합니다.');
-  await page.getByTestId('save-status').getByText('자동 저장됨').waitFor();
+  await page.getByTestId('save-status').getByText('임시 저장됨').waitFor();
   assert.equal(savedIds.size, 2, '새 기사는 별도 ID에 저장한다');
   await go('보관함');
-  await page.getByTestId('archive-view').getByRole('button', { name: /스텁 제목 둘/ }).click();
-  await page.getByRole('button', { name: '원고 열기', exact: true }).click();
+  await page.getByTestId('archive-view').getByRole('button', { name: /^\d+\s*스텁 제목 둘/ }).click();
+  await page.getByRole('button', { name: '수정', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('input[placeholder="기사 제목을 입력하거나 AI 추천을 확인하세요"]')?.value === '스텁 제목 둘');
   assert.ok((await body.inputValue()).includes('전환 직전 보존 문장'));
   // 전환 저장이 실패하면 현재 원고를 버리거나 새 기사로 넘어가지 않는다.
@@ -659,10 +723,17 @@ try {
   await page.unroute('**/api/articles/save');
   await go('기사 작성');
   assert.ok((await body.inputValue()).includes('저장 실패 시 보존 문장'));
+  // 보관소 × 로 기사 삭제(지금 쓰는 기사가 아닌 것) → 목록에서 사라지고 코어 목록에서도 빠진다
+  await go('보관함');
+  const archive = page.getByTestId('archive-view');
+  await archive.getByRole('button', { name: '전환 검증 두 번째 기사 삭제' }).click();
+  await archive.getByRole('button', { name: /^\d+\s*전환 검증 두 번째 기사/ }).waitFor({ state: 'detached' });
+  const remaining = (await (await page.request.get(`${BASE}/api/articles`)).json()).articles.map((item) => item.title);
+  assert.ok(!remaining.includes('전환 검증 두 번째 기사'), '삭제한 기사가 코어 목록에 남았습니다: ' + remaining);
   assert.deepEqual(problems, [], "브라우저 오류:\n" + problems.join("\n"));
-  console.log("PASS ui-smoke: 로그인·로그아웃·개발 자동 로그인·모델 설치/취소/오류/폴링·코어 연결·제목/부제 추천·흐름 요약·자동 저장·사진 찾기·PhotoEditor·팩트체크 서랍·자료 검색·실제 platform-generator 경계·보관함·녹취 전사·모바일 폭");
+  console.log("PASS ui-smoke: 로그인·로그아웃·개발 자동 로그인·모델 설치/취소/오류/폴링·코어 연결·제목/부제 추천·임시 저장·수동 저장·사진 검색·사진 편집·팩트체크 서랍·자료 검색·실제 platform-generator 경계·보관함·녹취 전사·모바일 폭");
 } catch (error) {
-  if (page) await page.screenshot({ path: new URL("temp/ui-smoke-failure.png", ROOT).pathname.slice(1) }).catch(() => {});
+  if (page) await page.screenshot({ path: fileURLToPath(new URL("temp/ui-smoke-failure.png", ROOT)) }).catch(() => {});
   console.error("FAIL ui-smoke:", error.stack || error.message);
   if (problems.length) console.error(problems.join("\n"));
   process.exitCode = 1;

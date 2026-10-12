@@ -45,8 +45,15 @@ def set_session(access: str, refresh: str = '', expires_in_seconds: int = 0, **i
             refresh=refresh or _STATE['refresh'],
             expires_at=(time.time() + int(expires_in_seconds)) if expires_in_seconds else 0.0,
             email=identity.get('email', _STATE['email']),
-            user_id=identity.get('user_id', _STATE['user_id']),
+            user_id=identity.get('user_id') or _STATE['user_id'],
         )
+
+
+def signed_user() -> str:
+    """로그인한 사용자 id(없으면 ''). 로컬 자료 저장소를 고르는 기준이다.
+    액세스 토큰이 만료돼도 갱신 토큰이 있으면 로그인한 것으로 본다(로컬 작업은 이어진다). 로그아웃하면 둘 다 지워진다."""
+    with _LOCK:
+        return _STATE['user_id'] if (_STATE['token'] or _STATE['refresh']) else ''
 
 
 def clear() -> None:

@@ -1,0 +1,75 @@
+"""로컬 팩트체크 끔: 모든 문장을 외부 모델이 판정하고, 판정 기록은 로컬 판정과 따로 쓴다."""
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+import env_isolation  # noqa: F401  (core 보다 먼저)
+import vault_fixture  # noqa: F401
+from core import factcheck_memo
+from core.ai.factcheck import external, service
+from core.managers import ai_manager, session_manager, settings_manager
+
+
+class ExternalModeTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.file = Path(temp.name) / 'settings.json'
+        for module in (session_manager, settings_manager):
+            patcher = mock.patch.object(module, 'SETTINGS', self.file)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def set_local(self, value):
+        settings_manager.SettingsManager().update({'localFactcheck': value})
+
+    def test_setting_default_on_validates_and_changes_memo_version(self):
+        self.assertTrue(settings_manager.local_factcheck())
+        local_version = factcheck_memo.model_version()
+        self.set_local(False)
+        self.assertFalse(settings_manager.local_factcheck())
+        self.assertEqual(factcheck_memo.model_version(), local_version + '+external')
+        with self.assertRaises(Exception):
+            settings_manager.SettingsManager().update({'localFactcheck': 'no'})
+
+    def test_status_does_not_need_judge_model_when_external(self):
+        self.set_local(False)
+        with mock.patch('core.ai.factcheck.paths.JUDGE_DIR', Path(tempfile.gettempdir()) / 'no-such-judge'), \
+                mock.patch('core.ai.factcheck.retrieval.create_encoder') as encoder:
+            encoder.return_value.available.return_value = True
+            status = ai_manager.AIManager().factcheck_status()
+        self.assertEqual(status['mode'], 'external')
+        self.assertFalse(status['models']['judge'])
+        self.assertTrue(status['ready'])
+
+    def test_external_pass_maps_verdicts_and_spans(self):
+        chunks = [{'text': '매출은 20억원이다.', 'material_title': '자료A', 'material_id': 'a'}]
+        nodes = [{'id': 'n1', 'type': 'TEXT', 'text': '매출은 30억원이다.'}, {'id': 'n2', 'type': 'TEXT', 'text': '대표는 김씨다.'}]
+        reply = {'results': [
+            {'id': 'n1', 'verdict': 'CONFLICT', 'reason': '수치가 다름', 'wrong_text': '30억원', 'evidence_text': '20억원'},
+            {'id': 'n2', 'verdict': 'NOT_ENOUGH_INFO', 'reason': '확인 불가', 'wrong_text': '', 'evidence_text': ''}]}
+        with mock.patch.object(service, '_retrieve_qwen_candidates', return_value=chunks), \
+                mock.patch.object(service, '_direct_span_match', return_value=None), \
+                mock.patch.object(external, 'judge', return_value=reply) as judge:
+            done = service._external_pass(nodes, chunks, [], {})
+        self.assertEqual(len(judge.call_args[0][0]['items']), 2, '문장 둘을 한 번에 보낸다')
+        conflict = done['n1'][1]
+        self.assertEqual((conflict['status'], conflict['provider']), ('CONFLICT', 'external'))
+        self.assertEqual((conflict['conflict_spans'][0]['claim_text'], conflict['conflict_spans'][0]['evidence_text']), ('30억원', '20억원'))
+        self.assertEqual(done['n2'][1]['status'], 'EVIDENCE_GAP')
+
+    def test_review_workspace_end_to_end_without_local_judge(self):
+        materials = [{'id': 'a', 'title': '자료A', 'content': '2025년 매출은 20억원이다. 대표는 박씨다.'}]
+        nodes = [{'id': 'n1', 'type': 'TEXT', 'text': '2025년 매출은 30억원이다.'}]
+        reply = {'results': [{'id': 'n1', 'verdict': 'CONFLICT', 'reason': '수치가 다름', 'wrong_text': '30억원', 'evidence_text': '20억원'}]}
+        with mock.patch.object(service, '_get_provider', side_effect=AssertionError('로컬 판정기를 불러오면 안 된다')),                 mock.patch('core.ai.factcheck.retrieval.get_vector_cache', side_effect=RuntimeError('네트워크 없이')),                 mock.patch.object(service, '_retrieve_qwen_candidates', side_effect=lambda claim, node, chunks, **kw: chunks[:3]),                 mock.patch.object(external, 'judge', return_value=reply):
+            result = service.review_workspace(nodes, materials, external=True)
+        self.assertEqual(result['results'][0]['status'], 'CONFLICT')
+        self.assertEqual(result['results'][0]['provider'], 'external')
+        self.assertEqual(result['node_statuses']['n1'], 'unverified')
+
+
+if __name__ == '__main__':
+    unittest.main()

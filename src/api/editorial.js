@@ -9,6 +9,7 @@ export const signIn = (email, password, remember = false) => core.signIn(email, 
 export const signUp = (email, password, remember = false) => core.signUp(email, password, { remember });
 export const setKeepLogin = (enabled) => core.setKeepLogin(enabled);
 export const signOut = () => core.signOut();
+export const getDiagnostics = (signal) => core.getDiagnostics(signal);
 export const getSettings = (signal) => core.getSettings(signal);
 export const saveSettings = (patch, signal) => core.saveSettings(patch, signal);
 export const modelStatus = (signal) => core.models(signal);

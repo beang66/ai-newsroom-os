@@ -420,6 +420,12 @@ try {
   await page.getByTestId("settings-keep-login").uncheck();
   await page.waitForFunction(() => document.querySelector('[data-testid="settings-keep-login"]')?.checked === false);
   assert.equal(session.keepLogin, false, "끄면 코어에 알린다");
+  // 문제 보고: 진단 정보를 만들어 보여 주고, 개인 정보(이메일)는 들어 있지 않다
+  await page.getByTestId("settings-copy-diagnostics").click();
+  const diagText = await page.getByTestId("settings-diagnostics-text").inputValue();
+  assert.match(diagText, /앱 버전: /);
+  assert.match(diagText, /파이프라인: /);
+  assert.equal(diagText.includes("reporter@example.test"), false, "진단 정보에 이메일이 없어야 합니다");
   // 팩트체크 로컬 모델 사용: 기본 켜짐, 끄면 유지(끄면 모든 문장을 외부 모델이 판정)
   assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), true, "로컬 팩트체크 기본값은 켜짐");
   await page.getByTestId("settings-local-factcheck").uncheck();

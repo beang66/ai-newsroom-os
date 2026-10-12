@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { exportVault, restoreVault, getSettings, saveSettings, setKeepLogin } from "../api/editorial";
+import { exportVault, restoreVault, getSettings, saveSettings, setKeepLogin, getDiagnostics } from "../api/editorial";
 import AppDialog from "./AppDialog";
 import { beginRestore, endRestore } from "../restoreState";
 
@@ -20,6 +20,29 @@ export default function SettingsDialog({ onClose, onBeforeRestore, session, onSe
     });
     return () => request.abort();
   }, []);
+
+  const [diagnostics, setDiagnostics] = useState("");
+  const [diagnosticsNotice, setDiagnosticsNotice] = useState("");
+  const copyDiagnostics = async () => {
+    setSettingsError(""); setDiagnosticsNotice("");
+    try {
+      const d = await getDiagnostics();
+      const text = [
+        `앱 버전: ${d.appVersion}${d.builtAt ? ` (빌드 ${d.builtAt})` : ""}`,
+        `파이프라인: ${d.pipelineVersion}`,
+        `연결 방식: ${window.pywebview?.api?.core ? "IPC" : "HTTP"} · ${d.frozen ? "배포본(EXE)" : "개발 실행"}`,
+        `OS: ${d.os}`,
+        `팩트체크: ${d.factcheckMode === "local" ? "로컬 모델" : "외부 모델"}`,
+        `모델: ${d.models.map((m) => `${m.id} ${m.installed ? "설치됨" : `미설치(${m.files})`}`).join(", ") || "없음"}`,
+        `로그인: ${d.signedIn ? "예" : "아니오"} · 로그인 유지: ${d.keepLogin ? "켜짐" : "꺼짐"}`,
+        `설정: ${JSON.stringify(d.settings)}`,
+        `저장 실패 기록: ${d.storageErrorLog}`,
+      ].join("\n");
+      setDiagnostics(text);
+      try { await navigator.clipboard.writeText(text); setDiagnosticsNotice("복사했어요. 문제 보고에 붙여 넣어 주세요."); }
+      catch { setDiagnosticsNotice("자동 복사가 안 돼요. 아래 내용을 직접 복사해 주세요."); }
+    } catch (e) { setSettingsError(e?.message || String(e)); }
+  };
 
   const [keep, setKeep] = useState(Boolean(session?.keepLogin));
   const changeKeepLogin = async (enabled) => {
@@ -105,6 +128,15 @@ export default function SettingsDialog({ onClose, onBeforeRestore, session, onSe
           팩트체크에 로컬 모델 사용
         </label>
         <p className="text-xs text-[#666666] leading-relaxed">켜면 이 PC의 판정 모델이 문장을 판정하고, 확정하지 못한 문장만 직접 골라 외부 모델에 재검토를 요청해요(토큰 절약). 끄면 모든 문장을 외부 모델(API)이 판정해요(성능 우선, 토큰 사용 증가). 끄면 로컬 판정 모델을 설치하지 않아도 되지만 로그인과 인터넷 연결이 필요해요. 문장과 근거 조각 일부가 외부 서비스로 전송됩니다.</p>
+      </section>
+      <hr className="border-[#DDD6CB]" />
+      <section className="space-y-3" aria-labelledby="diagnostics-title">
+        <h3 id="diagnostics-title" className="font-black">문제 보고</h3>
+        <p className="text-xs text-[#666666] leading-relaxed">문제가 생기면 아래 버튼으로 앱 버전·모델 설치 상태·설정을 복사해 보고에 붙여 주세요. 기사·자료 내용과 이메일은 들어가지 않습니다.</p>
+        <button type="button" data-testid="settings-copy-diagnostics" onClick={copyDiagnostics}
+          className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">진단 정보 복사</button>
+        {diagnosticsNotice && <p role="status" data-testid="settings-diagnostics-notice" className="text-xs text-emerald-700">{diagnosticsNotice}</p>}
+        {diagnostics && <textarea readOnly data-testid="settings-diagnostics-text" value={diagnostics} rows={9} className="w-full rounded-xl border border-[#DDD6CB] bg-white p-3 text-xs font-mono" />}
       </section>
       <hr className="border-[#DDD6CB]" />
       <section className="space-y-3" aria-labelledby="backup-title">

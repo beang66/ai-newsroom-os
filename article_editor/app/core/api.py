@@ -8,6 +8,7 @@ from .integrations.unsplash import unsplash_get, selected_unsplash
 from .integrations import donga_archive
 from .create_core import create_core
 from .documents import extract_text
+from . import support_report
 
 # App Core (managers). The handler routes through it instead of calling
 # implementations directly (see APP_CORE_ARCHITECTURE.md §4).
@@ -33,6 +34,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():return self.send(403,{'error':'로컬 주소로 접속해 주세요.'})
         if self.path=='/api/status':return self.send(200,{'ready':bool(os.environ.get('OPENAI_API_KEY')),'headline_ready':headline_dependencies_ready(),'headline_model':HEADLINE_MODEL,'subtitle_model':SUBTITLE_MODEL,'pipeline_version':PIPELINE_VERSION,'unsplash_ready':bool(os.environ.get('UNSPLASH_ACCESS_KEY')),'workspace_version':'3.0.0','dev':not getattr(sys,'frozen',False)})
         if self.path=='/api/settings':return self.send(200,CORE.settings.get())
+        if self.path=='/api/diagnostics':return self.send(200,support_report.report(CORE.models.status(),'local' if CORE.settings.get()['localFactcheck'] else 'external',CORE.settings.get()))
         if self.path=='/api/session':
             try:return self.send(200,CORE.session.status())
             except RequestError as e:return self.send(e.status,error_body(e))

@@ -15,6 +15,7 @@ if errorlevel 1 goto fail
 echo [2/3] 플랫폼 변환 번들 준비
 %PY% packaging\prepare_platform.py
 if errorlevel 1 goto fail
+%PY% packaging\write_build_info.py
 
 echo [3/3] exe 빌드 (몇 분 걸립니다) - 결과: dist\%VARIANT%\AINewsroom\
 if exist build\%VARIANT% rmdir /s /q build\%VARIANT%

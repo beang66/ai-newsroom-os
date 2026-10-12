@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
-import { generatePlatform, suggestPlatformKeywords } from "../api/platform";
+import { generatePlatform, renderCardImage, suggestPlatformKeywords } from "../api/platform";
 
 const PLATFORM_LIST = [
   { id: "instagram", label: "Instagram", badge: "피드 원고" },
@@ -224,6 +224,8 @@ function CardNewsEditor({ draft, article, onChange }) {
   const cards = draft?.cards || [];
   const [activeIndex, setActiveIndex] = useState(0);
   const active = cards[activeIndex] || null;
+  const [rendering, setRendering] = useState(false); // 카드 이미지 만들기 진행 중(훅은 early return 앞에 둔다)
+  const [renderError, setRenderError] = useState("");
   const photos = article.photos || [];
 
   if (!active) {
@@ -252,6 +254,27 @@ function CardNewsEditor({ draft, article, onChange }) {
 
   const selectedPhoto = photos.find((photo) => photo.id === active.photoId);
   const layout = active.design?.layout || "standard";
+
+  // ── 카드 이미지 만들기(임시 구현 — 위치·모양은 프론트 담당 디자인 요청, FRONTEND_PORT_HANDOFF 10장) ──
+  // 완성 이미지(JPEG)는 코어가 그려 암호화 저장소에 보관한다. 카드 글·사진·배치가 바뀌면 "수정됨"으로 표시해 다시 만들게 한다.
+  const renderKey = JSON.stringify([active.content, active.photoId || "", active.role]);
+  const rendered = active.rendered_image || null;
+  const renderStale = Boolean(rendered) && rendered.key !== renderKey;
+  const makeImage = async () => {
+    setRendering(true);
+    setRenderError("");
+    try {
+      const asset = await renderCardImage(active, selectedPhoto);
+      if (!asset?.local_uri) throw Error("카드 이미지를 만들지 못했어요.");
+      const next = structuredClone(draft);
+      next.cards[activeIndex] = { ...next.cards[activeIndex], rendered_image: { id: asset.id, uri: asset.local_uri, key: renderKey } };
+      onChange(next);
+    } catch (e) {
+      setRenderError(e?.message || "카드 이미지를 만들지 못했어요.");
+    } finally {
+      setRendering(false);
+    }
+  };
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_220px] gap-5">
@@ -336,6 +359,36 @@ function CardNewsEditor({ draft, article, onChange }) {
           </div>
 
           <Evidence quotes={active.source_evidence} valid={active.evidence_valid} />
+
+          <div className="border-t border-[#EFECE6] pt-4" data-testid="card-image-section">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-extrabold text-[#57514A]">완성 이미지</p>
+                <p className="text-[11px] text-[#8E8982]">
+                  {renderStale ? "카드를 고쳤어요. 이미지를 다시 만들어 주세요." : rendered ? "카드 이미지를 만들어 보관했어요." : "카드를 1080×1350 이미지로 만들어 보관합니다."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={makeImage}
+                disabled={rendering}
+                data-testid="card-image-make"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#292929] bg-[#292929] px-3 py-2 text-xs font-bold text-white transition hover:bg-black disabled:cursor-wait disabled:opacity-60"
+              >
+                {rendering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                {rendering ? "만드는 중…" : rendered ? "이미지 다시 만들기" : "카드 이미지 만들기"}
+              </button>
+            </div>
+            {renderError && <p role="alert" className="mt-2 text-xs font-bold text-rose-600" data-testid="card-image-error">{renderError}</p>}
+            {rendered?.uri && (
+              <img
+                src={rendered.uri}
+                alt={`${active.content?.headline || "카드"} 완성 이미지`}
+                data-testid="card-image-preview"
+                className={`mt-3 w-full max-w-[220px] rounded-2xl border border-[#DDD6CB] ${renderStale ? "opacity-50" : ""}`}
+              />
+            )}
+          </div>
         </div>
       </div>
 

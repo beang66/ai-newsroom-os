@@ -11,7 +11,7 @@ def main():
     try:
         commit = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True, timeout=10,
                                 cwd=APP).stdout.strip() or 'unknown'
-        dirty = bool(subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no'], capture_output=True, text=True,
+        dirty = bool(subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no', '--', '.'], capture_output=True, text=True,
                                     timeout=10, cwd=APP).stdout.strip())
     except (OSError, subprocess.SubprocessError):
         commit, dirty = 'unknown', False

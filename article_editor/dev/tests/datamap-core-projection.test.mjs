@@ -96,13 +96,13 @@ test("articleUuid matches the core read model id format", () => {
 });
 
 test("adapter needs an injected Core method, passes the signal and honours abort", async () => {
-  await assert.rejects(createDataMapApi().getKnowledgeMap(), /knowledgeMap/);
+  await assert.rejects(createDataMapApi().getKnowledgeMap(), /getKnowledgeMap/);
   await assert.rejects(createDataMapApi().saveSourceRevision({}), /수정본 저장/);
   assert.equal(createDataMapApi().canSaveSourceRevision, false);
   let received;
   let imported;
   const api = createDataMapApi({ coreApi: {
-    knowledgeMap: async (signal) => { received = signal; return payload; },
+    getKnowledgeMap: async (signal) => { received = signal; return payload; },
     importKnowledgeFiles: async (body, signal) => { imported = [body, signal]; return { imported: body.files.length }; },
   } });
   const controller = new AbortController();

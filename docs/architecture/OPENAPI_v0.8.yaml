@@ -9,6 +9,8 @@ info:
     feature/app-core의 현행 HTTP는 /api/*이며 saveArticle(draft), latestArticle(),
     openSource(sourceId), sourceBytes(sourceId) 등만 확인되었다. getKnowledgeMap,
     createSnapshot 및 공통 UUID 조회는 미구현이다.
+    2026-10-12 통일: 이름은 구현·문서 중 바꾸기 쉽고 직관적인 쪽으로 맞췄다. 결정과 호출 대응표는
+    CONTRACT_VS_IMPLEMENTATION_v0.8.md 참조. x-status: deferred 는 코어 미구현 항목.
     실제 호출·저장 및 계약 차이는 CORE_REALITY_AUDIT_2026-10-07.md를 참조한다.
 servers:
   - url: /api/core/v0.8
@@ -52,6 +54,7 @@ paths:
   /workspaces/{workspace_id}/retrieval/search:
     post:
       operationId: searchEvidence
+      x-status: deferred   # 코어 미구현(목표 계약만 유지)
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
       requestBody:
         required: true
@@ -70,7 +73,7 @@ paths:
         default: {$ref: '#/components/responses/Error'}
   /workspaces/{workspace_id}/snapshots/{snapshot_id}/verification-runs:
     post:
-      operationId: verifySnapshot
+      operationId: runFactcheck
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/SnapshotId'}]
       requestBody:
         content: {application/json: {schema: {type: object, properties: {source_ids: {type: array, items: {$ref: '#/components/schemas/Uuid'}}, options: {type: object, additionalProperties: true}}}}}
@@ -80,6 +83,7 @@ paths:
   /workspaces/{workspace_id}/verification-runs/{run_id}:
     get:
       operationId: getVerificationRun
+      x-status: deferred   # 코어 미구현(목표 계약만 유지)
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/RunId'}]
       responses:
         '200': {description: Verification run, content: {application/json: {schema: {$ref: '#/components/schemas/VerificationRun'}}}}
@@ -95,7 +99,7 @@ paths:
         default: {$ref: '#/components/responses/Error'}
   /workspaces/{workspace_id}/snapshots/{snapshot_id}/platform-outputs:
     post:
-      operationId: createPlatformOutput
+      operationId: generatePlatform
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/SnapshotId'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlatformOutputInput'}}}}
       responses:
@@ -103,6 +107,7 @@ paths:
         default: {$ref: '#/components/responses/Error'}
     get:
       operationId: listPlatformOutputs
+      x-status: deferred   # 코어 미구현(목표 계약만 유지)
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/SnapshotId'}]
       responses:
         '200': {description: Platform outputs, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/PlatformOutput'}}}}}
@@ -110,13 +115,14 @@ paths:
   /workspaces/{workspace_id}/platform-outputs/{platform_output_id}:
     get:
       operationId: getPlatformOutput
+      x-status: deferred   # 코어 미구현(목표 계약만 유지)
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}, {$ref: '#/components/parameters/PlatformOutputId'}]
       responses:
         '200': {description: Platform output, content: {application/json: {schema: {$ref: '#/components/schemas/PlatformOutput'}}}}
         default: {$ref: '#/components/responses/Error'}
   /workspaces/{workspace_id}/transcripts:
     post:
-      operationId: transcribeMedia
+      operationId: transcribe
       parameters: [{$ref: '#/components/parameters/WorkspaceId'}]
       requestBody:
         required: true

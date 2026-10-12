@@ -73,7 +73,7 @@
 **현재 endpoint**
 - `GET /api/factcheck/status`
 - `POST /api/factcheck/run`
-- JS: `factcheckRun(nodes, materials)`
+- JS: `runFactcheck(nodes, materials, snapshotId)`
 
 **현재 필드**
 - `nodes=[{id,type,text,linkedSourceIds?}]`
@@ -97,7 +97,7 @@
 - 강창희의 Verification: 작성 결과물의 사실/논리/출처/오류 판단
 
 **수정**
-- UI는 Core의 단일 `verifySnapshot(...)` 계약만 호출.
+- UI는 Core의 단일 `runFactcheck(...)` 계약만 호출.
 - critique-organizer의 도메인 로직은 Core에서 호출 가능한 service/adapter로 편입.
 - 별도 `localhost:8765` 서버는 최종 제품 경계로 사용하지 않는다.
 
@@ -391,9 +391,9 @@ Core가 Snapshot에서 article/title을 읽고 Verification service에 전달한
 |---|---|
 | 기사 저장/Revision 생성 | `saveArticle` |
 | Snapshot 생성 | `createSnapshot` |
-| 검증 시작 | `verifySnapshot` |
-| 플랫폼 변환 | `createPlatformOutput` |
-| STT | `transcribeMedia` |
+| 검증 시작 | `runFactcheck` |
+| 플랫폼 변환 | `generatePlatform` |
+| STT | `transcribe` |
 | 미디어 등록 | `registerMediaAsset` |
 | 작업 조회/취소 | `getJob` / `cancelJob` |
 

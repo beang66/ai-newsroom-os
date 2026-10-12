@@ -27,7 +27,7 @@ try {
     // 예전 차이 위치가 남아 있어도 일치 근거로 잘못 쓰지 않는다.
     focus_spans: [{ claim_start: 0, claim_end: 2, evidence_start: 0, evidence_end: 2 }],
   }]]);
-  core.factcheckRun = () => { throw Error('저장된 판정을 다시 실행하면 안 됩니다'); };
+  core.runFactcheck = () => { throw Error('저장된 판정을 다시 실행하면 안 됩니다'); };
   const results = await factcheckArticle(claim, [], cache);
   assert.deepEqual(results[0].quoteSpans, [{ start: 0, end: quote.length }]);
   assert.deepEqual(results[0].spans, []);

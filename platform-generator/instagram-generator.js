@@ -3,7 +3,7 @@ const path = require("path");
 const AI = require("./ai-provider");
 const {EMOJIS,checkWriting}=require("./instagram-writing-contract");
 const { getPlatformRules } = require("./platform-rules");
-require("dotenv").config({path: path.join(__dirname, ".env"), override: true, quiet: true});
+if (process.env.PLATFORM_AI_BRIDGE !== "core") require("dotenv").config({path: path.join(__dirname, ".env"), override: true, quiet: true});
 
 // 1. 구조화 출력: 문장별 근거와 해시태그는 게시 본문과 구분합니다.
 const string = {type: "string"};

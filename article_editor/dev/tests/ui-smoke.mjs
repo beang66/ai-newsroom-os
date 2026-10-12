@@ -79,7 +79,7 @@ require("readline").createInterface({ input: process.stdin }).once("line", (line
     ] };
   } else if (input.action === "generate") {
     const p = input.platform;
-    const common = { article_id: "smoke", platform: p, validation_status: "not_checked" };
+    const common = { article_id: input.payload.article.article_id, platform: p, validation_status: "not_checked" };
     if (p === "instagram") result = { success: true, draft: {
       ...common, opening: "스모크 인스타그램 도입", paragraphs: ["스모크 인스타그램 본문"],
       closing: "스모크 인스타그램 마무리", hashtags: ["#스모크", "#뉴스룸", "#검증"],
@@ -105,6 +105,8 @@ require("readline").createInterface({ input: process.stdin }).once("line", (line
         design: { layout: "standard", highlights: [], compact: false }
       }))
     }};
+  } else if (input.action === "validate") {
+    result = {success:true,validation:{platform:input.payload.platform,status:'passed',fact:{issue_count:0,issues:[]},requirement:{issue_count:0,issues:[]}}};
   } else if (input.action === "render") {
     // 카드 이미지: 2x2 JPEG 를 base64 로 돌려준다(코어가 암호화 저장소에 MediaAsset 으로 등록)
     result = { card_id: input.payload.card_id, mime_type: "image/jpeg", data: "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAACAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDk6KKKAP/Z" };
@@ -115,6 +117,27 @@ require("readline").createInterface({ input: process.stdin }).once("line", (line
   process.stdout.write(JSON.stringify({ ok: true, result }) + "\\n", () => process.exit(0));
 });
 `, "utf8");
+
+// SNS 화면 경계는 실제 계정과 분리한다. Core가 vault에서 읽은 JPG 순서·원고를 어댑터에 전달한다.
+fs.writeFileSync(path.join(PLATFORM_STUB,'sns-adapter.js'),`
+const lines=require('readline').createInterface({input:process.stdin}),active={};
+lines.on('line',line=>{
+ const input=JSON.parse(line);let result;
+ if(input.action==='prepare'){
+  const files=input.payload.assets;
+  if(!files.every((file,i)=>file.order===i+1&&file.mime==='image/jpeg'&&file.data_url.startsWith('data:image/jpeg;base64,/9j/')))throw Error('ordered JPG required');
+  if(!input.payload.text.includes('\\n\\n'))throw Error('paragraph breaks required');
+  active[input.platform]=true;
+  result={success:true,image_count:files.length,username:'fixture_owner',message:'fixture: 작성 준비 완료'};
+ }else{
+  if(input.action==='connect')active[input.platform]=true;
+  if(input.action==='close')active[input.platform]=false;
+  result={success:true,connected:!!active[input.platform],reason:active[input.platform]?null:'browser_closed',username:'fixture_owner',browser:'fixture'};
+ }
+ process.stdout.write(JSON.stringify({id:input.id,ok:true,result})+'\\n');
+});
+lines.on('close',()=>process.exit(0));
+`,'utf8');
 
 const server = spawn(process.env.PYTHON || "python", ["app/server.py"], {
   cwd: ROOT,
@@ -537,8 +560,73 @@ try {
   await cardImage.waitFor();
   assert.match(await cardImage.getAttribute("src"), /^\/api\/media-assets\/[0-9a-f-]{36}\/file$/); // localhost 주소가 아니라 코어 경로
   await page.waitForFunction(() => { const img = document.querySelector('[data-testid="card-image-preview"]'); return img && img.complete && img.naturalWidth > 0; });
-  await converter.getByPlaceholder("카드 제목").fill("고친 카드 제목"); // 카드를 고치면 다시 만들라고 안내
-  await converter.getByText("카드를 고쳤어요").waitFor();
+  await converter.getByRole('textbox',{name:'headline',exact:true}).fill("고친 카드 제목");
+  await converter.getByText("카드·사진·위치가 변경됐습니다. 이미지를 다시 만들어 주세요.").waitFor();
+
+  // 검수·렌더 결과가 늦게 도착해도 수정된 원고에 덮어쓰지 않는다.
+  const headline=converter.getByRole('textbox',{name:'headline',exact:true});
+  await converter.getByTestId('platform-validate').click();
+  await converter.getByTestId('platform-review').getByText(/검수 통과/).waitFor();
+  let reviewReady,reviewRelease;
+  const reviewWaiting=new Promise(resolve=>{reviewReady=resolve;}),reviewHold=new Promise(resolve=>{reviewRelease=resolve;});
+  await page.route('**/api/platform/validate',async route=>{const response=await route.fetch();reviewReady();await reviewHold;await route.fulfill({response});});
+  await converter.getByTestId('platform-validate').click();await reviewWaiting;
+  await headline.fill('검수 중 변경한 카드 제목');reviewRelease();
+  await converter.getByTestId('platform-review').getByText(/결과를 적용하지 않았습니다/).waitFor();
+  await converter.getByTestId('platform-review').getByText(/재검수 필요/).waitFor();
+  await page.unroute('**/api/platform/validate');
+  let renderReady,renderRelease;
+  const renderWaiting=new Promise(resolve=>{renderReady=resolve;}),renderHold=new Promise(resolve=>{renderRelease=resolve;});
+  await page.route('**/api/platform/render',async route=>{const response=await route.fetch();renderReady();await renderHold;await route.fulfill({response});});
+  await converter.getByTestId('card-image-make').click();await renderWaiting;
+  await headline.fill('렌더 중 변경한 카드 제목');renderRelease();
+  await converter.getByTestId('card-image-error').getByText(/결과를 적용하지 않았습니다/).waitFor();
+  assert.equal(await converter.getByTestId('card-image-preview').count(),0);
+  await page.unroute('**/api/platform/render');
+  await converter.getByTestId('card-image-make').click();await converter.getByTestId('card-image-preview').waitFor();
+  // 현재 카드의 추천 입력과 직접 업로드·편집 사진의 실제 저장 경계를 확인한다.
+  const cardPhoto=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;canvas.getContext('2d').fillRect(0,0,32,32);return canvas.toDataURL('image/png');});
+  await converter.getByLabel('카드 사진 업로드').setInputFiles({name:'card-upload.png',mimeType:'image/png',buffer:Buffer.from(cardPhoto.split(',')[1],'base64')});
+  await page.getByTestId('image-editor').getByTestId('image-apply').click();
+  await converter.getByText('사진 출처: 직접 업로드').waitFor();
+  let recommendation;
+  await page.route('**/api/assist',async route=>{const input=route.request().postDataJSON();if(input.kind==='photo_keywords')recommendation=input;await route.continue();});
+  await converter.getByRole('button',{name:'현재 카드 사진 찾기'}).click();
+  await page.getByTestId('photo-keywords').getByText('stub chip',{exact:true}).waitFor();
+  assert.equal(recommendation.card.content.headline,'렌더 중 변경한 카드 제목');
+  await page.getByTestId('photo-search').getByLabel('닫기',{exact:true}).click();await page.unroute('**/api/assist');
+  // 전체 렌더 중 두 번째 카드 실패: 성공 표시·일부 SNS 첨부를 하지 않고 카드 번호·재시도를 안내한다.
+  let renderCount=0;
+  await page.route('**/api/platform/render',async route=>{renderCount++;if(renderCount===2)await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'fixture render failure'})});else await route.continue();});
+  await converter.getByTestId('cards-export').click();
+  await converter.getByTestId('delivery-status').getByText(/2번 카드.*실패/).waitFor();
+  await converter.getByTestId('delivery-status').getByText(/다시 시도/).waitFor();
+  await page.unroute('**/api/platform/render');
+
+  // 실패 카드 재시도와 전체 JPG 링크, 두 채널의 팀 Core 작성 준비. 게시 작업은 없다.
+  await converter.getByTestId('cards-export').click();
+  await converter.getByTestId('delivery-status').getByText(/3장 JPG 다운로드를 요청/).waitFor();
+  assert.equal(await converter.getByTestId('platform-delivery').locator('a[download]').count(),3);
+  await converter.getByRole('button',{name:/^Instagram\s*●?$/}).click();
+  await converter.getByTestId('generate-active').click();
+  await converter.getByText('1/1개 결과를 실제 생성 엔진에서 받아왔습니다.').waitFor();
+  await converter.getByTestId('sns-prepare').click();
+  await converter.getByTestId('delivery-status').getByText(/기사·고정본이 다릅니다/).waitFor();
+  // 다른 저장 버전의 고정본은 혼합하지 않는다. 세 결과를 같은 생성 작업에서 받는다.
+  await converter.getByRole('button',{name:'선택 항목 생성',exact:true}).click();
+  await converter.getByText('3/3개 결과를 실제 생성 엔진에서 받아왔습니다.').waitFor();
+  await converter.getByRole('button',{name:/^카드뉴스\s*●?$/}).click();
+  const uploadedOption=converter.getByLabel('기사 사진 사용').locator('option').filter({hasText:'card-upload.png'});
+  await converter.getByLabel('기사 사진 사용').selectOption(await uploadedOption.getAttribute('value'));
+  for(const platform of ['Instagram','Threads']){
+    await converter.getByRole('button',{name:new RegExp('^'+platform+'\\s*●?$')}).click();
+    await converter.getByTestId('sns-prepare').click();
+    await converter.getByTestId('delivery-status').getByText(/사진 3장/).waitFor();
+    await converter.getByTestId('delivery-status').getByText(/게시 버튼은 누르지 않았습니다/).waitFor();
+    await converter.getByTestId('sns-review-status').getByText(/원고:.*카드:/).waitFor();
+    await converter.getByRole('button',{name:'전용 창 닫기',exact:true}).click();
+    await converter.getByTestId('delivery-status').getByText(/전용 창을 닫았습니다/).waitFor();
+  }
 
   await go("보관함");
   await see("미디어 & 변환 자산");
@@ -677,6 +765,7 @@ try {
 } catch (error) {
   if (page) await page.screenshot({ path: fileURLToPath(new URL("temp/ui-smoke-failure.png", ROOT)) }).catch(() => {});
   console.error("FAIL ui-smoke:", error.stack || error.message);
+  if(page)console.error('UI failure context:',(await page.getByTestId('format-converter').innerText().catch(()=>'' )).slice(-1800));
   if (problems.length) console.error(problems.join("\n"));
   process.exitCode = 1;
 } finally {

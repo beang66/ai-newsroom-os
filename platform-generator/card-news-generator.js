@@ -11,7 +11,7 @@ const OpenAI = require("./ai-provider");
 const { getPlatformRules } = require("./platform-rules");
 const CardModel = require("./lib/card-model");
 
-require("dotenv").config({
+if (process.env.PLATFORM_AI_BRIDGE !== "core") require("dotenv").config({
   path: path.join(__dirname, ".env"),
   override: true,
   quiet: true,

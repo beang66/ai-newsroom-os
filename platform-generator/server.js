@@ -6,8 +6,9 @@ function createApp({instagramService,threadsService,storageOptions={}}={}) {
 const app = express();
 
 // 로컬 게시 경로는 자체 JSON 크기 제한과 출처 검사를 먼저 적용합니다.
-require("./instagram-local-routes")(app,instagramService);
-require("./threads-local-routes")(app,threadsService);
+const instagram=require("./instagram-local-routes")(app,instagramService);
+const threads=require("./threads-local-routes")(app,threadsService);
+app.locals.closeSns=()=>Promise.allSettled([instagram.close(),threads.close()]);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname,"lib")));
@@ -122,6 +123,7 @@ return app;
 }
 if(require.main===module){
  const port=Number(process.env.PORT||3001);
- createApp().listen(port,'127.0.0.1',()=>console.log('편집실: http://localhost:'+port));
+ const app=createApp();const server=app.listen(port,'127.0.0.1',()=>console.log('편집실: http://localhost:'+port));
+ let stopping=false;for(const signal of ['SIGINT','SIGTERM'])process.on(signal,async()=>{if(stopping)return;stopping=true;await app.locals.closeSns();server.close(()=>process.exit(0));});
 }
 module.exports={createApp};

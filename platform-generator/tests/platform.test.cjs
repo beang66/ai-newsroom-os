@@ -9,6 +9,14 @@ const {validateInput,selectOriginalRatio}=require('../instagram-local-service');
 const {getPlatformRules}=require('../platform-rules');
 const template=require('../lib/card-template');
 const jpg={mime:'image/jpeg',order:1,data_url:'data:image/jpeg;base64,/9j/2Q=='};
+test('업로드 사진과 Unsplash 사진은 실제 출처를 미리보기·JPG 공용 템플릿에 유지',()=>{
+ const card={card_id:'credit',role:'body',content_version:2,headline:'도서관',image:{url:'data:image/png;base64,YQ==',source:'직접 업로드',provider:'upload'}};
+ assert(template.markup(card).includes('직접 업로드'));assert(!template.markup(card).includes('Unsplash'));
+ card.image={...card.image,photographer:'사진가',provider:'unsplash',sourceUrl:'https://unsplash.com/photos/fixture'};
+ const html=template.markup(card);assert(html.includes('Photo by 사진가'));assert(html.includes('on <a'));assert(html.includes('/photos/fixture?utm_source='));
+ card.image={...card.image,provider:'donga',source:'동아일보 DB',photographer:'동아일보 DB',sourceUrl:'https://www.donga.com/archive/'};
+ assert(template.markup(card).includes('https://www.donga.com/archive/'));assert(!template.markup(card).includes('Unsplash'));
+});
 function browserFixture(){
  let text='',photos=[],posted=0,closed=false;const empty={count:async()=>0,isVisible:async()=>false,waitFor:async()=>{throw Error('absent')},first(){return this;}};
  const field={count:async()=>1,isVisible:async()=>true,focus:async()=>{},fill:async value=>{text=value},evaluate:async fn=>fn({tagName:'DIV',innerText:text})};

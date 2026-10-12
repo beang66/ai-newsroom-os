@@ -21,7 +21,7 @@ async function clickNamed(scope,labels){
 }
 function createThreadsService({chromium,profileDir,clock=Date.now}={}){
  profileDir ||= path.join(process.env.LOCALAPPDATA||path.join(os.homedir(),'.local','share'),'AI-Newsroom','threads-browser');
- let context,page,busy=false,pending=null;
+ let context,page,busy=false,pending=null,browserSession;
  async function exclusive(action){if(busy)throw new Error('이전 Threads 작업이 진행 중입니다.');busy=true;try{return await action();}finally{busy=false;}}
  async function account(){
   if(!context||!page||page.isClosed())return {connected:false,reason:'browser_closed'};
@@ -51,20 +51,19 @@ function createThreadsService({chromium,profileDir,clock=Date.now}={}){
   return button;
  }
  return {
-  connect:()=>exclusive(async()=>{
+  connect:(input={})=>exclusive(async()=>{
    if(pending&&['ready','posting','posted','post_requested','post_uncertain'].includes(pending.status))throw new Error('기존 작성·게시 결과를 확인한 뒤 전용 창을 닫고 다시 연결해주세요.');
    if(!context){
-    await fs.mkdir(profileDir,{recursive:true,mode:0o700});
-    const options={headless:false,viewport:null,acceptDownloads:false};if(process.env.NEWSROOM_THREADS_BROWSER!=='chromium')options.channel='chrome';
-    try{context=await (chromium||require('playwright').chromium).launchPersistentContext(profileDir,options);}
-    catch{throw new Error('Threads 전용 창을 열지 못했습니다. Chrome 설치와 기존 전용 창을 확인해주세요.');}
-    context.on('close',()=>{context=null;page=null;pending=null;});
+    browserSession=await require('./sns-browser').launchSnsBrowser(chromium||require('playwright').chromium,profileDir,input.browser||process.env.NEWSROOM_THREADS_BROWSER||'auto');
+    context=browserSession.context;
+    context.on('close',()=>{context=null;page=null;pending=null;browserSession?.release().catch(()=>{});});
+   }else if(input.browser&&input.browser!=='auto'&&input.browser!==browserSession.browser){throw new Error('브라우저를 바꾸려면 기존 전용 창을 먼저 닫아 주세요.');
    }
    if(!page||page.isClosed())page=await context.newPage();await page.bringToFront();
    await page.goto(THREADS_URL,{waitUntil:'domcontentloaded',timeout:45000});
    return {success:true,message:'Threads 공식 창에서 직접 로그인한 뒤 연결 확인을 눌러주세요.'};
   }),
-  status:async()=>{const a=await account();return {success:true,connected:a.connected,username:a.username||null,reason:a.reason||null,busy,pending:pending?{id:pending.id,status:pending.status,image_count:pending.imageCount,message:pending.message}:null};},
+  status:async()=>{const a=await account();return {success:true,connected:a.connected,username:a.username||null,reason:a.reason||null,browser:browserSession?.browser||null,busy,pending:pending?{id:pending.id,status:pending.status,image_count:pending.imageCount,message:pending.message}:null};},
   prepare:input=>exclusive(async()=>{
    const {text,files}=validateThreadsInput(input),a=await account();if(!a.connected)throw new Error('Threads 로그인 연결을 먼저 확인해주세요.');
    if(pending&&['ready','posting','posted','post_requested','post_uncertain'].includes(pending.status))throw new Error('기존 작성·게시 결과를 확인한 뒤 전용 창을 닫고 다시 연결해주세요.');
@@ -109,7 +108,7 @@ function createThreadsService({chromium,profileDir,clock=Date.now}={}){
     return {success:true,status:pending.status,confirmed,message:pending.message};
    }catch{pending.status='post_uncertain';throw new Error('게시 결과가 불확실합니다. Threads에서 확인해주세요. 자동 재시도하지 않습니다.');}
   }),
-  close:()=>exclusive(async()=>{if(context)await context.close();context=null;page=null;pending=null;return {success:true};})
+  close:()=>exclusive(async()=>{if(context)await context.close();await browserSession?.release();context=null;page=null;pending=null;return {success:true};})
  };
 }
 module.exports={createThreadsService,validateThreadsInput};

@@ -828,7 +828,7 @@
         $('download').download = data.file_name;
         $('download').hidden = false;
         $('download').click();
-        tell('JPG 저장 완료: ' + data.saved_path + ' · 다운로드가 시작되지 않으면 아래 링크를 누르세요.');
+        tell((data.saved_path?'내 문서 JPG 보관 완료: '+data.saved_path+' · ':'JPG 생성 완료 · ')+'다운로드를 요청했습니다. 시작되지 않으면 아래 링크를 누르세요.');
       } catch (error) {
         tell(error.message);
       } finally {

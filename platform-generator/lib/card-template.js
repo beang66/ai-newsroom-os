@@ -21,6 +21,15 @@ const baseCss="*{box-sizing:border-box}\n.news-card{--accent:#d1f38a;--text-scal
    return {photo:`object-position:${p.x}% ${p.y}%;transform:scale(${p.zoom});transform-origin:${p.x}% ${p.y}%`,shade:p.direction==='uniform'?`background:rgba(0,0,0,${alpha})`:`background:linear-gradient(${angle}deg,rgba(0,0,0,${start}),rgba(0,0,0,${alpha}))`};
  }
  function creditUrl(v){try{const u=new URL(v);if(u.protocol==='https:'&&u.hostname==='unsplash.com'){u.searchParams.set('utm_source','news_card_editor');u.searchParams.set('utm_medium','referral');return u.href;}}catch{}return 'https://unsplash.com/?utm_source=news_card_editor&utm_medium=referral';}
+ function creditMarkup(image={}){
+   const name=image.photographer||image.source;
+   if(!name)return '';
+   const link=image.sourceUrl||image.profile;
+   let external='';try{const u=new URL(link);if(u.protocol==='https:')external=u.href;}catch{}
+   const unsplash=image.provider==='unsplash'||image.unsplashId||(!image.provider&&external&&new URL(external).hostname==='unsplash.com');
+   const label=unsplash?'Photo by '+esc(name):esc(name);
+   return '<div class="credit">'+(external?'<a target="_blank" rel="noopener" href="'+esc(unsplash?creditUrl(external):external)+'">'+label+'</a>':label)+(unsplash?' on <a target="_blank" rel="noopener" href="https://unsplash.com/?utm_source=news_card_editor&utm_medium=referral">Unsplash</a>':'')+'</div>';
+ }
  // 현재 글에 있는 구절만 강조합니다. 원고에 새로운 표현을 추가하지 않습니다.
  function highlighted(text,d){const value=String(text??'');const terms=[...d.highlights];const candidates=[...new Set(terms)].filter(t=>value.includes(t)).sort((a,b)=>b.length-a.length);if(!candidates.length)return esc(value);const re=new RegExp(candidates.map(t=>t.replace(/[.*+?^$(){}|[\]\\]/g,'\\$&')).join('|'),'gu');let result='',end=0;for(const m of value.matchAll(re)){result+=esc(value.slice(end,m.index))+'<mark>'+esc(m[0])+'</mark>';end=m.index+m[0].length;}return result+esc(value.slice(end));}
  // 본문 줄바꿈을 정보 배치에 사용하며, 텍스트·사진·출처는 그대로 보존합니다.
@@ -44,7 +53,7 @@ const baseCss="*{box-sizing:border-box}\n.news-card{--accent:#d1f38a;--text-scal
    return '<article class="news-card role-'+role+' layout-'+d.layout+'" data-compact="'+d.compact+'">'+
      (url?'<img class="photo" style="'+esc(photoStyle.photo)+'" alt="선택한 사진" src="'+esc(url)+'"><div class="shade" style="'+esc(photoStyle.shade)+'"></div>':'')+
      '<div class="card-top"><span>'+(service?'서비스 안내':{cover:'핵심 뉴스',body:'주요 내용',closing:'핵심 정리'}[role])+'</span><span>'+page+(total?' / '+total:'')+'</span></div><div class="words">'+words+'</div><div class="card-footer">카드뉴스</div>'+
-     (url&&card.image?.photographer?'<div class="credit">Photo by <a target="_blank" rel="noopener" href="'+esc(creditUrl(card.image.profile))+'">'+esc(card.image.photographer)+'</a> on <a target="_blank" rel="noopener" href="https://unsplash.com/?utm_source=news_card_editor&utm_medium=referral">Unsplash</a></div>':'')+'</article>';
+     (url?creditMarkup(card.image):'')+'</article>';
  }
 // 글자 크기는 선택한 100% 또는 90%로 고정하고, 넘치면 카드 분리를 요청합니다.
 // 이 함수는 미리보기와 Playwright JPG에서 함께 사용합니다.

@@ -3,10 +3,11 @@
 import { core } from "./core.js";
 import { textWithoutPhotos } from "../lib/photoMarks.js";
 import { saveDraft } from "./editorial.js";
+import { articleId, renderKey, selectedCardPhoto } from "../lib/platformState.js";
 
 // 본문 속 사진 자리 줄([사진:id])은 플랫폼·카드뉴스 글과 근거 검사에 들어가지 않게 뺀다
 const cleanArticle = (article = {}) => ({
-  article_id: String(article.articleId || article.id || "article_01"),
+  article_id: articleId(article),
   title: String(article.title || "").trim(),
   content: textWithoutPhotos(article.content).trim(),
 });
@@ -38,24 +39,69 @@ export async function generatePlatform(platform, article, selectedKeywords, requ
   };
   const result = await core.generatePlatform(platform, payload, snapshotId);
   const draft = result?.draft || null;
-  return draft && result?.snapshotId ? { ...draft, snapshot_id: result.snapshotId } : draft;
+  return draft ? { ...draft, ...(result?.snapshotId ? {snapshot_id:result.snapshotId} : {}), generation_input:payload } : null;
+}
+
+export async function validatePlatformDraft(platform, draft) {
+  const input = draft?.generation_input;
+  if (!input?.article) throw Error("검수 기준 원문이 없습니다. 현재 기사로 다시 생성해 주세요.");
+  const {validation_review:_review,rendered_image:_render,generation_input:_input,...reviewDraft}=draft;
+  if(reviewDraft.cards)reviewDraft.cards=reviewDraft.cards.map(({rendered_image:_render,validation_review:_review,image,...card})=>({...card,...(image?{image:{photographer:image.photographer}}:{})}));
+  const result = await core.validatePlatform({ ...input, platform, draft:reviewDraft }, draft.snapshot_id);
+  if (!result?.success || result.validation?.platform !== platform) throw Error("검수 결과를 확인하지 못했습니다.");
+  return result.validation;
 }
 
 /** 카드 한 장 → 렌더 입력. 표지는 cover, 사진이 있으면 photo_body, 없으면 text_only 템플릿(platform-generator 의 buildHtml 이 아는 이름) */
 export const cardRenderPayload = (card, photo) => ({
+  ...card,
   card_id: String(card?.card_id || "card"),
   template: photo?.url ? (card?.role === "cover" ? "cover" : "photo_body") : "text_only",
   content: {
-    keyword: String(card?.content?.keyword || ""),
-    headline: String(card?.content?.headline || ""),
-    body: String(card?.content?.body || ""),
+    ...(card?.content || card),
   },
-  ...(photo?.url ? { image: { url: photo.url, photographer: "" } } : {}),
+  ...(photo?.url ? { image: { ...photo, url: photo.url, photographer: photo.photographer || photo.source || "", profile:photo.sourceUrl || photo.profile || "" } } : {}),
 });
 
 /** 카드뉴스 카드 하나를 이미지로 그려 코어(암호화 저장소)에 등록한다 → asset { id, local_uri, mime_type, ... } | null.
  *  card: 카드뉴스 초안의 카드 한 장, photo: 그 카드에 쓸 기사 사진(없으면 사진 없는 카드). 화면은 asset.local_uri 로 보여 준다 */
 export async function renderCardImage(card, photo, snapshotId) {
-  const result = await core.renderPlatformCard(cardRenderPayload(card, photo), snapshotId);
+  const image = photo ? {...photo, url:await photoDataUrl(photo)} : null;
+  const result = await core.renderPlatformCard(cardRenderPayload(card, image), snapshotId);
   return result?.asset || null;
 }
+
+export async function photoDataUrl(photo) {
+  const url = photo.url || photo.data || "";
+  if (url.startsWith("data:image/")) return url;
+  if (!url.startsWith("media:") && !url.startsWith("blob:") && !/^\/api\/(media|media-assets)\//.test(url)) throw Error("팀 사진 가져오기 또는 업로드로 저장한 사진을 사용해 주세요.");
+  const blob = url.startsWith("media:") ? await core.mediaBytes(url.slice(6)) : await fetch(url).then(response => {
+    if (!response.ok) throw Error("저장된 사진을 읽지 못했습니다.");
+    return response.blob();
+  });
+  return blobToDataUrl(blob);
+}
+export const blobToDataUrl = blob => new Promise((resolve,reject) => {
+  const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error("이미지를 읽지 못했습니다."));reader.readAsDataURL(blob);
+});
+export async function renderStoredCard(card, article, draft) {
+  const photo=selectedCardPhoto(card,article);
+  if(card.photoId&&!photo)throw Error("선택한 사진이 기사에서 삭제됐습니다. 사진을 다시 선택해 주세요.");
+  const key=renderKey(card,photo,draft);
+  const payload=cardRenderPayload(card,photo?{...photo,url:await photoDataUrl(photo)}:null);
+  payload.page=draft.cards.findIndex(item=>item.card_id===card.card_id)+1;
+  payload.total_pages=draft.cards.length;
+  payload.article_id=draft.article_id;
+  payload.render_key=key;
+  const result=await core.renderPlatformCard(payload,draft.snapshot_id);
+  if (!result?.asset?.local_uri) throw Error("카드 이미지 보관에 실패했습니다.");
+  return {id:result.asset.id,uri:result.asset.local_uri,key,article_id:draft.article_id,snapshot_id:draft.snapshot_id||null};
+}
+export async function storedJpg(rendered) {
+  const response=await fetch(rendered.uri);
+  if (!response.ok) throw Error("암호화 보관소의 카드 이미지를 읽지 못했습니다.");
+  const blob=await response.blob();
+  if (blob.type!=="image/jpeg") throw Error("카드 JPG 형식을 확인해 주세요.");
+  return blob;
+}
+export const snsAction=(platform,action,payload={},draft={})=>core.platformSns(platform,action,payload,draft.article_id,draft.snapshot_id);

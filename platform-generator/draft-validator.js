@@ -20,7 +20,7 @@ const { getPlatformRules } = require("./platform-rules");
 // ============================================================
 // 1. 환경 변수 불러오기
 // ============================================================
-require("dotenv").config({
+if (process.env.PLATFORM_AI_BRIDGE !== "core") require("dotenv").config({
   path: path.join(__dirname, ".env"),
   override: true,
   quiet: true,

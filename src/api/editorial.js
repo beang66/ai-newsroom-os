@@ -29,8 +29,8 @@ export async function suggestSubtitles(body, currentHeadline = "") {
 }
 
 /** 기사에 맞는 사진 검색어(영어 3개) */
-export async function photoKeywords(body) {
-  return clean((await core.assist({ kind: "photo_keywords", body: textWithoutPhotos(body) })).keywords || []);
+export async function photoKeywords(body, card) {
+  return clean((await core.assist({ kind: "photo_keywords", body: textWithoutPhotos(body), ...(card ? {card} : {}) })).keywords || []);
 }
 
 /** 한글 사진 검색어 → Unsplash 에서 잘 찾히는 영어 검색어(영어·숫자만이면 그대로) */

@@ -56,7 +56,7 @@ async function selectOriginalRatio(scope, click) {
 function createInstagramService({ chromium, profileDir, clock = Date.now } = {}) {
   const base = process.env.LOCALAPPDATA || path.join(os.homedir(), '.local', 'share');
   profileDir ||= path.join(base, 'AI-Newsroom', 'instagram-browser');
-  let context, page, busy = false, pending = null;
+  let context, page, busy = false, pending = null, browserSession;
   const events = [];
   function log(stage) { events.push({ stage, at: new Date(clock()).toISOString() }); if (events.length > 30) events.shift(); }
   async function exclusive(action) {
@@ -64,16 +64,14 @@ function createInstagramService({ chromium, profileDir, clock = Date.now } = {})
     busy = true;
     try { return await action(); } finally { busy = false; }
   }
-  async function openBrowser() {
+  async function openBrowser(choice=process.env.NEWSROOM_INSTAGRAM_BROWSER||'auto') {
     if (!context) {
-      await fs.mkdir(profileDir, { recursive: true, mode: 0o700 });
       const engine = chromium || require('playwright').chromium;
-      const options = { headless: false, viewport: null, acceptDownloads: false };
-      // 기본값은 설치된 Chrome입니다. 일반 Chrome 프로필을 공유하지 않습니다.
-      if (process.env.NEWSROOM_INSTAGRAM_BROWSER !== 'chromium') options.channel = 'chrome';
-      try { context = await engine.launchPersistentContext(profileDir, options); }
-      catch { throw new Error('전용 브라우저를 열지 못했습니다. Chrome 설치 여부와 전용 창이 이미 실행 중인지 확인해주세요.'); }
-      context.on('close', () => { context = null; page = null; pending = null; });
+      browserSession=await require('./sns-browser').launchSnsBrowser(engine,profileDir,choice);
+      context=browserSession.context;
+      context.on('close', () => { context = null; page = null; pending = null; browserSession?.release().catch(()=>{}); });
+    } else if(choice!=='auto'&&choice!==browserSession.browser){
+      throw new Error('브라우저를 바꾸려면 기존 전용 창을 먼저 닫아 주세요.');
     }
     if (!page || page.isClosed()) page = await context.newPage();
     await page.bringToFront();
@@ -144,9 +142,9 @@ function createInstagramService({ chromium, profileDir, clock = Date.now } = {})
     return share;
   }
   const service = {
-    connect: () => exclusive(async () => {
+    connect: (input={}) => exclusive(async () => {
       log('공식 로그인 창 열기');
-      const currentPage = await openBrowser();
+      const currentPage = await openBrowser(input.browser||process.env.NEWSROOM_INSTAGRAM_BROWSER||'auto');
       if (pending?.status === 'ready') throw new Error('이미 준비한 작성창이 있습니다. 먼저 확인하거나 브라우저를 닫아주세요.');
       await currentPage.goto(SNS_ENDPOINTS.instagram, { waitUntil: 'domcontentloaded', timeout: 45000 });
       return { success: true, message: '열린 Instagram 공식 화면에서 직접 로그인한 뒤 연결 확인을 눌러주세요.' };
@@ -154,7 +152,7 @@ function createInstagramService({ chromium, profileDir, clock = Date.now } = {})
     status: async () => {
       const current = await account();
       return { success: true, connected: current.connected, username: current.username || null,
-        reason: current.reason || null, busy, pending: pending ? {
+        reason: current.reason || null, browser:browserSession?.browser||null, busy, pending: pending ? {
           id: pending.id, status: pending.status, image_count: pending.imageCount,
           username: pending.username, message: pending.message || ''
         } : null, events: [...events] };
@@ -262,7 +260,7 @@ function createInstagramService({ chromium, profileDir, clock = Date.now } = {})
         throw new Error(pending.message);
       }
     }),
-    close: () => exclusive(async () => { if (context) await context.close(); context = null; page = null; pending = null; return { success: true }; })
+    close: () => exclusive(async () => { if (context) await context.close(); await browserSession?.release(); context = null; page = null; pending = null; return { success: true }; })
   };
   return service;
 }

@@ -29,7 +29,7 @@ module.exports = function registerInstagramLocalRoutes(app, service = createInst
       catch (error) { res.status(422).json({ success: false, error: error.message || 'Instagram 작업에 실패했습니다.' }); }
     });
   }
-  route('post', '/connect', () => service.connect());
+  route('post', '/connect', input => service.connect(input));
   route('get', '/status', () => service.status());
   route('post', '/prepare', input => service.prepare(input));
   route('post', '/publish', input => service.publish(input));

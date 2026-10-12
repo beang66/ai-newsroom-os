@@ -227,6 +227,7 @@
     if(!Array.isArray(cards) || !cards.length || cards.length>10)throw new Error('생성한 카드뉴스 1~10장이 필요합니다.');
     const assets=[];
     for(const [index,card] of cards.entries()){
+      try {
       onProgress(index+1,cards.length);
       const result=await window.NewsApi.renderCard({...card,page:index+1,total_pages:cards.length,
         role:index===0?'cover':index===cards.length-1?'closing':'body'});
@@ -238,6 +239,7 @@
       const blob=await response.blob();
       if(blob.type!=='image/jpeg' || blob.size>5*1024*1024)throw new Error('카드 JPG 형식 또는 용량을 확인해주세요.');
       assets.push({name:`card_${String(index+1).padStart(2,'0')}.jpg`,mime:blob.type,order:index+1,data_url:await blobDataUrl(blob)});
+      } catch(error) {throw new Error(`${index+1}번 카드 출력 실패: ${error.message} · 해당 카드를 수정한 뒤 작성창 준비를 다시 실행해주세요. 일부 카드만 첨부하지 않았습니다.`);}
     }
     return assets;
   };
@@ -265,7 +267,7 @@
     return result;
   }
   Object.assign(window.NewsApi, {
-    instagramLocalConnect: () => request('/connect', {}),
+    instagramLocalConnect: (browser='auto') => request('/connect', {browser}),
     instagramLocalStatus: () => request('/status'),
     instagramLocalPrepare: payload => request('/prepare', payload),
     instagramLocalPublish: (id, reviewed) => request('/publish', { id, reviewed }),
@@ -284,5 +286,5 @@
   const result=await response.json().catch(()=>{throw new Error('Threads 로컬 서버 응답을 확인해주세요.');});
   if(!response.ok||!result.success)throw new Error(result.error||'Threads 작업 실패');return result;
  }
- Object.assign(window.NewsApi,{threadsLocalConnect:()=>request('/connect',{}),threadsLocalStatus:()=>request('/status'),threadsLocalPrepare:payload=>request('/prepare',payload),threadsLocalPublish:(id,reviewed)=>request('/publish',{id,reviewed}),threadsLocalClose:()=>request('/close',{})});
+ Object.assign(window.NewsApi,{threadsLocalConnect:(browser='auto')=>request('/connect',{browser}),threadsLocalStatus:()=>request('/status'),threadsLocalPrepare:payload=>request('/prepare',payload),threadsLocalPublish:(id,reviewed)=>request('/publish',{id,reviewed}),threadsLocalClose:()=>request('/close',{})});
 })();

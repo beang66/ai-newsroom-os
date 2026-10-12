@@ -21,7 +21,7 @@ const { getPlatformRules } = require("./platform-rules");
 // 1. 환경 변수 불러오기
 // 기존 프로젝트의 .env 설정 방식을 유지합니다.
 // ============================================================
-require("dotenv").config({
+if (process.env.PLATFORM_AI_BRIDGE !== "core") require("dotenv").config({
   path: path.join(__dirname, ".env"),
   override: true,
   quiet: true,

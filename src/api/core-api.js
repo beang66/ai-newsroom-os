@@ -63,6 +63,8 @@ export const ROUTES = Object.freeze({
   platformKeywords: "/api/platform/keywords",
   platformGenerate: "/api/platform/generate",
   platformRender: "/api/platform/render",
+  platformValidate: "/api/platform/validate",
+  platformSns: "/api/platform/sns",
 });
 
 /**
@@ -198,6 +200,10 @@ export function createCoreApi(transport) {
     /** platform-generator 실제 생성 엔진 호출 */
     generatePlatform: (platform, payload, snapshotId, signal) =>
       transport.json(ROUTES.platformGenerate, snapshotId ? { platform, payload, snapshotId } : { platform, payload }, signal),
+    validatePlatform: (payload, snapshotId, signal) =>
+      transport.json(ROUTES.platformValidate, { payload, ...(snapshotId ? { snapshotId } : {}) }, signal),
+    platformSns: (platform, action, payload, articleId, snapshotId, signal) =>
+      transport.json(ROUTES.platformSns, {platform,action,payload,articleId,snapshotId}, signal),
     /** 원고의 최신 저장 이력을 고정본(ArticleSnapshot)으로 만든다 → { id, article_id, revision_no, title, body_text, content_hash, created_at }.
      *  내용이 같으면 새로 만들지 않고 같은 고정본을 돌려준다 */
     createSnapshot: (articleId, signal) => transport.json(ROUTES.articleSnapshots(articleId), {}, signal),

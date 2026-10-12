@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+import uuid
 
 from app_paths import APP_DATA
 
@@ -180,7 +181,9 @@ class SessionManager:
     def _after_login(user_id: str) -> None:
         """로그인할 때 그 계정의 저장소를 준비한다: 계정 도입 전 저장소 이전(처음 로그인한 계정이 받는다), 예전 평문 가져오기,
         중단된 작업 정리. 실패해도 로그인은 막지 않는다."""
-        if not user_id:
+        try:  # Supabase 의 사용자 id 는 UUID 다. 아니면(시험의 가짜 계정 등) 저장소를 건드리지 않는다 — 실제 자료를 엉뚱한 계정에 넘기지 않으려는 안전장치
+            uuid.UUID(user_id)
+        except (ValueError, AttributeError, TypeError):
             return
         try:
             from .. import jobs, storage

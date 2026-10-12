@@ -73,5 +73,15 @@ class KeepLoginTests(unittest.TestCase):
         self.assertFalse(self.session.set_keep_login({'enabled': False})['keepLogin'])
 
 
+class AfterLoginSafetyTests(unittest.TestCase):
+    def test_non_uuid_user_never_touches_the_vault(self):
+        from core import vault
+        with mock.patch.object(vault, 'adopt_legacy', side_effect=AssertionError('가짜 계정이 저장소를 이전하면 안 된다')):
+            SessionManager._after_login('u-1')  # 예외 없이 건너뛴다
+        with mock.patch.object(vault, 'adopt_legacy', return_value=False) as adopt,                 mock.patch('core.storage.import_legacy_files', return_value={'articles': 0, 'sources': 0, 'failed': 0}),                 mock.patch('core.storage.pack_existing_photos'), mock.patch('core.storage.import_legacy_embedding_cache'),                 mock.patch('core.jobs.recover_interrupted_jobs'):
+            SessionManager._after_login('89426d96-db90-406e-860d-2a6984e7e71e')
+        adopt.assert_called_once()
+
+
 if __name__ == '__main__':
     unittest.main()

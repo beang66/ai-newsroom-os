@@ -21,15 +21,23 @@ def _uuid(value):
 
 
 def _articles(db):
-    counts = dict(db.execute('SELECT article_id, count(*) FROM article_revisions GROUP BY article_id').fetchall())
+    counts = dict(db.execute("SELECT article_id, count(*) FROM article_revisions WHERE kind = 'manual' GROUP BY article_id").fetchall())
+    unsaved = {row[0] for row in db.execute("SELECT article_id FROM article_revisions r WHERE kind = 'auto' AND revision_no = "
+               '(SELECT max(revision_no) FROM article_revisions WHERE article_id = r.article_id)').fetchall()}
     out = []
-    for article_id, created, updated, revision_no, body in storage.latest_revisions(db):
+    # 보관소에는 마지막 수동 저장본을 보인다(수동 저장 전인 기사는 임시 저장본, unsaved_changes 로 표시)
+    for article_id, created, updated, revision_no, body in storage.latest_revisions(db, manual=True):
         draft = json.loads(body)
         count = counts.get(article_id, 0)
         source_ids = storage.draft_source_ids(draft)
+        published = storage.published_info(db, article_id)
+        # state: draft(발행 전) | published(발행본과 마지막 저장본이 같음) | editing(발행 뒤 고쳐 저장함 — 발행본은 그대로)
+        state = 'draft' if not published else 'editing' if storage.edited_after_publish(db, article_id) else 'published'
         out.append({'id': _uuid(article_id), 'title': draft.get('title') or '', 'subtitle': draft.get('subtitle') or '',
                     'status': draft.get('status') or '', 'created_at': created, 'updated_at': updated,
-                    'revision_no': revision_no, 'revision_count': count,
+                    'excerpt': storage._plain(draft)[:120], 'photo_count': len(draft.get('photos') or []),
+                    'state': state, 'published': published, 'article_id': article_id,  # article_id: 편집기로 열 때 쓰는 32자 id
+                    'revision_no': revision_no, 'revision_count': count, 'unsaved_changes': article_id in unsaved,
                     'source_ids': sorted(_uuid(i) for i in source_ids)})
     return out
 

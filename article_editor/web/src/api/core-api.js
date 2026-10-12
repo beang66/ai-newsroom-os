@@ -16,11 +16,16 @@ export const ROUTES = Object.freeze({
   modelsCancel: "/api/models/cancel",
   assist: "/api/assist",
   articlesSave: "/api/articles/save",
+  articlesPublish: "/api/articles/publish",
+  articles: "/api/articles",
+  // 보관소 '수정' — version: "saved"(마지막 수동 저장본) | "published"(발행본). 사진은 참조로
+  article: (id, version) => "/api/articles/" + encodeURIComponent(id) + "?version=" + encodeURIComponent(version) + "&photos=ref",
   articlesLatest: "/api/articles/latest?photos=ref", // 사진은 'media:<id>' 참조로 받고 바이트는 mediaBytes 로 따로
   media: (id) => "/api/media/" + encodeURIComponent(id),
   mediaAssets: "/api/media-assets",
   articleRevisions: (id) => "/api/articles/" + encodeURIComponent(id) + "/revisions",
   articleRevision: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no),
+  articlePruneLegacy: (id) => "/api/articles/" + encodeURIComponent(id) + "/revisions/prune-legacy",
   articleRestore: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no) + "/restore",
   factcheckStatus: "/api/factcheck/status",
   factcheckRun: "/api/factcheck/run",
@@ -35,6 +40,8 @@ export const ROUTES = Object.freeze({
   unsplashSearch: "/api/unsplash/search",
   photo: (id) => "/api/unsplash/photo/" + encodeURIComponent(id),
   photoTrack: (id) => "/api/unsplash/photo/" + encodeURIComponent(id) + "/track",
+  dongaPhotos: "/api/donga/photos",
+  dongaPhoto: (id) => "/api/donga/photo/" + encodeURIComponent(id),
   platformKeywords: "/api/platform/keywords",
   platformGenerate: "/api/platform/generate",
 });
@@ -99,14 +106,22 @@ export function createCoreApi(transport) {
     /** 보관한 취재자료 원본 바이트(앱 안 뷰어용) → Blob */
     sourceBytes: (sourceId, signal) => transport.bytes(ROUTES.sourceFile(sourceId), signal),
     /** 원고 디스크 저장 (파일: 내 문서/AI Newsroom/articles) */
-    saveArticle: (draft, signal) =>
-      transport.json(ROUTES.articlesSave, { draft }, signal),
+    saveArticle: (draft, signal, kind) =>
+      transport.json(ROUTES.articlesSave, kind ? { draft, kind } : { draft }, signal), // kind: "manual"(저장 버튼) | "auto"(자동 임시 저장)
+    /** CMS 최종 발행 = 수동 저장 + 발행본(기사당 하나, 다시 발행하면 덮어쓰고 발행 시각 갱신) → { published, articleId, revisionNo, republished } */
+    publishArticle: (draft, signal) => transport.json(ROUTES.articlesPublish, { draft }, signal),
+    /** 보관소 기사 목록 → { articles: [{ article_id, title, state: draft|published|editing, published, ... }] } */
+    listArticles: (signal) => transport.json(ROUTES.articles, null, signal),
+    /** 보관소에서 연 기사(마지막 수동 저장본 / 발행본) → latestArticle 과 같은 모양 */
+    getArticle: (articleId, version, signal) => transport.json(ROUTES.article(articleId, version), null, signal),
     /** 가장 최근에 저장된 원고(앱을 열면 이어서 작업) → { draft | null }. 사진(data/original)은 "media:<id>" 참조 */
     latestArticle: (signal) => transport.json(ROUTES.articlesLatest, null, signal),
     /** 원고의 저장 이력 목록(최신이 위) → { revisions: [{ revisionNo, id, createdAt, title, excerpt, chars, ... }] } */
     listRevisions: (articleId, signal) => transport.json(ROUTES.articleRevisions(articleId), null, signal),
     /** 저장 이력 한 건의 미리보기(읽기 전용) → { title, subtitle, content, ... } */
     getRevision: (articleId, revisionNo, signal) => transport.json(ROUTES.articleRevision(articleId, revisionNo), null, signal),
+    /** 수동 저장 도입 전의 옛 자동 저장 이력 정리 → { deleted } */
+    pruneLegacyRevisions: (articleId, signal) => transport.json(ROUTES.articlePruneLegacy(articleId), {}, signal),
     /** 옛 저장본을 새 최신 저장본으로 복원(이력은 지우지 않음) → { draft, revisionNo, fromRevision } */
     restoreRevision: (articleId, revisionNo, signal) => transport.json(ROUTES.articleRestore(articleId, revisionNo), {}, signal),
     /** Unsplash 사진 검색 (1페이지 3장) */
@@ -118,6 +133,11 @@ export function createCoreApi(transport) {
       ),
     /** 사진 원본 바이트 (Unsplash 키는 코어가 보유) */
     photoBytes: (id, signal) => transport.bytes(ROUTES.photo(id), signal),
+    /** 동아일보 DB(포토파노라마) 사진 검색 — sort: all|latest|oldest, 3장씩 → { photos:[{id,image,thumb,date,title,summary}], page, totalPages, total } */
+    searchDongaPhotos: (query, sort = "all", page = 1, signal) =>
+      transport.json(`${ROUTES.dongaPhotos}?q=${encodeURIComponent(query || "")}&sort=${encodeURIComponent(sort)}&page=${page}`, null, signal),
+    /** 동아일보 DB 사진 원본 바이트 → Blob */
+    dongaPhotoBytes: (id, signal) => transport.bytes(ROUTES.dongaPhoto(id), signal),
     /** 원고 사진("media:<id>")의 바이트 → Blob */
     mediaBytes: (mediaId, signal) => transport.bytes(ROUTES.media(mediaId), signal),
     /** 사진을 암호화 저장소에 한 번 올리고 자산으로 등록 → { id, object_ref: "media:<id>", ... } */

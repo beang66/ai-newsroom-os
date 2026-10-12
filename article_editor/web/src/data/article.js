@@ -9,6 +9,8 @@ export function createEmptyArticle() {
     suggestedTitle: "",
     subtitle: "",
     content: "",
+    category: "", // 기사 분류(donga.com 섹션, data/sections.js) — 예: "사회"
+    subcategory: "", // 세부 분류(선택) — 예: "교육"
     status: "작성 중", // 작성 중, 검증 완료, 발행 준비, 발행 완료
     createdAt: now,
     updatedAt: now,

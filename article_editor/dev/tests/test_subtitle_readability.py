@@ -23,9 +23,10 @@ class SubtitleReadability(unittest.TestCase):
             with self.subTest(name=name),patch.object(server,'openai_call',return_value={'output':[{'content':[{'type':'output_text','text':'{}'}]}]}) as call:
                 server.structured_call(name,'기본 편집 지시',{},'기사')
                 prompt=call.call_args.args[1]['instructions']
-                self.assertIn('사실 검사와 문체 검사를 따로',prompt)
-                self.assertIn('명사형 종결은 마지막 어미의 선택',prompt)
-                self.assertIn('원문에 없는 작동 방식은 만들지',prompt)
+                # 2026-10-08: 기존 su4228 v30 규칙 → 동아일보 실제 부제 분석 규칙으로 교체
+                self.assertIn('[동아일보 부제 규칙]',prompt)
+                self.assertIn('[부제 출력 전 점검]',prompt)
+                self.assertIn("나열은 반드시 '-'로",prompt)
     def test_fact_check_not_forced_into_short_subtitle_style(self):
         with patch.object(server,'openai_call',return_value={'output':[{'content':[{'type':'output_text','text':'{}'}]}]}) as call:
             server.structured_call('subtitle_fact_check','완전한 문장으로 사실 확인',{},'기사')

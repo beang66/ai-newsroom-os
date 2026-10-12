@@ -12,7 +12,7 @@ import ModelsDialog from "./components/ModelsDialog";
 
 import { createEmptyArticle } from "./data/article";
 import { coreSnapshot } from "./api/core";
-import { loadLatestArticle } from "./api/editorial";
+import { loadArticle, loadLatestArticle } from "./api/editorial";
 import { useAutosave } from "./components/EditorialAssist";
 
 // 마지막으로 보던 화면(작성·보관함 등) — 이 PC 화면 설정이라 브라우저 저장소에 둔다(없거나 막혀도 동작)
@@ -27,6 +27,7 @@ const dismissHint = () => { try { localStorage.setItem(HINT_KEY, "1"); } catch {
 /** 앱을 열면 가장 최근에 저장된 원고를 불러와 이어서 작업한다(없으면 새 원고) */
 export default function App() {
   const [initial, setInitial] = useState(null);
+  const [opened, setOpened] = useState(0); // 보관소에서 기사를 열 때마다 작업 영역을 새로 연다
   useEffect(() => {
     loadLatestArticle(createEmptyArticle())
       .then((a) => setInitial(a || createEmptyArticle()))
@@ -36,15 +37,50 @@ export default function App() {
   }, []);
   // 원고를 불러오는 동안에도 앱 틀(헤더·사이드바)은 바로 그린다. 불러오면 작업 영역을 한 번 새로 연다(key) —
   // 불러온 원고가 '변경'으로 잡히지 않아 자동 저장이 돌지 않는다.
-  return <Workspace key={initial ? "ready" : "loading"} initialArticle={initial} />;
+  // 보관소 '수정' → 그 기사를 Article Writer 탭에서 연다(작업 영역을 새로 열어 저장 상태·이력도 그 기사 기준으로)
+  const openArticle = (article) => {
+    writeTab("writer");
+    setInitial(article);
+    setOpened((n) => n + 1);
+  };
+  return <Workspace key={initial ? `ready-${opened}` : "loading"} initialArticle={initial} onOpenArticle={openArticle} />;
 }
 
-function Workspace({ initialArticle }) {
+function Workspace({ initialArticle, onOpenArticle }) {
   const loading = !initialArticle;
   const [activeTab, setActiveTabState] = useState(readTab);
   const setActiveTab = (tab) => { setActiveTabState(tab); writeTab(tab); };
   const [article, setArticle] = useState(() => initialArticle || createEmptyArticle());
-  const saveStatus = useAutosave(article, setArticle);
+  // 저장: 자동 임시 저장 + 수동 저장(저장 버튼·Ctrl+S). 보관소 '작성 중'은 마지막 수동 저장본
+  const save = useAutosave(article, setArticle);
+  const saveStatus = save.status;
+  // Ctrl+S(맥은 Cmd+S) — 어느 화면에서든 수동 저장
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        save.saveNow();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [save]);
+
+  // 보관소의 '수정' 버튼: version "saved"(작성 중 = 마지막 수동 저장본) | "published"(발행본)
+  const openFromArchive = async (articleId, version) => {
+    if (save.dirty) {
+      if (!window.confirm("저장하지 않은 변경이 있습니다.\n지금 쓰던 내용을 저장한 뒤 열까요? (취소하면 열지 않습니다)")) return;
+      if (!(await save.saveNow())) {
+        alert("저장하지 못해 열지 않았습니다. 상단의 저장 상태를 확인해 주세요.");
+        return;
+      }
+    }
+    try {
+      onOpenArticle(await loadArticle(articleId, version, createEmptyArticle()));
+    } catch (e) {
+      alert("기사를 열지 못했습니다: " + (e?.message || e));
+    }
+  };
 
   // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
   const [core, setCore] = useState({ ok: false });
@@ -118,7 +154,7 @@ function Workspace({ initialArticle }) {
       {/* 1. Top Header */}
       <Header
         currentArticleTitle={article.title}
-        status={article.status}
+        status={save.phase}
         coreReady={core.ok}
         coreLabel={core.ok ? "코어 연결됨" : "코어 대기"}
         session={core.session}
@@ -166,6 +202,12 @@ function Workspace({ initialArticle }) {
                 setArticle={setArticle}
                 onOpenSearch={() => setShowSearchModal(true)}
                 saveStatus={saveStatus}
+                onSave={save.saveNow}
+                unsaved={save.dirty}
+                onRestoredSaved={save.markSaved}
+                onPublish={save.publishNow}
+                published={save.published}
+                saveTimes={save.times}
                 onModels={() => setShowModels(true)}
               />
             )}
@@ -183,7 +225,7 @@ function Workspace({ initialArticle }) {
             )}
 
             {!loading && activeTab === "archive" && (
-              <ArchiveView article={article} />
+              <ArchiveView article={article} unsaved={save.dirty} onEdit={openFromArchive} />
             )}
           </main>
         </div>

@@ -9,8 +9,8 @@ from ..media_assets import get_media_asset as _get_media_asset, media_asset_file
 from ..read_models import knowledge_map as _knowledge_map, list_articles as _list_articles
 from ..sources import delete_source as _delete_source, get_source as _get_source, list_sources as _list_sources
 from ..storage import (create_snapshot as _create_snapshot, get_revision as _get_revision, get_snapshot as _get_snapshot,
-                       latest_article as _latest_article, media_file as _media_file, list_revisions as _list_revisions, list_snapshots as _list_snapshots,
-                       open_source as _open_source, restore_revision as _restore_revision, save_article as _save_article,
+                       latest_article as _latest_article, get_article as _get_article, publish_article as _publish_article, media_file as _media_file, list_revisions as _list_revisions, list_snapshots as _list_snapshots,
+                       open_source as _open_source, restore_revision as _restore_revision, prune_legacy_revisions as _prune_legacy_revisions, save_article as _save_article,
                        source_file as _source_file)
 
 
@@ -18,6 +18,14 @@ class StorageManager:
     def save_article(self, data):
         """Persist a draft request ``{"draft": {...}, "expectedRevisionNo"?: int}`` to local storage (409 on mismatch)."""
         return guarded('article_save', _save_article, data)
+
+    def publish_article(self, data):
+        """CMS 최종 발행 ``{"draft": {...}}`` — 수동 저장 + 기사당 하나인 발행본 덮어쓰기(발행 시각 갱신)."""
+        return guarded('article_publish', _publish_article, data)
+
+    def get_article(self, article_id, version='saved', photo_refs=False):
+        """보관소에서 연 기사 — version 'saved'(마지막 수동 저장본) | 'published'(발행본). 모양은 latest_article 과 같다."""
+        return _get_article(article_id, version, photo_refs)
 
     def open_source(self, data):
         """보관한 취재자료 원본을 기본 프로그램으로 연다 ``{"sourceId": ...}``."""
@@ -46,6 +54,10 @@ class StorageManager:
     def restore_revision(self, article_id, revision_no):
         """옛 저장본을 새 최신 저장본으로 복원한다(이력은 지우지 않음)."""
         return guarded('version_restore', _restore_revision, article_id, revision_no)
+
+    def prune_legacy_revisions(self, article_id):
+        """수동 저장 도입 전의 옛 자동 저장 이력을 지운다(저장 이력 화면의 '정리')."""
+        return guarded('revision_prune', _prune_legacy_revisions, article_id)
 
     def create_snapshot(self, article_id, data):
         """저장 이력(``{"revisionId"?: uuid}``, 없으면 최신)을 고칠 수 없는 고정본으로 만든다."""

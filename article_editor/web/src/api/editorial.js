@@ -2,6 +2,7 @@
 // 응답 모양 차이(원격 AI / 로컬 모델)를 여기서 흡수해 컴포넌트는 문자열 목록만 받는다.
 import { core } from "./core.js";
 import { claimDetails } from "./claim-details.js";
+import { captionText, photoOfLine, textWithoutPhotos } from "../lib/photoMarks.js";
 
 // 로그인·설치 화면도 같은 코어 계약을 사용한다. 자격 증명은 요청 동안만 전달한다.
 export const signIn = (email, password) => core.signIn(email, password);
@@ -14,24 +15,50 @@ const clean = (values) => [...new Set(values.map((v) => String(v || "").trim()).
 
 /** 제목 후보(최대 3) — kind=metadata, requested=headline */
 export async function suggestHeadlines(body, currentHeadline = "") {
-  const d = await core.assist({ kind: "metadata", requested: "headline", body, current_headline: currentHeadline });
+  const d = await core.assist({ kind: "metadata", requested: "headline", body: textWithoutPhotos(body), current_headline: currentHeadline });
   const values = (d.headline_candidates || []).map((x) => (typeof x === "string" ? x : x.headline || x.title || x.text));
   return clean(values.length ? values : [d.headline]);
 }
 
-/** 부제 후보 — 원격 AI 는 subtitle_candidates, 로컬 모델 경로는 subtitle 한 개 */
+/** 부제 후보 — 원격 AI 는 subtitle_candidates, 로컬 모델 경로는 subtitle 한 개.
+ *  동아일보 부제는 2~4줄이므로 줄바꿈을 그대로 둔다(부제 칸·미리보기가 줄 단위로 보여 준다). */
 export async function suggestSubtitles(body, currentHeadline = "") {
-  const d = await core.assist({ kind: "metadata", requested: "subheadline", body, current_headline: currentHeadline });
-  return clean([d.subtitle, ...(d.subtitle_candidates || [])].map((v) => String(v || "").replace(/\n+/g, " / ")));
+  const d = await core.assist({ kind: "metadata", requested: "subheadline", body: textWithoutPhotos(body), current_headline: currentHeadline });
+  return clean([d.subtitle, ...(d.subtitle_candidates || [])].map((v) =>
+    String(v || "").split(/\n+/).map((line) => line.trim()).filter(Boolean).join("\n")));
 }
 
 /** 기사에 맞는 사진 검색어(영어 3개) */
 export async function photoKeywords(body) {
-  return clean((await core.assist({ kind: "photo_keywords", body })).keywords || []);
+  return clean((await core.assist({ kind: "photo_keywords", body: textWithoutPhotos(body) })).keywords || []);
+}
+
+/** 한글 사진 검색어 → Unsplash 에서 잘 찾히는 영어 검색어(영어·숫자만이면 그대로) */
+export async function photoSearchQuery(query) {
+  const q = String(query || "").trim();
+  if (!/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(q)) return q;
+  const d = await core.assist({ kind: "photo_query", body: q });
+  return String(d.query || "").trim() || q;
 }
 
 /** Unsplash 검색 — 한 페이지 3장 */
 export const searchPhotos = (query, page = 1) => core.searchPhotos(query, page);
+
+/** Unsplash 사진 원본을 코어로 받아 data URL 로(코어가 다운로드 집계도 한다 — Unsplash 가이드라인) */
+export async function unsplashPhotoData(photo) {
+  return readDataUrl(await core.photoBytes(photo.id));
+}
+
+/** 동아일보 DB(포토파노라마) 사진 검색 — 검색어(제목·설명)로 거르고 정렬(all 전체 | latest 최신순 | oldest 오래된순), 3장씩 */
+export const searchDongaPhotos = (query, sort = "all", page = 1) => core.searchDongaPhotos(query, sort, page);
+
+/** 고른 동아일보 DB 사진 → data URL(편집기·본문에 넣기용) */
+export async function dongaPhotoData(photo) {
+  return readDataUrl(await core.dongaPhotoBytes(photo.id));
+}
+
+/** 편집 화면의 원본·편집본 다운로드 집계(Unsplash 가이드라인) */
+export const trackPhotoDownload = (unsplashId) => core.trackPhoto(unsplashId);
 
 /** 고른 사진을 코어로 받아(다운로드 기록 포함) 기사 사진 항목으로 만든다 */
 export async function importPhoto(photo) {
@@ -320,25 +347,55 @@ async function fromMediaRef(value, loaded) {
 
 const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
+/** 원고(content) → 발행·변환용 HTML. 문단은 빈 줄, 줄바꿈은 <br>, 사진 자리 줄은 v30 과 같은 <figure data-photo-id> */
+function bodyHtmlOf(content, photos) {
+  const out = [];
+  let para = [];
+  const flush = () => {
+    if (para.some((l) => l.trim())) out.push(`<p>${para.map((l) => escapeHtml(l.trim())).join("<br>")}</p>`);
+    para = [];
+  };
+  for (const line of content.split("\n")) {
+    const photo = photoOfLine(line, photos);
+    if (photo) {
+      flush();
+      out.push(`<figure data-photo-id="${escapeHtml(photo.id)}"><figcaption>${escapeHtml(captionText(photo))}</figcaption></figure>`);
+    } else if (!line.trim()) flush();
+    else para.push(line);
+  }
+  flush();
+  return out.join("");
+}
+
 /** 원고 저장. 사진은 코어의 data/original 필드로 보내 암호화 media 저장소에서 중복 없이 보관한다. */
-export async function saveDraft(article, articleId) {
-  const bodyHtml = (article.content || "")
-    .split(/\n{2,}/)
-    .map((p) => `<p>${escapeHtml(p.trim()).replace(/\n/g, "<br>")}</p>`)
-    .join("");
+/** kind: "auto" = 자동 임시 저장(작업본 한 칸 덮어쓰기, 이력·보관소에 안 보임) | "manual" = 저장 버튼(저장 이력·보관소 '작성 중' 갱신) */
+/** → 코어 응답 { articleId, savedAt, firstSavedAt(처음 수동 저장 시각), ... } */
+export async function saveDraft(article, articleId, kind = "auto") {
+  return core.saveArticle(await draftOf(article, articleId), undefined, kind);
+}
+
+/** CMS 최종 발행 — 코어가 수동 저장과 발행본 갱신을 한 번에 한다 → { articleId, published, republished, savedAt } */
+export async function publishDraft(article, articleId) {
+  return core.publishArticle(await draftOf(article, articleId));
+}
+
+async function draftOf(article, articleId) {
+  const bodyHtml = bodyHtmlOf(article.content || "", article.photos || []);
   const photos = await Promise.all((article.photos || []).map(async ({ url, ...meta }) => ({
     ...meta,
     data: await toMediaRef(url?.startsWith("data:") ? url : meta.data),
     original: await toMediaRef(meta.original),
     url: url?.startsWith("data:") ? "" : url,
   })));
-  const d = await core.saveArticle({
+  return {
     ...(articleId ? { articleId } : {}),
     title: article.title || "",
     subtitle: article.subtitle || "",
     bodyHtml,
     photos,
     content: article.content || "", // 다시 열 때 그대로 복원(bodyHtml 은 발행·변환용)
+    category: article.category || "",
+    subcategory: article.subcategory || "",
     linkedSources: article.linkedSources || [],
     sources: (article.sources || []).map(({ text: _text, ...meta }) => meta), // 본문 텍스트는 sources/<id>/text.txt 에 있다
     status: article.status || "",
@@ -346,8 +403,7 @@ export async function saveDraft(article, articleId) {
     platformDrafts: article.platformDrafts || {},
     cardNews: article.cardNews || null,
     platformGeneration: article.platformGeneration || {},
-  });
-  return d.articleId;
+  };
 }
 
 /** 코어의 원고(draft) → 화면의 기사 객체. content 가 없는 옛 원고는 bodyHtml 에서 글자만 */
@@ -361,9 +417,12 @@ function articleFromDraft(draft, empty) {
     title: draft.title || "",
     subtitle: draft.subtitle || "",
     content,
+    category: draft.category || "",
+    subcategory: draft.subcategory || "",
     status: draft.status || empty.status,
     createdAt: draft.createdAt || empty.createdAt,
-    updatedAt: (draft.savedAt || "").replace("T", " ").slice(0, 16) || empty.updatedAt,
+    // 코어 저장 시각(UTC ISO) → 이 PC 시간대 "YYYY-MM-DD HH:mm"(새 기사의 createdAt·updatedAt 과 같은 모양)
+    updatedAt: localStamp(draft.savedAt) || empty.updatedAt,
     linkedSources: draft.linkedSources || [],
     sources: draft.sources || [],
     photos: (draft.photos || []).map((photo) => ({ ...photo, url: photo.data || photo.url || "" })),
@@ -375,7 +434,26 @@ function articleFromDraft(draft, empty) {
 
 /** 앱을 열 때 이어서 작업할 가장 최근 원고 → 기사 객체(없으면 null). 사진은 참조로 받아 바이트를 따로(병렬) 받는다 */
 export async function loadLatestArticle(empty) {
-  const { draft } = await core.latestArticle();
+  return articleFromResponse(await core.latestArticle(), empty);
+}
+
+/** 보관소 '수정' — 마지막 수동 저장본(version "saved") 또는 발행본("published")을 편집기용 기사 객체로 */
+export async function loadArticle(articleId, version, empty) {
+  const article = await articleFromResponse(await core.getArticle(articleId, version), empty);
+  return article && { ...article, openedFrom: version };
+}
+
+/** 보관소 목록 → [{ articleId, title, subtitle, excerpt, state, published, updatedAt, ... }] */
+export async function listArchive(signal) {
+  const { articles } = await core.listArticles(signal);
+  return (articles || []).map((a) => ({
+    articleId: a.article_id, title: a.title, subtitle: a.subtitle, excerpt: a.excerpt || "", state: a.state || "draft",
+    published: a.published || null, updatedAt: a.updated_at, createdAt: a.created_at, photoCount: a.photo_count || 0,
+    unsavedChanges: !!a.unsaved_changes, revisionCount: a.revision_count || 0,
+  }));
+}
+
+async function articleFromResponse({ draft, revisionKind, lastManual, published, editedAfterPublish, firstSavedAt }, empty) {
   if (!draft) return null;
   const loaded = new Map();
   const photos = await Promise.all((draft.photos || []).map(async (photo) => ({
@@ -383,12 +461,20 @@ export async function loadLatestArticle(empty) {
     data: await fromMediaRef(photo.data, loaded),
     original: await fromMediaRef(photo.original, loaded),
   })));
-  return articleFromDraft({ ...draft, photos }, empty);
+  // 아래 값들은 화면 전용(저장되지 않음): 마지막 수동 저장본(보관소 '원고'), 그 뒤 임시 저장본인지, 송고본 정보, 송고 뒤 고쳤는지
+  return { ...articleFromDraft({ ...draft, photos }, empty), lastManual: lastManual || null, unsavedOnOpen: revisionKind === "auto",
+    published: published || null, editedAfterPublish: !!editedAfterPublish, firstSavedAt: firstSavedAt || null };
 }
 
-/** 원고의 저장 이력(최신이 위) */
-export async function listRevisions(articleId) {
-  return (await core.listRevisions(articleId)).revisions || [];
+/** 원고의 저장 이력(최신이 위) + 정리할 수 있는 옛 자동 저장 이력 수(수동 저장 도입 전에는 고칠 때마다 이력이 남았다) */
+export async function listRevisionsWithLegacy(articleId) {
+  const { revisions, legacyCount } = await core.listRevisions(articleId);
+  return { revisions: revisions || [], legacyCount: legacyCount || 0 };
+}
+
+/** 옛 자동 저장 이력 지우기 → 지운 개수 */
+export async function pruneLegacyRevisions(articleId) {
+  return (await core.pruneLegacyRevisions(articleId)).deleted || 0;
 }
 
 /** 저장 이력 한 건의 미리보기(읽기 전용) */
@@ -414,4 +500,9 @@ export async function listStoredSources(signal) {
       content: used.length ? `이 자료를 쓰는 기사: ${used.join(", ")}` : "아직 이 자료를 쓰는 기사가 없습니다.",
     };
   });
+}
+
+function localStamp(iso) {
+  const d = new Date(iso || "");
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("sv-SE", { hour12: false }).slice(0, 16);
 }

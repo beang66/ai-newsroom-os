@@ -10,6 +10,7 @@ import {
   importPhoto,
   flowSummary,
   saveDraft,
+  publishDraft,
   factcheckArticle,
   splitSentences,
   needsRecheck,
@@ -191,7 +192,7 @@ export function SuggestionList({ state, onPick, label }) {
         <button
           key={value}
           onClick={() => onPick(value)}
-          className="block w-full text-left px-3 py-1.5 rounded-xl hover:bg-white font-bold text-slate-800 cursor-pointer"
+          className="block w-full text-left px-3 py-1.5 rounded-xl hover:bg-white font-bold text-slate-800 cursor-pointer whitespace-pre-line"
         >
           {value}
         </button>
@@ -361,10 +362,25 @@ export function FlowSummaryButton({ body }) {
   );
 }
 
-/** 기사가 바뀌면 1.5초 뒤 코어에 저장(옛 UI 와 같은 간격). 상태 문구를 돌려준다.
- *  App 에서 한 번만 쓴다 — 어느 화면에 있든 저장되고, 저장 ID 는 article.articleId 에 남아 같은 파일을 덮어쓴다 */
+const clock = () => new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+/** 저장 — App 에서 한 번만 쓴다(어느 화면에 있든 동작).
+ *  - 자동 임시 저장: 기사가 바뀌면 1.5초 뒤 작업본 한 칸에(앱이 갑자기 꺼져도 이어서 작업). 저장 이력·보관소에는 안 보임
+ *  - 수동 저장(saveNow): 저장 버튼·Ctrl+S → 저장 이력에 남고 보관소 '작성 중'이 이 판으로 바뀐다
+ *  돌려주는 값: { status(상태 문구), saveNow, saved(마지막 수동 저장본 {title, subtitle, content, savedAt}), dirty, markSaved, publishNow, published, phase(작성 중·송고됨·송고 후 수정 중), times({firstSavedAt, lastSavedAt}) } */
 export function useAutosave(article, setArticle) {
   const [status, setStatus] = useState("");
+  const [saved, setSaved] = useState(() => article.lastManual ? { ...article.lastManual, savedAt: clockOf(article.lastManual.savedAt) } : null);
+  const [dirty, setDirty] = useState(() => !!article.unsavedOnOpen);
+  const [saving, setSaving] = useState(false);
+  // 발행본(기사당 하나)과, 발행한 뒤 고쳤는지 — 상단 상태 "작성 중 / 송고됨 / 송고 후 수정 중"
+  const [published, setPublished] = useState(() => article.published || null);
+  const [changedSincePublish, setChangedSincePublish] = useState(() => !!article.editedAfterPublish);
+  // 미리보기 입력·업데이트(송고 전): 처음 수동 저장 시각 / 마지막 수동 저장 시각(코어 ISO)
+  const [times, setTimes] = useState(() => ({ firstSavedAt: article.firstSavedAt || null, lastSavedAt: article.lastManual?.savedAt || null }));
+  const noteSaved = (savedAt, firstSavedAt) => setTimes((prev) => ({
+    firstSavedAt: prev.firstSavedAt || firstSavedAt || savedAt, lastSavedAt: savedAt,
+  }));
   const idRef = useRef(article.articleId || null);
   const first = useRef(true);
   useEffect(() => {
@@ -372,24 +388,87 @@ export function useAutosave(article, setArticle) {
       first.current = false; // 처음 연(또는 불러온) 기사는 바꾸기 전까지 저장하지 않는다
       return;
     }
-    setStatus("저장 대기…");
+    setDirty(true);
+    setChangedSincePublish(true);
+    setStatus("임시 저장 대기…");
     // TODO(debt: DEBT-006): 실행 중인 저장 요청은 clearTimeout으로 중단되지 않아 다음 저장과 겹칠 수 있다.
     // 첫 ID 응답 전에는 새 기사 중복 생성, 응답 순서가 뒤집히면 오래된 본문/상태 덮어쓰기 가능성.
     // 동일 기사 저장 요청을 직렬화하고 낡은 응답의 상태 갱신을 막을 것(실사용 재현은 후속).
     const timer = setTimeout(async () => {
-      setStatus("자동 저장 중…");
+      setStatus("임시 저장 중…");
       try {
-        const id = await saveDraft(article, idRef.current || article.articleId);
+        const { articleId: id } = await saveDraft(article, idRef.current || article.articleId, "auto");
         idRef.current = id;
         if (id !== article.articleId) setArticle((prev) => ({ ...prev, articleId: id }));
-        setStatus("자동 저장됨");
+        setStatus("임시 저장됨");
       } catch (e) {
-        setStatus("저장 실패: " + (e?.message || e));
+        setStatus("임시 저장 실패: " + (e?.message || e));
       }
     }, 1500);
     return () => clearTimeout(timer);
     // 저장 대상 필드가 바뀔 때만(article 객체 전체가 아니라 — articleId 변경으로는 다시 저장하지 않는다)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [article.title, article.subtitle, article.content, article.photos, article.sources, article.linkedSources, article.status, article.platformDrafts, article.cardNews, article.platformGeneration]);
-  return status;
+  }, [article.title, article.subtitle, article.category, article.subcategory, article.content, article.photos, article.sources, article.linkedSources, article.status, article.platformDrafts, article.cardNews, article.platformGeneration]);
+
+  const markSaved = (a, at = clock(), iso = null) => {
+    setSaved({ title: a.title || "", subtitle: a.subtitle || "", content: a.content || "", savedAt: at });
+    if (iso !== false) setTimes((prev) => ({ firstSavedAt: prev.firstSavedAt || iso || new Date().toISOString(), lastSavedAt: iso || new Date().toISOString() })); // 복원도 수동 저장
+    setDirty(false);
+  };
+  const saveNow = async () => {
+    if (saving) return false;
+    setSaving(true);
+    setStatus("저장 중…");
+    try {
+      const result = await saveDraft(article, idRef.current || article.articleId, "manual");
+      const id = result.articleId;
+      idRef.current = id;
+      noteSaved(result.savedAt, result.firstSavedAt);
+      if (id !== article.articleId) setArticle((prev) => ({ ...prev, articleId: id }));
+      markSaved(article, clockOf(result.savedAt), false);
+      setStatus("");
+      return true;
+    } catch (e) {
+      setStatus("저장 실패: " + (e?.message || e));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+  // CMS 최종 발행: 수동 저장 + 발행본 갱신(코어 한 번). 성공하면 발행 결과를, 실패하면 오류를 던진다
+  const publishNow = async () => {
+    setSaving(true);
+    setStatus("송고 중…");
+    try {
+      const result = await publishDraft(article, idRef.current || article.articleId);
+      idRef.current = result.articleId;
+      // 코어가 발행본의 상태를 '발행됨'으로 저장한다 — 화면도 같게(같은 내용이라 임시 저장이 이력을 늘리지 않는다)
+      setArticle((prev) => ({ ...prev, articleId: result.articleId, status: "송고됨" }));
+      markSaved(article, clockOf(result.savedAt), false);
+      noteSaved(result.savedAt, result.firstSavedAt);
+      setPublished(result.published);
+      setChangedSincePublish(false);
+      if (article.status !== "송고됨") first.current = true; // 위 상태 글자 변경을 '발행 후 수정'으로 세지 않게
+      setStatus("");
+      return result;
+    } catch (e) {
+      setStatus("송고 실패: " + (e?.message || e));
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  };
+  const phase = !published ? "작성 중" : changedSincePublish ? "송고 후 수정 중" : "송고됨";
+  // 화면에 보일 상태 문구: 수동 저장 기준
+  const label = saving ? "저장 중…"
+    : status.startsWith("저장 실패") || status.startsWith("임시 저장 실패") || status.startsWith("송고") ? status
+    : dirty ? `저장하지 않은 변경 있음${saved ? ` · 마지막 저장 ${saved.savedAt}` : ""}`
+    : saved ? `저장됨 ${saved.savedAt}` : status;
+  return { status: label, saveNow, saved, dirty, markSaved, publishNow, published, phase, times };
+}
+
+// 코어의 저장 시각(ISO) → "14:32"
+function clockOf(iso) {
+  const d = new Date(iso || "");
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false });
 }

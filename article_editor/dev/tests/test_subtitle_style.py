@@ -19,7 +19,20 @@ class SubtitleStyle(unittest.TestCase):
             captured.update(payload);return {'output':[{'content':[{'type':'output_text','text':'{}'}]}]}
         with patch.object(server,'openai_call',side_effect=call):
             server.structured_call('subtitle_review','기존 규칙',{},'원고')
-        self.assertIn('원문의 시행 상태',captured['instructions']);self.assertIn('변경 후 수치가 없으면',captured['instructions'])
+        # 2026-10-08: 동아일보 부제 규칙(줄 수 기본 3줄, 제목 숫자 반복 금지)이 붙는지 확인
+        self.assertIn('기본 3줄',captured['instructions']);self.assertIn('제목에 있는 숫자는 부제에 다시 쓰지 않습니다',captured['instructions'])
+    def test_donga_declarative_ending(self):
+        self.assertIn('서술형 종결',server.subtitle_style_violations('로건 8이닝 무실점 투구 빛냈다'))
+        self.assertEqual(server.subtitle_style_violations('로건 8이닝 무실점 역투'),[])
+        self.assertEqual(server.subtitle_style_violations('한선수 “최선 다하고 싶다”'),[])  # 인용은 허용
+    def test_donga_four_lines_and_dash(self):
+        # 동아일보 규칙: 부제 최대 4줄, 나열 기호 '·' → '-' (9·19 같은 날짜 표기는 유지)
+        four='고사목 제거·나무예방주사 실시\nQR코드로 그루터기 추적 관리\n9·19 합의 이후 감시 강화\n청정지역 지정 목표'
+        with patch.object(server,'structured_call',return_value={'subtitle_1':four}):
+            out=server.polish_subtitle_lines(['초안'],'9·19 합의 원문','제목',multiline=True)
+        self.assertEqual(out,['고사목 제거-나무예방주사 실시\nQR코드로 그루터기 추적 관리\n9·19 합의 이후 감시 강화\n청정지역 지정 목표'])
+        with patch.object(server,'structured_call',return_value={'subtitle_1':four+'\n다섯째 줄'}):
+            with self.assertRaises(server.RequestError):server.polish_subtitle_lines(['초안'],'9·19 합의 원문','제목',multiline=True)
     def test_openai_repair(self):
         bad={'subtitle_candidates':['전용 프로그램 확인 가능한 워터마크 도입함','탐지율 92%에서','원문 기반 추가 정보']}
         good={'subtitle_candidates':['전용 프로그램으로 식별하는 워터마크 도입','단어 수정에 따른 탐지 성능 변화','원문 기반 추가 정보']}

@@ -160,3 +160,36 @@ AI 로봇 아이콘, 확정된 제목·부제 입력 잠금과 명시적 해제,
 
 ## v14
 raw text/inline/BR을 드래그 시작 시 DIV로 묶어 첫 줄 위치 누락 수정. 스크롤 조상 탐색으로 페이지/독립 패널 양방향 이동. 고정738px iframe 축소 제거, 뷰포트와 스크롤바 기준 렌더링. 동아일보 원본 반응형 CSS 규칙을 제목/본문 별도 영역에 적용하고 10개 폭에서 참조 CSS와 줄 문자열 비교.
+
+## 2026-10-08~10 Claude (로컬 브랜치 donga-subtitle-rules, 미푸시)
+자세한 경위·원인·검증 수치: `C:\고서연\팀플\작업 기록\2026-10-08_10_Claude_작업로그.md`
+
+| 날짜 | 내용 | 수정 파일 |
+|---|---|---|
+| 10-08 | 부제 규칙을 동아일보 실제 부제 43건 분석 규칙으로 교체(2~4줄·짧은 줄형·'-' 나열·인용 압축·제목 표기). 부제 경로 오류 수정(근거 문장 보정, 근거 없는 사실만 제외, 교열 수치 오류 시 교열 전 문장 사용, 한 줄 형식) | app/core/ai/subtitle_rules.py, subtitle_editorial.py, headline.py, router.py, dev/tests/test_subtitle_*.py |
+| 10-08 | 부제를 비교 테스트와 같은 구조로: KoBART 초안 → OpenAI 1회(temperature 0) → 후처리. 부제 칸 여러 줄(textarea) | app/core/ai/subtitle_donga.py(새), router.py, web/src/api/editorial.js, ArticleWriter.jsx, EditorialAssist.jsx, VersionHistory.jsx, dev/tests/test_subtitle_donga.py(새) |
+| 10-08 | 원인 기록: 헤드라인 추천 실패 = onnxruntime 1.20.1 에서 KeT5 ONNX 로드 불가 + 고치기 전 띄운 앱 프로세스가 옛 코드 사용 → onnxruntime 1.22.1, 앱 재시작 필요 | (환경) |
+| 10-08 | 동아일보 미리보기 복원: v30 iframe·donga-fonts.css·donga-preview.css·HTML 구조·fitPreview 계산 | web/public/assets/donga/*(새), web/src/components/DongaPreview.jsx(새), ArticleWriter.jsx |
+| 10-08 | 미리보기를 작성 카드 안에서 전환. 네이버 미리보기·흐름 요약·나란히 보기 삭제 | ArticleWriter.jsx, DongaPreview.jsx |
+| 10-10 | 미리보기 줄바꿈이 실제 사이트와 달라진 원인(카드 폭 ~820px → 1024px 이하 규칙) 수정: iframe 을 PC 문서 폭 1312px 로 그리고 빈 양옆 칸만 잘라 본문 684px 유지 | DongaPreview.jsx |
+| 10-10 | 제목도 'AI 추천' 방식(확정·다시 생성 제거). 추천 결과는 다시 누르기 전까지 유지(article.titleCandidates·subtitleCandidates) | ArticleWriter.jsx |
+| 10-10 | 사진 기능 v30 흐름 복원: 사진 넣기 메뉴, Unsplash 검색 팝업, 편집 화면(비율·모서리 크기·이동·가우시안 모자이크·지우개·이동·삭제·되돌리기), 본문 사진 도구, 끌어 옮기기(청록색 선·자동 스크롤), 저장 구조(original/data/crop/masks) 연결. 본문 사진 자리는 `[사진:id]` 한 줄 | web/src/lib/imageEditor.js(v30 그대로), lib/photoMarks.js, components/photo/*(새), ArticleWriter.jsx, api/editorial.js, DongaPreview.jsx |
+| 10-10 | 한글 사진 검색어 → 영어 검색어(assist kind `photo_query`), 크기 조절 모서리 ㄱ자 표시, 본문을 상자 하나로(사진이 상자 안), 카드뉴스·플랫폼 입력에서 사진 줄 제거 | app/core/ai/router.py, dev/tests/test_photo_query.py(새), api/editorial.js, api/platform.js, photo/PhotoSearch.jsx, ImageEditor.jsx, BodyWithPhotos.jsx, ArticleWriter.jsx |
+| 10-10 | 검증: 단위 테스트 303개 중 302 통과(실패 1 = 기존 test_factcheck_memo, 부제와 무관). 사진 e2e 47항목 통과(Playwright, 배율 100%) | - |
+| 10-10 | 제목·부제 AI 추천: 후보를 고르면 목록 닫힘(다시 'AI 추천' 전까지 안 보임) | web/src/components/ArticleWriter.jsx |
+| 10-10 | 제목 잘림("…노출"이 "…노") 원인 = 응답 스키마 maxLength 42 에서 API 가 문자열을 자름 → 상한 80, 42자 넘는 후보만 완결된 짧은 제목으로 다시 쓰기(46자 넘으면 제외) | app/core/ai/headline.py, dev/tests/test_headline_length.py(새) |
+| 10-10 | 수동 저장: 저장 버튼·Ctrl+S → 저장 이력(수동만)·보관소 '작성 중' 갱신. 자동 저장은 작업본 한 칸 덮어쓰기(이력·보관소에 안 보임, 다시 열면 이어서). article_revisions.kind 열('manual' 기본 / 'auto') 추가, kind 없는 저장은 예전처럼 manual | app/core/vault.py, storage.py, read_models.py, web/src/api/core-api.js, api/editorial.js, components/EditorialAssist.jsx(useAutosave), App.jsx, ArticleWriter.jsx, VersionHistory.jsx, ArchiveView.jsx, dev/tests/test_manual_save.py(새) |
+| 10-10 | 검증: 단위 312개(실패 1 = 기존 test_factcheck_memo), 저장 e2e 14항목, 사진 e2e 47항목 통과. 발행 구조(발행본 덮어쓰기 등)는 보관소 담당자와 상의 — `작업 기록\카드뉴스_연동_저장이력_제안.md` B-3 | - |
+| 10-12 | 미리보기 제목 글꼴: donga.com(1920px) 실측과 비교 → 제목 자간 -0.3px 를 normal 로(본문·부제는 -0.3px 유지), 500 굵기 글꼴(한글 Spoqa Han Sans Neo Medium·영문 Inter Medium) 추가. 같은 제목이 실제 기사와 같은 자리(601px / 70px)에서 줄바꿈됨 | web/public/assets/donga/donga-preview.css, donga-fonts.css |
+| 10-12 | CMS 최종 발행/이관 실제 동작: 발행 = 수동 저장 + 발행본(기사당 하나). 다시 발행하면 덮어쓰고 수정 시각(published_at) 갱신, 처음 발행 시각·발행 횟수는 남김. 상단 상태 작성 중 / 발행됨 / 발행 후 수정 중 | app/core/vault.py(article_published 테이블), storage.py(publish_article·get_article), read_models.py(state·published), api.py(POST /api/articles/publish, GET /api/articles/<id>?version=), managers/storage_manager.py, web/src/api/core-api.js, api/editorial.js, components/EditorialAssist.jsx, ArticleWriter.jsx, App.jsx |
+| 10-12 | 보관소: 코어 목록으로 작성 중·발행본 탭 실제 필터(발행하면 작성 중 → 발행본 바로 이동, 발행 뒤 고쳐 저장하면 작성 중에 '발행 후 수정 중'). 목록·원고 카드의 '수정' → Article Writer 탭에서 그 판(작성 중 = 마지막 수동 저장본, 발행본 = 발행본)을 엶. 저장 안 한 변경이 있으면 저장할지 먼저 물음 | web/src/components/ArchiveView.jsx, App.jsx, ArticleWriter.jsx(열기 안내) |
+| 10-12 | 검증: 단위 318개(실패 1 = 기존 test_factcheck_memo), 새 test_publish.py 6개, 발행 e2e 26항목 통과(`동아일보 부제 학습 자료/발행_확인/`) | dev/tests/test_publish.py(새) |
+| 10-12 | 기사 분류 선택: donga.com 사이트맵 기준 섹션 10개(정치·경제·국제·사회·문화·연예·스포츠·오피니언·헬스동아·전국) + 세부 섹션. 원고에 저장, 미리보기 맨 위 분류에 "스포츠 > 야구&MLB" 로 표시(고르기 전에는 비움 — 예전 "사회" 고정값 제거) | web/src/data/sections.js(새), components/ArticleWriter.jsx, DongaPreview.jsx, api/editorial.js, data/article.js, EditorialAssist.jsx |
+| 10-12 | 저장 이력의 옛 자동 저장 이력 정리: 수동 저장 도입(10-10 15:00 KST) 전 이력은 저장 이력 창의 '옛 이력 지우기'(확인 후)로 삭제. 도입 뒤 저장본이 없으면 옛 이력 마지막 하나는 남김. app_meta.manual_save_since 로 기준 시각 기록(쓰기 잠금 충돌을 피해 없을 때만 씀) | app/core/vault.py, storage.py(prune_legacy_revisions·legacyCount), api.py(POST …/revisions/prune-legacy), managers/storage_manager.py, web/src/components/VersionHistory.jsx, api/editorial.js, api/core-api.js, dev/tests/test_manual_save.py |
+| 10-12 | 이름 변경: 보관소 작성 중 → 원고, 발행본 → 송고, 'CMS 최종 발행/이관' 버튼 → '송고'(이 앱은 송고까지, 출고는 동아일보 CMS). 상단 상태 작성 중 / 송고됨 / 송고 후 수정 중 | web/src/components/ArchiveView.jsx, ArticleWriter.jsx, EditorialAssist.jsx, app/core/storage.py |
+| 10-12 | 사진 검색에 '동아일보 DB' 출처 추가: 동아디지털아카이브 포토파노라마(148장)를 코어가 읽어 6시간 보관, 검색어(제목·설명)·연대로 거르고 6장씩. 썸네일은 dimg.donga.com 400px 축소본, 넣기·편집·다운로드는 Unsplash 와 같음(출처 '동아일보 DB', 설명 = 사진 제목) | app/core/integrations/donga_archive.py(새), api.py(GET /api/donga/photos, /api/donga/photo/<id>), web/src/components/photo/PhotoSearch.jsx, ArticleWriter.jsx, api/editorial.js, api/core-api.js |
+| 10-12 | 검증: 단위 320개(실패 1 = 기존 test_factcheck_memo), e2e 22항목 통과(`동아일보 부제 학습 자료/10-12_확인/`) | - |
+| 10-12 | 동아일보 DB 사진: 연대 버튼 → 정렬 3개(전체 = 아카이브 기본 순서 / 최신순 / 오래된순), 한 번에 3장(Unsplash 처럼 이전·다음), 사진 출처를 바꾸면 검색칸·결과 비움(Unsplash 검색어가 넘어가지 않게). e2e 26항목 통과 | app/core/integrations/donga_archive.py, api.py, web/src/components/photo/PhotoSearch.jsx, api/editorial.js, api/core-api.js |
+| 10-12 | 동아일보 DB 사진 '전체'를 최신순으로(아카이브 기본 순서가 오래된순과 같아 구분이 안 되던 것). e2e 27항목 통과 | app/core/integrations/donga_archive.py |
+| 10-12 | 미리보기 입력·업데이트 시각: 송고한 기사는 업데이트 = 송고본 최종 저장 시각(다시 송고하면 바뀜), 입력 = 처음 송고 시각. 코어 시각(UTC)을 그대로 잘라 9시간 이르게 보이던 것(예: 11:40 이 02:40)도 이 PC 시간대(KST)로 고침. e2e 29항목 통과 | web/src/components/DongaPreview.jsx, ArticleWriter.jsx, api/editorial.js |
+| 10-12 | 미리보기 입력·업데이트 규칙 정리: 송고 전 = 처음 수동 저장 / 마지막 수동 저장(처음 저장 직후엔 같음, 저장 전이면 '저장 전'), 송고 후 = 처음 송고 / 최종 송고(송고 뒤 저장만으로는 안 바뀜). 코어에 처음 수동 저장 시각 표(article_first_saved — articles 열 추가 대신, 기존 테스트의 위치 기반 INSERT 를 깨지 않게), 옛 기사는 남은 수동 저장 이력 중 가장 이른 시각으로 채움. 단위 322개(실패 1 = 기존), e2e 시각 7항목·기존 29항목 통과 | app/core/vault.py, storage.py, web/src/components/DongaPreview.jsx, EditorialAssist.jsx(times), ArticleWriter.jsx, App.jsx, api/editorial.js, dev/tests/test_publish.py |

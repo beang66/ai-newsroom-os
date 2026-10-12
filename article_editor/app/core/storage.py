@@ -174,21 +174,39 @@ def import_legacy_files():
     return report
 
 
-def _append_revision(db, identifier, body, now):
-    """이력에 새 줄을 더한다. 마지막 줄과 내용이 같으면 늘리지 않는다(자동저장이 잦다). → 최신 revision 번호"""
-    last = db.execute('SELECT revision_no, draft_json FROM article_revisions WHERE article_id = ? '
+SAVE_KINDS = ('manual', 'auto')
+
+
+def _append_revision(db, identifier, body, now, kind='manual'):
+    """이력에 저장본을 더한다. → 최신 revision 번호
+    - manual(수동 저장): 저장 이력에 남는 버전. 바로 앞 줄이 자동 임시 저장이면 그 줄을 이 버전으로 올린다.
+    - auto(자동 임시 저장): 이력을 늘리지 않고 '마지막 수동 저장 뒤의 한 칸'을 계속 덮어쓴다 — 앱이 갑자기 꺼져도
+      이어서 작업할 수 있게 하는 작업본이다. 저장 이력·보관소에는 보이지 않는다.
+    마지막 줄과 내용이 같으면 아무것도 늘리지 않는다."""
+    last = db.execute('SELECT revision_no, draft_json, kind FROM article_revisions WHERE article_id = ? '
                       'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone()
-    if last and last[1] == body:
+    if last and last[1] == body and (kind == 'auto' or last[2] == 'manual'):
+        return last[0]
+    if last and last[2] == 'auto':
+        if kind == 'manual':
+            before = db.execute("SELECT revision_no, draft_json FROM article_revisions WHERE article_id = ? AND kind = 'manual' "
+                                'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone()
+            if before and before[1] == body:  # 수동 저장본과 같아졌다 → 작업본은 필요 없다
+                db.execute('DELETE FROM article_revisions WHERE article_id = ? AND revision_no = ?', (identifier, last[0]))
+                return before[0]
+        db.execute('UPDATE article_revisions SET draft_json = ?, created_at = ?, kind = ? WHERE article_id = ? AND revision_no = ?',
+                   (body, now, kind, identifier, last[0]))
         return last[0]
     revision = (last[0] if last else 0) + 1
-    db.execute('INSERT INTO article_revisions (article_id, revision_no, draft_json, created_at, id) VALUES (?, ?, ?, ?, ?)',
-               (identifier, revision, body, now, ids.revision_uuid(identifier, revision)))
+    db.execute('INSERT INTO article_revisions (article_id, revision_no, draft_json, created_at, id, kind) VALUES (?, ?, ?, ?, ?, ?)',
+               (identifier, revision, body, now, ids.revision_uuid(identifier, revision), kind))
     db.execute('DELETE FROM article_revisions WHERE article_id = ? AND revision_no <= ?',
                (identifier, revision - MAX_REVISIONS))
     return revision
 
 
-def save_article(data):
+def _check_draft(data):
+    """저장 요청 검사 → (draft, identifier, expected)."""
     draft = data.get('draft')
     if not isinstance(draft, dict) or not isinstance(draft.get('bodyHtml'), str):
         raise RequestError('저장할 원고를 확인해 주세요.')
@@ -200,27 +218,144 @@ def save_article(data):
     expected = data.get('expectedRevisionNo')
     if expected is not None and (isinstance(expected, bool) or not isinstance(expected, int) or expected < 0):
         raise RequestError('expectedRevisionNo 는 0 이상의 정수여야 합니다.')
+    return draft, identifier, expected
+
+
+def _save_in(db, draft, identifier, expected, kind, now):
+    """한 트랜잭션 안에서 원고를 저장한다 → (revision_no, 저장한 draft_json)."""
+    if expected is not None:
+        current = db.execute('SELECT max(revision_no) FROM article_revisions WHERE article_id = ?', (identifier,)).fetchone()[0] or 0
+        if current != expected:
+            raise RequestError(f'다른 곳에서 먼저 저장된 원고입니다(현재 {current}번 저장본). 최신 원고를 다시 불러온 뒤 저장해 주세요.',
+                               409, code='REVISION_CONFLICT')
+    body = json.dumps(_pack(db, dict(draft, articleId=identifier, savedAt=None)), ensure_ascii=False, sort_keys=True)
+    db.execute('INSERT OR IGNORE INTO articles VALUES (?, ?, ?, ?)', (identifier, vault.WORKSPACE_ID, now, now))
+    revision = _append_revision(db, identifier, body, now, kind)
+    db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, identifier))
+    if kind == 'manual':
+        db.execute('INSERT OR IGNORE INTO article_first_saved VALUES (?, ?)', (identifier, now))
+    return revision, body
+
+
+def save_article(data):
+    draft, identifier, expected = _check_draft(data)
+    kind = data.get('kind', 'manual')  # 화면의 자동 저장은 'auto', 저장 버튼은 'manual'(값이 없으면 예전처럼 이력에 남김)
+    if kind not in SAVE_KINDS:
+        raise RequestError("kind 는 'manual' 또는 'auto' 입니다.")
     now = _now()
     with SAVE_LOCK, vault.connect() as db:
-        if expected is not None:
-            current = db.execute('SELECT max(revision_no) FROM article_revisions WHERE article_id = ?', (identifier,)).fetchone()[0] or 0
-            if current != expected:
-                raise RequestError(f'다른 곳에서 먼저 저장된 원고입니다(현재 {current}번 저장본). 최신 원고를 다시 불러온 뒤 저장해 주세요.',
-                                   409, code='REVISION_CONFLICT')
-        body = json.dumps(_pack(db, dict(draft, articleId=identifier, savedAt=None)), ensure_ascii=False, sort_keys=True)
-        db.execute('INSERT OR IGNORE INTO articles VALUES (?, ?, ?, ?)', (identifier, vault.WORKSPACE_ID, now, now))
-        revision = _append_revision(db, identifier, body, now)
-        db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, identifier))
-    return {'saved': True, 'articleId': identifier, 'revisionNo': revision,
+        revision, _ = _save_in(db, draft, identifier, expected, kind, now)
+        first = first_saved_at(db, identifier)
+    return {'saved': True, 'articleId': identifier, 'revisionNo': revision, 'kind': kind, 'savedAt': now, 'firstSavedAt': first,
             'fileName': identifier + '.json', 'folder': '암호화 저장소'}  # fileName·folder 는 이전 응답과의 호환용 표시값
 
 
-def latest_revisions(db, limit=None):
+def _published_row(db, article_id):
+    return db.execute('SELECT revision_no, first_published_at, published_at, publish_count, draft_json FROM article_published '
+                      'WHERE article_id = ?', (article_id,)).fetchone()
+
+
+def first_saved_at(db, article_id):
+    """처음 수동 저장한 시각(없으면 None) — 송고 전 미리보기의 '입력'."""
+    row = db.execute('SELECT first_saved_at FROM article_first_saved WHERE article_id = ?', (article_id,)).fetchone()
+    return row[0] if row else None
+
+
+def published_info(db, article_id):
+    """기사의 발행본 정보(본문 제외) — 발행한 적 없으면 None."""
+    row = _published_row(db, article_id)
+    if not row:
+        return None
+    draft = json.loads(row[4])
+    return {'revisionNo': row[0], 'firstPublishedAt': row[1], 'publishedAt': row[2], 'publishCount': row[3],
+            'title': draft.get('title') or '', 'subtitle': draft.get('subtitle') or '', 'excerpt': _plain(draft)[:120]}
+
+
+def _last_manual(db, article_id):
+    return db.execute("SELECT revision_no, created_at, draft_json FROM article_revisions WHERE article_id = ? AND kind = 'manual' "
+                      'ORDER BY revision_no DESC LIMIT 1', (article_id,)).fetchone()
+
+
+def _manual_summary(manual):
+    if not manual:
+        return None
+    saved = json.loads(manual[2])
+    return {'revisionNo': manual[0], 'savedAt': manual[1], 'title': saved.get('title') or '',
+            'subtitle': saved.get('subtitle') or '', 'content': saved.get('content') or _plain(saved)}
+
+
+def edited_after_publish(db, article_id):
+    """발행한 뒤 수동 저장한 내용이 발행본과 다른가(보관소 '발행 후 수정 중')."""
+    row = _published_row(db, article_id)
+    manual = _last_manual(db, article_id)
+    return bool(row and manual and manual[2] != row[4])
+
+
+def publish_article(data):
+    """송고(화면 이름, 예전 "CMS 최종 발행") = **수동 저장 + 송고본(발행본) 갱신**(한 트랜잭션). 출고는 동아일보 CMS 에서 따로 한다.
+    발행본은 기사마다 하나다. 다시 발행하면 기존 발행본을 이 판으로 덮어쓰고 발행 시각(published_at)을 새로 적는다.
+    처음 발행 시각(first_published_at)과 발행 횟수(publish_count)는 남긴다 — 언제 처음 나갔는지·몇 번 고쳐 냈는지 확인용.
+    → {published: {...}, articleId, revisionNo, savedAt, republished}"""
+    draft, identifier, expected = _check_draft(data)
+    now = _now()
+    with SAVE_LOCK, vault.connect() as db:
+        revision, body = _save_in(db, dict(draft, status='송고됨'), identifier, expected, 'manual', now)
+        before = _published_row(db, identifier)
+        if before:
+            db.execute('UPDATE article_published SET revision_no = ?, draft_json = ?, published_at = ?, publish_count = publish_count + 1 '
+                       'WHERE article_id = ?', (revision, body, now, identifier))
+        else:
+            db.execute('INSERT INTO article_published (article_id, revision_no, draft_json, first_published_at, published_at, publish_count) '
+                       'VALUES (?, ?, ?, ?, ?, 1)', (identifier, revision, body, now, now))
+        info = published_info(db, identifier)
+        first = first_saved_at(db, identifier)
+    return {'published': info, 'articleId': identifier, 'revisionNo': revision, 'savedAt': now, 'firstSavedAt': first,
+            'republished': bool(before)}
+
+
+ARTICLE_VERSIONS = ('saved', 'published')
+
+
+def get_article(article_id, version='saved', photo_refs=False):
+    """보관소에서 '수정'을 누른 기사를 편집기로 연다(읽기만 하고 아무것도 바꾸지 않는다).
+    - saved: 마지막 수동 저장본(보관소 '작성 중'에 보이는 판). 수동 저장이 없으면 최신 임시 저장본
+    - published: 발행본
+    응답 모양은 latest_article 과 같다."""
+    article_id = _article_id(article_id)
+    if version not in ARTICLE_VERSIONS:
+        raise RequestError("version 은 'saved' 또는 'published' 입니다.")
+    with vault.connect() as db:
+        manual = _last_manual(db, article_id)
+        pub = _published_row(db, article_id)
+        if version == 'published':
+            if not pub:
+                raise _not_found('이 기사는 아직 발행본이 없습니다.')
+            body, at = pub[4], pub[2]
+        elif manual:
+            body, at = manual[2], manual[1]
+        else:
+            row = db.execute('SELECT draft_json, created_at FROM article_revisions WHERE article_id = ? ORDER BY revision_no DESC LIMIT 1',
+                             (article_id,)).fetchone()
+            if not row:
+                raise _not_found('기사를 찾지 못했습니다.')
+            body, at = row
+        return {'draft': _full_draft(db, body, at, unpack_photos=not photo_refs), 'version': version,
+                # 연 판이 마지막 수동 저장본과 다르면(발행 뒤 저장한 수정본이 따로 있는 경우) 화면이 '저장하지 않은 변경'으로 알린다
+                'revisionKind': 'manual' if manual and manual[2] == body else 'auto',
+                'lastManual': _manual_summary(manual), 'published': published_info(db, article_id),
+                'firstSavedAt': first_saved_at(db, article_id),
+                'editedAfterPublish': bool(pub and body != pub[4])}
+
+
+def latest_revisions(db, limit=None, manual=False):
     """기사마다 **최신 저장본** 한 줄 (article_id, created_at, updated_at, revision_no, draft_json) — 최근 수정순.
-    "기사가 지금 무엇을 쓰는가"(자료 사용처·읽기 모델·이어서 작업)는 모두 이 한 곳에서 읽는다."""
+    "기사가 지금 무엇을 쓰는가"(자료 사용처·읽기 모델·이어서 작업)는 모두 이 한 곳에서 읽는다.
+    manual=True 면 마지막 **수동 저장본**(보관소 '작성 중'에 보이는 판). 수동 저장이 아직 없는 기사는 최신 임시 저장본."""
+    pick = ('(SELECT revision_no FROM article_revisions WHERE article_id = a.id '
+            "ORDER BY kind = 'manual' DESC, revision_no DESC LIMIT 1)") if manual else \
+        '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id)'
     sql = ('SELECT a.id, a.created_at, a.updated_at, r.revision_no, r.draft_json FROM articles a '
-           'JOIN article_revisions r ON r.article_id = a.id AND r.revision_no = '
-           '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id) ORDER BY a.updated_at DESC')
+           'JOIN article_revisions r ON r.article_id = a.id AND r.revision_no = ' + pick + ' ORDER BY a.updated_at DESC')
     return db.execute(sql + ' LIMIT ?', (limit,)).fetchall() if limit else db.execute(sql).fetchall()
 
 
@@ -239,7 +374,14 @@ def latest_article(photo_refs=False):
         rows = latest_revisions(db, limit=1)
         if not rows:
             return {'draft': None}
-        return {'draft': _full_draft(db, rows[0][4], rows[0][2], unpack_photos=not photo_refs)}
+        # 이어서 작업할 원고는 가장 최근 것(임시 저장 포함). 그게 수동 저장 뒤의 임시 저장본이면 화면이 '저장하지 않은 변경'을 알린다
+        article_id = rows[0][0]
+        kind = db.execute('SELECT kind FROM article_revisions WHERE article_id = ? AND revision_no = ?', (article_id, rows[0][3])).fetchone()[0]
+        pub = _published_row(db, article_id)
+        return {'draft': _full_draft(db, rows[0][4], rows[0][2], unpack_photos=not photo_refs),
+                'revisionKind': kind, 'lastManual': _manual_summary(_last_manual(db, article_id)),
+                'published': published_info(db, article_id), 'editedAfterPublish': bool(pub and pub[4] != rows[0][4]),
+                'firstSavedAt': first_saved_at(db, article_id)}
 
 
 def media_file(media_id):
@@ -279,12 +421,34 @@ def _plain(draft):
     return text if isinstance(text, str) else _text_of(draft.get('bodyHtml'))
 
 
+def _legacy_rows(db, article_id):
+    """수동 저장 도입 전에 쌓인 이력(그때는 고칠 때마다 자동으로 남았다) 중 지워도 되는 줄의 번호.
+    기사가 비지 않도록, 도입 뒤 저장본이 하나도 없으면 옛 이력 중 마지막 하나는 남긴다. 송고본은 따로 복사돼 있어 영향 없음."""
+    row = db.execute("SELECT value FROM app_meta WHERE key = 'manual_save_since'").fetchone()
+    if not row:
+        return []
+    old = [r[0] for r in db.execute('SELECT revision_no FROM article_revisions WHERE article_id = ? AND created_at < ? '
+                                    'ORDER BY revision_no', (article_id, row[0])).fetchall()]
+    newer = db.execute('SELECT count(*) FROM article_revisions WHERE article_id = ? AND created_at >= ?', (article_id, row[0])).fetchone()[0]
+    return old if newer else old[:-1]
+
+
+def prune_legacy_revisions(article_id):
+    """저장 이력에서 옛 자동 저장 이력을 지운다(사용자가 '정리'를 눌렀을 때만). → {deleted, articleId}"""
+    article_id = _article_id(article_id)
+    with SAVE_LOCK, vault.connect() as db:
+        numbers = _legacy_rows(db, article_id)
+        db.executemany('DELETE FROM article_revisions WHERE article_id = ? AND revision_no = ?', [(article_id, n) for n in numbers])
+    return {'deleted': len(numbers), 'articleId': article_id}
+
+
 def list_revisions(article_id):
     """원고의 저장 이력(최신이 위). 목록용 요약만 — 본문 전체와 사진은 싣지 않는다."""
     article_id = _article_id(article_id)
     with vault.connect() as db:
         rows = db.execute('SELECT revision_no, id, created_at, draft_json FROM article_revisions WHERE article_id = ? '
-                          'ORDER BY revision_no DESC', (article_id,)).fetchall()
+                          "AND kind = 'manual' ORDER BY revision_no DESC", (article_id,)).fetchall()  # 저장 이력 = 수동 저장만
+        legacy = len(_legacy_rows(db, article_id))
     out = []
     for number, uuid_, created, body in rows:
         draft = json.loads(body)
@@ -292,7 +456,7 @@ def list_revisions(article_id):
         out.append({'revisionNo': number, 'id': uuid_, 'createdAt': created, 'title': draft.get('title') or '',
                     'subtitle': draft.get('subtitle') or '', 'excerpt': text[:120], 'chars': len(text),
                     'photoCount': len(draft.get('photos') or []), 'sourceCount': len(draft.get('sources') or [])})
-    return {'articleId': article_id, 'revisions': out}
+    return {'articleId': article_id, 'revisions': out, 'legacyCount': legacy}  # legacyCount: 정리할 수 있는 옛 자동 저장 이력 수
 
 
 def get_revision(article_id, revision_no):
@@ -320,7 +484,7 @@ def restore_revision(article_id, revision_no):
         if not row:
             raise RequestError('해당 저장 이력을 찾지 못했습니다. 오래된 이력은 자동으로 정리됩니다.', 404)
         body = json.dumps(dict(json.loads(row[0]), articleId=article_id, savedAt=None), ensure_ascii=False, sort_keys=True)
-        latest = _append_revision(db, article_id, body, now)
+        latest = _append_revision(db, article_id, body, now, 'manual')  # 복원은 사용자가 고른 판이므로 수동 저장으로 남긴다
         db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, article_id))
         draft = _full_draft(db, body, now)
     return {'restored': True, 'articleId': article_id, 'fromRevision': revision_no, 'revisionNo': latest, 'draft': draft}

@@ -24,6 +24,7 @@ from .ids import revision_uuid
 
 SERVICE = os.environ.get('AI_NEWSROOM_KEY_SERVICE') or 'AI Newsroom'  # 테스트는 다른 이름을 써서 실제 기기 키를 건드리지 않는다
 ACCOUNT = 'device-key'
+MANUAL_SAVE_INTRODUCED = '2026-10-10T06:00:00+00:00'  # 수동 저장 도입(10-10 15:00 KST) — 그 전 이력은 모두 자동 저장
 WORKSPACE_ID = '10000000-0000-4000-8000-000000000001'  # 단일 워크스페이스(계약 ERD 의 workspace_id). 저장소 파일이 계정마다 따로라 계정 안에서는 하나다
 
 
@@ -76,7 +77,7 @@ def adopt_legacy(user_id):
         marker.write_text(user_id, encoding='utf-8')
         return moved
 _INIT_LOCK = threading.RLock()
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4  # 3: 저장 종류(kind)·발행본(article_published)·처음 수동 저장(article_first_saved) / 4: 보관소에서 지운 기사(article_deleted)
 # api.py 의 /api/vault/restore 요청 한도(220MB)에 base64(4/3배)·JSON 여유를 뺀 값. 넘는 백업은 받아도 복구할 수 없다.
 MAX_BACKUP_BYTES = 160_000_000
 
@@ -85,7 +86,16 @@ CREATE TABLE IF NOT EXISTS articles (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS article_revisions (
   article_id TEXT NOT NULL REFERENCES articles(id), revision_no INTEGER NOT NULL,
-  draft_json TEXT NOT NULL, created_at TEXT NOT NULL, id TEXT, PRIMARY KEY (article_id, revision_no));
+  draft_json TEXT NOT NULL, created_at TEXT NOT NULL, id TEXT, kind TEXT NOT NULL DEFAULT 'manual',
+  PRIMARY KEY (article_id, revision_no));
+-- 발행본: 기사마다 하나(다시 발행하면 덮어쓰고 published_at 갱신). draft_json 은 발행한 판의 복사본이라 이력이 정리돼도 남는다
+CREATE TABLE IF NOT EXISTS article_published (
+  article_id TEXT PRIMARY KEY REFERENCES articles(id), revision_no INTEGER NOT NULL, draft_json TEXT NOT NULL,
+  first_published_at TEXT NOT NULL, published_at TEXT NOT NULL, publish_count INTEGER NOT NULL DEFAULT 1);
+-- 처음 수동 저장한 시각(미리보기 '입력', 송고 전). 이력이 정리돼도 남도록 따로 둔다
+CREATE TABLE IF NOT EXISTS article_first_saved (article_id TEXT PRIMARY KEY, first_saved_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS article_deleted (article_id TEXT PRIMARY KEY REFERENCES articles(id), deleted_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS media (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, header TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS media_assets (
@@ -151,6 +161,23 @@ def _migrate(db):
         db.execute('UPDATE article_revisions SET id = ? WHERE article_id = ? AND revision_no = ?',
                    (revision_uuid(article_id, revision_no), article_id, revision_no))
     db.execute('CREATE UNIQUE INDEX IF NOT EXISTS article_revisions_id ON article_revisions(id)')
+    # 2026-10-10 저장 종류: 'manual'(수동 저장 = 저장 이력·보관소) | 'auto'(자동 임시 저장 — 한 칸을 덮어씀).
+    # 옛 이력은 'manual' 로 둔다(예전에는 저장마다 이력이었으므로 그대로 보이게).
+    added = not any(row[1] == 'kind' for row in db.execute('PRAGMA table_info(article_revisions)'))
+    if added:
+        db.execute("ALTER TABLE article_revisions ADD COLUMN kind TEXT NOT NULL DEFAULT 'manual'")
+    # 수동 저장을 쓰기 시작한 시각 — 이보다 앞선 이력은 '저장할 때마다 남던' 옛 자동 저장이다(저장 이력에서 정리 가능).
+    # 지금 kind 열을 붙인 저장소는 지금부터, 이미 붙어 있던 저장소(10-10 수동 저장 도입 뒤 실행)는 도입 시각으로 적는다.
+    # 처음 수동 저장 시각이 없는 옛 기사는 남아 있는 수동 저장 이력 중 가장 이른 시각으로 채운다(빠진 게 있을 때만 쓴다)
+    missing = "SELECT article_id, min(created_at) FROM article_revisions WHERE kind = 'manual' " \
+              'AND article_id NOT IN (SELECT article_id FROM article_first_saved) GROUP BY article_id'
+    rows = db.execute(missing).fetchall()
+    if rows:
+        db.executemany('INSERT OR IGNORE INTO article_first_saved VALUES (?, ?)', rows)
+    # 없을 때만 쓴다 — connect() 마다 쓰기 잠금을 잡으면 다른 스레드의 저장과 부딪힌다
+    if not db.execute("SELECT 1 FROM app_meta WHERE key = 'manual_save_since'").fetchone():
+        db.execute('INSERT OR IGNORE INTO app_meta (key, value) VALUES (?, ?)',
+                   ('manual_save_since', datetime.datetime.now(datetime.timezone.utc).isoformat() if added else MANUAL_SAVE_INTRODUCED))
 
 
 def _device_key():

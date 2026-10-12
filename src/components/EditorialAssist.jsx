@@ -9,7 +9,9 @@ import {
   searchPhotos,
   importPhoto,
   flowSummary,
-  saveDraft,
+  saveDraftResult,
+  publishDraft,
+  publishCms,
   factcheckArticle,
   splitSentences,
   needsRecheck,
@@ -20,6 +22,7 @@ import {
 import { freezeArticle } from "../api/platform";
 import { core } from "../api/core.js";
 import { isRestoring } from "../restoreState";
+import { clearBackup, writeBackup } from "../lib/draftBackup.js";
 
 /** 외부 재판정 요청 항목 — 클릭 재검토와 저장된 판정 복원이 **똑같은 형식**이어야 코어가 저장된 기록을 찾는다 */
 const recheckItems = (todo) => todo.map(([text, r], i) => {
@@ -219,7 +222,7 @@ export function SuggestionList({ state, onPick, label }) {
         <button
           key={value}
           onClick={() => onPick(value)}
-          className="block w-full text-left px-3 py-1.5 rounded-xl hover:bg-white font-bold text-slate-800 cursor-pointer"
+          className="block w-full text-left px-3 py-1.5 rounded-xl hover:bg-white font-bold text-slate-800 cursor-pointer whitespace-pre-line"
         >
           {value}
         </button>
@@ -389,85 +392,215 @@ export function FlowSummaryButton({ body }) {
   );
 }
 
-/** 기사가 바뀌면 1.5초 뒤 코어에 저장(옛 UI 와 같은 간격). 상태 문구를 돌려준다.
- *  App 에서 한 번만 쓴다 — 어느 화면에 있든 저장되고, 저장 ID 는 article.articleId 에 남아 같은 파일을 덮어쓴다 */
+const clock = () => new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+/** 저장 — App 에서 한 번만 쓴다(어느 화면에 있든 동작). 저장 길은 두 갈래이고, 코어로 가는 요청은 한 줄로 세워 겹치지 않게 한다.
+ *  - 자동 임시 저장 트랙: 기사가 바뀌면 1.5초 뒤 '최근 작업본' 한 칸을 덮어쓴다(이력·보관소에는 안 보임).
+ *    기다리는 동안 또 바뀌면 앞의 것은 버리고 가장 최근 원고 하나만 보낸다.
+ *  - 수동 저장 트랙(saveNow·publishNow): 저장 버튼·Ctrl+S·송고. 버리지 않고 순서대로 보내며 새 버전이 된다.
+ *    수동 저장이 최신 원고를 담으므로, 줄을 서 있던 자동 저장은 버린다.
+ *  - 실시간 백업: 바뀔 때마다 0.3초 뒤 이 PC 에 원고를 남긴다(강제 종료 대비). 코어 저장이 최신까지 끝나면 지운다.
+ *  돌려주는 값: { status(상태 문구), saveNow, publishNow, flush(자동 저장을 지금 끝내기 → articleId), saved, dirty(수동 저장 안 한 변경),
+ *    unsynced(코어에 아직 안 간 변경), markSaved, published, phase(작성 중·송고 완료·수정 중), times({firstSavedAt, lastSavedAt}) } */
 export function useAutosave(article, setArticle) {
   const [status, setStatus] = useState("");
-  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(() => article.lastManual ? { ...article.lastManual, savedAt: clockOf(article.lastManual.savedAt) } : null);
+  const [dirty, setDirty] = useState(() => !!article.unsavedOnOpen || !!article.restoredFromBackup);
+  const [unsynced, setUnsynced] = useState(() => !!article.restoredFromBackup);
+  const [saving, setSaving] = useState(false);
+  // 송고본(기사당 하나)과, 송고한 뒤 고쳤는지 — 상단 상태 "작성 중 / 송고 완료 / 수정 중"
+  const [published, setPublished] = useState(() => article.published || null);
+  const [changedSincePublish, setChangedSincePublish] = useState(() => !!article.editedAfterPublish);
+  // 미리보기 입력·업데이트(송고 전): 처음 수동 저장 시각 / 마지막 수동 저장 시각(코어 ISO)
+  const [times, setTimes] = useState(() => ({ firstSavedAt: article.firstSavedAt || null, lastSavedAt: article.lastManual?.savedAt || null }));
+  const noteSaved = (savedAt, firstSavedAt) => setTimes((prev) => ({
+    firstSavedAt: prev.firstSavedAt || firstSavedAt || savedAt, lastSavedAt: savedAt,
+  }));
   const idRef = useRef(article.articleId || null);
+  const latest = useRef(article);
+  latest.current = article;
   const mounted = useRef(true);
-  const pending = useRef(null);
-  const saving = useRef(null);
+  const autoJob = useRef(null); // 자동 저장 트랙: 가장 최근 원고 하나
+  const manualJobs = useRef([]); // 수동 저장 트랙: 순서대로 전부
+  const running = useRef(null);
   const timerRef = useRef(null);
+  const backupTimer = useRef(null);
   const lastError = useRef(null);
   const sequence = useRef(0);
   const previousFields = useRef(null);
+  const savingRef = useRef(false);
+  const skipChange = useRef(false); // 송고가 바꾼 상태 글자는 '송고 후 수정'으로 세지 않는다
 
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
 
+  const idle = () => !autoJob.current && !manualJobs.current.length;
   const drain = useCallback(() => {
-    if (saving.current) return saving.current;
-    saving.current = (async () => {
-    try {
-      while (pending.current) {
-        const job = pending.current;
-        if (isRestoring()) break; // 작업을 비우기 전에 멈춰야 복구가 실패해도 다음 저장에 남는다
-        pending.current = null;
-        if (mounted.current) setStatus("자동 저장 중…");
-        try {
-          const id = await saveDraft(job.article, idRef.current || job.article.articleId);
-          idRef.current = id;
-          lastError.current = null;
-          if (mounted.current && id !== job.article.articleId) {
-            setArticle((prev) => prev.articleId === id ? prev : ({ ...prev, articleId: id }));
-          }
-          if (mounted.current && job.sequence === sequence.current && !pending.current) {
-            setStatus("자동 저장됨");
-            setDirty(false);
-          }
-        } catch (e) {
-          lastError.current = e;
-          if (mounted.current && job.sequence === sequence.current && !pending.current) {
-            setStatus("저장 실패: " + (e?.message || e));
+    if (running.current) return running.current;
+    running.current = (async () => {
+      try {
+        while (!idle()) {
+          if (isRestoring()) break; // 작업을 비우기 전에 멈춰야 복구가 실패해도 다음 저장에 남는다
+          const job = manualJobs.current.shift() || autoJob.current;
+          if (job === autoJob.current) autoJob.current = null;
+          try {
+            const result = await job.run(idRef.current || job.article.articleId);
+            idRef.current = result.articleId;
+            lastError.current = null;
+            if (mounted.current && result.articleId !== job.article.articleId) {
+              setArticle((prev) => prev.articleId === result.articleId ? prev : ({ ...prev, articleId: result.articleId }));
+            }
+            const isLatest = job.sequence === sequence.current && idle();
+            if (isLatest) {
+              void clearBackup(); // 코어에 최신 원고까지 들어갔다 → 백업은 필요 없다
+              if (mounted.current) setUnsynced(false);
+            }
+            if (mounted.current) job.done?.(isLatest);
+            job.resolve?.(result);
+          } catch (e) {
+            lastError.current = e;
+            if (mounted.current) job.failed?.(e);
+            job.reject?.(e);
           }
         }
+      } finally {
+        running.current = null;
       }
-    } finally {
-      saving.current = null;
-    }
     })();
-    return saving.current;
+    return running.current;
   }, [setArticle]);
 
+  const autoJobOf = (a, seq) => ({
+    article: a, sequence: seq,
+    run: (id) => saveDraftResult(a, id, { kind: "auto" }),
+    done: (isLatest) => { if (isLatest) setStatus("임시 저장됨"); },
+    failed: (e) => setStatus("임시 저장 실패: " + (e?.message || e)),
+  });
+
+  // 백업에서 복구한 원고는 열자마자 코어에 임시 저장한다
   useEffect(() => {
-    const fields = [article.title, article.subtitle, article.content, article.photos, article.sources,
+    if (!article.restoredFromBackup) return;
+    autoJob.current = autoJobOf(article, sequence.current);
+    void drain();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const fields = [article.title, article.subtitle, article.category, article.subcategory, article.content, article.photos, article.sources,
       article.linkedSources, article.linkedInterviews, article.status, article.platformDrafts, article.cardNews, article.platformGeneration];
     if (!previousFields.current) {
-      previousFields.current = fields;
+      previousFields.current = fields; // 처음 연(또는 불러온) 기사는 바꾸기 전까지 저장하지 않는다
       return;
     }
     if (fields.every((value, index) => Object.is(value, previousFields.current[index]))) return;
     previousFields.current = fields;
+    if (skipChange.current) {
+      skipChange.current = false; // 송고 직후 상태 글자 변경 — 코어에는 송고로 이미 저장됐다
+      return;
+    }
     const revision = ++sequence.current;
     setDirty(true);
-    setStatus("저장 대기…");
+    setUnsynced(true);
+    setChangedSincePublish(true);
+    setStatus("임시 저장 대기…");
+    clearTimeout(backupTimer.current);
+    backupTimer.current = setTimeout(() => void writeBackup(article), 300);
     const timer = timerRef.current = setTimeout(() => {
-      pending.current = { article, sequence: revision };
+      autoJob.current = autoJobOf(article, revision);
+      setStatus("임시 저장 중…");
       void drain();
     }, 1500);
     return () => clearTimeout(timer);
     // 저장 대상 필드가 바뀔 때만(article 객체 전체가 아니라 — articleId 변경으로는 다시 저장하지 않는다)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [article.title, article.subtitle, article.content, article.photos, article.sources, article.linkedSources, article.linkedInterviews, article.status, article.platformDrafts, article.cardNews, article.platformGeneration, drain]);
+  }, [article.title, article.subtitle, article.category, article.subcategory, article.content, article.photos, article.sources, article.linkedSources, article.linkedInterviews, article.status, article.platformDrafts, article.cardNews, article.platformGeneration, drain]);
+
+  /** 자동 저장을 지금 끝낸다(기사 전환·창 닫기·복원 전) → articleId. 실패하면 던진다 */
   const flush = useCallback(async () => {
     clearTimeout(timerRef.current);
-    pending.current = { article, sequence: ++sequence.current };
+    autoJob.current = autoJobOf(latest.current, sequence.current);
     await drain();
     if (lastError.current) throw lastError.current;
     return idRef.current;
-  }, [article, drain]);
-  return { status, flush, dirty };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drain]);
+
+  const enqueueManual = (a, run) => new Promise((resolve, reject) => {
+    clearTimeout(timerRef.current);
+    autoJob.current = null; // 수동 저장이 최신 원고를 담는다 → 기다리던 자동 저장은 필요 없다
+    manualJobs.current.push({ article: a, sequence: sequence.current, run, resolve, reject });
+    void drain();
+  });
+
+  const markSaved = (a, at = clock(), iso = null) => {
+    setSaved({ title: a.title || "", subtitle: a.subtitle || "", content: a.content || "", savedAt: at });
+    if (iso !== false) setTimes((prev) => ({ firstSavedAt: prev.firstSavedAt || iso || new Date().toISOString(), lastSavedAt: iso || new Date().toISOString() })); // 복원도 수동 저장
+    if (a === latest.current) setDirty(false); // 저장하는 사이에 또 고쳤으면 '저장하지 않은 변경'은 남는다
+  };
+  const saveNow = async () => {
+    if (savingRef.current) return false;
+    savingRef.current = true;
+    setSaving(true);
+    setStatus("저장 중…");
+    const a = latest.current;
+    try {
+      const result = await enqueueManual(a, (id) => saveDraftResult(a, id, { kind: "manual" }));
+      noteSaved(result.savedAt, result.firstSavedAt);
+      markSaved(a, clockOf(result.savedAt), false);
+      setStatus("");
+      return true;
+    } catch (e) {
+      setStatus("저장 실패: " + (e?.message || e));
+      return false;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+  // 송고: ① 새 기사면 먼저 저장해 ID 를 받고 ② CMS(백엔드)로 보낸 뒤 ③ 성공하면 송고본을 남긴다(수동 저장 포함, 기사당 하나).
+  // CMS 전송이 실패하면 송고본은 바뀌지 않는다. 성공하면 결과 { published, republished, receipt, ... } 를, 실패하면 오류를 던진다
+  const publishNow = async () => {
+    if (savingRef.current) throw new Error("저장 중입니다. 잠시 뒤 다시 눌러 주세요.");
+    savingRef.current = true;
+    setSaving(true);
+    setStatus("송고 중…");
+    const a = latest.current;
+    try {
+      const result = await enqueueManual(a, async (id) => {
+        const articleId = id || (await saveDraftResult(a, null, { kind: "auto" })).articleId;
+        const receipt = await publishCms({ ...a, articleId });
+        return { ...(await publishDraft({ ...a, cmsReceipt: receipt }, articleId)), receipt };
+      });
+      if (latest.current.status !== "송고됨") skipChange.current = true;
+      // 코어가 송고본의 상태를 '송고됨'으로 저장한다 — 화면도 같게
+      setArticle((prev) => ({ ...prev, articleId: result.articleId, status: "송고됨", cmsReceipt: result.receipt }));
+      markSaved(a, clockOf(result.savedAt), false);
+      noteSaved(result.savedAt, result.firstSavedAt);
+      setPublished(result.published);
+      setChangedSincePublish(false);
+      setStatus("");
+      return result;
+    } catch (e) {
+      setStatus("송고 실패: " + (e?.message || e));
+      throw e;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+  const phase = !published ? "작성 중" : changedSincePublish ? "수정 중" : "송고 완료";
+  // 화면에 보일 상태 문구: 수동 저장 기준
+  const label = saving ? status || "저장 중…"
+    : /^(저장 실패|임시 저장 실패|송고)/.test(status) ? status
+    : dirty ? [status, `저장하지 않은 변경 있음${saved ? ` · 마지막 저장 ${saved.savedAt}` : ""}`].filter(Boolean).join(" · ") // 예: "임시 저장됨 · 저장하지 않은 변경 있음"
+    : saved ? `저장됨 ${saved.savedAt}` : status;
+  return { status: label, saveNow, publishNow, flush, saved, dirty, unsynced, markSaved, published, phase, times };
+}
+
+// 코어의 저장 시각(ISO) → "14:32"
+function clockOf(iso) {
+  const d = new Date(iso || "");
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false });
 }

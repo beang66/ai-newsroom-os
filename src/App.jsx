@@ -17,7 +17,7 @@ const SettingsDialog = lazy(() => import("./components/SettingsDialog"));
 import { createEmptyArticle } from "./data/article";
 import { core, coreSnapshot } from "./api/core";
 import { loadLatestArticle, loadStoredArticle } from "./api/editorial";
-import { publishCms } from "./api/editorial";
+import { clearBackup, readBackup, setBackupOwner, sameDraft } from "./lib/draftBackup.js";
 import { useAutosave } from "./components/EditorialAssist";
 import { isRestoring } from "./restoreState";
 import PageHeader from "./components/PageHeader";
@@ -60,7 +60,37 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   const setActiveTab = (tab) => { if (tab === "interview") setInterviewVisited(true); if (tab === "map") setMapArticleId(null); setActiveTabState(tab); writeTab(tab); };
   const [article, setArticle] = useState(() => initialArticle || createEmptyArticle());
   const [mapArticleId, setMapArticleId] = useState(null);
-  const { status: saveStatus, flush, dirty } = useAutosave(article, setArticle);
+  // 저장: 자동 임시 저장 + 수동 저장(저장 버튼·Ctrl+S) + 실시간 백업. 보관소 '원고'는 마지막 수동 저장본
+  const save = useAutosave(article, setArticle);
+  const { status: saveStatus, flush, unsynced } = save;
+  // Ctrl+S(맥은 Cmd+S) — 어느 화면에서든 수동 저장
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        save.saveNow();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [save]);
+  // 앱이 강제 종료돼 코어에 못 간 원고가 이 PC 에 남아 있으면 복구할지 묻는다(같은 내용이면 조용히 지운다)
+  const ownerId = coreState.session?.userId || "";
+  setBackupOwner(ownerId); // 렌더 중에 먼저 정해 둔다: 자식이 쓰는 백업에도 같은 계정이 적힌다
+  useEffect(() => {
+    if (loading || initialArticle?.restoredFromBackup || !ownerId) return undefined;
+    let alive = true;
+    readBackup().then((backup) => {
+      if (!alive || !backup?.article) return;
+      if (sameDraft(backup.article, article)) { void clearBackup(); return; }
+      const when = new Date(backup.at).toLocaleString("ko-KR");
+      if (window.confirm(`저장되지 않은 원고가 남아 있습니다.\n(${when} · ${backup.article.title || "제목 없음"})\n\n프로그램이 갑자기 종료되기 전의 내용입니다. 복구할까요?\n취소하면 남은 내용을 지웁니다.`)) {
+        onReplaceArticle({ ...backup.article, restoredFromBackup: true });
+      } else void clearBackup();
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, ownerId]);
   const [storedArticles, setStoredArticles] = useState([]);
   const [listError, setListError] = useState("");
   const [listAttempt, setListAttempt] = useState(0);
@@ -77,13 +107,24 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   }, [loading, activeTab, saveStatus, listAttempt]);
   const currentId = article.articleId || article.id;
   const storedCurrent = storedArticles.find((item) => item.id === currentId);
+  // 지금 편집 중인 기사는 화면의 값으로 보인다(보관소 원고/송고 구분도 지금 상태 기준)
   const currentSummary = { ...storedCurrent, id: currentId,
     title: article.title, subtitle: article.subtitle, status: article.status,
+    state: { "작성 중": "draft", "송고 완료": "published", "수정 중": "editing" }[save.phase],
+    published: save.published || storedCurrent?.published || null,
     updated_at: storedCurrent?.updated_at || article.updatedAt };
   const articles = storedCurrent ? storedArticles.map((item) => item.id === currentId ? currentSummary : item) : [currentSummary, ...storedArticles];
   const changeArticle = async (id = null) => {
     if (switching) return;
     if (id === currentId) { setActiveTab("writer"); return; }
+    // 수동 저장하지 않은 변경이 있으면 먼저 묻는다(임시 저장은 아래에서 어차피 끝낸다)
+    if (save.dirty) {
+      if (!window.confirm("저장하지 않은 변경이 있습니다.\n지금 쓰던 내용을 저장한 뒤 열까요? (취소하면 열지 않습니다)")) return;
+      if (!(await save.saveNow())) {
+        setSwitchError("저장하지 못해 열지 않았습니다. 현재 원고는 유지됩니다. 상단의 저장 상태를 확인해 주세요.");
+        return;
+      }
+    }
     setSwitching(true);
     setSwitchError("");
     try {
@@ -95,12 +136,27 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       setSwitchError(`원고를 전환하지 못했습니다. 현재 원고는 유지됩니다. ${error.message}`);
     } finally { setSwitching(false); }
   };
-  const publishArticle = async () => {
-    const articleId = await flush();
-    return publishCms({ ...article, articleId });
+  // 보관소의 × — 기사를 지운다. 지금 쓰던 기사면 새 기사로 바꾼다(남은 백업도 지운다)
+  const deleteArticle = async (id) => {
+    const target = articles.find((item) => item.id === id);
+    if (!window.confirm(`'${target?.title || "제목 없는 기사"}' 기사를 보관소에서 삭제할까요?
+삭제하면 보관소와 이어서 작업에서 사라집니다.`)) return;
+    setSwitchError("");
+    try {
+      await core.deleteArticle(id);
+    } catch (error) {
+      setSwitchError(`기사를 삭제하지 못했습니다. ${error.message}`);
+      return;
+    }
+    if (id === currentId) {
+      await clearBackup();
+      onReplaceArticle(createEmptyArticle());
+    } else {
+      setStoredArticles((list) => list.filter((item) => item.id !== id));
+    }
   };
   useEffect(() => {
-    if (!dirty) return undefined;
+    if (!unsynced) return undefined;
     const beforeUnload = (event) => {
       if (isRestoring()) return;
       void flush();
@@ -114,7 +170,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       window.removeEventListener("beforeunload", beforeUnload);
       document.removeEventListener("visibilitychange", saveWhenHidden);
     };
-  }, [dirty, flush]);
+  }, [unsynced, flush]);
 
   // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
   const [showLogin, setShowLogin] = useState(false);
@@ -181,13 +237,13 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       {/* 1. Top Header */}
       <Header
         currentArticleTitle={article.title}
-        status={article.status}
+        status={save.phase}
         coreReady={coreState.ok}
         coreLabel={coreState.ok ? "코어 연결됨" : "코어 대기"}
         session={coreState.session}
         onSession={onSession}
         onLogin={() => setShowLogin(true)}
-        beforeLogout={() => (dirty ? flush() : Promise.resolve())}
+        beforeLogout={() => (unsynced ? flush() : Promise.resolve())}
         onModels={() => setShowModels(true)}
         saveStatus={saveStatus}
         onHome={() => setActiveTab("desk")}
@@ -228,8 +284,13 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
                 setArticle={setArticle}
                 onOpenSearch={() => setShowSearchModal(true)}
                 saveStatus={saveStatus}
+                onSave={save.saveNow}
+                unsaved={save.dirty}
+                onRestoredSaved={save.markSaved}
+                onPublish={save.publishNow}
+                published={save.published}
+                saveTimes={save.times}
                 onModels={() => setShowModels(true)}
-                onPublish={publishArticle}
               />
             )}
 
@@ -249,7 +310,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
             )}
 
             {!loading && activeTab === "archive" && (
-              <ArchiveView article={article} articles={articles} onOpen={changeArticle}
+              <ArchiveView article={article} articles={articles} onOpen={changeArticle} onDelete={deleteArticle}
                 onMap={(id) => { setActiveTab("map"); setMapArticleId(id === article.id ? null : id); }} busy={switching} />
             )}
           </main>
@@ -260,7 +321,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       <Suspense fallback={null}>
         {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} required={!session?.signedIn} />}
         {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
-        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} onBeforeRestore={() => (dirty ? flush() : Promise.resolve())} />}
+        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} onBeforeRestore={() => (unsynced ? flush() : Promise.resolve())} />}
 
       {/* Quick Source Search Modal during Writing */}
       {showSearchModal && (

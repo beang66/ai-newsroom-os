@@ -77,7 +77,7 @@ export const restoreVault = (password, data, signal) => core.restoreVault(passwo
 /** 취재자료 등록 — 코어가 텍스트를 뽑고 원본·텍스트를 암호화 저장소에 보관한다(30MB 이하).
  *  → 기사 sources 항목 {id, name, format, size, chars, path, addedAt, text} */
 export async function registerSource(file) {
-  const d = await core.extractText(file.name, await readDataUrl(file));
+  const d = await core.createSource(file.name, await readDataUrl(file));
   return {
     id: d.sourceId,
     name: file.name,
@@ -194,7 +194,7 @@ export async function factcheckArticle(content, files, cache = new Map(), snapsh
   const todo = [...new Map(nodes.filter((n) => !cache.has(n.text)).map((n) => [n.text, n])).values()];
   if (todo.length) {
     const materials = files.map((f) => ({ id: f.id, title: f.name, content: f.text }));
-    const d = await core.factcheckRun(todo.map((n) => ({ id: n.id, type: "TEXT", text: n.text })), materials, snapshotId);
+    const d = await core.runFactcheck(todo.map((n) => ({ id: n.id, type: "TEXT", text: n.text })), materials, snapshotId);
     const byId = Object.fromEntries(todo.map((n) => [n.id, n]));
     for (const r of d.results || []) if (byId[r.node_id]) cache.set(byId[r.node_id].text, r);
   }

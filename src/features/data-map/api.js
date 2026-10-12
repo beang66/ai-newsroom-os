@@ -8,9 +8,9 @@ export function createDataMapApi({ coreApi } = {}) {
     canSaveSourceRevision: false,
     async getKnowledgeMap({ signal } = {}) {
       signal?.throwIfAborted();
-      if (typeof coreApi?.knowledgeMap !== "function")
-        throw new Error("Core knowledgeMap 메서드를 연결해 주세요.");
-      const payload = await coreApi.knowledgeMap(signal);
+      if (typeof coreApi?.getKnowledgeMap !== "function")
+        throw new Error("Core getKnowledgeMap 메서드를 연결해 주세요.");
+      const payload = await coreApi.getKnowledgeMap(signal);
       signal?.throwIfAborted();
       return projectKnowledgeMap(payload);
     },

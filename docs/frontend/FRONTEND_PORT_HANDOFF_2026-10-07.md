@@ -1,6 +1,6 @@
 # 프론트 안내: 새로 추가한 화면(임시)과 호출 이름
 
-작성일: 2026-10-07 · 개정: 2026-10-12 · 기준: `main`
+작성일: 2026-10-07 · 개정: 2026-10-12(호출 이름 통일 반영) · 기준: `main`
 
 ## 1. 이 문서의 범위
 
@@ -47,14 +47,26 @@
 | 동작 | 코어 | 화면에서 필요한 것 |
 |---|---|---|
 | 자료 목록 | `listSources` → `{sources:[{id, name, format, size, chars, createdAt, usedBy:[{articleId,title}]}]}` | 목록과 "N개 기사에서 사용 중" 표시 |
-| 삭제 시도 | `POST /api/sources/<id>/delete` 본문 `{}` | 삭제 버튼. 쓰는 기사가 없으면 바로 삭제 |
+| 삭제 시도 | `deleteSource(id)` | 삭제 버튼. 쓰는 기사가 없으면 바로 삭제 |
 | 경고 | 쓰는 기사가 있으면 **409** `{error, code:"SOURCE_IN_USE", details:{usedBy:[{articleId,title}]}}` | 경고 대화상자: 쓰는 기사 제목 목록 + [취소] [그래도 삭제] |
-| 강제 삭제 | `POST /api/sources/<id>/delete` 본문 `{"force": true}` | [그래도 삭제]를 누르면 이 요청 |
+| 강제 삭제 | `deleteSource(id, {force: true})` | [그래도 삭제]를 누르면 이 요청 |
 | 삭제된 자료 표시 | 기사 안의 참조는 남고 원본·본문 요청은 404 | "삭제된 자료"로 표시(원본 열기·근거 보기 비활성) |
 
-경고 문구에 "이미 쓴 팩트체크 판정 기록은 남지만 근거 원본을 열 수 없게 된다"는 점을 한 줄로 알려 주세요. 화면에서 쓸 `deleteSource(id, {force})`는 `api/core-api.js`에 아직 없어서 화면을 만들 때 함께 추가합니다.
+경고 문구에 "이미 쓴 팩트체크 판정 기록은 남지만 근거 원본을 열 수 없게 된다"는 점을 한 줄로 알려 주세요. 호출은 `deleteSource(sourceId, {force})`(`api/core-api.js`)로 준비돼 있습니다. 쓰는 기사가 있으면 409 오류(`code: "SOURCE_IN_USE"`, `details.usedBy`)가 오고, `{force: true}`로 다시 부르면 지워집니다. 한 건 조회는 `getSource(sourceId)`입니다.
 
 ### 회원가입과 로그인 유지 (예정)
 지금은 팀원이 개발용 공용 계정을 씁니다. 회원가입이 구현되면 각자 가입해서 쓰게 바꿉니다. 코어 기능(`signUp`)은 구현 전이라 화면 디자인을 먼저 받고 연결합니다.
 - 회원가입 화면: 이메일·비밀번호, 비밀번호 규칙, 가입 후 안내, 로그인 화면과의 전환
 - "이 PC에서 로그인 유지" 설정: 켜면 다음 실행 때 자동 로그인, 끄면 저장된 로그인 정보 삭제 (지금의 자동 로그인 토글 `AutoLoginToggle`을 대체)
+
+## 5. 호출 이름이 바뀐 것 (2026-10-12)
+
+팀 계약 문서와 이름을 맞추면서 `src/api/core-api.js`의 호출 세 개의 이름을 바꿨습니다. 화면 코드에서 옛 이름을 쓰고 있으면 새 이름으로 바꿔 주세요(`src/api/` 안의 사용처는 이미 바꿨습니다).
+
+| 이전 | 현재 | 하는 일 |
+|---|---|---|
+| `knowledgeMap()` | `getKnowledgeMap()` | 데이터 맵용 지식 지도 |
+| `extractText(filename, data)` | `createSource(filename, data)` | 취재자료 파일에서 글자를 뽑아 자료로 등록 |
+| `factcheckRun(nodes, materials, snapshotId)` | `runFactcheck(nodes, materials, snapshotId)` | 팩트체크 실행 |
+
+새로 쓸 수 있게 된 호출(화면은 아직 안 씀): `getSource(sourceId)`, `deleteSource(sourceId, {force})`, `getMediaAsset(assetId)`, `getJob(jobId)`, `cancelJob(jobId)`, `listSnapshots(articleId)`, `getSnapshot(snapshotId)`. 전체 대응표는 `docs/architecture/CONTRACT_VS_IMPLEMENTATION_v0.8.md`에 있습니다.

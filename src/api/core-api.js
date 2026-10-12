@@ -22,6 +22,10 @@ export const ROUTES = Object.freeze({
   articlesLatest: "/api/articles/latest?photos=ref", // 사진은 'media:<id>' 참조로 받고 바이트는 mediaBytes 로 따로
   media: (id) => "/api/media/" + encodeURIComponent(id),
   mediaAssets: "/api/media-assets",
+  mediaAsset: (id) => "/api/media-assets/" + encodeURIComponent(id),
+  job: (id) => "/api/jobs/" + encodeURIComponent(id),
+  jobCancel: (id) => "/api/jobs/" + encodeURIComponent(id) + "/cancel",
+  snapshot: (id) => "/api/snapshots/" + encodeURIComponent(id),
   articleRevisions: (id) => "/api/articles/" + encodeURIComponent(id) + "/revisions",
   articleRevision: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no),
   articleRestore: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no) + "/restore",
@@ -38,6 +42,8 @@ export const ROUTES = Object.freeze({
   vaultRestore: "/api/vault/restore",
   materialsExtract: "/api/materials/extract",
   sources: "/api/sources",
+  source: (id) => "/api/sources/" + encodeURIComponent(id),
+  sourceDelete: (id) => "/api/sources/" + encodeURIComponent(id) + "/delete",
   knowledgeMap: "/api/knowledge-map",
   knowledgeFilesImport: "/api/knowledge-files/import",
   knowledgeFile: (id) => "/api/knowledge-files/" + encodeURIComponent(id),
@@ -86,7 +92,7 @@ export function createCoreApi(transport) {
     /** 팩트체크 준비 상태(모델·런타임 설치 여부) */
     factcheckStatus: (signal) => transport.json(ROUTES.factcheckStatus, null, signal),
     /** 팩트체크: nodes=[{id,type,text,linkedSourceIds?}], materials=[{id,title,content,date?,speaker?}] */
-    factcheckRun: (nodes, materials, snapshotId, signal) =>
+    runFactcheck: (nodes, materials, snapshotId, signal) =>
       transport.json(ROUTES.factcheckRun, snapshotId ? { nodes, materials, snapshotId } : { nodes, materials }, signal),
     /** 외부 재판정(임시·OpenAI): items=[{id, claim, evidence:[str], titles?:[str]}] → { results:[{id, verdict, reason, wrong_text, evidence_text}] }
      *  options.cachedOnly 가 참이면 저장된 재판정만 돌려주고 OpenAI 는 부르지 않는다(저장 없는 문장은 results 에서 빠짐) —
@@ -106,12 +112,17 @@ export function createCoreApi(transport) {
     exportVault: (password, signal) => transport.json(ROUTES.vaultExport, { password }, signal),
     restoreVault: (password, data, signal) => transport.json(ROUTES.vaultRestore, { password, data }, signal),
     /** 자료 파일(PDF·DOCX·HWP·HWPX·TXT) 텍스트 추출 → { text, chars, format } */
-    extractText: (filename, data, signal) =>
+    createSource: (filename, data, signal) =>
       transport.json(ROUTES.materialsExtract, { filename, data }, signal),
     /** 저장된 취재자료 목록(최신순) → { sources: [{ id, name, format, size, chars, createdAt, usedBy:[{articleId,title}], index }] } */
     listSources: (signal) => transport.json(ROUTES.sources, null, signal),
+    /** 취재자료 한 건의 정보(목록 항목과 같은 모양) */
+    getSource: (sourceId, signal) => transport.json(ROUTES.source(sourceId), null, signal),
+    /** 취재자료 삭제. 쓰는 기사가 있으면 409(code SOURCE_IN_USE, details.usedBy)로 거절하고, options.force 가 참이면 그래도 지운다 */
+    deleteSource: (sourceId, { force = false } = {}, signal) =>
+      transport.json(ROUTES.sourceDelete(sourceId), force ? { force: true } : {}, signal),
     /** 기사·자료·고정본과 실제 연결(읽기 모델) → { articles, sources, snapshots, entities, edges:[{source,target,relation}] } */
-    knowledgeMap: (signal) => transport.json(ROUTES.knowledgeMap, null, signal),
+    getKnowledgeMap: (signal) => transport.json(ROUTES.knowledgeMap, null, signal),
     /** Markdown 파일을 앱 관리 저장소로 가져오고 링크·백링크를 다시 색인한다. */
     importKnowledgeFiles: (payload, signal) => transport.json(ROUTES.knowledgeFilesImport, payload, signal),
     /** Markdown 파일 본문과 링크·백링크를 읽는다. */
@@ -153,6 +164,12 @@ export function createCoreApi(transport) {
     mediaBytes: (mediaId, signal) => transport.bytes(ROUTES.media(mediaId), signal),
     /** 사진을 암호화 저장소에 한 번 올리고 자산으로 등록 → { id, object_ref: "media:<id>", ... } */
     registerMediaAsset: (payload, signal) => transport.json(ROUTES.mediaAssets, payload, signal),
+    /** 미디어 자산 한 건의 정보 → { id, kind, mime_type, filename, caption, generated, local_uri, usages, ... } */
+    getMediaAsset: (assetId, signal) => transport.json(ROUTES.mediaAsset(assetId), null, signal),
+    /** 처리 작업(색인 등)의 상태 → { id, type, status, progress, ... }. status: queued | running | succeeded | failed | cancelled */
+    getJob: (jobId, signal) => transport.json(ROUTES.job(jobId), null, signal),
+    /** 처리 작업 취소 요청(작업이 다음 확인 지점에서 멈춘다) */
+    cancelJob: (jobId, signal) => transport.json(ROUTES.jobCancel(jobId), {}, signal),
     /** 다운로드 추적(Unsplash 가이드라인) */
     trackPhoto: (id, signal) => transport.json(ROUTES.photoTrack(id), null, signal),
     /** 플랫폼 콘텐츠용 핵심 키워드 후보 */
@@ -164,6 +181,10 @@ export function createCoreApi(transport) {
     /** 원고의 최신 저장 이력을 고정본(ArticleSnapshot)으로 만든다 → { id, article_id, revision_no, title, body_text, content_hash, created_at }.
      *  내용이 같으면 새로 만들지 않고 같은 고정본을 돌려준다 */
     createSnapshot: (articleId, signal) => transport.json(ROUTES.articleSnapshots(articleId), {}, signal),
+    /** 원고의 고정본 목록(최신이 위) */
+    listSnapshots: (articleId, signal) => transport.json(ROUTES.articleSnapshots(articleId), null, signal),
+    /** 고정본 한 건(제목·본문 사본 포함) */
+    getSnapshot: (snapshotId, signal) => transport.json(ROUTES.snapshot(snapshotId), null, signal),
     /** 카드뉴스 카드 하나를 이미지로 그려 코어(암호화 저장소)에 등록 → { cardId, asset:{ id, local_uri, mime_type, ... } }.
      *  payload: { card_id, template, content:{ keyword, headline, body }, image?:{ url, photographer } }. 결과 이미지는 asset.local_uri 로 보여 준다 */
     renderPlatformCard: (payload, snapshotId, signal) =>

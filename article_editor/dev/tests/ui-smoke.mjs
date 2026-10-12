@@ -415,7 +415,7 @@ try {
   // 4. 작성·검토 → 팩트체크 서랍
   await page.getByText("기사 팩트체크 & 근거자료").first().click();
   await see("팩트체크 & 근거자료 검증");
-  // 텍스트 자료 → 코어 factcheckRun. 모델·런타임이 없는 PC 에서는 설치 안내가 나와야 한다
+  // 텍스트 자료 → 코어 runFactcheck. 모델·런타임이 없는 PC 에서는 설치 안내가 나와야 한다
   const factcheckReady = (await (await fetch(`${BASE}/api/factcheck/status`)).json()).ready;
   // PDF·HWP·DOCX 는 코어가 추출한다 — 깨진 파일이면 파일 목록에 사유가 보여야 한다
   await page.locator('input[type="file"][accept*=".hwp"]').setInputFiles({

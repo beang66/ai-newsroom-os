@@ -20,7 +20,7 @@ class FactcheckContractTests(ApiTestCase):
         status, raw, _ = self.request('/api/factcheck/status')
         self.assertEqual(status, 200)
         data = json.loads(raw)
-        self.assertEqual(set(data), {'ready', 'models', 'runtime'})
+        self.assertEqual(set(data), {'ready', 'mode', 'models', 'runtime'})
         self.assertEqual(set(data['models']), {'judge', 'embedding', 'boundary'})
 
     def test_run_validates_input(self):

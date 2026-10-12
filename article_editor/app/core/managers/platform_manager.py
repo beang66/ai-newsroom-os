@@ -65,11 +65,16 @@ class PlatformManager:
             if snapshot_id:
                 _, frozen = self._from_snapshot(data)
                 if frozen['article_id'] != article_id: raise RequestError('SNS 원고와 고정본의 기사가 다릅니다.', 409)
+            else:
+                from ..storage import get_article
+                get_article(article_id, photo_refs=True)
             assets = payload.get('assets', [])
             if not isinstance(assets, list) or len(assets) > 10: raise RequestError('첨부할 카드 0~10장을 확인해 주세요.')
             files=[]
             for index, item in enumerate(assets):
                 if not isinstance(item, dict): raise RequestError('카드 이미지 정보를 확인해 주세요.')
+                if not isinstance(item.get('key'), str) or not item['key']:
+                    raise RequestError('%s번 카드 이미지의 최신성을 확인할 수 없습니다. 다시 렌더해 주세요.' % (index+1), 409)
                 with vault.connect() as db:
                     key=self._render_origin_key(str(item.get('id')),article_id,snapshot_id,item.get('key'))
                     row=db.execute('SELECT value FROM app_meta WHERE key=?', (key,)).fetchone()

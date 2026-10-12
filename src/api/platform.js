@@ -75,7 +75,8 @@ export async function photoDataUrl(photo) {
   const url = photo.url || photo.data || "";
   if (url.startsWith("data:image/")) return url;
   if (!url.startsWith("media:") && !url.startsWith("blob:") && !/^\/api\/(media|media-assets)\//.test(url)) throw Error("팀 사진 가져오기 또는 업로드로 저장한 사진을 사용해 주세요.");
-  const blob = url.startsWith("media:") ? await core.mediaBytes(url.slice(6)) : await fetch(url).then(response => {
+  const media=/^\/api\/media\/([a-f0-9]{32})$/.exec(url),asset=/^\/api\/media-assets\/([a-f0-9-]{36})\/file$/.exec(url);
+  const blob = url.startsWith("media:") ? await core.mediaBytes(url.slice(6)) : media ? await core.mediaBytes(media[1]) : asset ? await assetBytes({id:asset[1]}) : await fetch(url).then(response => {
     if (!response.ok) throw Error("저장된 사진을 읽지 못했습니다.");
     return response.blob();
   });
@@ -95,12 +96,16 @@ export async function renderStoredCard(card, article, draft) {
   payload.render_key=key;
   const result=await core.renderPlatformCard(payload,draft.snapshot_id);
   if (!result?.asset?.local_uri) throw Error("카드 이미지 보관에 실패했습니다.");
-  return {id:result.asset.id,uri:result.asset.local_uri,key,article_id:draft.article_id,snapshot_id:draft.snapshot_id||null};
+  return {id:result.asset.id,uri:result.asset.local_uri,object_ref:result.asset.object_ref,key,article_id:draft.article_id,snapshot_id:draft.snapshot_id||null};
+}
+async function assetBytes(rendered) {
+  const asset=rendered.object_ref?rendered:await core.getMediaAsset(rendered.id);
+  const media=/^media:([a-f0-9]{32})$/.exec(asset?.object_ref||'');
+  if(!media)throw Error('암호화 보관소의 이미지 참조를 확인하지 못했습니다. 다시 렌더해 주세요.');
+  return core.mediaBytes(media[1]);
 }
 export async function storedJpg(rendered) {
-  const response=await fetch(rendered.uri);
-  if (!response.ok) throw Error("암호화 보관소의 카드 이미지를 읽지 못했습니다.");
-  const blob=await response.blob();
+  const blob=await assetBytes(rendered);
   if (blob.type!=="image/jpeg") throw Error("카드 JPG 형식을 확인해 주세요.");
   return blob;
 }

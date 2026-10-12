@@ -26,3 +26,15 @@ test('검수 상태는 편집 뒤 재검수 필요이고 렌더 메타데이터�
  const edited=structuredClone(ready);edited.cards[0].content.detail='수정';assert.equal(reviewStatus(edited),'not_checked');
  assert.equal(fingerprint({...ready,rendered_image:{id:'x'}}),fingerprint(ready));
 });
+
+test('JPG 읽기는 IPC Core의 실제 미디어 참조를 쓰고 HTTP 주소에 의존하지 않음',async()=>{
+ const previous=globalThis.window,calls=[],id='a'.repeat(32),assetId='10000000-0000-4000-8000-000000000001';
+ globalThis.window={pywebview:{api:{core:async path=>{calls.push(path);return {status:200,body:{object_ref:'media:'+id}};},coreBytes:async path=>{calls.push(path);return 'data:image/jpeg;base64,/9j/2Q==';}}}};
+ try{
+  const {storedJpg}=await import('../../../src/api/platform.js');
+  const direct=await storedJpg({object_ref:'media:'+id,uri:'http://unreachable.invalid/card.jpg'});
+  assert.equal(direct.type,'image/jpeg');assert.equal(direct.size,4);
+  const restored=await storedJpg({id:assetId,uri:'http://unreachable.invalid/card.jpg'});
+  assert.equal(restored.type,'image/jpeg');assert.deepEqual(calls,['/api/media/'+id,'/api/media-assets/'+assetId,'/api/media/'+id]);
+ }finally{if(previous===undefined)delete globalThis.window;else globalThis.window=previous;}
+});

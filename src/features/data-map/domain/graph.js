@@ -99,10 +99,10 @@ export function filterNodes(
   return graph.nodes.filter(
     (n) =>
       (project === "all" || n.projectId === project) &&
-      (kind === "all" || n.kind === kind) &&
+      (kind === "all" || (n.category || n.kind) === kind) &&
       (showPlaceholders || !n.placeholder) &&
       (!q ||
-        `${n.label} ${n.tags.join(" ")} ${n.author}`
+        `${n.label} ${n.tags.join(" ")} ${n.author} ${n.path || ""}`
           .toLocaleLowerCase()
           .includes(q)),
   );

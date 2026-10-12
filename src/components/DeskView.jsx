@@ -1,24 +1,81 @@
 import { useState } from "react";
+import { AlertTriangle, ArrowRight, Plus } from "lucide-react";
 import { formatArticleTime } from "../data/article";
+import { deskSchedule, countByStage, deadlineQueue, focusStory, WRITING_STEPS } from "../data/desk";
 
-export default function DeskView({ article, articles, onNavigate, onOpen, busy }) {
+const ISSUE_ICONS = { verify: AlertTriangle, evidence: AlertTriangle, link: Plus };
+// 오늘 저장한 원고는 시각만, 그 전 원고는 날짜까지 보인다
+const savedAt = (value, today) => { const time = formatArticleTime(value); return time.startsWith(today) ? time.slice(11) : time; };
+
+export default function DeskView({ articles, onNavigate, busy }) {
   const [today] = useState(() => new Date());
-  const title = article.title || "제목 없는 기사";
-  const metrics = [["저장된 기사", articles.filter((item) => item.revision_no).length], ["작성 중", articles.filter((item) => item.status === "작성 중").length], ["검증 완료", articles.filter((item) => item.status === "검증 완료").length], ["발행 준비", articles.filter((item) => item.status === "발행 준비").length]];
+  const queue = deadlineQueue(deskSchedule);
+  const story = focusStory(deskSchedule);
+  const recent = articles.filter((item) => item.revision_no).slice(0, 2);
+  const todayStamp = today.toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
   return <div data-testid="desk-view">
     <p className="workspace-date">{new Intl.DateTimeFormat("ko-KR", { dateStyle: "full", timeZone: "Asia/Seoul" }).format(today)}</p>
-    <section className="workspace-metrics" aria-label="업무 현황">{metrics.map(([label, count]) => <div key={label}><span>{label}</span><strong>{String(count).padStart(2, "0")}</strong></div>)}</section>
-    <div className="workspace-master-detail">
-      <section className="workspace-panel"><span className="workspace-kicker">지금 집중할 기사</span><h2>{title}</h2><p>{article.subtitle || "취재자료를 연결하고 원고를 이어서 작성하세요."}</p>
-        <div className="workspace-actions"><button type="button" className="workspace-primary" onClick={() => onNavigate("writer")}>원고 이어쓰기</button><button type="button" onClick={() => onNavigate("map")}>근거 확인</button></div>
-        <dl className="workspace-facts"><div><dt>현재 상태</dt><dd>{article.status}</dd></div><div><dt>본문</dt><dd>{(article.content || "").length}자</dd></div><div><dt>취재자료</dt><dd>{(article.sources || []).length}건</dd></div></dl>
+    <section className="workspace-metrics workspace-metrics--inline" aria-label="상태별 기사">{countByStage(deskSchedule).map(([label, count]) => <div key={label}><span>{label}</span><strong>{String(count).padStart(2, "0")}</strong></div>)}</section>
+
+    {story && <div className="workspace-master-detail">
+      <section className="workspace-panel desk-focus" aria-labelledby="desk-focus-heading">
+        <header className="desk-section-head"><h2 id="desk-focus-heading">지금 집중할 기사</h2><span className="desk-deadline">오늘 {story.deadline} 마감</span></header>
+        <div className="desk-focus-body">
+          <div className="desk-story">
+            <p className="desk-byline">{story.desk} · {story.owner}</p>
+            <h3>{story.title || story.slug}</h3>
+            {story.deck && <p>{story.deck}</p>}
+            <div className="workspace-actions"><button type="button" className="workspace-primary" onClick={() => onNavigate("writer")}>원고 이어쓰기</button><button type="button" onClick={() => onNavigate("evidence")}>근거 확인</button></div>
+          </div>
+          <dl className="desk-facts">{[
+            story.step > 1 && ["작성", "완료"],
+            story.evidence && ["근거", `${story.evidence.linked}/${story.evidence.total}`],
+            story.interviews != null && ["인터뷰", `${story.interviews}건`],
+            story.checksLeft != null && ["검증", `${story.checksLeft}건 남음`],
+          ].filter(Boolean).map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}</dl>
+        </div>
+        <div className="desk-track">
+          <span className="desk-track-label" id="desk-steps-label">기사 작성 단계</span>
+          <ol className="desk-steps" aria-labelledby="desk-steps-label">{WRITING_STEPS.map((label, index) => {
+            const state = index < story.step ? "done" : index === story.step ? "active" : "todo";
+            return <li key={label} data-state={state} aria-current={state === "active" ? "step" : undefined}><span className="desk-step-node" aria-hidden="true">{state === "done" ? "✓" : index + 1}</span><strong>{label}</strong><small>{state === "done" ? "완료" : state === "active" ? "진행 중" : "대기"}</small></li>;
+          })}</ol>
+        </div>
       </section>
-      <aside className="workspace-panel"><span className="workspace-kicker">다음 작업</span><h2>지금 확인할 것</h2>
-        <div className="workspace-next-actions"><button type="button" onClick={() => onNavigate("writer")}>{article.content ? "원고와 근거 검증" : "첫 원고 작성"}<small>본문을 작성하고 근거자료와 비교합니다.</small></button><button type="button" onClick={() => onNavigate("interview")}>인터뷰·녹취 확인<small>필요한 발언을 골라 원고에 연결합니다.</small></button><button type="button" onClick={() => onNavigate("convert")}>채널별 원고 만들기<small>원문에서 변환본을 생성하고 검토합니다.</small></button></div>
+
+      <aside className="workspace-panel desk-attention" aria-labelledby="desk-inbox-title">
+        <header className="desk-section-head"><h2 id="desk-inbox-title">지금 확인할 것</h2></header>
+        {story.issues?.length
+          ? <ol className="desk-inbox">{story.issues.map((issue, index) => {
+            const Icon = ISSUE_ICONS[issue.kind] || AlertTriangle;
+            return <li key={issue.title} data-kind={issue.kind}>
+              <span className="desk-inbox-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+              <div><span className="desk-inbox-label"><Icon aria-hidden="true" />{issue.label}</span><strong>{issue.title}</strong><small>{issue.detail}</small></div>
+              <button type="button" onClick={() => onNavigate(issue.to)}>{issue.action}</button>
+            </li>;
+          })}</ol>
+          : <p className="workspace-muted">지금 처리할 검증·근거 작업이 없습니다.</p>}
       </aside>
-    </div>
-    <section className="workspace-panel"><h2>최근 작업 <small>최근 수정순</small></h2><p className="workspace-muted">마감 정보가 없는 원고는 최근 수정순으로 표시합니다.</p>
-      <div className="workspace-article-list">{articles.slice(0, 6).map((item) => <button type="button" key={item.id} disabled={busy} onClick={() => onOpen(item.id)}><span><strong>{item.title || "제목 없는 기사"}</strong><small>{item.revision_no ? formatArticleTime(item.updated_at) : "현재 원고 · 저장 전"}</small></span><span className="workspace-status">{item.status || "작성 중"}</span></button>)}</div>
+    </div>}
+
+    <section className="workspace-panel" aria-labelledby="desk-queue-title">
+      <h2 id="desk-queue-title">오늘의 마감 큐 <small>마감 임박순 · {queue.length}건</small></h2>
+      <div className="desk-queue" role="table" aria-label="오늘의 마감 큐">
+        <div role="row" className="desk-queue-head"><span role="columnheader">마감</span><span role="columnheader">기사</span><span role="columnheader">담당</span><span role="columnheader">현재 상태</span><span role="columnheader">다음 작업</span></div>
+        {queue.map((item) => <div role="row" key={item.id} aria-current={item.id === story?.id || undefined}>
+          <strong role="cell" className="desk-queue-time">{item.deadline}</strong>
+          <span role="cell" className="desk-queue-title"><small>{item.desk}</small>{item.slug}</span>
+          <span role="cell">{item.owner}</span>
+          <span role="cell"><span className="workspace-status">{item.status}</span></span>
+          <span role="cell">{item.next && <button type="button" onClick={() => onNavigate(item.next.to)} aria-label={`${item.slug}: ${item.next.label}`}>{item.next.label}<ArrowRight aria-hidden="true" /></button>}</span>
+        </div>)}
+      </div>
     </section>
+
+    <footer className="desk-recent">
+      <span className="desk-recent-label">최근 활동</span>
+      <ul>{recent.length ? recent.map((item) => <li key={item.id}>{item.title || "제목 없는 기사"} · {savedAt(item.updated_at, todayStamp)} 저장</li>) : <li>아직 저장한 기사가 없습니다</li>}</ul>
+      <button type="button" disabled={busy} onClick={() => onNavigate("archive")}>최근 활동 보기 <ArrowRight aria-hidden="true" /></button>
+    </footer>
   </div>;
 }

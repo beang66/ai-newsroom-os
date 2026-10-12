@@ -139,6 +139,17 @@ paths; the vault override is a **database filename**, not a directory.
 `MODELS_DIR` can override the model directory. The EXE folder is for code/resources,
 not normal vault/model storage. Existing legacy files may be imported at startup.
 
+## IPC / HTTP variant builds (team testing)
+
+| Script | Output | Window talks to the core via |
+|---|---|---|
+| `packaging\build_ipc.bat` | `dist\ipc\AINewsroom\` | pywebview bridge (default) |
+| `packaging\build_http.bat` | `dist\http\AINewsroom\` | local HTTP (the build adds `transport.txt` containing `http` next to the exe) |
+
+Both build the same code; only the transport choice differs. `AI_NEWSROOM_TRANSPORT=http|ipc` overrides it at run time
+(`desktop/shell.py: transport()`). `AINewsroom.exe --browser` always uses HTTP. Verify a build with
+`AINewsroom-debug.exe --check` and `--smoke write` (the smoke has an IPC bridge item). Set `NOPAUSE=1` to skip the final pause.
+
 ## CLI and safe diagnostics
 
 | Command | Behavior |

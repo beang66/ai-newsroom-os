@@ -6,13 +6,15 @@ import {
   useState,
 } from "react";
 import {
+  FolderUp,
   Network,
   Search,
   Upload,
   X,
 } from "lucide-react";
 import { dataMapApi } from "../../api/datamap.js";
-import { TYPES } from "./constants.js";
+import { CATEGORIES } from "./constants.js";
+import CategoryMark from "./components/CategoryMark.jsx";
 import { FILE_KINDS } from "./domain/files.js";
 import {
   filterNodes,
@@ -144,6 +146,22 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
       setImporting(false);
     }
   };
+  const importButtons = (
+    <div className="dm-import">
+      <label className="dm-button">
+        <Upload size={14} />
+        {importing ? "가져오는 중" : "Markdown 추가"}
+        <input className="sr-only" type="file" accept=".md,text/markdown" multiple disabled={importing}
+          onChange={(event) => { importMarkdown(event.target.files); event.target.value = ""; }} />
+      </label>
+      <label className="dm-button">
+        <FolderUp size={14} />
+        폴더 추가
+        <input className="sr-only" type="file" accept=".md,text/markdown" multiple webkitdirectory="" directory="" disabled={importing}
+          onChange={(event) => { importMarkdown(event.target.files); event.target.value = ""; }} />
+      </label>
+    </div>
+  );
   if (!graph || !graph.nodes.length)
     return (
       <div className="dm-root dm-status" data-testid="data-map">
@@ -167,24 +185,10 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
         {graph && (
           <>
             <p>
-              저장된 기사나 지식 파일이 없습니다. Markdown을 추가하면 문서의
-              링크와 백링크가 관계망으로 표시됩니다.
+              저장된 기사나 취재 자료가 없습니다. Markdown 파일이나 폴더를
+              추가하면 문서의 링크와 백링크가 관계망으로 표시됩니다.
             </p>
-            <label className="primary-button file-import-empty">
-              <Upload size={15} />
-              {importing ? "가져오는 중" : "Markdown 추가"}
-              <input
-                className="sr-only"
-                type="file"
-                accept=".md,text/markdown"
-                multiple
-                disabled={importing}
-                onChange={(event) => {
-                  importMarkdown(event.target.files);
-                  event.target.value = "";
-                }}
-              />
-            </label>
+            {importButtons}
             {importNotice && <p role="status">{importNotice}</p>}
           </>
         )}
@@ -193,6 +197,7 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
   const panelWidth = selected ? contextWidth : overviewWidth;
   const setPanelWidth = selected ? setContextWidth : setOverviewWidth;
   const hasFilter = project !== "all" || kind !== "all" || query;
+  const categoryCounts = graph.nodes.reduce((counts, n) => ({ ...counts, [n.category]: (counts[n.category] || 0) + 1 }), {});
   return (
     <div
       className={`dm-root ${expanded ? "expanded" : ""}`}
@@ -200,14 +205,14 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
     >
       <div className="map-workspace">
         {importNotice && <p className="dm-import-notice" role="status">{importNotice}</p>}
-        <div className="datamap-command">
+        <div className="dm-toolbar">
           <label className="global-search">
             <Search size={16} />
             <input
               ref={searchInput}
               aria-keyshortcuts="/"
               aria-label="지식 검색"
-              placeholder="기사, 인물, 파일, 맥락 검색"
+              placeholder="기사, 자료, 경로 검색"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -219,42 +224,28 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
             <kbd>/</kbd>
           </label>
           <MapViews view={view} onView={navigate} />
+          {importButtons}
         </div>
         <div className="filterbar">
-          <div className="type-filters">
-            <button
-              className={kind === "all" ? "active" : ""}
-              onClick={() => setKind("all")}
-            >
-              전체
+          <div className="type-filters" role="group" aria-label="분류 필터">
+            <button className={kind === "all" ? "active" : ""} aria-pressed={kind === "all"} onClick={() => setKind("all")}>
+              전체 <small>{graph.nodes.length}</small>
             </button>
-            {Object.entries(TYPES).map(([id, label]) => (
+            {Object.entries(CATEGORIES).map(([id, { label, description }]) => (
               <button
                 key={id}
                 className={kind === id ? "active" : ""}
+                aria-pressed={kind === id}
+                title={description}
+                disabled={!categoryCounts[id]}
                 onClick={() => setKind(id)}
               >
-                <span className={`type-dot ${id}`} />
-                {label}
+                <CategoryMark category={id} />
+                {label} <small>{categoryCounts[id] || 0}</small>
               </button>
             ))}
           </div>
           <div className="filter-actions">
-            <label className="dm-import-button">
-              <Upload size={14} />
-              {importing ? "가져오는 중" : "Markdown 추가"}
-              <input
-                className="sr-only"
-                type="file"
-                accept=".md,text/markdown"
-                multiple
-                disabled={importing}
-                onChange={(event) => {
-                  importMarkdown(event.target.files);
-                  event.target.value = "";
-                }}
-              />
-            </label>
             {hasFilter && (
               <button className="text-button" onClick={resetFilters}>
                 필터 초기화
@@ -288,8 +279,6 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
               selectedId={selectedId}
               onSelect={choose}
               onOpen={open}
-              onImport={importMarkdown}
-              importing={importing}
               importNotice={importNotice}
             />
           )}
@@ -299,11 +288,7 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
                 className={selected ? "context-resizer" : "overview-resizer"}
                 role="separator"
                 aria-orientation="vertical"
-                aria-label={
-                  selected
-                    ? "SELECTED CONTEXT 너비 조절"
-                    : "YOUR KNOWLEDGE, CONNECTED 너비 조절"
-                }
+                aria-label={selected ? "선택한 맥락 패널 너비 조절" : "취재 맥락 요약 패널 너비 조절"}
                 onPointerDown={(event) => {
                   event.currentTarget.setPointerCapture(event.pointerId);
                   event.currentTarget.dataset.dragging = "true";
@@ -338,6 +323,8 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
                 onSelect={choose}
                 onOpen={open}
                 onProject={filterProject}
+                onKind={(id) => { setKind(id); setSelectedId(null); }}
+                categoryCounts={categoryCounts}
                 onClear={() => choose(null)}
               />
             </>

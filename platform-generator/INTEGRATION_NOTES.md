@@ -2,6 +2,8 @@
 
 ## 현재 로컬 통합 기준 — 2026-10-12
 
+현재 기준 main은 `25e73af63116e46269452542e3df37b487e0c489`입니다. 초기 `8ee7a3b` 병합은 `1762e61`, 원래 작업 보존은 `6fd20c6` 및 `backup/platform-before-main-20261012-openai`입니다. 추가 연결 작업은 `6e663a2`에 보존했고 추가 main 병합 전 백업은 `backup/platform-before-main-25e73af-20261012`입니다. main에 직접 커밋하거나 push·PR을 실행하지 않았습니다.
+
 아래 과거 마일스톤의 n8n 설명은 당시 기록입니다. 현재 플랫폼 기능은 Node 코드로 전환했으며 `workflows/**`를 실행하거나 복구하지 않습니다. 팀 앱은 `PlatformManager` → `core-adapter.js` → 생성기·렌더러를 사용하고, 개발용 편집실은 `server.js`의 Express 경로를 사용합니다. 팀 메인 UI와 개발용 편집실을 함께 유지하며 공용 API·카드 모델·템플릿은 `lib/`에서 제공합니다. 팀 Core의 AI 브리지, 스냅샷 입력과 암호화 이미지 저장 계약은 유지합니다.
 
 `origin/main`의 이전 수동 테스트를 파일별로 검토했습니다. 현재 및 main의 package.json, 전체 코드·팀 문서에 이 파일들을 호출하는 참조가 없고 `.github/workflows` CI도 없습니다. 아래 파일과 제거한 n8n 워크플로에는 KEEP 표시가 없으며 모두 삭제 상태로 유지합니다.
@@ -42,13 +44,37 @@
 
 ### 2026-10-12 검증과 남은 항목
 
-- 루트 `npm test`: API 경계 및 21개 테스트 통과. `npm test --prefix platform-generator`: 로컬 저장 검사 및 34개 자동 테스트 통과.
-- `$env:PYTHONPATH='article_editor/.runtime'; python -m unittest discover -s article_editor/dev/tests -p test_platform_connections.py`: 9개 통과. 실제 Node Core 검수, 사진 저장/복원, 다른 기사·고정본/낡은 렌더 거부, SNS 프로세스 종료·재실행·병행 요청, 데스크톱 종료 호출 포함.
-- 팀 UI smoke는 실제 Python Core·암호화 저장소와 모의 AI/사진/생성/SNS 어댑터를 사용합니다. 실제 계정에 게시하지 않습니다. 검수/렌더 지연 중 편집, 업로드 편집, 카드 추천 입력, 렌더 실패·재시도, JPG 링크, snapshot 불일치 차단, 두 채널 작성 준비를 구분해 검사합니다.
+- 루트 `npm test`: API 경계 및 36개 테스트 통과. `npm test --prefix platform-generator`: 로컬 저장 검사 및 34개 자동 테스트 통과. 새 main의 IPC·암호화 백업·데이터맵 테스트를 모두 보존하고 플랫폼 상태 테스트도 함께 실행합니다.
+- `$env:PYTHONIOENCODING='utf-8'; $env:PYTHONPATH='article_editor/.runtime'; python -m unittest discover -s article_editor/dev/tests -p 'test_*.py'`: **396개, OK (기존 skipped=6)**. 실제 Node Core 검수, 사진 저장/복원, 다른 기사·고정본/낡은 렌더 거부, 동일 JPG 중복 보관 시 복수 렌더 출처 유지, SNS 프로세스 종료·재실행·병행 요청, 데스크톱 종료 호출 포함. 경계 모델 파일 부재 안내와 일부 ResourceWarning은 있었으며 테스트 실패는 없었습니다.
+- 루트 `npm run build`, `npm run test:ui`: 통과. 팀 UI smoke는 실제 Python Core·암호화 저장소와 모의 AI/사진/생성/SNS 어댑터를 사용합니다. 실제 계정에 게시하지 않습니다. 최신 main의 강제 로그인·회원가입·로그인 유지·설정 검사와 검수/렌더 지연 중 편집, 업로드 편집, 카드 추천 입력, 렌더 실패·재시도, JPG 링크, snapshot 불일치 차단, 두 채널 작성 준비·서비스 종료 검사를 함께 유지합니다. 재시작 뒤 세션이 헤더에 반영되는 전제조건을 기다려 설정 검사를 시작합니다. 검증을 skip하거나 완화하지 않았습니다.
+- `node tests/card-news-output.cjs` (platform-generator에서): 16개 화면 검사, JPG 12장, 넘침 차단 4개, 브라우저 오류 0. `node tests/text-position-output.cjs`: 배율 3개·경계·저장·초기화·JPG 검사 통과, 오류 0. 모두 개발용 편집실의 실제 브라우저/JPG 검증입니다.
+- JPG 바이트는 기존 MediaAsset의 `object_ref`와 Core `mediaBytes` 계약을 사용하므로 HTTP·IPC에서 같은 경로를 유지합니다. HTTP 주소가 없는 IPC mock에서도 JPG 읽기 회귀 검증을 통과했습니다. 실제 EXE 실행 검증을 대신하지 않습니다.
 - 실제 AI: 앞선 OpenAI 개발용 카드 생성·검수 검사에서 4장 생성 성공. 운영 backend 계정·과금 키로 이번 연결 전체를 반복한 결과는 아닙니다.
-- 실제 팀 Core + 빌드 UI + 로그인 창: UI 로딩 오류 수정 확인. Instagram 로그인은 한 차례 연결 확인됐지만 창 종료 후 최종 이미지 순서·줄바꿈·계정/작성 준비 검증은 **미완료**입니다. 추가 상태 확인 명령이 승인되지 않아 계속 진행하지 않았습니다. 게시 버튼을 누르지 않았습니다.
-- Threads 실제 계정은 로그인 자체가 검토 중이므로 사용자 지시에 따라 보류했습니다. 모의 작성 준비/자동 검증과 실제 계정 검증을 혼동하지 않습니다.
+- 실제 팀 Core + 빌드 UI + Instagram 공식 Chrome 창: 앞선 중단 시점에는 최종 작성 준비가 미완료였으나, 2026-10-12 재개 후 보존된 프로필의 로그인 연결과 JPG 3장·원고 작성 준비에 성공했습니다. 사용자가 계정·1번→2번→3번 카드 순서·문단 줄바꿈이 정상임을 확인했습니다. 게시/공유 버튼은 누르지 않았습니다.
+- Threads 실제 계정은 앞선 중단 때 검토 중이어서 보류했으나, 2026-10-12 재개 요청으로 다시 확인했습니다. Chrome의 보존된 프로필에서 로그인 연결 → 실제 Core/빌드 UI의 JPG 3장·원고 작성 준비에 성공했습니다. 사용자가 계정·1번→2번→3번 카드 순서·문단 줄바꿈이 정상임을 확인했습니다. 작성창 종료 후 SNS 서비스를 재실행해도 다시 로그인할 필요 없이 연결됐으며 마지막 검증 창은 닫았습니다. 게시 버튼은 누르지 않았습니다.
 - 최신 Windows EXE 재빌드·Node/Playwright 동봉·앱 재실행 및 운영 backend 사진 실연결은 **미검증**입니다. 따라서 팀 앱/EXE 전체 전달 검증 완료 또는 즉시 배포 가능 상태로 보고하지 않습니다.
+- 검증용 Instagram·Threads 전용 창은 닫았으며 로그인 프로필은 보존했습니다. 이번에 띄운 QA Core 서버도 정리했습니다. 비밀번호·세션·API 키·생성 JPG·QA 저장소·node_modules·runtime은 커밋에 포함하지 않습니다.
+
+재개 시 HEAD/MERGE_HEAD와 전체 Git 상태가 중단 메모와 같음을 확인했습니다. 추가 소스 diff도 기록된 검증 범위와 일치했습니다. 마지막 실제 빌드의 HTML/JS/CSS 참조가 모두 존재하며 통합 API의 Core mediaBytes/object_ref 코드도 산출물에 포함됐음을 확인했습니다. 이미 통과한 테스트를 반복하거나 검증을 완화하지 않았습니다. 최종 생성물을 다시 stage해 이전 index의 빌드 파일·문서와 작업 트리 사이 차이를 정리합니다.
+
+최종 로컬 통합은 작업 브랜치에서 `25e73af` 병합 결과를 커밋하는 범위입니다. 충돌 파일 0, diff/check 통과, stage 후보의 실제 비밀값 일치 0, 금지 산출물 0, main 대비 KEEP 삭제 0을 확인했습니다. 새 main을 다시 병합하거나 기존 merge를 abort/reset/clean하지 않았습니다. 로컬 코드/자동 검증과 두 SNS의 게시 전 작성 준비는 확인됐으며, 운영 backend·EXE 검증은 별도의 남은 작업입니다. 업로드/PR은 이번 단계에서 실행하지 않습니다.
+
+실제 QA 브라우저를 닫을 때 완료 전의 보관함/데이터맵 읽기 요청에서 ConnectionAbortedError 로그가 발생했습니다. 두 SNS 작성 준비 응답과 사용자의 확인은 정상 완료됐고 페이지 오류는 0이었습니다. 이 로그를 숨기거나 테스트를 완화하지 않았습니다.
+
+실제 SNS 검증은 별도 QA 저장소·공개 가상 원고·Core가 발급한 실제 기사/고정본/자산 ID를 사용했습니다. 팀 인증 화면은 개발용 고정 세션으로 분리했으며 SNS 공식 창에서는 사용자의 실제 로그인 프로필을 사용했습니다. 운영 팀 계정/backend 인증 또는 EXE 성공으로 표시하지 않습니다.
+
+### 최신 main 추가 병합과 충돌 해결
+
+팀 main의 계정별 vault·회원가입/로그인 유지·암호화 브라우저 백업·IPC·데스크/데이터맵/보관함 개편 및 신규 팀 파일을 유지했습니다. Core API 충돌은 팀 회원가입·로그인 유지·설정 경로와 플랫폼 검수·SNS 경로를 함께 포함했습니다. 루트 package.json 충돌은 팀 IPC/백업 테스트와 플랫폼 상태 테스트를 모두 실행하도록 해결했습니다. runtime 자동 병합은 로그인 시 이전 정책과 SNS 종료를 함께 유지합니다.
+
+생성 파일 충돌은 최종 소스를 루트 `npm run build`로 재생성한 뒤 stage했습니다. 출력 경로는 빌드 입력이 아니므로 임시 버전 선택이 필요하지 않았고 생성 파일을 손으로 편집하지 않았습니다. main 대비 삭제는 위에서 검토한 이전 수동 테스트 5개와 n8n workflow 8개, 재빌드로 교체된 프론트 생성 파일뿐입니다. 예상하지 않은 팀 소스 삭제나 KEEP 표시 삭제를 남기지 않았습니다.
+
+충돌 파일은 다음과 같습니다.
+
+- `article_editor/app/core/api.py`, 루트 `package.json`
+- `article_editor/app/frontend/index.html`
+- frontend/assets의 AppDialog-CQo89VuZ.js, ArchiveView-0vf2sGiM.js, DataMapView-DJaQVTLR.js, DeskView-BW458Zp0.js, FormatConverter-BhxKatG-.js, InterviewStudio-Bp81mRMr.js, LoginDialog-ClJMdy5t.js, ModelsDialog-BtTCpaw3.js
+- frontend/assets의 SourceSearch-AAKBMBxl.js, SourceSearch-CvZnT2mV.js, SourceSearch-DKtwVBnO.js, copy-CLdfknXy.js, copy-CMkBtcLS.js, copy-D9KllhiO.js, upload-BXmdt3m0.js, upload-CB3wXGjq.js, upload-nU3OU4-1.js
 
 ## 과거 마일스톤 기록
 

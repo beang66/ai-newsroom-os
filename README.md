@@ -53,7 +53,7 @@ npm run test:ui
 
 ## DataMap 테스트 자료와 복구점
 
-`sample-data/datamap/`의 마크다운 5개는 내부 링크, 백링크, 미해결 링크를 검증합니다. 보관함의 DataMap에서 가져올 수 있습니다.
+`sample-data/datamap/`의 마크다운 5개는 내부 링크, 백링크, 미해결 링크를 검증합니다. `sample-data/datamap/projects/`에는 오늘의 데스크 6개 프로젝트(폭염·가계부채·집중호우·영화제·국정감사·반도체)의 간략한 근거·취재 자료, 데스크 편성표, 오늘 출고한 기사 10건이 역할 폴더(`기획`·`원자료`·`인터뷰`·`검증`·`취재노트`·`기사`)별로 들어 있습니다(데모용 가상 자료). 데이터맵의 **폴더 추가**로 `sample-data/datamap/` 폴더를 고르면 전체 45개를 한 번에 넣을 수 있습니다.
 
 GitHub `origin/main` 이력을 연결했으며, UI 정리 직전 로컬 DataMap 변경은 `backup/local-before-ui-consolidation` 브랜치에 보존했습니다. 구형 UI는 이 브랜치에서 확인할 수 있습니다. 로컬 커밋은 별도 요청 전에는 GitHub로 push하지 않습니다.
 

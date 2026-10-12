@@ -43,12 +43,13 @@ export default function ArticleWriter({
   onPublish, // 송고 = 수동 저장 + 송고본 갱신(기사당 하나) → 결과
   published = null, // 이 기사의 송고본 정보(없으면 아직 송고 전)
   saveTimes = null, // { firstSavedAt, lastSavedAt } — 송고 전 미리보기의 입력·업데이트
+  openEvidence, // 데스크의 '근거 확인'으로 들어오면 좁은 화면에서도 팩트체크·근거자료 서랍을 열어 둔다
 }) {
   // 1. 화면 뷰 모드: 'editor' (기사 작성) | 'preview' (같은 카드 안에서 동아일보 미리보기)
   const [viewMode, setViewMode] = useState("editor");
 
   // 팩트체크 & 근거자료 우측 슬라이더(Drawer) 열림 상태
-  const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches);
+  const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(() => Boolean(openEvidence) || (typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches));
   const [showHistory, setShowHistory] = useState(false);
   // 팩트체크 — 글쓰기가 멈추면 자동 실행. 서랍을 닫아도 본문 하이라이트가 남도록 여기에 둔다
   const factCheck = useFactCheck(article);

@@ -9,7 +9,7 @@ import {
   LockKeyhole,
   X,
 } from "lucide-react";
-import { TYPES } from "../constants.js";
+import { categoryLabel } from "../constants.js";
 export default function ResourceReader({
   node,
   initialPage = 0,
@@ -78,7 +78,6 @@ export default function ResourceReader({
         </div>
         <div className="reader-layout">
           <aside className="reader-index">
-            <span className="eyebrow">PAGE RECORDS</span>
             <h3>
               {node.kind === "audio" ? "시간 구간 기록" : "자료별 페이지"}
             </h3>
@@ -96,7 +95,7 @@ export default function ResourceReader({
             {!node.pages?.length && <p className="muted">연결된 페이지 없음</p>}
             <div className="reader-metadata">
               <p>
-                자료 유형 <strong>{TYPES[node.kind]}</strong>
+                분류 <strong>{categoryLabel(node)}</strong>
               </p>
               <p>
                 기록자 <strong>{node.author}</strong>
@@ -121,14 +120,11 @@ export default function ResourceReader({
               </button>
             </div>
             <span className="eyebrow">
-              {node.kind === "audio"
-                ? "TRANSCRIPT PREVIEW"
-                : "DOCUMENT PREVIEW"}
+              {node.kind === "audio" ? "녹취 미리보기" : "문서 미리보기"}
             </span>
             <h2>{record?.title || node.label}</h2>
             <p className="reader-lead">{record?.text || node.summary}</p>
             <div className="page-summary">
-              <span className="eyebrow">CONTEXT SUMMARY</span>
               <h3>이 페이지가 연결하는 맥락</h3>
               <p>{node.summary}</p>
               <div className="tag-row">

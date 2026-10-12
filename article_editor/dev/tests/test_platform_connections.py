@@ -58,6 +58,8 @@ class PlatformConnectionsTests(unittest.TestCase):
         data={'platform':'threads','action':'prepare','articleId':self.article_id,'snapshotId':self.snapshot['id'],'payload':{'text':'원고\n\n줄바꿈','assets':[{'id':asset['id'],'key':'old'}]}}
         with self.assertRaises(RequestError):self.manager.sns(data)
         self.assertEqual(captured,[])
+        data['payload']['assets'][0]['key']=None
+        with self.assertRaises(RequestError):self.manager.sns(data)
         data['payload']['assets'][0]['key']='current';self.manager.sns(data)
         self.assertEqual(captured[0]['text'],'원고\n\n줄바꿈');self.assertEqual(captured[0]['assets'][0]['order'],1);self.assertEqual(captured[0]['assets'][0]['data_url'],'data:image/jpeg;base64,/9j/2Q==')
         data['articleId']='other'
@@ -73,6 +75,14 @@ class PlatformConnectionsTests(unittest.TestCase):
         self.assertEqual(assets[0]['id'],assets[1]['id'])
         self.manager.sns({'platform':'instagram','action':'prepare','articleId':self.article_id,'snapshotId':self.snapshot['id'],'payload':{'text':'두 카드','assets':assets}})
         self.assertEqual([file['order'] for file in captured[0]['assets']],[1,2])
+
+    def test_text_only_sns_without_snapshot_requires_real_saved_article(self):
+        captured=[];self.manager._sns=SimpleNamespace(call=lambda p,a,d:captured.append(d) or {'success':True},close=lambda:None)
+        request={'platform':'threads','action':'prepare','articleId':self.article_id,'payload':{'text':'현재 원고','assets':[]}}
+        self.manager.sns(request);self.assertEqual(len(captured),1)
+        request['articleId']='f'*32
+        with self.assertRaises(RequestError):self.manager.sns(request)
+        self.assertEqual(len(captured),1)
 
     def test_no_publish_operation_and_owned_service_is_closed(self):
         with self.assertRaises(RequestError):self.manager.sns({'platform':'threads','action':'publish'})

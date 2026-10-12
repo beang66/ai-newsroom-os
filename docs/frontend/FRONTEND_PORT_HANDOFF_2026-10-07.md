@@ -21,7 +21,7 @@
 |---|---|---|---|---|
 | 1 | **저장 이력**: 목록, 미리보기(읽기 전용), 이전 저장본으로 복원 | `components/VersionHistory.jsx` | `listRevisions`, `previewRevision`, `restoreRevision` (`api/editorial.js`) | `version-history`, `revision-list`, `revision-preview`, `revision-restore`, `revision-restore-confirm` |
 | 2 | **로그인·회원가입 대화상자**(이메일·비밀번호, 아래쪽 링크로 회원가입 화면 전환, 가입 시 비밀번호 확인 입력, 이메일 확인이 켜져 있으면 "확인 메일을 보냈어요" 안내 후 로그인으로 복귀), 공용 대화상자 틀 | `components/LoginDialog.jsx`, `components/AppDialog.jsx` | `signIn`, `signUp`, `signOut`, 세션 상태 (`api/editorial.js`) | `login-dialog`, `login-email`, `login-password`, `login-submit`, `login-error`, `login-mode-toggle`, `signup-confirm`, `login-notice` |
-| 3 | **로그인 필요 시 로그인 창 자동 열기**: 서버 기능이 로그인을 요구하면 창이 열리고, 성공하면 하던 요청을 한 번 다시 보냄 | `App.jsx`, `api/auth-gate.js` | `setLoginHandler`, `askLogin` | |
+| 3 | **로그인 필수**: 로그인하지 않으면 기사·자료를 볼 수 없어서 로그인 창이 열려 있고 **닫을 수 없음**("나중에"·닫기 버튼·Esc 없음). 자료 요청이 `AUTH_REQUIRED`로 거절돼도 같은 창이 열리며, 로그인하면 하던 요청을 한 번 다시 보냄. 로그아웃하면 화면을 새로고침해 이전 계정의 내용을 비움 | `App.jsx`, `api/auth-gate.js` | `setLoginHandler`, `askLogin` | |
 | 4 | **모델 설치 대화상자**: 목록·크기·설치/취소·진행 (헤더의 "모델 설치" 버튼과 팩트체크 서랍의 안내 버튼에서 열림. 환경 설정과는 별개 창) | `components/ModelsDialog.jsx` | `modelStatus`, `installModels`, `cancelModelInstall` | `models-dialog`, `models-install`, `models-cancel`, `models-progress` |
 | 5 | **생성 버튼 3종**: "선택 항목 생성", 지금 보는 탭만 만드는 "원고 생성/다시 생성", "카드뉴스만 생성" | `components/FormatConverter.jsx` | `suggestPlatformKeywords(article, snapshotId)`, `generatePlatform(platform, article, keywords, requirements, snapshotId)` (`api/platform.js`) | `generate-active` |
 | 6 | **고정본 기준 생성 안내**: 생성이 끝나면 메시지에 "(저장 N번 버전의 글 기준)"을 표시. 고정본을 못 만들면 "(고정본을 만들지 못해 현재 글로 생성했습니다)" | `components/FormatConverter.jsx` | `freezeArticle(article)` (`api/platform.js`) | |
@@ -39,7 +39,7 @@
 - **색인 상태(8):** `indexing`(색인 중 NN%, 2초마다 새로 읽음) · `ready`(완료, 조각 수) · `failed`(실패, 팩트체크 때 다시 시도) · `pending`(안 됨: 서버 연결·로그인이 안 됐거나 옛 형식 자료). 색인이 끝나기 전에는 팩트체크가 자동으로 대기합니다.
 - **본문 하이라이트(10)의 판정별 색(현재 값):** 자료와 불일치(CONFLICT)는 장미색에 안쪽 테두리로 가장 강하게, 근거 부족(EVIDENCE_GAP)은 호박색, 검토 필요(REVIEW·EXTERNAL_REQUIRED)는 보라색, 일치(SUPPORTED)는 평소에 칠하지 않고 서랍 카드에 마우스를 올린 동안만 초록색, 일치 문장 안의 날짜·기관·주체 세부 값(DETAIL)은 호박색입니다. 하이라이트가 겹치면 앞의 것만 칠합니다. 재검토(11)는 한 번 받은 결과를 원고를 다시 열어도 자동으로 불러오며(비용 없음) 문장을 고치면 지워집니다.
 - **클라우드 백업(13):** 지금은 설정값만 저장하고 실제 클라우드 저장은 아직 연결되지 않았습니다(안내 문구에 같은 내용이 있음). 취재자료는 이 설정과 관계없이 이 PC에만 저장됩니다.
-- **로그인 자동 열기(3):** 로그인이 필요한 서버 기능(사진 검색, 임베딩, AI 보조 등)을 쓸 때 열립니다.
+- **계정별 자료(3):** 기사·취재자료·사진·녹취는 로그인한 계정마다 따로 보관돼, 다른 계정으로 로그인하면 보이지 않습니다. 계정 도입 전에 쓰던 자료는 처음 로그인한 계정이 이어받습니다. 이전의 "로그인 안내 띠"와 "나중에" 버튼은 없앴습니다.
 
 ## 4. 코어는 준비됐지만 화면이 없는 것
 

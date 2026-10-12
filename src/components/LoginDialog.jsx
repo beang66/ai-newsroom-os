@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { signIn, signUp } from "../api/editorial";
 import AppDialog from "./AppDialog";
 
-export default function LoginDialog({ onClose, onSession }) {
+// required: 로그인하지 않으면 자료를 볼 수 없으므로 닫을 수 없다(계정마다 자기 자료만 본다)
+export default function LoginDialog({ onClose, onSession, required = false }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,8 +46,8 @@ export default function LoginDialog({ onClose, onSession }) {
   };
 
   return (
-    <AppDialog title={signup ? "회원가입" : "로그인"} testId="login-dialog" onClose={onClose} busy={busy}>
-      <p className="text-xs leading-relaxed text-[#666666]">로그인하면 서버 연결 기능을 사용할 수 있어요. 나중에 로그인해도 로컬 글쓰기·저장·팩트체크를 계속할 수 있어요.</p>
+    <AppDialog title={signup ? "회원가입" : "로그인"} testId="login-dialog" onClose={onClose} busy={busy} closable={!required}>
+      <p className="text-xs leading-relaxed text-[#666666]">{required ? "로그인해야 내 기사와 자료를 볼 수 있어요. 기사와 자료는 계정마다 따로 보관됩니다." : "로그인하면 서버 연결 기능을 사용할 수 있어요."}</p>
       <form onSubmit={submit} aria-busy={busy} className="space-y-4">
         <div>
           <label htmlFor="login-email" className="block mb-1.5 text-xs font-bold">이메일</label>
@@ -71,8 +72,8 @@ export default function LoginDialog({ onClose, onSession }) {
         <button type="button" data-testid="login-mode-toggle" onClick={switchMode} disabled={busy}
           className="text-xs font-bold underline cursor-pointer disabled:opacity-50">{signup ? "이미 계정이 있어요 · 로그인" : "계정이 없어요 · 회원가입"}</button>
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={busy}
-            className="px-4 py-2 font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer disabled:opacity-50">나중에</button>
+          {!required && <button type="button" onClick={onClose} disabled={busy}
+            className="px-4 py-2 font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer disabled:opacity-50">나중에</button>}
           <button type="submit" disabled={busy} data-testid="login-submit"
             className="px-5 py-2 font-bold bg-[#23211F] text-[#FAF8F5] rounded-full cursor-pointer disabled:opacity-50">
             {busy ? (signup ? "가입 중…" : "로그인 중…") : (signup ? "가입하기" : "로그인")}

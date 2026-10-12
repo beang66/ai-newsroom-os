@@ -125,6 +125,7 @@ const server = spawn(process.env.PYTHON || "python", ["app/server.py"], {
     AI_NEWSROOM_DOCUMENTS: SMOKE_DOCS,
     AI_NEWSROOM_APPDATA: path.join(SMOKE_DOCS, "appdata"),
     AI_NEWSROOM_SKIP_DOTENV: "1", // 개발자의 실제 키·테스트 계정을 읽지 않는다
+    AI_NEWSROOM_FIXED_USER: "ui-smoke-user", // 계정마다 저장소가 따로라 코어는 이 사용자로 로그인한 것으로 본다(브라우저의 세션 목업과 별개)
     AI_NEWSROOM_KEY_SERVICE: "AI Newsroom (ui-smoke)",
     USE_LOCAL_MODELS: "false",
     PYTHONIOENCODING: "utf-8",
@@ -175,7 +176,7 @@ try {
   const snapshot = (name) => page.screenshot({ path: fileURLToPath(new URL(`temp/${name}.png`, ROOT)), fullPage: true });
 
   // 로그인·모델 설치는 브라우저에서 고정 응답: 실제 인증·다운로드를 전혀 호출하지 않는다.
-  let session = { signedIn: false, email: null, userId: null, expiresIn: 0, supabase: true, backend: true,
+  let session = { signedIn: true, email: "reporter@example.test", userId: "smoke-user", expiresIn: 3600, supabase: true, backend: true,
     autoLogin: { available: false, enabled: false, email: "", error: "" } };
   let finishSignIn, onSignInStarted;
   const signupCalls = [];
@@ -301,18 +302,31 @@ try {
   // 1. 코어 연결 — UI 가 계약(web/src/api)으로 /api/status·/api/session 을 받아 헤더에 반영
   await see("코어 연결됨");
   const login = page.getByTestId("login-dialog");
-  // 시작할 때 로그인 창으로 가로막지 않고, 작업을 막지 않는 안내 띠만 보인다(포커스를 빼앗지 않음)
-  const loginHint = page.getByTestId("login-hint");
-  await loginHint.waitFor();
-  assert.equal(await login.count(), 0, "시작할 때 로그인 창이 작업을 가로막지 않아야 합니다");
-  await loginHint.getByRole("button", { name: "로그인", exact: true }).click();
+  // 로그인한 상태에서는 로그인 창이 열리지 않고, 로그아웃하면 화면을 비우고(새로고침) 닫을 수 없는 로그인 창이 뜬다
+  assert.equal(await login.count(), 0, "로그인한 상태에서는 로그인 창이 없어야 합니다");
+  await page.locator("header").getByText("reporter@example.test", { exact: true }).waitFor();
+  await page.getByTestId("logout-button").click();
   await login.waitFor();
+  assert.equal(await login.getByRole("button", { name: "나중에", exact: true }).count(), 0, "로그인 전에는 건너뛸 수 없어야 합니다");
+  assert.equal(await login.getByRole("button", { name: "닫기", exact: true }).count(), 0, "로그인 전에는 창을 닫을 수 없어야 합니다");
+  await page.keyboard.press("Escape");
+  assert.equal(await login.count(), 1, "Esc 로도 닫히지 않아야 합니다");
   assert.equal(await page.getByTestId("login-email").evaluate((el) => el === document.activeElement), true);
-  await login.getByRole("button", { name: "나중에", exact: true }).click();
-  await go("보관함");
-  await go("기사 작성");
-  assert.equal(await login.count(), 0, "닫은 로그인 창이 다시 열리지 않아야 합니다");
-  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).click();
+  // 회원가입: 비밀번호 확인이 다르면 보내지 않고, 이메일 확인이 켜져 있으면 안내 후 로그인 화면으로 돌아온다
+  await page.getByTestId("login-mode-toggle").click();
+  await page.getByTestId("signup-confirm").waitFor();
+  await page.getByTestId("login-email").fill("new@example.test");
+  await page.getByTestId("login-password").fill("long-enough-1");
+  await page.getByTestId("signup-confirm").fill("different-1");
+  await page.getByTestId("login-submit").click();
+  await page.getByTestId("login-error").getByText("비밀번호 확인이 일치하지 않아요.").waitFor();
+  assert.equal(signupCalls.length, 0, "확인이 다르면 가입 요청을 보내지 않습니다");
+  await page.getByTestId("login-password").fill("long-enough-1");
+  await page.getByTestId("signup-confirm").fill("long-enough-1");
+  await page.getByTestId("login-submit").click();
+  await page.getByTestId("login-notice").getByText(/확인 메일/).waitFor();
+  assert.deepEqual(signupCalls, [{ email: "new@example.test", passwordLength: 13 }]);
+  assert.equal(await page.getByTestId("signup-confirm").count(), 0, "안내 뒤에는 로그인 화면으로 돌아옵니다");
   await page.getByTestId("login-email").fill("reporter@example.test");
   await page.getByTestId("login-password").fill("bad-password");
   let signInStarted = new Promise((resolve) => { onSignInStarted = resolve; });
@@ -331,28 +345,9 @@ try {
   finishSignIn();
   await login.waitFor({ state: "detached" });
   await page.locator("header").getByText("reporter@example.test", { exact: true }).waitFor();
-  await page.getByTestId("logout-button").click();
-  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).waitFor();
-  assert.equal(await login.count(), 0, "로그아웃 뒤에는 안내를 다시 강제로 열지 않습니다");
-  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).click();
-  assert.equal(await page.getByTestId("login-password").inputValue(), "", "성공한 로그인 뒤에도 비밀번호를 보관하지 않습니다");
-  // 회원가입: 비밀번호 확인이 다르면 보내지 않고, 이메일 확인이 켜져 있으면 안내 후 로그인 화면으로 돌아온다
-  await page.getByTestId("login-mode-toggle").click();
-  await page.getByTestId("signup-confirm").waitFor();
-  await page.getByTestId("login-email").fill("new@example.test");
-  await page.getByTestId("login-password").fill("long-enough-1");
-  await page.getByTestId("signup-confirm").fill("different-1");
-  await page.getByTestId("login-submit").click();
-  await page.getByTestId("login-error").getByText("비밀번호 확인이 일치하지 않아요.").waitFor();
-  assert.equal(signupCalls.length, 0, "확인이 다르면 가입 요청을 보내지 않습니다");
-  await page.getByTestId("login-password").fill("long-enough-1");
-  await page.getByTestId("signup-confirm").fill("long-enough-1");
-  await page.getByTestId("login-submit").click();
-  await page.getByTestId("login-notice").getByText(/확인 메일/).waitFor();
-  assert.deepEqual(signupCalls, [{ email: "new@example.test", passwordLength: 13 }]);
-  assert.equal(await page.getByTestId("signup-confirm").count(), 0, "안내 뒤에는 로그인 화면으로 돌아옵니다");
-  await page.keyboard.press("Escape");
-  await login.waitFor({ state: "detached" });
+  await go("보관함");
+  await go("기사 작성");
+  assert.equal(await login.count(), 0, "로그인한 뒤에는 로그인 창이 다시 열리지 않아야 합니다");
   // 나머지 기존 단계의 새로고침에서는 로그인한 상태로 유지한다.
   session = { ...session, signedIn: true, email: "reporter@example.test" };
 
@@ -620,24 +615,20 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value === "스모크 인스타그램 도입"), null, { timeout: 10_000 });
   await go("기사 작성");
   // 7. 좁은 화면에서도 첫 화면이 오류 없이 그려지는지
-  // 개발 계정 자동 로그인이 사용 가능하면 로그인 안내를 띄우지 않고 기존 토글도 동작한다.
-  session = { ...session, signedIn: false, email: null,
-    autoLogin: { available: true, enabled: false, email: "dev@example.test", error: "" } };
+  // 개발 계정 자동 로그인이 켜져 있으면 로그인된 상태이고, 끄면 로그아웃되어 로그인 창이 뜬다
+  session = { ...session, signedIn: true, email: "dev@example.test",
+    autoLogin: { available: true, enabled: true, email: "dev@example.test", error: "" } };
   await page.reload();
   const autoLogin = page.getByTestId("auto-login-toggle");
   await autoLogin.waitFor();
-  assert.equal(await login.count(), 0);
-  await autoLogin.click();
-  await page.locator("header").getByText("dev@example.test", { exact: true }).waitFor();
-  await autoLogin.click();
-  await page.locator("header").getByRole("button", { name: "로그인", exact: true }).waitFor();
-  assert.equal(await login.count(), 0);
-  session = { ...session, autoLogin: { ...session.autoLogin, enabled: true } };
-  await page.reload();
   await autoLogin.getByText(/켜짐/).waitFor();
-  assert.equal(await login.count(), 0, "자동 로그인이 켜져 있으면 실패 상태여도 안내를 강제로 열지 않습니다");
+  assert.equal(await login.count(), 0, "자동 로그인으로 로그인된 상태에서는 로그인 창이 없어야 합니다");
+  await autoLogin.click();
+  await login.waitFor();
   session = { ...session, signedIn: true, email: "reporter@example.test",
     autoLogin: { available: false, enabled: false, email: "", error: "" } };
+  await page.reload();
+  await page.locator("header").getByText("reporter@example.test", { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await go('오늘의 데스크');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);

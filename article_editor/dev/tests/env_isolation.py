@@ -15,6 +15,7 @@ _VAULT_DIR = tempfile.mkdtemp(prefix='ainews-test-vault-')
 atexit.register(shutil.rmtree, _VAULT_DIR, True)
 os.environ['AI_NEWSROOM_VAULT'] = os.path.join(_VAULT_DIR, 'vault.db')
 os.environ['AI_NEWSROOM_KEY_SERVICE'] = 'AI Newsroom (test)'
+os.environ['AI_NEWSROOM_FIXED_USER'] = 'test-user'  # 계정마다 저장소가 따로라 시험은 고정 사용자로 로그인한 것처럼 돈다(배포본은 무시)
 for name in ('OPENAI_API_KEY', 'GEMINI_API_KEY', 'UNSPLASH_ACCESS_KEY', 'UNSPLASH_APPLICATION_ID', 'UNSPLASH_SECRET_KEY',
              'APP_TOKEN', 'TEST_ACCOUNT_EMAIL', 'TEST_ACCOUNT_PASSWORD'):
     os.environ.pop(name, None)

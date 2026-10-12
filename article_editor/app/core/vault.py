@@ -7,14 +7,16 @@
 import contextlib
 import datetime
 import os
+import re
 import shutil
+import sys
 import tempfile
 import threading
 
 import keyring
 from sqlcipher3 import dbapi2 as sqlite
 
-from . import config  # noqa: F401  — sys.path 에 app/ 를 올린다(app_paths)
+from . import auth, config  # noqa: F401  — sys.path 에 app/ 를 올린다(app_paths)
 from app_paths import DB_PATH  # noqa: E402
 
 from .errors import RequestError
@@ -22,7 +24,57 @@ from .ids import revision_uuid
 
 SERVICE = os.environ.get('AI_NEWSROOM_KEY_SERVICE') or 'AI Newsroom'  # 테스트는 다른 이름을 써서 실제 기기 키를 건드리지 않는다
 ACCOUNT = 'device-key'
-WORKSPACE_ID = '10000000-0000-4000-8000-000000000001'  # 단일 워크스페이스(계약 ERD 의 workspace_id)
+WORKSPACE_ID = '10000000-0000-4000-8000-000000000001'  # 단일 워크스페이스(계약 ERD 의 workspace_id). 저장소 파일이 계정마다 따로라 계정 안에서는 하나다
+
+
+def _fixed_user():
+    # AI_NEWSROOM_FIXED_USER: 시험용(UI 스모크·단위 시험) 고정 사용자. 배포본(frozen)에서는 무시한다.
+    return '' if getattr(sys, 'frozen', False) else os.environ.get('AI_NEWSROOM_FIXED_USER', '')
+
+
+def _user_id():
+    return _fixed_user() or auth.signed_user()
+
+
+def _path_for(user):
+    return DB_PATH.with_name(f'{DB_PATH.stem}-{re.sub(r"[^A-Za-z0-9_-]", "_", user)[:64]}{DB_PATH.suffix}')
+
+
+def active_path():
+    """지금 로그인한 계정의 저장소 파일(vault-<사용자 id>.db). 로그인하지 않았으면 열지 않는다(AUTH_REQUIRED).
+    계정마다 파일이 따로라서 다른 계정의 기사·자료는 질의로도 닿지 않는다."""
+    user = _user_id()
+    if not user:
+        raise RequestError('로그인이 필요합니다.', 401, code='AUTH_REQUIRED')
+    if user == _fixed_user():  # 시험용 고정 사용자는 DB_PATH 자체를 쓴다(시험이 DB_PATH 를 직접 다룬다)
+        return DB_PATH
+    return _path_for(user)
+
+
+def _any_db_exists():
+    return DB_PATH.exists() or any(DB_PATH.parent.glob(f'{DB_PATH.stem}-*{DB_PATH.suffix}'))
+
+
+def adopt_legacy(user_id):
+    """계정 도입 전의 저장소(vault.db)를 처음 로그인한 계정의 것으로 옮긴다(한 번만). 옮겼으면 True."""
+    marker = DB_PATH.with_name(DB_PATH.stem + '.adopted')
+    with _INIT_LOCK:
+        if marker.exists() or not DB_PATH.is_file():
+            return False
+        target = _path_for(user_id)
+        moved = False
+        if not target.exists():
+            # 이전하기 전에 원본을 한 번 복사해 둔다(문제가 생기면 이 파일로 되돌릴 수 있다). 복사에 실패하면 옮기지 않는다.
+            with contextlib.suppress(RequestError, sqlite.DatabaseError), connect_path(DB_PATH) as legacy_db:
+                legacy_db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+            shutil.copy2(DB_PATH, DB_PATH.with_name(DB_PATH.stem + '.pre-accounts' + DB_PATH.suffix))
+            for suffix in ('', '-wal', '-shm'):
+                source = DB_PATH.with_name(DB_PATH.name + suffix)
+                if source.exists():
+                    os.replace(source, target.with_name(target.name + suffix))
+            moved = True
+        marker.write_text(user_id, encoding='utf-8')
+        return moved
 _INIT_LOCK = threading.RLock()
 SCHEMA_VERSION = 2
 # api.py 의 /api/vault/restore 요청 한도(220MB)에 base64(4/3배)·JSON 여유를 뺀 값. 넘는 백업은 받아도 복구할 수 없다.
@@ -106,7 +158,7 @@ def _device_key():
         key = keyring.get_password(SERVICE, ACCOUNT)
         if key:
             return key
-        if DB_PATH.exists():
+        if _any_db_exists():
             raise RequestError('암호화 저장소의 키를 찾을 수 없습니다. 이 PC 의 보관 키가 사라졌습니다.', 500)
         key = os.urandom(32).hex()
         keyring.set_password(SERVICE, ACCOUNT, key)
@@ -140,11 +192,12 @@ def _export(db, target, key, raw_key=False):
 def export_backup(password):
     """기기 키 대신 사용자가 정한 암호로 다시 암호화한 이동식 SQLCipher 백업."""
     password = _password(password)
-    if not DB_PATH.is_file():
+    path = active_path()
+    if not path.is_file():
         raise RequestError('백업할 사용자 자료가 없습니다.', 404)
     handle, name = tempfile.mkstemp(prefix='ai-newsroom-backup-', suffix='.db')
     os.close(handle)
-    target = type(DB_PATH)(name)
+    target = type(path)(name)
     try:
         with connect() as db:
             db.execute('PRAGMA wal_checkpoint(FULL)')
@@ -161,14 +214,15 @@ def restore_backup(raw, password):
     password = _password(password)
     if not isinstance(raw, bytes) or not raw:
         raise RequestError('복구할 백업 파일을 선택해 주세요.')
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    path = active_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
     with _INIT_LOCK:
         source_handle, source_name = tempfile.mkstemp(prefix='ai-newsroom-restore-', suffix='.db')
         target_handle, target_name = tempfile.mkstemp(prefix='ai-newsroom-restored-', suffix='.db')
         os.close(source_handle)
         os.close(target_handle)
-        source, target = type(DB_PATH)(source_name), type(DB_PATH)(target_name)
-        rollback = DB_PATH.with_name('vault.before-restore.db')
+        source, target = type(path)(source_name), type(path)(target_name)
+        rollback = path.with_name(path.stem + '.before-restore.db')
         try:
             source.write_bytes(raw)
             target.unlink(missing_ok=True)
@@ -184,20 +238,20 @@ def restore_backup(raw, password):
                 raise RequestError('백업 암호가 맞지 않거나 파일이 손상됐습니다.') from error
             finally:
                 db.close()
-            if DB_PATH.is_file():
+            if path.is_file():
                 # 옛 -wal 이 새 DB 옆에 남으면 다음 실행에서 옛 쓰기가 새 DB 위에 재생돼 깨진다: 먼저 비운다.
                 with contextlib.suppress(RequestError, sqlite.DatabaseError), connect() as live_db:
                     live_db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
             rollback.unlink(missing_ok=True)
             for suffix in ('', '-wal', '-shm'):
-                live = DB_PATH.with_name(DB_PATH.name + suffix)
+                live = path.with_name(path.name + suffix)
                 copy = rollback.with_name(rollback.name + suffix)
                 copy.unlink(missing_ok=True)
                 if live.exists():
                     shutil.copy2(live, copy)
             for suffix in ('-wal', '-shm'):  # 교체 전에 지운다(체크포인트가 실패했어도 안전 복사본에 남아 있다)
-                DB_PATH.with_name(DB_PATH.name + suffix).unlink(missing_ok=True)
-            os.replace(target, DB_PATH)  # atomic: the live DB path is never empty
+                path.with_name(path.name + suffix).unlink(missing_ok=True)
+            os.replace(target, path)  # atomic: the live DB path is never empty
             return {'restored': True, 'safetyCopy': str(rollback) if rollback.exists() else None,
                     'restoredAt': datetime.datetime.now(datetime.timezone.utc).isoformat()}
         finally:
@@ -207,13 +261,20 @@ def restore_backup(raw, password):
 
 @contextlib.contextmanager
 def connect():
-    """암호화 DB 연결(호출마다 열고 닫는다). 정상 종료하면 커밋, 예외면 롤백."""
+    """암호화 DB 연결(호출마다 열고 닫는다). 지금 로그인한 계정의 저장소를 연다."""
+    with connect_path(active_path()) as db:
+        yield db
+
+
+@contextlib.contextmanager
+def connect_path(path):
+    """주어진 저장소 파일의 암호화 DB 연결. 정상 종료하면 커밋, 예외면 롤백."""
     db = None
     try:
         with _INIT_LOCK:
             key = _device_key()
-            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-            db = sqlite.connect(str(DB_PATH), timeout=10)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            db = sqlite.connect(str(path), timeout=10)
             db.execute('PRAGMA cipher_log_level = NONE')
             db.execute(f"PRAGMA key = \"x'{key}'\"")
             try:

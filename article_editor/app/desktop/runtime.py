@@ -41,14 +41,7 @@ class LocalServer:
         from core import bootstrap, storage  # 코어는 서버를 만들 때만 불러온다
 
         storage.cleanup_open()  # 이전 실행이 비정상 종료돼 남은 임시 복호화본
-        try:  # 예전 평문 원고·자료를 암호화 저장소로(이미 옮긴 것은 건너뜀). 실패해도 앱은 뜬다
-            moved = storage.import_legacy_files()
-            storage.pack_existing_photos()
-            storage.import_legacy_embedding_cache()
-            if moved['articles'] or moved['sources'] or moved['failed']:
-                print(f'예전 저장물 가져오기: {moved}', flush=True)
-        except Exception as error:
-            print(f'예전 저장물 가져오기 실패: {error}', flush=True)
+        # 예전 평문 가져오기·저장소 이전·중단된 작업 정리는 로그인할 때 한다(자료 저장소가 계정마다 따로라서)
 
         self.port = int(port)
         # 소켓은 생성자에서 바로 바인딩된다. 포트 충돌은 여기서 즉시 드러난다.

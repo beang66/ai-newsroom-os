@@ -28,10 +28,6 @@ import "./workspace.css";
 const TAB_KEY = "ai-newsroom:lastTab";
 const readTab = () => { try { const tab = localStorage.getItem(TAB_KEY); return destinations.some((item) => item.id === tab) ? tab : "desk"; } catch { return "desk"; } };
 const writeTab = (tab) => { try { localStorage.setItem(TAB_KEY, tab); } catch { /* 저장 못 해도 그만 */ } };
-// 로그인 안내 띠를 닫았는지 — 이 PC 화면 설정(닫으면 다시 띄우지 않는다. 로그인은 헤더 버튼으로 언제든)
-const HINT_KEY = "ai-newsroom:loginHintDismissed";
-const hintDismissed = () => { try { return localStorage.getItem(HINT_KEY) === "1"; } catch { return false; } };
-const dismissHint = () => { try { localStorage.setItem(HINT_KEY, "1"); } catch { /* 저장 못 해도 그만 */ } };
 
 /** 앱을 열면 가장 최근에 저장된 원고를 불러와 이어서 작업한다(없으면 새 원고) */
 export default function App() {
@@ -122,7 +118,6 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
 
   // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
   const [showLogin, setShowLogin] = useState(false);
-  const [loginHintHidden, setLoginHintHidden] = useState(hintDismissed);
   const [showModels, setShowModels] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const loginWait = useRef([]); // 로그인 창 결과를 기다리는 요청들(AUTH_REQUIRED 로 멈춘 것)
@@ -136,6 +131,8 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
   }, []);
   const onSession = (session) => {
     loggedIn.current = Boolean(session?.signedIn);
+    // 로그아웃하면 화면에 남은 이전 계정의 기사·자료를 비운다(다시 열면 로그인부터 한다)
+    if (coreState.session?.signedIn && !session?.signedIn) { window.location.reload(); return; }
     setCore((prev) => ({ ...prev, session }));
   };
   const closeLogin = () => {
@@ -145,8 +142,14 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
     loginWait.current.splice(0).forEach((resolve) => resolve(ok));
   };
   const session = coreState.session;
-  const showLoginHint = !loading && !loginHintHidden && session && !session.signedIn
-    && !session.autoLogin?.available && !session.autoLogin?.enabled;
+  // 개발 자동 로그인처럼 로그인이 다른 경로로 끝나면 열려 있던 로그인 창을 닫고 기다리던 요청을 이어 간다
+  useEffect(() => {
+    if (session?.signedIn && showLogin) { loggedIn.current = true; closeLogin(); }
+  }, [session?.signedIn, showLogin]);
+  // 로그인하지 않았으면 자료를 볼 수 없으므로 로그인 창을 연다(코어가 자료 요청을 거절하기 전에도)
+  useEffect(() => {
+    if (session && !session.signedIn) setShowLogin(true);
+  }, [session?.signedIn, Boolean(session)]);
 
   // Sidebar collapse state (main 디자인: 기본은 세로로 긴 슬림 사이드바 접힘)
 
@@ -184,22 +187,13 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
         session={coreState.session}
         onSession={onSession}
         onLogin={() => setShowLogin(true)}
+        beforeLogout={() => (dirty ? flush() : Promise.resolve())}
         onModels={() => setShowModels(true)}
         saveStatus={saveStatus}
         onHome={() => setActiveTab("desk")}
         onSearch={() => setActiveTab("archive")}
       />
 
-      {showLoginHint && !coreState.session?.signedIn && (
-        <div role="status" data-testid="login-hint"
-          className="mx-3 md:mx-5 mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-[#E7E4DE] bg-white px-4 py-2 text-xs text-[#666666]">
-          <span className="flex-1 min-w-[200px]">로그인하면 AI 추천 같은 서버 기능을 쓸 수 있어요. 글쓰기·저장·팩트체크는 로그인 없이도 됩니다.</span>
-          <button type="button" onClick={() => setShowLogin(true)}
-            className="px-3 py-1 font-bold text-white bg-[#292929] rounded-full cursor-pointer hover:bg-black">로그인</button>
-          <button type="button" onClick={() => { dismissHint(); setLoginHintHidden(true); }}
-            className="px-2 py-1 font-bold text-[#666666] hover:text-[#292929] cursor-pointer">다시 보지 않기</button>
-        </div>
-      )}
 
       {/* 2. Main Workspace Layout: Floating Slim Sidebar & Warm Minimal Workspace */}
       {switchError && <p role="alert" className="workspace-global-error">{switchError}</p>}
@@ -264,7 +258,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       </div>
 
       <Suspense fallback={null}>
-        {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} />}
+        {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} required={!session?.signedIn} />}
         {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
         {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} onBeforeRestore={() => (dirty ? flush() : Promise.resolve())} />}
 

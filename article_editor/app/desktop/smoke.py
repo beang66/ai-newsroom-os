@@ -159,7 +159,7 @@ IPC_JS = """JSON.stringify((() => {
         api.core('/api/articles/latest'),
         api.core('/api/jobs/00000000-0000-4000-8000-000000000000'),
       ]).then(([status, latest, missing]) => {
-        s.ipc = { status: status.status, latest: latest.status, missing: missing.status, missingError: !!(missing.body && missing.body.error) };
+        s.ipc = { status: status.status, latest: latest.status, latestCode: latest.body && latest.body.code, missing: missing.status, missingCode: missing.body && missing.body.code, missingError: !!(missing.body && missing.body.error) };
       }).catch((e) => { s.ipc = 'error:' + e; });
     }
   }
@@ -195,8 +195,12 @@ def runner(window, mode, checks, timeout):
         checks.append(('코어 연결: GET /api/status', isinstance(status, dict), status))
 
         ipc = wait_value(window, IPC_JS, 20)
-        ok_ipc = isinstance(ipc, dict) and ipc.get('status') == 200 and ipc.get('latest') == 200             and ipc.get('missing') == 404 and ipc.get('missingError')
-        checks.append(('IPC 브리지: core() 로 상태·읽기·오류 응답이 HTTP 와 같은 형태로 옴', bool(ok_ipc), ipc))
+        # 로그아웃 상태(스모크의 기본)에서는 자료 요청이 401 AUTH_REQUIRED 로 거절된다 — 로그인 상태면 200/404.
+        # 어느 쪽이든 오류 본문(code)까지 HTTP 와 같은 형태로 오면 통과.
+        def answered(status, code, expected):
+            return status == expected or (status == 401 and code == 'AUTH_REQUIRED')
+        ok_ipc = isinstance(ipc, dict) and ipc.get('status') == 200 and answered(ipc.get('latest'), ipc.get('latestCode'), 200)             and answered(ipc.get('missing'), ipc.get('missingCode'), 404) and ipc.get('missingError')
+        checks.append(('IPC 브리지: core() 로 상태·읽기·오류(AUTH_REQUIRED 포함) 응답이 HTTP 와 같은 형태로 옴', bool(ok_ipc), ipc))
 
         if mode == 'write':
             written = wait_value(window, IDB_WRITE_JS, 15)

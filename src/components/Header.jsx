@@ -12,6 +12,7 @@ export default function Header({
   session = null,
   onSession = () => {},
   onLogin,
+  beforeLogout,
   onModels,
   saveStatus = "",
   onHome,
@@ -25,6 +26,7 @@ export default function Header({
     setBusy(true);
     setError("");
     try {
+      await beforeLogout?.(); // 쓰던 글은 이 계정에 먼저 저장한다
       onSession(await signOut());
     } catch (e) {
       setError(e?.message || String(e));

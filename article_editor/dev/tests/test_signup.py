@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import env_isolation  # noqa: F401  (core 보다 먼저: 개발자의 .env 계정으로 실제 로그인하지 않게)
 import vault_fixture  # noqa: F401  (sys.path 준비)
 from core import auth
 from core.errors import RequestError

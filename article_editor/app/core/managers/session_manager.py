@@ -14,7 +14,7 @@ import sys
 
 from app_paths import APP_DATA
 
-from .. import auth, config
+from .. import auth, config, vault
 from ..errors import RequestError
 from ..integrations import supabase
 
@@ -119,7 +119,7 @@ class SessionManager:
         refresh = auth.refresh_token()
         if refresh:
             try:
-                self._store(supabase.refresh(refresh), '')
+                self._store(supabase.refresh(refresh), '', prepare=False)
                 return auth.current_token()
             except RequestError:
                 auth.clear()
@@ -131,7 +131,25 @@ class SessionManager:
                 return ''
         return token  # 만료됐고 갱신도 안 되면 '' (호출부가 401 처리)
 
-    def _store(self, result: dict, email: str) -> None:
+    @staticmethod
+    def _after_login(user_id: str) -> None:
+        """로그인할 때 그 계정의 저장소를 준비한다: 계정 도입 전 저장소 이전(처음 로그인한 계정이 받는다), 예전 평문 가져오기,
+        중단된 작업 정리. 실패해도 로그인은 막지 않는다."""
+        if not user_id:
+            return
+        try:
+            from .. import jobs, storage
+            vault.adopt_legacy(user_id)
+            moved = storage.import_legacy_files()
+            storage.pack_existing_photos()
+            storage.import_legacy_embedding_cache()
+            jobs.recover_interrupted_jobs()
+            if moved['articles'] or moved['sources'] or moved['failed']:
+                print(f'예전 저장물 가져오기: {moved}', flush=True)
+        except Exception as error:
+            print(f'저장소 준비 중 문제: {error}', flush=True)
+
+    def _store(self, result: dict, email: str, prepare: bool = True) -> None:
         access = result.get('access_token', '')
         if not access:
             raise RequestError('로그인 응답을 확인하지 못했어요.', 502)
@@ -143,3 +161,5 @@ class SessionManager:
             email=email or user.get('email', ''),
             user_id=user.get('id', ''),
         )
+        if prepare:  # 토큰 갱신에서는 저장소 준비를 다시 하지 않는다
+            self._after_login(user.get('id', ''))

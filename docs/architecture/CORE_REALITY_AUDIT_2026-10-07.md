@@ -18,6 +18,8 @@
 | ID 매핑 | `ids.py`가 32hex/UUID 변환과 UUID v5(`legacy_uuid`)를 제공. 기사 ID는 32hex로 유지하고 계약 ID는 변환해서 쓴다 |
 | 팩트체크 임베딩 | 로컬 모델 대신 백엔드 `/ai/embeddings`(Cloudflare Workers AI)로 원격 임베딩이 기본. 판정 모델은 로컬 ONNX |
 
+계정별 저장소(2026-10-12): 로그인한 계정마다 암호화 저장소 파일이 따로(`vault-<id>.db`)라 다른 계정의 기사·자료에 닿지 않고, 로그인하지 않으면 자료 요청은 401 `AUTH_REQUIRED`다. 도입 전 `vault.db`는 처음 로그인한 계정이 이어받는다. 팀 공유(S1)와는 별개다.
+
 **계약과 아직 다른 항목 (결정: 앱 구현이 정본, 계약 문서의 `x-implementation`에 실제 경로·본문 기록 — 2026-10-12)**
 - 경로: 계약은 `/api/core/v0.8/workspaces/{id}/...`, 구현은 `/api/*`(작업공간은 단일 상수 `vault.WORKSPACE_ID`). 다중 작업공간·접근 권한은 없다.
 - `saveArticle`: 계약은 별도 본문 형식, 구현은 `POST /api/articles/save` 본문 `{draft, expectedRevisionNo?}`.

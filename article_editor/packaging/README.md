@@ -143,8 +143,8 @@ not normal vault/model storage. Existing legacy files may be imported at startup
 
 | Script | Output | Window talks to the core via |
 |---|---|---|
-| `packaginguild_ipc.bat` | `dist\ipc\AINewsroom\` | pywebview bridge (default) |
-| `packaginguild_http.bat` | `dist\http\AINewsroom\` | local HTTP (the build adds `transport.txt` containing `http` next to the exe) |
+| `packaging\build_ipc.bat` | `dist\ipc\AINewsroom\` | pywebview bridge (default) |
+| `packaging\build_http.bat` | `dist\http\AINewsroom\` | local HTTP (the build adds `transport.txt` containing `http` next to the exe) |
 
 Both build the same code; only the transport choice differs. `AI_NEWSROOM_TRANSPORT=http|ipc` overrides it at run time
 (`desktop/shell.py: transport()`). `AINewsroom.exe --browser` always uses HTTP. Verify a build with

@@ -82,6 +82,25 @@ class SessionManager:
         self._store(result, email.strip())
         return self.status()
 
+    def sign_up(self, payload):
+        """회원가입. 이메일 확인이 꺼져 있으면 바로 로그인된 상태로, 켜져 있으면 확인 메일 안내({needsConfirmation: True})."""
+        email = (payload or {}).get('email', '')
+        password = (payload or {}).get('password', '')
+        if not isinstance(email, str) or '@' not in email or len(email) > 200:
+            raise RequestError('이메일을 확인해 주세요.')
+        if not isinstance(password, str) or not 8 <= len(password) <= 200:
+            raise RequestError('비밀번호는 8자 이상으로 입력해 주세요.')
+        result = supabase.sign_up(email.strip(), password)
+        if result.get('access_token'):
+            self._store(result, email.strip())
+            return {**self.status(), 'needsConfirmation': False}
+        user = result.get('user') or result
+        if not user.get('id'):
+            raise RequestError('가입 응답을 확인하지 못했어요.', 502)
+        if user.get('identities') == []:  # 이메일 확인이 켜져 있을 때 Supabase 가 이미 가입된 주소를 알리는 방식
+            raise RequestError('이미 가입된 이메일이에요. 로그인해 주세요.')
+        return {**self.status(), 'needsConfirmation': True}
+
     def sign_out(self):
         token = auth.current_token()
         if token:

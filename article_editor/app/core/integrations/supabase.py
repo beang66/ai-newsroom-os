@@ -6,6 +6,7 @@
 
 앱은 `SUPABASE_ANON_KEY`(공개 전제) + 사용자 JWT 만 쓴다. `service_role` 키는 쓰지 않는다.
 
+    POST {url}/auth/v1/signup
     POST {url}/auth/v1/token?grant_type=password
     POST {url}/auth/v1/token?grant_type=refresh_token
     POST {url}/auth/v1/logout
@@ -72,6 +73,8 @@ def _call(request: urllib.request.Request, expect_json: bool = True):
             raise RequestError(message or '로그인이 필요합니다. 다시 로그인해 주세요.', 401) from None
         if error.code == 403:
             raise RequestError(message or '이 데이터에 접근할 권한이 없습니다.', 403) from None
+        if error.code in (400, 422):  # 가입·로그인 입력 오류(이미 가입, 약한 비밀번호 등)는 사용자 오류로 돌려준다
+            raise RequestError(_korean(message) or '입력을 확인해 주세요.', 400) from None
         if error.code == 429:
             raise RequestError(message or '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.', 502) from None
         raise RequestError(message or 'Supabase 요청이 실패했습니다.', 502) from None
@@ -79,11 +82,37 @@ def _call(request: urllib.request.Request, expect_json: bool = True):
         raise RequestError('Supabase에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.', 504) from None
 
 
+def _korean(message):
+    """Supabase Auth 의 대표 영어 메시지만 한국어로(나머지는 그대로)."""
+    text = (message or '').lower()
+    if 'invalid login credentials' in text:
+        return '이메일 또는 비밀번호를 확인해 주세요.'
+    if 'already registered' in text or 'already been registered' in text:
+        return '이미 가입된 이메일이에요. 로그인해 주세요.'
+    if 'password' in text and ('least' in text or 'weak' in text or 'short' in text):
+        return '비밀번호가 너무 약하거나 짧아요. 더 길게 입력해 주세요.'
+    if 'valid email' in text or 'invalid email' in text or 'email address' in text and 'invalid' in text:
+        return '이메일 형식을 확인해 주세요.'
+    return message
+
+
 def auth_health() -> bool:
     """Supabase Auth 도달성 확인(로그인 없이)."""
     request = urllib.request.Request(_base() + '/auth/v1/health', headers=_headers())
     _call(request)
     return True
+
+
+def sign_up(email: str, password: str) -> dict:
+    """이메일/비밀번호 가입. 이메일 확인이 꺼져 있으면 세션({access_token,...})을, 켜져 있으면 user 만 돌려준다."""
+    payload = json.dumps({'email': email, 'password': password}).encode()
+    request = urllib.request.Request(
+        _base() + '/auth/v1/signup',
+        data=payload,
+        headers=_headers(extra={'Content-Type': 'application/json'}),
+        method='POST',
+    )
+    return _call(request) or {}
 
 
 def sign_in(email: str, password: str) -> dict:

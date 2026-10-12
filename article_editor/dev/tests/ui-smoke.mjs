@@ -178,6 +178,7 @@ try {
   let session = { signedIn: false, email: null, userId: null, expiresIn: 0, supabase: true, backend: true,
     autoLogin: { available: false, enabled: false, email: "", error: "" } };
   let finishSignIn, onSignInStarted;
+  const signupCalls = [];
   const reply = (route, data, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(data) });
   await page.route("**/api/session", async (route) => {
     if (route.request().method() === "POST") {
@@ -189,6 +190,11 @@ try {
     return reply(route, session);
   });
   await page.route("**/api/session/**", (route) => {
+    if (route.request().url().endsWith("/signup")) {
+      const { email, password } = route.request().postDataJSON();
+      signupCalls.push({ email, passwordLength: password.length });
+      return reply(route, { ...session, signedIn: false, needsConfirmation: true });
+    }
     if (route.request().url().endsWith("/auto")) {
       const { enabled } = route.request().postDataJSON();
       session = { ...session, signedIn: enabled, email: enabled ? "dev@example.test" : null,
@@ -330,6 +336,21 @@ try {
   assert.equal(await login.count(), 0, "로그아웃 뒤에는 안내를 다시 강제로 열지 않습니다");
   await page.locator("header").getByRole("button", { name: "로그인", exact: true }).click();
   assert.equal(await page.getByTestId("login-password").inputValue(), "", "성공한 로그인 뒤에도 비밀번호를 보관하지 않습니다");
+  // 회원가입: 비밀번호 확인이 다르면 보내지 않고, 이메일 확인이 켜져 있으면 안내 후 로그인 화면으로 돌아온다
+  await page.getByTestId("login-mode-toggle").click();
+  await page.getByTestId("signup-confirm").waitFor();
+  await page.getByTestId("login-email").fill("new@example.test");
+  await page.getByTestId("login-password").fill("long-enough-1");
+  await page.getByTestId("signup-confirm").fill("different-1");
+  await page.getByTestId("login-submit").click();
+  await page.getByTestId("login-error").getByText("비밀번호 확인이 일치하지 않아요.").waitFor();
+  assert.equal(signupCalls.length, 0, "확인이 다르면 가입 요청을 보내지 않습니다");
+  await page.getByTestId("login-password").fill("long-enough-1");
+  await page.getByTestId("signup-confirm").fill("long-enough-1");
+  await page.getByTestId("login-submit").click();
+  await page.getByTestId("login-notice").getByText(/확인 메일/).waitFor();
+  assert.deepEqual(signupCalls, [{ email: "new@example.test", passwordLength: 13 }]);
+  assert.equal(await page.getByTestId("signup-confirm").count(), 0, "안내 뒤에는 로그인 화면으로 돌아옵니다");
   await page.keyboard.press("Escape");
   await login.waitFor({ state: "detached" });
   // 나머지 기존 단계의 새로고침에서는 로그인한 상태로 유지한다.

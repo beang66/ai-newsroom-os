@@ -20,7 +20,7 @@
 | # | 화면 | 위치(`src/`) | 호출 이름 | `data-testid` |
 |---|---|---|---|---|
 | 1 | **저장 이력**: 목록, 미리보기(읽기 전용), 이전 저장본으로 복원 | `components/VersionHistory.jsx` | `listRevisions`, `previewRevision`, `restoreRevision` (`api/editorial.js`) | `version-history`, `revision-list`, `revision-preview`, `revision-restore`, `revision-restore-confirm` |
-| 2 | **로그인 대화상자**(이메일·비밀번호), 공용 대화상자 틀 | `components/LoginDialog.jsx`, `components/AppDialog.jsx` | `signIn`, `signOut`, 세션 상태 (`api/editorial.js`) | `login-dialog`, `login-email`, `login-password`, `login-submit`, `login-error` |
+| 2 | **로그인·회원가입 대화상자**(이메일·비밀번호, 아래쪽 링크로 회원가입 화면 전환, 가입 시 비밀번호 확인 입력, 이메일 확인이 켜져 있으면 "확인 메일을 보냈어요" 안내 후 로그인으로 복귀), 공용 대화상자 틀 | `components/LoginDialog.jsx`, `components/AppDialog.jsx` | `signIn`, `signUp`, `signOut`, 세션 상태 (`api/editorial.js`) | `login-dialog`, `login-email`, `login-password`, `login-submit`, `login-error`, `login-mode-toggle`, `signup-confirm`, `login-notice` |
 | 3 | **로그인 필요 시 로그인 창 자동 열기**: 서버 기능이 로그인을 요구하면 창이 열리고, 성공하면 하던 요청을 한 번 다시 보냄 | `App.jsx`, `api/auth-gate.js` | `setLoginHandler`, `askLogin` | |
 | 4 | **모델 설치 대화상자**: 목록·크기·설치/취소·진행 (헤더의 "모델 설치" 버튼과 팩트체크 서랍의 안내 버튼에서 열림. 환경 설정과는 별개 창) | `components/ModelsDialog.jsx` | `modelStatus`, `installModels`, `cancelModelInstall` | `models-dialog`, `models-install`, `models-cancel`, `models-progress` |
 | 5 | **생성 버튼 3종**: "선택 항목 생성", 지금 보는 탭만 만드는 "원고 생성/다시 생성", "카드뉴스만 생성" | `components/FormatConverter.jsx` | `suggestPlatformKeywords(article, snapshotId)`, `generatePlatform(platform, article, keywords, requirements, snapshotId)` (`api/platform.js`) | `generate-active` |
@@ -56,10 +56,10 @@
 
 경고 문구에 "이미 쓴 팩트체크 판정 기록은 남지만 근거 원본을 열 수 없게 된다"는 점을 한 줄로 알려 주세요. 호출은 `deleteSource(sourceId, {force})`(`api/core-api.js`)로 준비돼 있습니다. 쓰는 기사가 있으면 409 오류(`code: "SOURCE_IN_USE"`, `details.usedBy`)가 오고, `{force: true}`로 다시 부르면 지워집니다. 한 건 조회는 `getSource(sourceId)`입니다.
 
-### 회원가입과 로그인 유지 (예정)
-지금은 팀원이 개발용 공용 계정을 씁니다. 회원가입이 구현되면 각자 가입해서 쓰게 바꿉니다. 코어 기능(`signUp`)은 구현 전이라 화면 디자인을 먼저 받고 연결합니다.
-- 회원가입 화면: 이메일·비밀번호, 비밀번호 규칙, 가입 후 안내, 로그인 화면과의 전환
-- "이 PC에서 로그인 유지" 설정: 켜면 다음 실행 때 자동 로그인, 끄면 저장된 로그인 정보 삭제 (지금의 자동 로그인 토글 `AutoLoginToggle`을 대체)
+### 로그인 유지 (예정)
+회원가입은 임시 화면으로 구현했습니다(위 2번 항목, 코어 `signUp`). 아직 없는 것은 로그인 유지입니다.
+- "이 PC에서 로그인 유지" 설정: 켜면 다음 실행 때 자동 로그인, 끄면 저장된 로그인 정보 삭제 (지금의 자동 로그인 토글 `AutoLoginToggle`을 대체). 코어 기능은 구현 전이라 화면 디자인을 먼저 받고 연결합니다.
+- 회원가입 화면의 디자인(비밀번호 규칙 안내, 가입 후 안내 문구 등)은 임시 화면을 보고 정해 주세요.
 
 ## 5. 호출 이름이 바뀐 것 (2026-10-12)
 

@@ -9,6 +9,7 @@
 export const ROUTES = Object.freeze({
   status: "/api/status",
   session: "/api/session",
+  signUp: "/api/session/signup",
   signOut: "/api/session/signout",
   sessionAuto: "/api/session/auto",
   settings: "/api/settings",
@@ -77,6 +78,8 @@ export function createCoreApi(transport) {
     signIn: (email, password, signal) =>
       transport.json(ROUTES.session, { email, password }, signal),
     /** 로그아웃 */
+    /** 회원가입. 이메일 확인이 꺼져 있으면 로그인된 session() 모양, 켜져 있으면 signedIn=false 로 오고 둘 다 needsConfirmation 이 붙는다 */
+    signUp: (email, password, signal) => transport.json(ROUTES.signUp, { email, password }, signal),
     signOut: (signal) => transport.json(ROUTES.signOut, {}, signal),
     /** 공용 테스트 계정 자동 로그인 켜기/끄기(개발 실행 전용) → session() 과 같은 모양 */
     setAutoLogin: (enabled, signal) => transport.json(ROUTES.sessionAuto, { enabled }, signal),

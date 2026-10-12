@@ -181,10 +181,12 @@ try {
     autoLogin: { available: false, enabled: false, email: "", error: "" } };
   let finishSignIn, onSignInStarted;
   const signupCalls = [];
+  const signInRemember = [];
   const reply = (route, data, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(data) });
   await page.route("**/api/session", async (route) => {
     if (route.request().method() === "POST") {
-      const { email, password } = route.request().postDataJSON();
+      const { email, password, remember } = route.request().postDataJSON();
+      signInRemember.push(remember);
       await new Promise((resolve) => { finishSignIn = resolve; onSignInStarted(); }); // 응답 전에 busy·비밀번호 초기화 확인
       if (password === "bad-password") return reply(route, { error: "이메일 또는 비밀번호를 확인해 주세요." }, 401);
       session = { ...session, signedIn: true, email, userId: "smoke-user", expiresIn: 3600 };
@@ -196,6 +198,10 @@ try {
       const { email, password } = route.request().postDataJSON();
       signupCalls.push({ email, passwordLength: password.length });
       return reply(route, { ...session, signedIn: false, needsConfirmation: true });
+    }
+    if (route.request().url().endsWith("/keep")) {
+      session = { ...session, keepLogin: route.request().postDataJSON().enabled };
+      return reply(route, session);
     }
     if (route.request().url().endsWith("/auto")) {
       const { enabled } = route.request().postDataJSON();
@@ -339,12 +345,14 @@ try {
   await page.getByTestId("login-error").getByText("이메일 또는 비밀번호를 확인해 주세요.").waitFor();
   assert.equal(await page.getByTestId("login-error").getAttribute("role"), "alert");
   await page.getByTestId("login-password").fill("valid-password");
+  await page.getByTestId("login-remember").check();
   signInStarted = new Promise((resolve) => { onSignInStarted = resolve; });
   await page.getByTestId("login-submit").click();
   await signInStarted;
   assert.equal(await page.getByTestId("login-password").inputValue(), "");
   finishSignIn();
   await login.waitFor({ state: "detached" });
+  assert.deepEqual(signInRemember, [false, true], "로그인 유지 체크는 기본 꺼짐이고, 켜면 요청에 실린다");
   await page.locator("header").getByText("reporter@example.test", { exact: true }).waitFor();
   await go("보관함");
   await go("기사 작성");
@@ -403,6 +411,15 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
   assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), false, "끈 설정이 유지됨");
   await page.getByTestId("settings-cloud-backup").check();
+  // 로그인 유지: 로그인 때 켠 상태가 반영되고, 설정에서 끄고 켤 수 있다
+  session = { ...session, keepLogin: true };
+  await page.reload();
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await page.getByTestId("settings-keep-login").waitFor();
+  assert.equal(await page.getByTestId("settings-keep-login").isChecked(), true);
+  await page.getByTestId("settings-keep-login").uncheck();
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-keep-login"]')?.checked === false);
+  assert.equal(session.keepLogin, false, "끄면 코어에 알린다");
   // 팩트체크 로컬 모델 사용: 기본 켜짐, 끄면 유지(끄면 모든 문장을 외부 모델이 판정)
   assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), true, "로컬 팩트체크 기본값은 켜짐");
   await page.getByTestId("settings-local-factcheck").uncheck();

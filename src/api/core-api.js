@@ -10,6 +10,7 @@ export const ROUTES = Object.freeze({
   status: "/api/status",
   session: "/api/session",
   signUp: "/api/session/signup",
+  sessionKeep: "/api/session/keep",
   signOut: "/api/session/signout",
   sessionAuto: "/api/session/auto",
   settings: "/api/settings",
@@ -82,11 +83,14 @@ export function createCoreApi(transport) {
     /** 로그인 상태 — **토큰은 오지 않는다**(프론트는 토큰을 모른다) */
     session: (signal) => transport.json(ROUTES.session, null, signal),
     /** 로그인 (Supabase Auth). 성공하면 session() 과 같은 모양을 돌려준다 */
-    signIn: (email, password, signal) =>
-      transport.json(ROUTES.session, { email, password }, signal),
+    signIn: (email, password, { remember = false } = {}, signal) =>
+      transport.json(ROUTES.session, { email, password, remember }, signal),
     /** 로그아웃 */
     /** 회원가입. 이메일 확인이 꺼져 있으면 로그인된 session() 모양, 켜져 있으면 signedIn=false 로 오고 둘 다 needsConfirmation 이 붙는다 */
-    signUp: (email, password, signal) => transport.json(ROUTES.signUp, { email, password }, signal),
+    signUp: (email, password, { remember = false } = {}, signal) =>
+      transport.json(ROUTES.signUp, { email, password, remember }, signal),
+    /** 이 PC 에서 로그인 유지(앱을 열면 로그인된 상태). 켜면 갱신 토큰만 OS 자격 증명 저장소에 두고, 끄면 지운다 → session() 모양 */
+    setKeepLogin: (enabled, signal) => transport.json(ROUTES.sessionKeep, { enabled }, signal),
     signOut: (signal) => transport.json(ROUTES.signOut, {}, signal),
     /** 공용 테스트 계정 자동 로그인 켜기/끄기(개발 실행 전용) → session() 과 같은 모양 */
     setAutoLogin: (enabled, signal) => transport.json(ROUTES.sessionAuto, { enabled }, signal),

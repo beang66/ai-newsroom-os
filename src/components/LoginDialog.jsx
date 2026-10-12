@@ -9,6 +9,7 @@ export default function LoginDialog({ onClose, onSession, required = false }) {
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState("");
   const [mode, setMode] = useState("login"); // login | signup
+  const [remember, setRemember] = useState(false); // 이 PC 에서 로그인 유지
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const signup = mode === "signup";
@@ -22,7 +23,7 @@ export default function LoginDialog({ onClose, onSession, required = false }) {
     setNotice("");
     if (signup && password !== confirm) { setError("비밀번호 확인이 일치하지 않아요."); return; }
     setBusy(true);
-    const request = signup ? signUp(email.trim(), password) : signIn(email.trim(), password);
+    const request = signup ? signUp(email.trim(), password, remember) : signIn(email.trim(), password, remember);
     setPassword("");
     setConfirm("");
     try {
@@ -67,6 +68,10 @@ export default function LoginDialog({ onClose, onSession, required = false }) {
             required minLength={8} maxLength={200} disabled={busy} value={confirm} onChange={(e) => setConfirm(e.target.value)}
             className="w-full px-4 py-2.5 bg-white border border-[#DDD6CB] rounded-xl focus:outline-2 focus:outline-[#23211F]" />
         </div>}
+        <label className="flex items-center gap-2 text-xs font-bold">
+          <input type="checkbox" data-testid="login-remember" disabled={busy} checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+          이 PC에서 로그인 유지 <span className="font-normal text-[#666666]">(다음에 앱을 열면 바로 로그인돼요. 공용 PC에서는 끄세요)</span>
+        </label>
         {notice && <p role="status" data-testid="login-notice" className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-3">{notice}</p>}
         {error && <p role="alert" data-testid="login-error" className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3">{error}</p>}
         <button type="button" data-testid="login-mode-toggle" onClick={switchMode} disabled={busy}

@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { exportVault, restoreVault, getSettings, saveSettings } from "../api/editorial";
+import { exportVault, restoreVault, getSettings, saveSettings, setKeepLogin } from "../api/editorial";
 import AppDialog from "./AppDialog";
 import { beginRestore, endRestore } from "../restoreState";
 
 // 환경 설정: 이 PC·계정의 설정만 다룬다(모델 설치는 ModelsDialog 가 따로 맡는다).
-export default function SettingsDialog({ onClose, onBeforeRestore }) {
+export default function SettingsDialog({ onClose, onBeforeRestore, session, onSession }) {
   const restoreInput = useRef(null);
   const [backupPassword, setBackupPassword] = useState("");
   const [backupPending, setBackupPending] = useState(false);
@@ -20,6 +20,14 @@ export default function SettingsDialog({ onClose, onBeforeRestore }) {
     });
     return () => request.abort();
   }, []);
+
+  const [keep, setKeep] = useState(Boolean(session?.keepLogin));
+  const changeKeepLogin = async (enabled) => {
+    setSettingsError("");
+    setKeep(enabled); // 바로 반영하고, 실패하면 되돌린다
+    try { onSession?.(await setKeepLogin(enabled)); }
+    catch (e) { setKeep(!enabled); setSettingsError(e?.message || String(e)); }
+  };
 
   const change = async (patch) => {
     const before = settings;
@@ -77,6 +85,16 @@ export default function SettingsDialog({ onClose, onBeforeRestore }) {
         </label>
         <p className="text-xs text-[#666666] leading-relaxed">기본값은 켜짐입니다. 끄면 기사가 이 PC에만 저장됩니다. 취재자료는 이 설정과 관계없이 항상 이 PC에만 저장돼요. (지금은 설정만 저장하며, 실제 클라우드 저장은 아직 연결되지 않았어요.)</p>
         {settingsError && <p role="alert" data-testid="settings-error" className="text-xs text-rose-700">{settingsError}</p>}
+      </section>
+      <hr className="border-[#DDD6CB]" />
+      <section className="space-y-3" aria-labelledby="keep-login-title">
+        <h3 id="keep-login-title" className="font-black">로그인 유지</h3>
+        <label className="flex items-center gap-2 text-sm font-bold">
+          <input type="checkbox" data-testid="settings-keep-login" checked={keep} disabled={!session?.signedIn}
+            onChange={(event) => changeKeepLogin(event.target.checked)} />
+          이 PC에서 로그인 유지
+        </label>
+        <p className="text-xs text-[#666666] leading-relaxed">켜면 다음에 앱을 열 때 바로 로그인된 상태로 시작해요. 비밀번호는 저장하지 않고, 로그인 유지용 토큰만 이 PC의 Windows 자격 증명 관리자에 보관합니다. 로그아웃하면 자동으로 꺼집니다. 공용 PC에서는 켜지 마세요.</p>
       </section>
       <hr className="border-[#DDD6CB]" />
       <section className="space-y-3" aria-labelledby="local-factcheck-title">

@@ -5,8 +5,9 @@ import { claimDetails } from "./claim-details.js";
 import { captionText, photoOfLine, textWithoutPhotos } from "../lib/photoMarks.js";
 
 // 로그인·설치 화면도 같은 코어 계약을 사용한다. 자격 증명은 요청 동안만 전달한다.
-export const signIn = (email, password) => core.signIn(email, password);
-export const signUp = (email, password) => core.signUp(email, password);
+export const signIn = (email, password, remember = false) => core.signIn(email, password, { remember });
+export const signUp = (email, password, remember = false) => core.signUp(email, password, { remember });
+export const setKeepLogin = (enabled) => core.setKeepLogin(enabled);
 export const signOut = () => core.signOut();
 export const getSettings = (signal) => core.getSettings(signal);
 export const saveSettings = (patch, signal) => core.saveSettings(patch, signal);

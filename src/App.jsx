@@ -38,12 +38,13 @@ export default function App() {
   const [workspaceVersion, setWorkspaceVersion] = useState(0);
   useEffect(() => {
     let alive = true;
-    loadLatestArticle(createEmptyArticle())
-      .then((a) => alive && setInitial(a || createEmptyArticle()))
-      .catch((error) => alive && setLoadError(error?.message || "최근 원고를 불러오지 못했습니다."));
+    // 로그인 상태를 먼저 알아본다: 로그인 유지가 켜져 있으면 이 요청에서 로그인이 되살아나, 이어서 불러오는 원고가 바로 열린다
     coreSnapshot()
       .then((snapshot) => alive && setCore(snapshot))
-      .catch(() => alive && setCore({ ok: false }));
+      .catch(() => alive && setCore({ ok: false }))
+      .then(() => alive && loadLatestArticle(createEmptyArticle()))
+      .then((a) => alive && a !== false && setInitial(a || createEmptyArticle()))
+      .catch((error) => alive && setLoadError(error?.message || "최근 원고를 불러오지 못했습니다."));
     return () => { alive = false; };
   }, [loadAttempt]);
   // 원고를 불러오는 동안에도 앱 틀(헤더·사이드바)은 바로 그린다. 불러오면 작업 영역을 한 번 새로 연다(key) —
@@ -321,7 +322,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       <Suspense fallback={null}>
         {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} required={!session?.signedIn} />}
         {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
-        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} onBeforeRestore={() => (unsynced ? flush() : Promise.resolve())} />}
+        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} onBeforeRestore={() => (unsynced ? flush() : Promise.resolve())} session={session} onSession={onSession} />}
 
       {/* Quick Source Search Modal during Writing */}
       {showSearchModal && (

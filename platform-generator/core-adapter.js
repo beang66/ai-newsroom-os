@@ -3,6 +3,7 @@
 const registerGenerateRoutes = require("./generate-routes");
 const { suggestKeywords } = require("./ai-client");
 const { readInput } = require("./core-bridge");
+const { renderCardJpeg } = require("./card-renderer");
 
 function getGenerateHandler() {
   let handler = null;
@@ -50,6 +51,17 @@ async function main() {
   if (input.action === "generate") {
     if (typeof input.platform !== "string") throw new Error("플랫폼을 지정해주세요.");
     return generate(input.platform, input.payload || {});
+  }
+  if (input.action === "render") {
+    // 카드 하나를 JPEG 로 그려 base64 로 돌려준다. 파일·localhost 주소를 만들지 않는다(코어가 암호화 저장소에 등록).
+    const payload = input.payload || {};
+    if (typeof payload.card_id !== "string" || !payload.card_id) {
+      const error = new Error("card_id 가 필요합니다.");
+      error.status = 400;
+      throw error;
+    }
+    const image = await renderCardJpeg(payload);
+    return { card_id: payload.card_id, mime_type: "image/jpeg", data: image.toString("base64") };
   }
   throw new Error("지원하지 않는 platform-generator 작업입니다.");
 }

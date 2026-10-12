@@ -22,3 +22,10 @@ export async function generatePlatform(platform, article, selectedKeywords, requ
   const result = await core.generatePlatform(platform, payload);
   return result?.draft || null;
 }
+
+/** 카드뉴스 카드 하나를 이미지로 그려 코어(암호화 저장소)에 등록한다 → asset { id, local_uri, mime_type, ... } | null.
+ *  card: { card_id, template, content:{ keyword, headline, body }, image?:{ url, photographer } }. 화면은 asset.local_uri 로 보여 준다 */
+export async function renderCardImage(card, snapshotId) {
+  const result = await core.renderPlatformCard(card, snapshotId);
+  return result?.asset || null;
+}

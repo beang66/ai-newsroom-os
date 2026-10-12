@@ -42,6 +42,57 @@ const { readInput, call } = require(%r);
 """ % _REAL_BRIDGE
 
 
+# 가짜 렌더 어댑터: 실제 브라우저 없이 작은 JPEG(시그니처만)를 base64 로 돌려준다 — 코어가 받아 vault 에 등록하는지만 시험한다.
+_RENDER_ADAPTER = """
+const { readInput } = require(%r);
+(async () => {
+  const input = JSON.parse(await readInput());
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0xff, 0xd9]);
+  const reply = input.action === 'render'
+    ? { ok: true, result: { card_id: input.payload.card_id, mime_type: 'image/jpeg', data: jpeg.toString('base64') } }
+    : { ok: false, error: 'unexpected', status: 500 };
+  process.stdout.write(JSON.stringify(reply) + '\\n', () => process.exit(0));
+})();
+""" % _REAL_BRIDGE
+
+
+@unittest.skipUnless(shutil.which("node"), "Node.js 가 필요합니다")
+class PlatformRenderTests(unittest.TestCase):
+    def setUp(self):
+        vault_fixture.use_temp_vault(self)
+        self.dir = tempfile.mkdtemp(prefix="ainews-render-")
+        Path(self.dir, "core-adapter.js").write_text(_RENDER_ADAPTER, encoding="utf-8")
+        patcher = patch.dict(os.environ, {"PLATFORM_GENERATOR_DIR": self.dir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.manager = PlatformManager()
+
+    def test_render_registers_a_generated_media_asset_in_the_vault(self):
+        from core import media_assets
+        out = self.manager.render({"payload": {"card_id": "card 1/a", "template": "cover",
+                                               "content": {"keyword": "k", "headline": "8월 취업자 증가", "body": "b"}}})
+        asset = out["asset"]
+        self.assertEqual(out["cardId"], "card 1/a")
+        self.assertEqual((asset["kind"], asset["mime_type"], asset["generated"]), ("image", "image/jpeg", True))
+        self.assertEqual(asset["caption"], "8월 취업자 증가")
+        self.assertEqual(asset["filename"], "card_1_a.jpg")  # 경로 문자는 지운다
+        self.assertTrue(asset["local_uri"].endswith("/file"))  # localhost 주소가 아니라 코어 경로
+        self.assertNotIn("localhost", json.dumps(asset))
+        raw, mime = media_assets.media_asset_file(asset["id"])  # 암호화 저장소에서 읽힌다
+        self.assertEqual((raw[:3], mime), (b"\xff\xd8\xff", "image/jpeg"))
+        again = self.manager.render({"payload": {"card_id": "card 1/a"}})
+        self.assertEqual(again["asset"]["id"], asset["id"])  # 같은 바이트면 같은 자산(중복 저장 없음)
+
+    def test_render_validates_input_and_snapshot(self):
+        for bad in ({}, {"payload": "x"}, {"payload": {"card_id": "  "}}, {"payload": {"card_id": 3}}):
+            with self.assertRaises(RequestError):
+                self.manager.render(bad)
+        with self.assertRaises(RequestError) as caught:  # 없는 고정본은 404
+            self.manager.render({"payload": {"card_id": "c"}, "snapshotId": "00000000-0000-4000-8000-000000000000"})
+        self.assertEqual(caught.exception.status, 404)
+
+
 @unittest.skipUnless(shutil.which("node"), "Node.js 가 필요합니다")
 class PlatformManagerBridgeTests(unittest.TestCase):
     def setUp(self):

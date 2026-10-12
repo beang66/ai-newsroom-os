@@ -61,6 +61,14 @@
 - `POST /api/jobs/<uuid>/cancel`: 대기 중이면 바로 취소, 실행 중이면 취소 요청을 기록하고 작업이 확인하면 `cancelled`. 이미 끝난 작업은 409.
 - 앱 시작 때 이전 실행에서 남은 대기·실행 중 작업은 `INTERRUPTED`로 실패 처리. 팩트체크·변환·전사·모델 설치를 이 레지스트리에 연결하는 일은 아직 안 했다.
 
+## 카드뉴스 이미지 렌더 (M2-3, 2026-10-12)
+
+`POST /api/platform/render` — 카드 한 장을 이미지로 그려 코어(암호화 저장소)에 MediaAsset 으로 등록한다.
+- 요청: `{ payload: { card_id, template, content: { keyword, headline, body }, image?: { url, photographer } }, snapshotId? }`
+- 응답 200: `{ cardId, asset: { id, kind:"image", mime_type:"image/jpeg", generated:true, local_uri:"/api/media-assets/<id>/file", ... }, snapshotId? }`
+- 같은 이미지(같은 바이트)는 같은 자산 id 를 돌려준다. 파일·`localhost` 주소는 만들지 않는다. 오류: 400(card_id 없음), 404(없는 snapshotId), 502(이미지 생성 실패), 503(Node·렌더 브라우저 없음).
+- 웹 API: `core.renderPlatformCard(payload, snapshotId)`, `renderCardImage(card, snapshotId)`(platform.js).
+
 ## 어댑터가 해야 할 일 (su4228 `createCoreClient` 쪽)
 1. 기본 경로를 `/api/core/v0.8`에서 `/api`로, `workspaces/{id}/` 접두를 제거.
 2. 위 표의 이름→경로 대응으로 메서드를 호출하고, 오류 본문·201/200 차이를 흡수.

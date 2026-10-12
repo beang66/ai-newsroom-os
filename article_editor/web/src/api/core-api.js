@@ -37,6 +37,7 @@ export const ROUTES = Object.freeze({
   photoTrack: (id) => "/api/unsplash/photo/" + encodeURIComponent(id) + "/track",
   platformKeywords: "/api/platform/keywords",
   platformGenerate: "/api/platform/generate",
+  platformRender: "/api/platform/render",
 });
 
 /**
@@ -130,5 +131,9 @@ export function createCoreApi(transport) {
     /** platform-generator 실제 생성 엔진 호출 */
     generatePlatform: (platform, payload, signal) =>
       transport.json(ROUTES.platformGenerate, { platform, payload }, signal),
+    /** 카드뉴스 카드 하나를 이미지로 그려 코어(암호화 저장소)에 등록 → { cardId, asset:{ id, local_uri, mime_type, ... } }.
+     *  payload: { card_id, template, content:{ keyword, headline, body }, image?:{ url, photographer } }. 결과 이미지는 asset.local_uri 로 보여 준다 */
+    renderPlatformCard: (payload, snapshotId, signal) =>
+      transport.json(ROUTES.platformRender, snapshotId ? { payload, snapshotId } : { payload }, signal),
   };
 }

@@ -12,7 +12,7 @@ from .. import factcheck_memo as memo
 from ..ai.router import assist as _assist
 from ..ai.transcribe import transcribe as _transcribe
 from ..errors import RequestError
-from ..storage import get_snapshot
+from ..storage import get_snapshot, save_transcript
 
 FACTCHECK_BATCH = 5  # 한 번에 판정하고 기록하는 문장 수
 
@@ -33,7 +33,7 @@ class AIManager:
 
     def transcribe(self, payload):
         """인터뷰 녹음 전사 → 녹취 스튜디오 대화 목록. payload: {filename, data(base64)}"""
-        return _transcribe(payload)
+        return save_transcript(payload, _transcribe(payload))
 
     def factcheck_status(self):
         """팩트체크에 필요한 모델·런타임 준비 상태."""

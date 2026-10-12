@@ -55,6 +55,36 @@ class ApiTestCase(unittest.TestCase):
             return e.code, e.read(), e.headers
 
 class ServerTests(ApiTestCase):
+    def test_saved_transcript_list_detail_and_audio_routes(self):
+        import base64
+        use_temp_vault(self)
+        saved = storage.save_transcript(
+            {'filename': 'interview.m4a', 'mimeType': 'audio/mp4', 'data': base64.b64encode(b'AUDIO').decode()},
+            {'dialogues': [{'id': 's1', 'speakerName': '기자', 'text': '질문', 'timestamp': 0}], 'duration': 3},
+        )
+        identifier = saved['transcriptId']
+        self.assertEqual(json.loads(self.request('/api/transcripts')[1])['transcripts'][0]['id'], identifier)
+        self.assertEqual(json.loads(self.request('/api/transcripts/' + identifier)[1])['dialogues'][0]['text'], '질문')
+        status, raw, headers = self.request('/api/transcripts/' + identifier + '/audio')
+        self.assertEqual((status, raw, headers['Content-Type']), (200, b'AUDIO', 'audio/mp4'))
+
+    def test_cms_route_only_returns_success_from_platform_manager(self):
+        with patch.object(api.CORE.platform, 'publish', return_value={'published': True, 'id': 'cms-1'}) as publish:
+            status, raw, _ = self.request('/api/cms/publish', {'article': {'title': '기사', 'content': '본문'}})
+        self.assertEqual((status, json.loads(raw)['id']), (200, 'cms-1'))
+        publish.assert_called_once()
+
+    def test_get_article_reads_selected_draft_without_creating_revision(self):
+        use_temp_vault(self)
+        first = storage.save_article({'draft': {'title': 'Selected', 'content': 'kept', 'bodyHtml': '<p>kept</p>'}})['articleId']
+        second = storage.save_article({'draft': {'title': 'Latest', 'content': 'other', 'bodyHtml': '<p>other</p>'}})['articleId']
+        status, raw, _ = self.request('/api/articles/' + first)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(raw)['draft']['content'], 'kept')
+        self.assertEqual(storage.latest_article()['draft']['articleId'], second)
+        self.assertEqual(len(storage.list_revisions(first)['revisions']), 1)
+        self.assertEqual(self.request('/api/articles/' + 'f' * 32)[0], 404)
+
     def test_static_assets(self):
         # 새 프론트는 Vite 빌드 결과(해시 파일명)를 코어가 그대로 서빙한다.
         status, raw, headers = self.request('/')
@@ -169,6 +199,24 @@ class ServerTests(ApiTestCase):
         self.assertEqual(len(json.loads(self.request('/api/articles')[1])['articles']), 1)
         self.assertEqual(json.loads(self.request('/api/sources/%s/delete' % sid, {'force': True})[1])['deleted'], True)
         self.assertEqual(json.loads(self.request('/api/knowledge-map')[1])['edges'], [])
+
+    def test_knowledge_files_routes_import_read_delete_and_origin(self):
+        use_temp_vault(self)
+        body = {'files': [{'path': 'notes/a.md', 'content': '# A\n[[b]]'},
+                          {'path': 'notes/b.md', 'content': '# B'}]}
+        self.assertEqual(self.request('/api/knowledge-files/import', body, origin='http://evil.example')[0], 403)
+        status, raw, _ = self.request('/api/knowledge-files/import', body)
+        self.assertEqual(status, 200)
+        files = json.loads(raw)['files']
+        graph = json.loads(self.request('/api/knowledge-map')[1])
+        self.assertEqual([(link['source'], link['target']) for link in graph['file_links']],
+                         [(files[0]['id'], files[1]['id'])])
+        status, raw, _ = self.request('/api/knowledge-files/' + files[0]['id'])
+        self.assertEqual((status, json.loads(raw)['content']), (200, '# A\n[[b]]'))
+        self.assertEqual(self.request('/api/knowledge-files/import',
+                                      {'files': [{'path': '../outside.md', 'content': 'x'}]})[0], 400)
+        self.assertEqual(self.request('/api/knowledge-files/' + files[1]['id'] + '/delete', {})[0], 200)
+        self.assertEqual(len(json.loads(self.request('/api/knowledge-map')[1])['unresolved']), 1)
 
     def test_media_asset_routes(self):
         import base64

@@ -22,10 +22,76 @@ from .errors import RequestError
 SAVE_LOCK = threading.Lock()
 MAX_REVISIONS = 200  # ponytail: 자동저장 이력은 원고마다 최근 200개만 둔다. 더 필요하면 간격 저장(예: 1분)이나 압축으로
 OPEN_DIR = APP_DATA / 'open'  # 외부 프로그램으로 열 때만 만드는 임시 복호화본(cleanup_open)
+MAX_TRANSCRIPT_AUDIO = 25_000_000
 
 
 def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def save_transcript(payload, result):
+    """STT 성공 결과와 원본 녹음을 같은 암호화 저장소에 영구 보관한다."""
+    filename = payload.get('filename')
+    mime = payload.get('mimeType') or 'application/octet-stream'
+    encoded = payload.get('data')
+    dialogues = result.get('dialogues') if isinstance(result, dict) else None
+    if not isinstance(filename, str) or not filename.strip() or len(filename) > 255:
+        raise RequestError('녹음 파일 이름을 확인해 주세요.')
+    known_audio = filename.lower().endswith(('.mp3', '.m4a', '.wav', '.aac', '.ogg', '.webm', '.mp4', '.mov'))
+    if not isinstance(mime, str) or len(mime) > 100 or not (mime.startswith('audio/') or mime.startswith('video/')
+                                                             or (mime == 'application/octet-stream' and known_audio)):
+        raise RequestError('지원하지 않는 녹음 형식입니다.', 415)
+    if not isinstance(encoded, str) or not isinstance(dialogues, list) or len(dialogues) > 10_000:
+        raise RequestError('녹취 결과 형식을 확인해 주세요.')
+    try:
+        audio = base64.b64decode(encoded.split(',', 1)[-1], validate=True)
+    except ValueError:
+        raise RequestError('녹음 파일을 읽지 못했어요.') from None
+    if not audio or len(audio) > MAX_TRANSCRIPT_AUDIO:
+        raise RequestError('녹음 파일은 25MB 이하만 보관할 수 있어요.', 413)
+    for item in dialogues:
+        if not isinstance(item, dict) or not isinstance(item.get('text'), str) or len(item['text']) > 20_000:
+            raise RequestError('녹취 발언 형식을 확인해 주세요.')
+    identifier, created = uuid.uuid4().hex, _now()
+    duration = result.get('duration')
+    if duration is not None and (isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0):
+        duration = None
+    with vault.connect() as db:
+        db.execute('INSERT INTO transcripts VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                   (identifier, vault.WORKSPACE_ID, filename.strip(), mime, audio,
+                    json.dumps(dialogues, ensure_ascii=False), duration, created))
+    return {**result, 'transcriptId': identifier, 'filename': filename.strip(), 'createdAt': created}
+
+
+def list_transcripts():
+    with vault.connect() as db:
+        rows = db.execute('SELECT id, filename, mime_type, duration, created_at, length(audio), dialogues_json '
+                          'FROM transcripts ORDER BY created_at DESC').fetchall()
+    return {'transcripts': [{'id': row[0], 'filename': row[1], 'mimeType': row[2], 'duration': row[3],
+                             'createdAt': row[4], 'bytes': row[5], 'segments': len(json.loads(row[6]))}
+                            for row in rows]}
+
+
+def get_transcript(identifier):
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    with vault.connect() as db:
+        row = db.execute('SELECT filename, mime_type, dialogues_json, duration, created_at FROM transcripts WHERE id = ?',
+                         (identifier,)).fetchone()
+    if not row:
+        raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+    return {'id': identifier, 'filename': row[0], 'mimeType': row[1], 'dialogues': json.loads(row[2]),
+            'duration': row[3], 'createdAt': row[4]}
+
+
+def transcript_audio(identifier):
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    with vault.connect() as db:
+        row = db.execute('SELECT audio, mime_type FROM transcripts WHERE id = ?', (identifier,)).fetchone()
+    if not row:
+        raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+    return bytes(row[0]), row[1]
 
 
 def cleanup_open():
@@ -200,6 +266,9 @@ def save_article(data):
     expected = data.get('expectedRevisionNo')
     if expected is not None and (isinstance(expected, bool) or not isinstance(expected, int) or expected < 0):
         raise RequestError('expectedRevisionNo 는 0 이상의 정수여야 합니다.')
+    replace_latest = data.get('replaceLatest', False)
+    if not isinstance(replace_latest, bool):
+        raise RequestError('replaceLatest 는 true/false 여야 합니다.')
     now = _now()
     with SAVE_LOCK, vault.connect() as db:
         if expected is not None:
@@ -209,19 +278,34 @@ def save_article(data):
                                    409, code='REVISION_CONFLICT')
         body = json.dumps(_pack(db, dict(draft, articleId=identifier, savedAt=None)), ensure_ascii=False, sort_keys=True)
         db.execute('INSERT OR IGNORE INTO articles VALUES (?, ?, ?, ?)', (identifier, vault.WORKSPACE_ID, now, now))
-        revision = _append_revision(db, identifier, body, now)
+        latest = db.execute('SELECT revision_no, draft_json, id FROM article_revisions WHERE article_id = ? '
+                            'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone()
+        can_replace = replace_latest and latest and not db.execute(
+            'SELECT 1 FROM article_snapshots WHERE revision_id = ? LIMIT 1', (latest[2],)).fetchone()
+        if can_replace and latest[1] != body:
+            db.execute('UPDATE article_revisions SET draft_json = ?, created_at = ? WHERE article_id = ? AND revision_no = ?',
+                       (body, now, identifier, latest[0]))
+        revision = latest[0] if can_replace else _append_revision(db, identifier, body, now)
         db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, identifier))
     return {'saved': True, 'articleId': identifier, 'revisionNo': revision,
             'fileName': identifier + '.json', 'folder': '암호화 저장소'}  # fileName·folder 는 이전 응답과의 호환용 표시값
 
 
-def latest_revisions(db, limit=None):
+def latest_revisions(db, limit=None, article_id=None):
     """기사마다 **최신 저장본** 한 줄 (article_id, created_at, updated_at, revision_no, draft_json) — 최근 수정순.
     "기사가 지금 무엇을 쓰는가"(자료 사용처·읽기 모델·이어서 작업)는 모두 이 한 곳에서 읽는다."""
     sql = ('SELECT a.id, a.created_at, a.updated_at, r.revision_no, r.draft_json FROM articles a '
            'JOIN article_revisions r ON r.article_id = a.id AND r.revision_no = '
-           '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id) ORDER BY a.updated_at DESC')
-    return db.execute(sql + ' LIMIT ?', (limit,)).fetchall() if limit else db.execute(sql).fetchall()
+           '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id)')
+    params = []
+    if article_id is not None:
+        sql += ' WHERE a.id = ?'
+        params.append(_article_id(article_id))
+    sql += ' ORDER BY a.updated_at DESC'
+    if limit:
+        sql += ' LIMIT ?'
+        params.append(limit)
+    return db.execute(sql, params).fetchall()
 
 
 def draft_source_ids(draft):
@@ -231,15 +315,17 @@ def draft_source_ids(draft):
     return {i for i in found if isinstance(i, str)}
 
 
-def latest_article(photo_refs=False):
+def latest_article(photo_refs=False, article_id=None):
     """가장 최근에 저장된 원고(앱을 열면 이어서 작업). 취재자료 본문은 sources 테이블에서 다시 붙인다.
     photo_refs=True 면 사진을 data URL 로 되돌리지 않고 'media:<id>' 참조 그대로 준다 — 화면이 사진 바이트를
     media_file 로 따로 받는다(사진 몇 장이면 응답이 수십 MB 가 되던 것을 피한다)."""
     with vault.connect() as db:
-        rows = latest_revisions(db, limit=1)
+        rows = latest_revisions(db, limit=1, article_id=article_id)
         if not rows:
+            if article_id is not None:
+                raise RequestError('원고를 찾지 못했습니다.', 404)
             return {'draft': None}
-        return {'draft': _full_draft(db, rows[0][4], rows[0][2], unpack_photos=not photo_refs)}
+        return {'draft': _full_draft(db, rows[0][4], rows[0][2], rows[0][3], unpack_photos=not photo_refs)}
 
 
 def media_file(media_id):
@@ -254,9 +340,11 @@ def media_file(media_id):
     return bytes(row[1]), mime.group(1) if mime else 'application/octet-stream'
 
 
-def _full_draft(db, draft_json, saved_at, unpack_photos=True):
+def _full_draft(db, draft_json, saved_at, revision_no=None, unpack_photos=True):
     """이력 한 줄 → 화면이 쓰는 원고(사진 되돌리기 + 취재자료 본문 붙이기)."""
     draft = dict(json.loads(draft_json), savedAt=saved_at)
+    if revision_no is not None:
+        draft['revisionNo'] = revision_no
     if unpack_photos:
         draft = _unpack(db, draft)
     for source in draft.get('sources') or []:
@@ -322,7 +410,7 @@ def restore_revision(article_id, revision_no):
         body = json.dumps(dict(json.loads(row[0]), articleId=article_id, savedAt=None), ensure_ascii=False, sort_keys=True)
         latest = _append_revision(db, article_id, body, now)
         db.execute('UPDATE articles SET updated_at = ? WHERE id = ?', (now, article_id))
-        draft = _full_draft(db, body, now)
+        draft = _full_draft(db, body, now, latest)
     return {'restored': True, 'articleId': article_id, 'fromRevision': revision_no, 'revisionNo': latest, 'draft': draft}
 
 

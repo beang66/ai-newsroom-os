@@ -72,6 +72,8 @@ def load_proxy(upstream_base: str):
             'CF_API_TOKEN': 'test-cf-token',
             'AUTH_REQUIRED': 'true',
             'RATE_LIMIT_PER_MIN': '1000',
+            'CMS_PUBLISH_URL': upstream_base + '/cms-target',
+            'CMS_BEARER_TOKEN': 'cms-secret',
         }
     )
     spec = importlib.util.spec_from_file_location('backend_server', BACKEND / 'server.py')
@@ -160,6 +162,12 @@ class ProxyTests(unittest.TestCase):
         self.assertEqual(payload['contentType'], 'multipart/form-data; boundary=b1')
         self.assertEqual(payload['raw'].encode('latin-1'), body)
         self.assertEqual(SEEN[-1][1:], ('/openai/v1/audio/transcriptions', 'Bearer test-openai-key'))
+
+    def test_cms_publish_requires_user_and_uses_server_token(self):
+        self.assertEqual(self.call('/cms/publish', {'article': {'title': 'x'}})[0], 401)
+        status, payload = self.call('/cms/publish', {'article': {'title': 'x'}}, token='good-token')
+        self.assertEqual((status, payload['path']), (200, '/cms-target'))
+        self.assertEqual(SEEN[-1], ('POST', '/cms-target', 'Bearer cms-secret'))
 
     def test_unsplash_search_forwards(self):
         status, payload = self.call('/unsplash/search/photos?query=sea&per_page=3', token='good-token')

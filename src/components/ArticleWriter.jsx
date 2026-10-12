@@ -1,14 +1,16 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
+import PhotoEditor from "./PhotoEditor";
+import VersionHistory from "./VersionHistory";
+import { createEmptyArticle } from "../data/article";
+import { supportedClaimRanges } from "../api/claim-details.js";
+// 코어 편집 보조(제목·부제 추천, 사진 찾기, 흐름 요약, 자동 저장) — 로직은 EditorialAssist.jsx
+import { useSuggestions, SuggestionList, SuggestButton, PhotoFinder, FlowSummaryButton, useFactCheck } from "./EditorialAssist";
 import { 
-  Sparkles, 
   Search, 
   Check, 
   RotateCcw, 
-  Bold, 
-  Italic, 
-  Quote, 
-  Wand2, 
+  History,
   AlertTriangle,
   Eye,
   Edit3,
@@ -22,160 +24,89 @@ import {
 } from "lucide-react";
 
 export default function ArticleWriter({ 
-  locationRequest,
   article, 
   setArticle, 
   onOpenSearch, 
-  onRunFactCheck,
-  factCheckActive,
-  factCheckIssues,
-  activeFactIndex,
-  onApplyFactFix,
-  onSkipFactFix
+  onModels,
+  onPublish,
+  saveStatus // 자동 저장은 App 에서(어느 화면에 있든 저장된다)
 }) {
   // 1. 화면 뷰 모드: 'editor' (에디터만) | 'split' (에디터+미리보기 나란히) | 'preview' (미리보기 전체)
   const [viewMode, setViewMode] = useState("editor");
 
   // 팩트체크 & 근거자료 우측 슬라이더(Drawer) 열림 상태
-  const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(false);
+  const [isFactCheckDrawerOpen, setIsFactCheckDrawerOpen] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches);
+  const [showHistory, setShowHistory] = useState(false);
+  // 팩트체크 — 글쓰기가 멈추면 자동 실행. 서랍을 닫아도 본문 하이라이트가 남도록 여기에 둔다
+  const factCheck = useFactCheck(article);
+  const issues = useMemo(() => factCheck.results.filter((r) => r.verdict !== "SUPPORTED").sort((a, b) => a.start - b.start), [factCheck.results]);
+  const factIssues = issues.length;
+  // 순서형 검사: 버튼을 누르면 켜지고, 문제 문장을 한 건씩 넘겨 본다. 문장이 고쳐져 줄어들면 순서를 맞춘다
+  const [review, setReview] = useState(false);
+  const [reviewIdx, setReviewIdx] = useState(0);
+  const reviewAt = Math.min(reviewIdx, Math.max(0, issues.length - 1));
+  const current = issues[reviewAt];
 
   // 2. 미리보기 플랫폼 탭: 'donga' (동아일보 공식 웹) | 'naver' (네이버 뉴스 포털)
   const [previewPlatform, setPreviewPlatform] = useState("donga");
 
   // 3. 사진/미디어 관리 상태
-  const [photos, setPhotos] = useState(article.photos || [
-    {
-      id: "photo-1",
-      url: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80",
-      caption: "국내 연구진이 개발한 차세대 AI 반도체 NPU 웨이퍼 시제품",
-      source: "동아일보 DB",
-      provider: "김동아 기자",
-      ratio: "16:9 (동아일보 대표)"
-    }
-  ]);
+  const photos = article.photos || [];
+  const [editingPhoto, setEditingPhoto] = useState(null);
+  const [photoError, setPhotoError] = useState("");
+  const [photoNotice, setPhotoNotice] = useState("");
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [newCaption, setNewCaption] = useState("");
-  const [newSource, setNewSource] = useState("동아일보 DB");
-  const [newProvider, setNewProvider] = useState("김동아 기자");
+  const [newSource, setNewSource] = useState("");
+  const [newProvider, setNewProvider] = useState("");
   const [newRatio, setNewRatio] = useState("16:9");
 
   // 4. CMS 발행 이관 상태
   const [isCmsExporting, setIsCmsExporting] = useState(false);
   const [isCmsSuccessModal, setIsCmsSuccessModal] = useState(false);
+  const [cmsError, setCmsError] = useState("");
+  const [cmsReceipt, setCmsReceipt] = useState(null);
 
   // 에디터 서식 및 제목 관련 상태
   const [isTitleHovered, setIsTitleHovered] = useState(false);
   const [isTitleConfirmed, setIsTitleConfirmed] = useState(false);
-  const [selectedText, setSelectedText] = useState("");
-  const [floatingToolbarPos, setFloatingToolbarPos] = useState(null);
-  const [showDraftModal, setShowDraftModal] = useState(false);
-  const [draftPrompt, setDraftPrompt] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  const editorRef = useRef(null);
-  const bodyInputRef = useRef(null);
-  const handledLocation = useRef(null);
-  const locationText = locationRequest?.claimText || "";
-  const locationIndex = locationText ? article.content.indexOf(locationText) : -1;
-  const uniqueLocation = locationIndex >= 0 && article.content.indexOf(locationText, locationIndex + 1) < 0;
-  const locationNotice = locationRequest?.articleId === article.id
-    ? uniqueLocation ? "데이터맵에서 선택한 문장을 현재 원고에서 강조했습니다." : "현재 원고에서 해당 문장을 하나로 특정할 수 없습니다. 검증 시점의 원고와 현재 내용을 확인해 주세요."
-    : "";
-  useEffect(() => {
-    if (!locationRequest || locationRequest.articleId !== article.id) return;
-    if (handledLocation.current === locationRequest || !uniqueLocation) return;
-    handledLocation.current = locationRequest;
-    const input = bodyInputRef.current;
-    input?.focus();
-    input?.setSelectionRange(locationIndex, locationIndex + locationText.length);
-    input?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [locationRequest, article.id, uniqueLocation, locationIndex, locationText]);
   const photoInputRef = useRef(null);
 
-  // 텍스트 드래그 선택 서식 툴바
-  const handleSelection = () => {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !editorRef.current) {
-      setFloatingToolbarPos(null);
-      setSelectedText("");
-      return;
-    }
-
-    const text = selection.toString().trim();
-    if (text.length > 0) {
-      setSelectedText(text);
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      const containerRect = editorRef.current.getBoundingClientRect();
-
-      setFloatingToolbarPos({
-        top: Math.max(0, rect.top - containerRect.top - 48),
-        left: Math.max(10, rect.left - containerRect.left + (rect.width / 2) - 120)
-      });
-    } else {
-      setFloatingToolbarPos(null);
-    }
-  };
+  const headlineSuggest = useSuggestions("headline", article);
+  const subtitleSuggest = useSuggestions("subtitle", article);
 
   const handleTitleConfirm = () => {
     setIsTitleConfirmed(true);
   };
 
   const handleRegenerateTitle = () => {
-    const titles = [
-      "AI 반도체 기술 대도약, 글로벌 시장 주도권 쟁탈전 개막",
-      "국내 연구진, 초거대 AI용 고성능 NPU 자체 개발 성공",
-      "GPU 한계 넘는다... 차세대 PIM·NPU 반도체 생태계 급부상"
-    ];
-    const randomTitle = titles[Math.floor(Math.random() * titles.length)];
-    setArticle((prev) => ({ ...prev, suggestedTitle: randomTitle, title: randomTitle }));
+    headlineSuggest.request(); // 코어 제목 추천 → 아래 후보 목록에서 고른다
     setIsTitleConfirmed(false);
-  };
-
-  const handleGenerateDraft = () => {
-    setIsGenerating(true);
-    setTimeout(() => {
-      setArticle((prev) => ({
-        ...prev,
-        title: "AI 반도체 개척자들... 초거대 AI 시대의 차세대 주도권 경쟁",
-        suggestedTitle: "AI 반도체 개척자들... 초거대 AI 시대의 차세대 주도권 경쟁",
-        subtitle: "국내 주요 반도체 기업, NPU 및 PIM 기술로 글로벌 시장에 도전장",
-        content: `인공지능(AI) 기술의 급격한 발전에 따라 고성능·고효율 AI 반도체의 수요가 폭발적으로 증가하고 있다. 기존 GPU 중심의 연산 시스템은 높은 전력 소비와 발열 문제로 한계에 부딪히고 있으며, 이에 따라 NPU(신경망 처리장치)와 PIM(지능형 반도체)이 차세대 대안으로 주목받고 있다.
-
-국내 주요 기업과 연구진은 초거대 AI 모델 지원을 위한 고성능 AI 반도체를 자체 개발하여 글로벌 빅테크 기업들과 경쟁을 펼치고 있다. 이번 취재 결과, 국내 개발진은 데이터 병목 현상을 해결하고 전력 소비를 최대 70% 감소시키는 성과를 얻어냈다.
-
-전문가들은 "단순한 칩 제조를 넘어 인공지능 알고리즘과의 최적화 소프트웨어가 향후 반도체 패권의 승패를 결정지을 것"이라고 조언했다. 이에 따른 정부 차원의 집중 지원과 실증 사업 확대가 시급한 시점이다.`
-      }));
-      setIsGenerating(false);
-      setShowDraftModal(false);
-      setIsTitleConfirmed(false);
-    }, 1200);
-  };
-
-  const applyFormat = (formatType) => {
-    if (!selectedText) return;
-    alert(`선택한 문장 "${selectedText.slice(0, 15)}..." 에 [${formatType}] 서식을 적용했습니다.`);
-    setFloatingToolbarPos(null);
   };
 
   // 사진 업로드 핸들러
   const handlePhotoUpload = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
+    setPhotoError("");
     if (file) {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 20 * 1024 * 1024) {
+        setPhotoError("20MB 이하 JPG·PNG·WebP 사진을 선택해 주세요.");
+        return;
+      }
       const reader = new FileReader();
+      reader.onerror = () => setPhotoError("사진 파일을 읽지 못했습니다. 다시 선택해 주세요.");
       reader.onload = (uploadEvt) => {
         if (uploadEvt.target?.result) {
           const newPhoto = {
-            id: `photo-${Date.now()}`,
+            id: `photo-${crypto.randomUUID()}`,
             url: uploadEvt.target.result,
             caption: newCaption || file.name,
-            source: newSource || "동아일보 DB",
-            provider: newProvider || "기자",
+            source: newSource,
+            provider: newProvider,
             ratio: newRatio
           };
-          const updated = [newPhoto, ...photos];
-          setPhotos(updated);
-          setArticle((prev) => ({ ...prev, photos: updated }));
+          setEditingPhoto(newPhoto);
           setNewCaption("");
           setShowPhotoModal(false);
         }
@@ -191,39 +122,59 @@ export default function ArticleWriter({
       ...prev,
       content: prev.content + photoTag
     }));
-    alert(`"${photo.caption}" 사진이 기사 본문에 삽입되었습니다.`);
+    setPhotoNotice(`“${photo.caption}” 사진 태그를 본문 끝에 삽입했습니다.`);
+  };
+
+  const handleApplyPhoto = (photo) => {
+    setArticle((prev) => ({
+      ...prev,
+      photos: [photo, ...(prev.photos || []).filter((p) => p.id !== photo.id)],
+      content: prev.content + `\n\n[사진 삽입: ${photo.caption} (출처: ${photo.source}, 제공: ${photo.provider})]\n\n`,
+    }));
+    setPhotoNotice(`“${photo.caption}” 편집본을 반영하고 본문 끝에 사진 태그를 삽입했습니다.`);
+    setEditingPhoto(null);
   };
 
   // CMS 발행/이관 실행
-  const handleCmsExport = () => {
+  const handleCmsExport = async () => {
+    if (isCmsExporting) return;
     setIsCmsExporting(true);
-    setTimeout(() => {
-      setIsCmsExporting(false);
+    setCmsError("");
+    try {
+      const receipt = await onPublish();
+      setCmsReceipt(receipt);
       setIsCmsSuccessModal(true);
-      setArticle((prev) => ({ ...prev, status: "발행 완료" }));
-    }, 1200);
+      setArticle((prev) => ({ ...prev, status: "발행 완료", cmsReceipt: receipt }));
+    } catch (error) {
+      setCmsError(error?.message || "CMS 발행에 실패했습니다.");
+    } finally {
+      setIsCmsExporting(false);
+    }
   };
+
+  if (editingPhoto) return (
+    <PhotoEditor
+      key={editingPhoto.id}
+      photo={editingPhoto}
+      onBack={() => setEditingPhoto(null)}
+      onApply={handleApplyPhoto}
+      charCount={article.content.length}
+    />
+  );
 
   return (
     <div className="w-full space-y-5 animate-float-in">
-      {locationNotice && <div role="status" className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">{locationNotice}</div>}
+      {photoNotice && <p role="status" className="px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">{photoNotice}</p>}
+      {cmsError && <p role="alert" className="px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">CMS로 보내지 못했습니다. {cmsError}</p>}
 
       {/* ──────────────────────────────────────────
           1. 최상단 통합 컨트롤 툴바
-          (AI 초안, 자료검색, 팩트체크, 뷰 모드 전환, 미디어 관리, CMS 발행)
+          (자료검색, 팩트체크, 뷰 모드 전환, 미디어 관리, CMS 발행)
          ────────────────────────────────────────── */}
       <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-4 md:p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
         
         {/* 좌측: 기사 작성 도구들 */}
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={() => setShowDraftModal(true)}
-            className="px-4.5 py-2.5 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full font-black text-xs md:text-sm transition shadow-xs flex items-center gap-2 cursor-pointer active:scale-95 border border-[#23211F]"
-          >
-            <Wand2 className="w-4 h-4 text-amber-300" />
-            <span>AI 기사 초안 생성</span>
-          </button>
-          
           <button
             onClick={onOpenSearch}
             className="px-4.5 py-2.5 bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95"
@@ -233,18 +184,29 @@ export default function ArticleWriter({
           </button>
 
           <button
+            onClick={() => setShowHistory(true)}
+            disabled={!article.articleId}
+            title={article.articleId ? "저장된 이전 버전을 보고 복원합니다" : "저장된 원고가 있어야 이력을 볼 수 있습니다"}
+            className="px-4.5 py-2.5 bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB] rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-default"
+          >
+            <History className="w-4 h-4 text-[#57514A]" />
+            <span>저장 이력</span>
+          </button>
+
+          <button
             onClick={() => {
               setIsFactCheckDrawerOpen(true);
-              if (onRunFactCheck) onRunFactCheck();
+              setReview(true);
+              setReviewIdx(0);
             }}
             className={`px-4.5 py-2.5 rounded-full text-xs md:text-sm font-bold transition cursor-pointer flex items-center gap-2 active:scale-95 ${
-              factCheckActive || isFactCheckDrawerOpen
+              review || isFactCheckDrawerOpen
                 ? "bg-[#23211F] text-[#FAF8F5] border border-[#23211F] shadow-xs"
                 : "bg-[#EFECE6] hover:bg-[#E3DDD4] text-[#23211F] border border-[#DDD6CB]"
             }`}
             title="취재파일 업로드 및 원문 근거자료 검증 패널을 엽니다"
           >
-            <ShieldCheck className={`w-4 h-4 ${factCheckActive || isFactCheckDrawerOpen ? "text-emerald-400" : "text-emerald-600"}`} />
+            <ShieldCheck className={`w-4 h-4 ${review || isFactCheckDrawerOpen ? "text-emerald-400" : "text-emerald-600"}`} />
             <span>기사 팩트체크 & 근거자료</span>
           </button>
 
@@ -259,6 +221,12 @@ export default function ArticleWriter({
 
         {/* 우측: 뷰 모드 전환 및 [CMS 최종 발행] 버튼 */}
         <div className="flex items-center gap-3 flex-wrap">
+          {saveStatus && <span className="text-[11px] font-bold text-slate-500" data-testid="save-status">{saveStatus}</span>}
+          {(factCheck.busy || factCheck.results.length > 0) && (
+            <span className={`text-[11px] font-bold ${factIssues ? "text-rose-600" : "text-emerald-600"}`} data-testid="factcheck-status">
+              {factCheck.busy ? "팩트체크 중…" : factIssues ? `확인 필요 ${factIssues}문장` : "팩트체크 통과"}
+            </span>
+          )}
           {/* 뷰 모드 전환 탭 (레퍼런스 이미지 스타일 알약 캡슐) */}
           <div className="flex items-center gap-1 bg-[#EFECE6] p-1 rounded-full border border-[#DDD6CB]/80 shadow-inner">
             <button
@@ -327,56 +295,59 @@ export default function ArticleWriter({
       {/* ──────────────────────────────────────────
           2. 메인 작업 영역: [좌측 기사 작성/미리보기] + [우측 팩트체크 검증실] 나란히 배치
          ────────────────────────────────────────── */}
-      <div className="flex items-start gap-6 w-full min-w-0">
+      <div className="flex flex-col lg:flex-row items-start gap-6 w-full min-w-0">
 
         {/* [좌측 메인 컬럼]: 기사 에디터 / 미리보기 */}
-        <div className="flex-1 min-w-0 space-y-5">
+        <div className="w-full flex-1 min-w-0 space-y-5">
 
-          {/* 팩트체크 진행 배너 */}
-          {factCheckActive && factCheckIssues.length > 0 && (
-            <div className={`bg-amber-50/90 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3 animate-float-in ${
+          {/* 팩트체크 순서형 검사 — 코어가 짚은 문제 문장을 한 건씩 보여 준다(본문 하이라이트는 그대로, 지금 보는 문장만 진한 윤곽) */}
+          {review && current && (
+            <div data-testid="fact-sequence" className={`bg-amber-50/90 border border-amber-200/90 rounded-2xl p-5 shadow-xs space-y-3 animate-float-in ${
               !isFactCheckDrawerOpen && viewMode === "editor" ? "w-full max-w-4xl mx-auto" : "w-full"
             }`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm md:text-base">
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
-              <span>AI 팩트체크 순서형 검사 ({activeFactIndex + 1} / {factCheckIssues.length})</span>
-            </div>
-            <span className="text-xs font-bold px-2.5 py-1 bg-amber-200/80 text-amber-950 rounded-lg">
-              {factCheckIssues[activeFactIndex]?.type}
-            </span>
-          </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm md:text-base">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  <span>AI 팩트체크 순서형 검사 ({reviewAt + 1} / {issues.length})</span>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 bg-amber-200/80 text-amber-950 rounded-lg">
+                  {MARK_LABEL[current.verdict] || current.verdict}
+                </span>
+              </div>
 
-          <div className="bg-white p-4 rounded-xl border border-amber-200/80 space-y-2 text-xs md:text-sm">
-            <p className="font-semibold text-slate-800">
-              문제 문장: <span className="underline decoration-red-500 decoration-2 text-red-700 bg-red-50 px-1 rounded">{factCheckIssues[activeFactIndex]?.targetText}</span>
-            </p>
-            <p className="text-slate-600">
-              <strong className="text-slate-900">발생 이유:</strong> {factCheckIssues[activeFactIndex]?.reason}
-            </p>
-            <div className="text-slate-900 bg-emerald-50/90 p-2.5 rounded-xl border border-emerald-200 flex items-center gap-2">
-              <Wand2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <span><strong>AI 수정안 제안:</strong> "{factCheckIssues[activeFactIndex]?.suggestion}"</span>
-            </div>
-          </div>
+              <div className="bg-white p-4 rounded-xl border border-amber-200/80 space-y-2 text-xs md:text-sm">
+                <p className="font-semibold text-slate-800">
+                  문제 문장: <span className="underline decoration-red-500 decoration-2 text-red-700 bg-red-50 px-1 rounded">{current.claimText}</span>
+                </p>
+                {current.comment && (
+                  <p className="text-slate-600">
+                    <strong className="text-slate-900">발생 이유:</strong> {current.comment}
+                  </p>
+                )}
+                {current.quote && (
+                  <p className="text-slate-600 line-clamp-3">
+                    <strong className="text-slate-900">근거{current.sourceDoc ? ` (${current.sourceDoc})` : ""}:</strong> {current.quote}
+                  </p>
+                )}
+              </div>
 
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button
-              onClick={onSkipFactFix}
-              className="px-4 py-1.5 text-xs font-bold bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full border border-[#DDD6CB] transition cursor-pointer"
-            >
-              건너뛰기
-            </button>
-            <button
-              onClick={onApplyFactFix}
-              className="px-4 py-1.5 text-xs font-extrabold bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full transition shadow-xs cursor-pointer flex items-center gap-1 border border-[#23211F]"
-            >
-              <Check className="w-3.5 h-3.5" />
-              수정 적용
-            </button>
-          </div>
-        </div>
-      )}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  onClick={() => setReviewIdx(Math.max(0, reviewAt - 1))}
+                  disabled={reviewAt === 0}
+                  className="px-4 py-1.5 text-xs font-bold bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] rounded-full border border-[#DDD6CB] transition cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                >
+                  이전
+                </button>
+                <button
+                  onClick={() => (reviewAt + 1 < issues.length ? setReviewIdx(reviewAt + 1) : setReview(false))}
+                  className="px-4 py-1.5 text-xs font-extrabold bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] rounded-full transition shadow-xs cursor-pointer border border-[#23211F]"
+                >
+                  {reviewAt + 1 < issues.length ? "다음" : "검사 종료"}
+                </button>
+              </div>
+            </div>
+          )}
 
       {/* ──────────────────────────────────────────
           2. 메인 작업 영역: [에디터] / [나란히 보기] / [미리보기]
@@ -414,7 +385,8 @@ export default function ArticleWriter({
                   type="text"
                   value={article.title}
                   onChange={(e) => {
-                    setArticle({ ...article, title: e.target.value });
+                    const title = e.target.value;
+                    setArticle((prev) => ({ ...prev, title })); // 렌더 시점의 article 을 통째로 복사하면 그 사이에 추가된 취재자료 등을 옛 값으로 덮어쓴다
                     setIsTitleConfirmed(true);
                   }}
                   placeholder="기사 제목을 입력하거나 AI 추천을 확인하세요"
@@ -446,15 +418,38 @@ export default function ArticleWriter({
               </div>
             </div>
 
+            <SuggestionList
+              state={headlineSuggest}
+              label="제목"
+              onPick={(value) => {
+                setArticle((prev) => ({ ...prev, title: value, suggestedTitle: value }));
+                headlineSuggest.clear();
+              }}
+            />
+
             {/* 부제 영역 */}
             <div className="space-y-1">
-              <label className="text-xs text-slate-400 font-semibold">부제 (부제목)</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-slate-400 font-semibold">부제 (부제목)</label>
+                <SuggestButton onClick={subtitleSuggest.request} busy={subtitleSuggest.busy} title="본문과 제목에 맞는 부제를 추천받습니다" />
+              </div>
               <input
                 type="text"
                 value={article.subtitle}
-                onChange={(e) => setArticle({ ...article, subtitle: e.target.value })}
+                onChange={(e) => {
+                  const subtitle = e.target.value;
+                  setArticle((prev) => ({ ...prev, subtitle }));
+                }}
                 placeholder="기사 부제를 입력하세요"
                 className="w-full text-sm md:text-base font-bold text-slate-700 border-b border-slate-200 pb-2 outline-none focus:border-slate-800 bg-transparent transition-colors"
+              />
+              <SuggestionList
+                state={subtitleSuggest}
+                label="부제"
+                onPick={(value) => {
+                  setArticle((prev) => ({ ...prev, subtitle: value }));
+                  subtitleSuggest.clear();
+                }}
               />
             </div>
 
@@ -494,44 +489,23 @@ export default function ArticleWriter({
             )}
 
             {/* 본문 텍스트 에디터 */}
-            <div className="relative pt-1" ref={editorRef} onMouseUp={handleSelection}>
+            <div className="relative pt-1">
               <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-2">
-                <span>본문 작성 영역 (자유 작성 및 서식 적용)</span>
-                <span>공백 포함 {article.content.length.toLocaleString()}자</span>
+                <span>본문 작성 영역</span>
+                <span className="flex items-center gap-2">
+                  <FlowSummaryButton body={article.content} />
+                  공백 포함 {article.content.length.toLocaleString()}자
+                </span>
               </div>
 
-              {/* 드래그 플로팅 툴바 */}
-              {floatingToolbarPos && (
-                <div
-                  style={{ top: `${floatingToolbarPos.top}px`, left: `${floatingToolbarPos.left}px` }}
-                  className="absolute z-30 flex items-center gap-1 bg-slate-900 text-white px-2 py-1.5 rounded-xl shadow-xl border border-slate-700 animate-float-in text-xs"
-                >
-                  <button onClick={() => applyFormat("굵게")} className="p-1 hover:bg-slate-800 rounded-md" title="굵게">
-                    <Bold className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => applyFormat("기울임")} className="p-1 hover:bg-slate-800 rounded-md" title="기울임">
-                    <Italic className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => applyFormat("인용구")} className="p-1 hover:bg-slate-800 rounded-md" title="인용구">
-                    <Quote className="w-3.5 h-3.5" />
-                  </button>
-                  <div className="w-[1px] h-4 bg-slate-700 my-auto mx-1" />
-                  <button
-                    onClick={() => applyFormat("AI 다듬기")}
-                    className="p-1 px-2 hover:bg-blue-600 rounded-md transition flex items-center gap-1 text-blue-300 font-bold"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    AI 문장 다듬기
-                  </button>
-                </div>
-              )}
-
-              <textarea
-                ref={bodyInputRef}
+              <HighlightedBody
                 value={article.content}
-                onChange={(e) => setArticle({ ...article, content: e.target.value })}
-                placeholder="기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다..."
-                className="w-full min-h-[460px] text-slate-900 text-xs md:text-sm leading-relaxed p-5 bg-slate-50/70 rounded-2xl border border-slate-200 focus:bg-white focus:border-slate-800 outline-none transition-all resize-y shadow-2xs font-sans"
+                onChange={(content) => setArticle((prev) => ({ ...prev, content }))}
+                results={factCheck.results}
+                onRecheck={factCheck.recheck}
+                focus={factCheck.focus}
+                activeId={review && current ? current.id : null}
+                recheckBusy={factCheck.recheckBusy}
               />
             </div>
 
@@ -608,9 +582,9 @@ export default function ArticleWriter({
                   {/* 바이라인 & 작성일자 */}
                   <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-100 pb-3">
                     <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-slate-800">김동아 기자</span>
+                      <span className="font-extrabold text-slate-800">기자</span>
                       <span>|</span>
-                      <span>입력 2026-10-02 17:00</span>
+                      <span>입력 {article.createdAt}</span>
                     </div>
                     <div className="flex items-center gap-3">
                       <Bookmark className="w-3.5 h-3.5 text-slate-400" />
@@ -693,10 +667,11 @@ export default function ArticleWriter({
         {/* [우측 컬럼]: 팩트체크 & 근거자료 검증 패널 (나란히 인라인 배치되어 절대 겹치지 않음) */}
         {isFactCheckDrawerOpen && (
           <FactCheckDrawer
-            isOpen={isFactCheckDrawerOpen}
             onClose={() => setIsFactCheckDrawerOpen(false)}
             article={article}
             setArticle={setArticle}
+            factCheck={factCheck}
+            onModels={onModels}
           />
         )}
 
@@ -706,6 +681,19 @@ export default function ArticleWriter({
       {/* ──────────────────────────────────────────
           3. 사진·미디어 관리 및 본문 삽입 모달
          ────────────────────────────────────────── */}
+      {showHistory && article.articleId && (
+        <VersionHistory
+          article={article}
+          emptyArticle={createEmptyArticle()}
+          onClose={() => setShowHistory(false)}
+          onRestored={(restored) => {
+            setArticle(restored);
+            setShowHistory(false);
+            setPhotoNotice("선택한 저장본으로 복원했습니다. 복원 직전 상태는 저장 이력에 남아 있습니다.");
+          }}
+        />
+      )}
+
       {showPhotoModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 md:p-8 max-w-xl w-full shadow-2xl space-y-5 animate-float-in border border-slate-100">
@@ -721,6 +709,14 @@ export default function ArticleWriter({
                 ×
               </button>
             </div>
+
+            <PhotoFinder
+              body={article.content}
+              onPick={(photo) => {
+                setEditingPhoto(photo);
+                setShowPhotoModal(false);
+              }}
+            />
 
             {/* 새 사진 업로드 폼 */}
             <div className="space-y-3.5 text-xs">
@@ -752,7 +748,7 @@ export default function ArticleWriter({
                     type="text"
                     value={newProvider}
                     onChange={(e) => setNewProvider(e.target.value)}
-                    placeholder="김동아 기자"
+                    placeholder="기자 이름"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:bg-white"
                   />
                 </div>
@@ -790,10 +786,11 @@ export default function ArticleWriter({
                   type="file"
                   ref={photoInputRef}
                   onChange={handlePhotoUpload}
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   className="hidden"
                 />
               </div>
+              {photoError && <p role="alert" className="text-rose-600">{photoError}</p>}
             </div>
 
             {/* 현재 등록된 사진 리스트 */}
@@ -806,12 +803,16 @@ export default function ArticleWriter({
                       <img src={p.url} alt="p" className="w-10 h-8 object-cover rounded-md flex-shrink-0" />
                       <span className="font-bold text-slate-800 truncate">{p.caption}</span>
                     </div>
-                    <button
-                      onClick={() => handleInsertPhotoToContent(p)}
-                      className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded-lg shadow-2xs flex-shrink-0 cursor-pointer"
-                    >
-                      본문 삽입
-                    </button>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => { setEditingPhoto(p); setShowPhotoModal(false); }}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded-lg shadow-2xs cursor-pointer"
+                      >편집</button>
+                      <button
+                        onClick={() => handleInsertPhotoToContent(p)}
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded-lg shadow-2xs cursor-pointer"
+                      >본문 삽입</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -840,7 +841,7 @@ export default function ArticleWriter({
             </div>
             <h3 className="text-lg font-black text-slate-950">CMS 발행이 완료되었습니다</h3>
             <p className="text-xs text-slate-600 leading-relaxed font-medium">
-              동아일보 디지털 통합 시스템(CMS)과 포털 송고 대기열로 기사 텍스트와 사진 데이터가 성공적으로 이관되었습니다.
+              CMS가 발행 요청을 정상 접수했습니다.{cmsReceipt?.id ? ` 접수 ID: ${cmsReceipt.id}` : ""}
             </p>
             <button
               onClick={() => setIsCmsSuccessModal(false)}
@@ -848,85 +849,6 @@ export default function ArticleWriter({
             >
               확인
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* AI 기사 초안 생성 모달 */}
-      {showDraftModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-6 md:p-8 max-w-xl w-full shadow-2xl border border-white space-y-5 animate-float-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Wand2 className="w-4 h-4 text-amber-500" />
-                <h3 className="text-base font-bold text-slate-900">AI 기사 초안 생성</h3>
-              </div>
-              <button
-                onClick={() => setShowDraftModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-xl font-bold cursor-pointer"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs md:text-sm">
-              <p className="text-slate-600">
-                수집된 취재자료나 녹취 데이터를 바탕으로 AI가 종합 기사 초안을 작성합니다.
-              </p>
-
-              <div className="space-y-2">
-                <label className="font-bold text-slate-800 block">연결할 취재자료 선택</label>
-                <div className="space-y-2 bg-slate-50/80 p-3 rounded-xl border border-slate-200">
-                  {["2026 차세대 반도체 산업 동향 보고서", "김성민 박사 인터뷰 전사본", "전력망 확충 회의록"].map((src, idx) => (
-                    <label key={idx} className="flex items-center gap-2.5 text-slate-800 text-xs cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        defaultChecked={idx < 2} 
-                        className="w-4 h-4 rounded text-slate-900 focus:ring-slate-800"
-                      />
-                      <span>{src}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-bold text-slate-800 block">추가 지시사항 (선택)</label>
-                <input
-                  type="text"
-                  value={draftPrompt}
-                  onChange={(e) => setDraftPrompt(e.target.value)}
-                  placeholder="예: 핵심 기술 성과 위주로 객관적 톤으로 작성해줘"
-                  className="w-full px-3.5 py-2.5 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-900 outline-none focus:border-slate-800 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-              <button
-                onClick={() => setShowDraftModal(false)}
-                className="px-4 py-2 bg-[#EFECE6] hover:bg-[#E4DFD7] text-[#23211F] border border-[#DDD6CB] text-xs font-bold rounded-full transition cursor-pointer"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleGenerateDraft}
-                disabled={isGenerating}
-                className="px-5 py-2 bg-[#23211F] hover:bg-[#38332E] text-[#FAF8F5] text-xs font-bold rounded-full transition shadow-xs cursor-pointer flex items-center gap-2 border border-[#23211F]"
-              >
-                {isGenerating ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>초안 생성 중...</span>
-                  </>
-                ) : (
-                  <>
-                    <Wand2 className="w-3.5 h-3.5 text-amber-300" />
-                    <span>초안 자동 생성</span>
-                  </>
-                )}
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -953,6 +875,87 @@ export default function ArticleWriter({
         </div>
       )}
 
+    </div>
+  );
+}
+
+// 팩트체크 결과 하이라이트 — 투명 textarea 뒤에 같은 글자를 깔고 구간에 색을 칠한다(옛 archive-os EditorView 방식).
+// 코어가 짚은 위치(틀린 값·거의 같은 문장의 다른 부분)만 칠하고, 위치가 없으면 문장 전체. 본문을 고쳐 문장이 바뀐 결과는 칠하지 않는다.
+const MARK = {
+  CONFLICT: "bg-rose-200/90 ring-1 ring-inset ring-rose-400",
+  EVIDENCE_GAP: "bg-amber-200/80",
+  REVIEW: "bg-violet-200/70",
+  EXTERNAL_REQUIRED: "bg-violet-200/70",
+  FOCUS: "bg-emerald-200/80", // 서랍의 '팩트 일치' 카드에 마우스를 올린 동안
+  DETAIL: "bg-amber-200/80", // 날짜·기관·주체는 별도 의미 확인이 필요
+};
+const OUTLINE = { CONFLICT: "#9f1239", EVIDENCE_GAP: "#b45309", REVIEW: "#6d28d9", EXTERNAL_REQUIRED: "#6d28d9" }; // 하이라이트색의 진한 판(마우스 올린 문장)
+const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요", EXTERNAL_REQUIRED: "검토 필요" };
+
+function HighlightedBody({ value, onChange, results, onRecheck, recheckBusy, focus = null, activeId = null }) {
+  const layer = useRef(null);
+  const [hover, setHover] = useState(null); // { key, x, y } — 하이라이트 위 마우스(textarea 가 위를 덮어 마크가 이벤트를 못 받으니 좌표로 찾는다)
+
+  const ranges = useMemo(() => {
+    const out = results
+      .map((r) => (r.verdict === "SUPPORTED" && r.id === focus ? { ...r, verdict: "FOCUS", spans: supportedClaimRanges(r.claimText, r.details).map((s) => ({ ...s, start: s.start + r.start, end: s.end + r.start })) } : r))
+      .filter((r) => MARK[r.verdict] && r.start >= 0 && value.slice(r.start, r.start + r.claimText.length) === r.claimText)
+      .flatMap((r) => (r.spans.length ? r.spans : [{ start: r.start, end: r.start + r.claimText.length }])
+        .map((x) => ({ ...x, verdict: r.verdict === "FOCUS" && x.detail ? "DETAIL" : r.verdict, key: r.judgedBy === "external" ? "" : r.key, rid: r.id })))
+      .sort((a, b) => a.start - b.start);
+    return out.filter((x, i) => i === 0 || x.start >= out[i - 1].end); // 겹치면 앞의 것만
+  }, [results, value, focus]);
+
+  const parts = [];
+  let cursor = 0;
+  ranges.forEach((x, i) => {
+    parts.push(value.slice(cursor, x.start));
+    parts.push(<mark key={i} data-key={x.key} className={`${MARK[x.verdict]} text-transparent rounded-sm`}
+      style={(x.key && hover?.key === x.key) || (activeId && x.rid === activeId) ? { outline: `2px solid ${OUTLINE[x.verdict]}`, outlineOffset: 1 } : undefined} title={x.title || MARK_LABEL[x.verdict]}>{value.slice(x.start, x.end)}</mark>);
+    cursor = x.end;
+  });
+  parts.push(value.slice(cursor) + "\n"); // 마지막 줄바꿈도 높이를 맞춘다
+
+  // 뒤의 글자 층이 높이를 정하고(글이 길어지면 같이 늘어남) textarea 는 그 위를 덮는다 → 줄바꿈 위치가 항상 같다
+  const box = "w-full min-h-[460px] text-xs md:text-sm leading-relaxed p-5 rounded-2xl border font-sans whitespace-pre-wrap break-words";
+  const findMark = (e) => {
+    if (!onRecheck || !layer.current) return null;
+    const box = layer.current.parentElement.getBoundingClientRect();
+    for (const m of layer.current.querySelectorAll("mark[data-key]")) {
+      if (!m.dataset.key) continue; // 이미 AI 재판정한 문장
+      for (const r of m.getClientRects())
+        if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom)
+          return { key: m.dataset.key, x: e.clientX - box.left, y: r.top - box.top };
+    }
+    return null;
+  };
+
+  return (
+    <div className="relative bg-slate-50/70 rounded-2xl focus-within:bg-white transition-all">
+      <div ref={layer} aria-hidden="true" data-testid="fact-highlight" className={`${box} text-transparent border-transparent pointer-events-none`}>
+        {parts}
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onMouseMove={(e) => setHover(findMark(e))}
+        onMouseLeave={() => setHover(null)}
+        onClick={(e) => {
+          const hit = findMark(e);
+          if (hit && !recheckBusy && e.target.selectionEnd === e.target.selectionStart) {
+            setHover(null);
+            onRecheck(hit.key);
+          }
+        }}
+        placeholder="기사 본문을 입력하세요. 자유롭게 문단을 작성할 수 있습니다..."
+        className={`${box} absolute inset-0 h-full overflow-hidden text-slate-900 bg-transparent border-slate-200 focus:border-slate-800 outline-none resize-none shadow-2xs ${hover ? "cursor-pointer" : ""}`}
+      />
+      {hover && (
+        <div data-testid="recheck-tip" className="absolute z-10 -translate-x-1/2 -translate-y-full -mt-1 px-2 py-1 rounded-md bg-slate-900 text-white text-[11px] font-bold pointer-events-none whitespace-nowrap shadow"
+          style={{ left: hover.x, top: hover.y - 4 }}>
+          {recheckBusy ? "상위모델 재검토 중…" : "상위모델로 재검토"}
+        </div>
+      )}
     </div>
   );
 }

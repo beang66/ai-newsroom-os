@@ -3,9 +3,9 @@
 // 실행: node --test dev/tests/datamap-*.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { indexGraph, getContext, rankRelated, filterNodes } from "../../web/src/features/data-map/domain/graph.js";
-import { FILE_KINDS } from "../../web/src/features/data-map/domain/files.js";
-import { MAP_CENTER, MAP_RADIUS, insideCircle } from "../../web/src/features/data-map/domain/layout.js";
+import { indexGraph, getContext, rankRelated, filterNodes } from "../../../src/features/data-map/domain/graph.js";
+import { FILE_KINDS } from "../../../src/features/data-map/domain/files.js";
+import { MAP_CENTER, MAP_RADIUS, insideCircle } from "../../../src/features/data-map/domain/layout.js";
 
 const n = (id, kind, extra = {}) => ({ id, kind, label: id, tags: [], author: "", pages: [], placeholder: false, articleId: null, projectId: null, x: 0, y: 0, ...extra });
 const graph = {

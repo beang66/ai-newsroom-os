@@ -6,7 +6,6 @@ const { suggestKeywords } = require("./ai-client");
 const app = express();
 
 app.use(express.json({ limit: "50mb" }));
-app.use(express.static(path.join(__dirname, "public")));
 
 // 기본은 저장 경로의 410 안내만 등록합니다. PLATFORM_LOCAL_STORAGE=1은 개발 전용입니다.
 require("./local-storage-routes")(app);
@@ -176,9 +175,6 @@ app.post("/api/article/keywords", async (req, res) => {
 
 app.listen(3001, () => {
   console.log("현재 서버 파일:", __filename);
-  console.log(
-    "화면 파일 존재:",
-    fs.existsSync(path.join(__dirname, "public", "index.html"))
-  );
+  console.log("Main UI: run npm run dev from the repository root");
   console.log("http://localhost:3001");
 });

@@ -213,3 +213,28 @@ class PlatformManager:
             "data": "data:image/jpeg;base64," + image,
         })
         return {"cardId": card_id, "asset": asset, **({"snapshotId": snapshot_id} if snapshot_id else {})}
+
+    def publish(self, data: dict):
+        """검증된 사용자 세션으로 백엔드의 CMS 어댑터를 호출한다. 성공 응답 전에는 발행 상태를 만들지 않는다."""
+        article = data.get("article")
+        if not isinstance(article, dict):
+            raise RequestError("발행할 기사 정보가 필요합니다.")
+        title, content = article.get("title"), article.get("content")
+        if not isinstance(title, str) or not title.strip() or len(title) > 500:
+            raise RequestError("기사 제목을 확인해 주세요.")
+        if not isinstance(content, str) or not content.strip() or len(content) > 2_000_000:
+            raise RequestError("기사 본문을 확인해 주세요.")
+        from .. import backend_proxy
+        photos = [{k: photo.get(k, "") for k in ("caption", "source", "provider", "sourceUrl")}
+                  for photo in article.get("photos", []) if isinstance(photo, dict)]
+        result = backend_proxy.post("/cms/publish", {"article": {
+            "id": article.get("articleId"), "title": title.strip(), "subtitle": article.get("subtitle") or "",
+            "content": content, "photos": photos,
+        }}, timeout=60)
+        if not isinstance(result, dict):
+            raise RequestError("CMS 응답 형식을 확인할 수 없습니다.", 502)
+        if result.get("error") or result.get("success") is False or result.get("published") is False:
+            raise RequestError(str(result.get("error") or "CMS가 발행 요청을 거절했습니다."), 502)
+        if not (result.get("published") is True or result.get("id")):
+            raise RequestError("CMS 응답에 발행 성공 신호가 없습니다.", 502)
+        return {**result, "published": True}

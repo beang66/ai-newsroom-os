@@ -125,6 +125,28 @@ export function createAiProxyRouter(): Router {
     });
   });
 
+  router.post("/cms/publish", json, async (req, res) => {
+    if (!(await guard(req, res))) return;
+    const target = String(process.env.CMS_PUBLISH_URL || "").trim();
+    let parsed: URL;
+    try {
+      parsed = new URL(target);
+    } catch {
+      res.status(503).json({ error: "CMS_PUBLISH_URL이 설정되지 않았습니다." });
+      return;
+    }
+    if (parsed.protocol !== "https:" && !["127.0.0.1", "localhost"].includes(parsed.hostname)) {
+      res.status(503).json({ error: "CMS_PUBLISH_URL은 HTTPS 주소여야 합니다." });
+      return;
+    }
+    const token = String(process.env.CMS_BEARER_TOKEN || "").trim();
+    await relay(res, target, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(req.body ?? {}),
+    });
+  });
+
   router.get("/unsplash/*", async (req, res) => {
     if (!(await guard(req, res))) return;
     const suffix = req.path.replace(/^\/unsplash/, "");

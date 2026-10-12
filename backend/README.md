@@ -35,6 +35,8 @@
 | `SUPABASE_ANON_KEY` | JWT 검증 | anon(publishable) 키 |
 | `AUTH_REQUIRED` | | 기본 `true`. `false`는 개발 전용(토큰 없이 허용) |
 | `RATE_LIMIT_PER_MIN` | | 기본 `120` |
+| `CMS_PUBLISH_URL` | CMS 송고 | 실제 CMS의 HTTPS 수신 API |
+| `CMS_BEARER_TOKEN` | CMS 인증 | 수신 API가 요구하는 서버 전용 Bearer 토큰 |
 | `OPENAI_BASE_URL` / `UNSPLASH_BASE_URL` | | 시험용 대체 주소(기본은 실제 서비스) |
 
 또는 `render.yaml`(Blueprint)로 한 번에 만들 수 있다 — 비밀값은 `sync: false`라 대시보드에서 채운다.
@@ -56,6 +58,7 @@ AI_BACKEND_URL=https://<render 서비스 주소>
 | POST | `/ai/images/generations` | `{OPENAI_BASE}/images/generations` |
 | POST | `/ai/embeddings` | Cloudflare Workers AI `@cf/qwen/qwen3-embedding-0.6b` (모델은 서버 고정; 본문 그대로 중계) |
 | POST | `/ai/audio/transcriptions` | `{OPENAI_BASE}/audio/transcriptions` (multipart 그대로) |
+| POST | `/cms/publish` | `CMS_PUBLISH_URL` (기사 JSON, 성공 응답을 그대로 반환) |
 | GET | `/unsplash/search/photos` | `{UNSPLASH_BASE}/search/photos` |
 | GET | `/unsplash/photos/<id>` | `{UNSPLASH_BASE}/photos/<id>` |
 | GET | `/unsplash/download/<...>` | `{UNSPLASH_BASE}/download/<...>` |

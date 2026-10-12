@@ -40,6 +40,17 @@ class RevisionHistoryTests(unittest.TestCase):
         self.assertEqual((preview['title'], preview['content']), ('제목1', '첫 본문'))
         self.assertEqual(storage.list_revisions(self.aid)['revisions'], before)
 
+    def test_open_specific_article_does_not_restore_or_change_latest(self):
+        other = storage.save_article(draft(title='다른 기사', content='다른 본문'))['articleId']
+        before = storage.list_revisions(self.aid)
+        selected = storage.latest_article(photo_refs=True, article_id=self.aid)['draft']
+        self.assertEqual((selected['title'], selected['content']), ('제목3', '셋째 본문'))
+        self.assertEqual(storage.latest_article()['draft']['articleId'], other)
+        self.assertEqual(storage.list_revisions(self.aid), before)
+        with self.assertRaises(RequestError) as error:
+            storage.latest_article(article_id='f' * 32)
+        self.assertEqual(error.exception.status, 404)
+
     def test_restore_adds_a_new_latest_revision_and_keeps_history(self):
         result = storage.restore_revision(self.aid, 1)
         self.assertEqual((result['fromRevision'], result['revisionNo']), (1, 4))

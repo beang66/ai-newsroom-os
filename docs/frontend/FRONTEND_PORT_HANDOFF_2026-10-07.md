@@ -23,9 +23,9 @@ main의 디자인을 앱에 이식하는 작업(U1)은 아래까지 끝났습니
 ## 1. 방향
 
 - **main에서 가져오는 것은 UI 디자인(레이아웃, 스타일, 컴포넌트 외형)입니다. 호출 방식과 기능 로직은 가져오지 않고, 앱이 이미 하는 방식으로 다시 연결합니다.**
-- 모든 외부 API 호출(Unsplash 포함)은 `화면 → web/src/api → 코어 → 백엔드 요청`으로 통일합니다. main 코드의 호출 부분은 쓰지 않습니다.
+- 모든 외부 API 호출(Unsplash 포함)은 `화면 → src/api → 코어 → 백엔드 요청`으로 통일합니다. main 코드의 호출 부분은 쓰지 않습니다.
 - **UI 정본은 main의 프론트엔드(루트 `src/`)입니다.**
-- 앱 UI(`article_editor/web/src`)에만 있는 기능을 main UI로 **이식**합니다.
+- 앱 UI(`src`)에만 있는 기능을 main UI로 **이식**합니다.
 - 이식하는 기능은 코어(App Core)와 연결되어 동작하는 것들이라, 기능 코드는 앱 쪽을 그대로 가져오고 **프론트 작업자는 main의 디자인에 맞게 화면을 설계**합니다.
 - 이 문서는 그 디자인 작업을 부탁하기 위한 목록입니다.
 
@@ -35,7 +35,7 @@ main의 디자인을 앱에 이식하는 작업(U1)은 아래까지 끝났습니
 
 | 규칙 | 이유 |
 |---|---|
-| 화면은 코어를 `web/src/api/`의 **이름 붙은 메서드**로만 호출합니다. `fetch(`, `"/api/..."` 문자열을 화면 코드에 쓰지 않습니다. | 개발은 HTTP, 최종 EXE는 IPC로 같은 계약을 쓰기 때문입니다. `npm run check:api-boundary`가 검사합니다. |
+| 화면은 코어를 `src/api/`의 **이름 붙은 메서드**로만 호출합니다. `fetch(`, `"/api/..."` 문자열을 화면 코드에 쓰지 않습니다. | 개발은 HTTP, 최종 EXE는 IPC로 같은 계약을 쓰기 때문입니다. `npm run check:api-boundary`가 검사합니다. |
 | 외부 AI/사진 서비스(Groq, OpenAI, Unsplash 등)를 화면에서 직접 호출하지 않고, API 키를 브라우저(`localStorage`)에 저장하지 않습니다. | 앱에는 운영 키를 두지 않는 보안 규칙입니다. |
 | 아래 `data-testid` 값은 이름을 유지합니다. | UI 스모크 테스트(`dev/tests/ui-smoke.mjs`, `support-highlight.mjs`)가 사용합니다. |
 
@@ -43,7 +43,7 @@ main의 디자인을 앱에 이식하는 작업(U1)은 아래까지 끝났습니
 
 ## 3. 이식할 기능과 디자인 요청
 
-각 항목은 **앱의 동작 → 앱 구현 위치 → 쓰는 코어 메서드 → 디자인이 필요한 상태/요청** 순서입니다. 앱 구현 위치의 경로는 모두 `article_editor/web/src/` 기준입니다.
+각 항목은 **앱의 동작 → 앱 구현 위치 → 쓰는 코어 메서드 → 디자인이 필요한 상태/요청** 순서입니다. 앱 구현 위치의 경로는 모두 `src/` 기준입니다.
 
 ### A. 팩트체크 (가장 큼)
 
@@ -137,7 +137,7 @@ main의 디자인을 앱에 이식하는 작업(U1)은 아래까지 끝났습니
 
 ## 7. 참고: 코어가 제공하는 메서드 (화면은 이름만 알면 됨)
 
-`session`, `signIn`, `signOut`, `setAutoLogin`, `models`, `installModels`, `cancelModelInstall`, `assist`(제목·부제·요약·사진 검색어), `factcheckStatus`, `factcheckRun`, `factcheckExternal`(조회 전용 옵션 포함), `semanticParse`, `transcribe`, `extractText`, `openSource`, `sourceBytes`, `saveArticle`, `latestArticle`, `searchPhotos`, `photoBytes`, `trackPhoto` — 정의는 `article_editor/web/src/api/core-api.js`
+`session`, `signIn`, `signOut`, `setAutoLogin`, `models`, `installModels`, `cancelModelInstall`, `assist`(제목·부제·요약·사진 검색어), `factcheckStatus`, `factcheckRun`, `factcheckExternal`(조회 전용 옵션 포함), `semanticParse`, `transcribe`, `extractText`, `openSource`, `sourceBytes`, `saveArticle`, `latestArticle`, `searchPhotos`, `photoBytes`, `trackPhoto` — 정의는 `src/api/core-api.js`
 
 > **Data Map:** 보관함(ArchiveView) 화면의 **상단 메인 작업 공간**(왼쪽 위의 큰 빈 영역)에 들어갑니다(2026-10-07 확정). 탭이 아닙니다. 지금은 이식 대상이 아니고, 이 자리는 비워 두되 모양을 바꾸지 않습니다(코드에는 `data-testid="data-map-slot"`로 표시).
 
@@ -176,7 +176,7 @@ main의 FormatConverter는 화면 틀만 있고 생성 버튼이 없었습니다
 | 삭제된 자료 표시 | 기사 안의 자료 참조는 남습니다. 원본·본문 요청은 404 | 기사의 자료 목록에서 지워진 자료를 "삭제된 자료"로 표시(원본 열기·팩트체크 근거 보기는 비활성) |
 
 주의: 팩트체크에 이미 쓴 판정 기록은 남지만, 근거 원본을 열 수 없게 됩니다. 이 점을 경고 문구에 한 줄로 알려 주세요.
-화면에서 쓰는 API 이름은 `web/src/api/core-api.js`에 코어와 1:1로 추가됩니다(`listSources`, `deleteSource(id, {force})`).
+화면에서 쓰는 API 이름은 `src/api/core-api.js`에 코어와 1:1로 추가됩니다(`listSources`, `deleteSource(id, {force})`).
 
 ## 10. 카드뉴스 "완성 이미지" 만들기 — 임시 버튼과 미리보기 (디자인 요청, 2026-10-12)
 

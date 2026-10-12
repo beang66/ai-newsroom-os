@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
-const { PATHS } = require('./public/api');
+const { PATHS } = require('./lib/api');
 
 async function main() {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'platform-storage-'));
@@ -27,8 +27,8 @@ async function main() {
           ...fs,
           async rename(from, to) { renames.push([from, to]); await fs.rename(from, to); },
         };
-        if (name === './public/api') return {
-          ...require('./public/api'),
+        if (name === './lib/api') return {
+          ...require('./lib/api'),
           getStorageRoot() { throw new Error('실제 Documents 경로를 조회하면 안 됩니다.'); },
         };
         return require(name);
@@ -110,26 +110,15 @@ async function main() {
       fetch: async () => ({ ok: false, status: 410, json: async () => ({ success: false, error: disabledMessage }) }),
     };
     vm.createContext(browser);
-    vm.runInContext(await fs.readFile(path.join(__dirname, 'public/api.js'), 'utf8'), browser);
+    vm.runInContext(await fs.readFile(path.join(__dirname, 'lib/api.js'), 'utf8'), browser);
     browser.NewsApi = browser.window.NewsApi;
     for (const method of ['saveLocalDraft', 'listLocalDrafts', 'loadLocalDraft', 'getLocalStorageInfo']) {
       await assert.rejects(() => browser.NewsApi[method](draft), error => error.status === 410 && error.message === disabledMessage);
     }
-    const html = await fs.readFile(path.join(__dirname, 'public/index.html'), 'utf8');
-    for (const [start, end, button] of [
-      ["$('save').onclick =", '// 12.', buttons.save],
-      ['localLoadButton.onclick =', '// JPG 생성:', browser.localLoadButton],
-    ]) {
-      const offset = html.indexOf(start);
-      assert.ok(offset >= 0);
-      const finish = html.indexOf(end, offset);
-      assert.ok(finish > offset);
-      vm.runInContext(html.slice(offset, finish), browser);
-      await button.onclick();
-      assert.equal(messages.at(-1), disabledMessage);
-      assert.equal(button.disabled, false);
-    }
-    console.log('PASS local storage: default 410, opt-in save/list/load and atomic writes, image archival, browser 410 recovery');
+    const template = require('./lib/card-template');
+    assert.ok(template.markup({ headline: '<script>bad</script>' }).includes('&lt;script&gt;'));
+    assert.ok(template.css.includes('.news-card'));
+    console.log('PASS local storage: default 410, opt-in save/list/load, atomic writes, image archival, shared API and card template');
   } finally {
     if (originalFlag === undefined) delete process.env.PLATFORM_LOCAL_STORAGE;
     else process.env.PLATFORM_LOCAL_STORAGE = originalFlag;

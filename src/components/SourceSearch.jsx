@@ -1,16 +1,26 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Search, Calendar, Link2, Check, Filter } from "lucide-react";
-import { mockSources } from "../data/mockData";
+import { listStoredSources } from "../api/editorial";
 
-export default function SourceSearch({ onConnectToArticle, isModal = false, onClose }) {
+export default function SourceSearch({ onConnectToArticle, connectedSourceIds = [], isModal = false, onClose }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("전체");
-  const [selectedSource, setSelectedSource] = useState(mockSources[0]);
-  const [connectedIds, setConnectedIds] = useState([]);
+  const [selectedSource, setSelectedSource] = useState(null);
+  const [sources, setSources] = useState([]);
+  const [loadError, setLoadError] = useState("");
 
-  const categories = ["전체", "공식문서", "통계", "회의록", "취재자료"];
+  // 코어에 저장된 취재자료(GET /api/sources). 창을 열 때마다 새로 읽는다.
+  useEffect(() => {
+    const controller = new AbortController();
+    listStoredSources(controller.signal)
+      .then((items) => !controller.signal.aborted && setSources(items))
+      .catch((e) => !controller.signal.aborted && setLoadError(e.message || "취재자료를 불러오지 못했습니다."));
+    return () => controller.abort();
+  }, []);
 
-  const filteredSources = mockSources.filter((item) => {
+  const categories = ["전체", ...new Set(sources.map((item) => item.category))]; // 실제 자료 형식(PDF·HWPX…)만
+
+  const filteredSources = sources.filter((item) => {
     const matchesSearch = 
       item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.snippet.toLowerCase().includes(searchTerm.toLowerCase());
@@ -19,9 +29,6 @@ export default function SourceSearch({ onConnectToArticle, isModal = false, onCl
   });
 
   const handleConnect = (source) => {
-    if (!connectedIds.includes(source.id)) {
-      setConnectedIds([...connectedIds, source.id]);
-    }
     if (onConnectToArticle) {
       onConnectToArticle(source);
     }
@@ -42,7 +49,7 @@ export default function SourceSearch({ onConnectToArticle, isModal = false, onCl
               자체 취재자료 검색
             </h2>
             <p className="text-xs text-[#8E8982] mt-1 font-semibold">
-              내부 저장소에 저장된 공식문서, 통계, 회의록, 취재자료를 검색하고 기사 출처로 연결합니다.
+              암호화 저장소에 올린 취재자료를 찾아 기사 출처로 연결합니다.
             </p>
           </div>
           {isModal && (
@@ -63,7 +70,7 @@ export default function SourceSearch({ onConnectToArticle, isModal = false, onCl
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="자료 제목, 키워드, 내용 검색 (예: NPU, 전력망, 통계)"
+              placeholder="자료 이름 검색"
               className="w-full pl-12 pr-4 py-3 bg-white border border-[#E7E2D9] rounded-2xl text-[#292B2F] text-sm font-semibold outline-none focus:border-[#292B2F] shadow-2xs transition"
             />
           </div>
@@ -91,11 +98,13 @@ export default function SourceSearch({ onConnectToArticle, isModal = false, onCl
           {/* Result List */}
           <div className="md:col-span-5 space-y-3 max-h-[440px] overflow-y-auto pr-1">
             {filteredSources.length === 0 ? (
-              <div className="p-8 text-center text-[#8E8982] text-xs">검색 결과가 없습니다.</div>
+              <div className="p-8 text-center text-[#8E8982] text-xs">
+                {loadError || (sources.length ? "검색 결과가 없습니다." : "저장된 취재자료가 없습니다. 기사 작성 화면에서 자료를 올리면 여기에 보입니다.")}
+              </div>
             ) : (
               filteredSources.map((item) => {
                 const isSelected = selectedSource?.id === item.id;
-                const isConnected = connectedIds.includes(item.id);
+                const isConnected = connectedSourceIds.includes(item.id);
                 return (
                   <div
                     key={item.id}
@@ -160,14 +169,15 @@ export default function SourceSearch({ onConnectToArticle, isModal = false, onCl
                   <span className="text-xs text-[#8E8982] font-semibold">자체 보안 DB 보관 문서</span>
                   <button
                     onClick={() => handleConnect(selectedSource)}
+                    disabled={connectedSourceIds.includes(selectedSource.id)}
                     className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 ${
-                      connectedIds.includes(selectedSource.id)
+                      connectedSourceIds.includes(selectedSource.id)
                         ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                         : "bg-[#292B2F] hover:bg-[#1F2124] text-[#FAF8F5] shadow-xs"
                     }`}
                   >
                     <Link2 className="w-4 h-4 text-[#D8C76A]" />
-                    {connectedIds.includes(selectedSource.id) ? "연결 완료 (기사 적용됨)" : "기사에 출처 연결"}
+                    {connectedSourceIds.includes(selectedSource.id) ? "연결 완료 (기사 적용됨)" : "기사에 출처 연결"}
                   </button>
                 </div>
               </>

@@ -31,6 +31,8 @@ app.use(createAiProxyRouter());   // ★ 반드시 app.use(express.json({ limit:
 | `AUTH_REQUIRED` | 기본 `true` (개발 시험 때만 `false`) |
 | `HOST` | **`0.0.0.0`** — 지금 `server.ts`가 `127.0.0.1` 기본이라 Render에서 외부 접속이 안 될 수 있음 |
 | `RATE_LIMIT_PER_MIN` | 기본 `120` |
+| `CMS_PUBLISH_URL` | 실제 CMS의 HTTPS 수신 API |
+| `CMS_BEARER_TOKEN` | CMS 서버 인증 토큰(필요한 경우) |
 
 ## 4. 추가되는 경로 (앱이 부르는 것)
 
@@ -40,6 +42,7 @@ app.use(createAiProxyRouter());   // ★ 반드시 app.use(express.json({ limit:
 | POST | `/ai/responses` | `{OPENAI_BASE}/responses` |
 | POST | `/ai/images/generations` | `{OPENAI_BASE}/images/generations` |
 | POST | `/ai/audio/transcriptions` | `{OPENAI_BASE}/audio/transcriptions` (multipart 그대로) |
+| POST | `/cms/publish` | `CMS_PUBLISH_URL` |
 | GET | `/unsplash/search/photos` · `/unsplash/photos/<id>` · `/unsplash/download/<...>` | `{UNSPLASH_BASE}/...` |
 | GET | `/unsplash/absolute?url=` | 절대 URL(host가 `api.unsplash.com`일 때만) |
 

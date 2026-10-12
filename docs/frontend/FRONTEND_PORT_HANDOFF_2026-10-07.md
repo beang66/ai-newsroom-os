@@ -28,11 +28,15 @@
 | 7 | **카드 이미지 만들기**: 버튼, 완성 이미지 미리보기, "카드를 고쳤어요" 안내(이미지 흐림), 오류 문구 | `components/FormatConverter.jsx` (카드뉴스 편집 영역 맨 아래) | `renderCardImage(card, photo, snapshotId)` (`api/platform.js`) | `card-image-make`, `card-image-preview`, `card-image-error` |
 | 8 | **취재자료 색인 상태**: 자료 목록 항목의 배지와 서랍 위쪽 안내문 | `components/FactCheckDrawer.jsx` | `listSources` → 항목의 `index: {state, chunks, progress}` (`api/core-api.js`) | `source-index-badge`, `factcheck-indexing` |
 | 9 | **전체 다시 검증의 기준 버전 표시**: 서랍 상태 줄 아래 "마지막 전체 검증: 저장 N번 버전의 글 기준" (글이 바뀌었으면 "(그 뒤 글이 바뀌었어요)") | `components/FactCheckDrawer.jsx`, `components/EditorialAssist.jsx`(`useFactCheck`의 `basis`) | `factcheckArticle(content, files, cache, snapshotId)`, `freezeArticle` | `factcheck-basis` |
+| 10 | **본문 하이라이트**: 본문 안의 문장을 판정별 색으로 칠함. 글이 1초 멈추면 자동 검증 | `components/ArticleWriter.jsx`의 `HighlightedBody`, `components/EditorialAssist.jsx`의 `useFactCheck` | `useFactCheck(article)` → `factcheckArticle` (`api/editorial.js`) | `fact-highlight`, `factcheck-status`, `factcheck-error` |
+| 11 | **상위모델 재검토**: 로컬 판정기가 확정 못 한 문장의 하이라이트에 마우스를 올리면 말풍선이 뜨고, 누르면 다시 판정. 결과는 카드에 "AI 재판정"으로 표시되고 하이라이트가 사라짐. 서랍의 "AI 재판정 N건(임시)" 버튼으로 한꺼번에도 가능 | `ArticleWriter.jsx`(말풍선), `FactCheckDrawer.jsx`, `useFactCheck`의 `recheck`·`restoreExternal` | `externalRecheck`, `cachedExternalRecheck` (`api/editorial.js`) | `recheck-tip` |
+| 12 | **서랍의 새로고침 버튼**: 전체 문장을 다시 검증(평소에는 고친 문장만 자동 검증) | `components/FactCheckDrawer.jsx` | `useFactCheck`의 `run(true)` | |
 
 **화면별로 알아 둘 점**
 - **고정본(3-6, 9):** 키워드 추천·생성·카드 이미지·전체 다시 검증을 누르면 코어가 지금 글을 저장해 고정본(그 시점의 글을 얼린 사본)으로 만들고, 그 기준으로 요청합니다. 글이 그대로면 같은 고정본을 다시 씁니다. 글이 멈출 때마다 도는 자동 검증은 고정본을 만들지 않습니다.
 - **카드 이미지(7):** 카드 값을 이미지 입력으로 바꾸는 규칙은 `api/platform.js`의 `cardRenderPayload`에 있습니다(사진이 있으면 표지는 `cover`, 나머지는 `photo_body`, 사진이 없으면 `text_only`). 이미지는 카드 데이터의 `rendered_image: {id, uri}`에 저장됩니다. 렌더에는 Edge나 Chrome이 필요합니다(Windows 기본 설치).
 - **색인 상태(8):** `indexing`(색인 중 NN%, 2초마다 새로 읽음) · `ready`(완료, 조각 수) · `failed`(실패, 팩트체크 때 다시 시도) · `pending`(안 됨: 서버 연결·로그인이 안 됐거나 옛 형식 자료). 색인이 끝나기 전에는 팩트체크가 자동으로 대기합니다.
+- **본문 하이라이트(10)의 판정별 색(현재 값):** 자료와 불일치(CONFLICT)는 장미색에 안쪽 테두리로 가장 강하게, 근거 부족(EVIDENCE_GAP)은 호박색, 검토 필요(REVIEW·EXTERNAL_REQUIRED)는 보라색, 일치(SUPPORTED)는 평소에 칠하지 않고 서랍 카드에 마우스를 올린 동안만 초록색, 일치 문장 안의 날짜·기관·주체 세부 값(DETAIL)은 호박색입니다. 하이라이트가 겹치면 앞의 것만 칠합니다. 재검토(11)는 한 번 받은 결과를 원고를 다시 열어도 자동으로 불러오며(비용 없음) 문장을 고치면 지워집니다.
 - **로그인 자동 열기(3):** 로그인이 필요한 서버 기능(사진 검색, 임베딩, AI 보조 등)을 쓸 때 열립니다.
 
 ## 4. 코어는 준비됐지만 화면이 없는 것
@@ -54,8 +58,3 @@
 지금은 팀원이 개발용 공용 계정을 씁니다. 회원가입이 구현되면 각자 가입해서 쓰게 바꿉니다. 코어 기능(`signUp`)은 구현 전이라 화면 디자인을 먼저 받고 연결합니다.
 - 회원가입 화면: 이메일·비밀번호, 비밀번호 규칙, 가입 후 안내, 로그인 화면과의 전환
 - "이 PC에서 로그인 유지" 설정: 켜면 다음 실행 때 자동 로그인, 끄면 저장된 로그인 정보 삭제 (지금의 자동 로그인 토글 `AutoLoginToggle`을 대체)
-
-## 5. 참고
-
-- 코어가 제공하는 메서드의 전체 목록과 요청·응답 형식은 `src/api/core-api.js`와 `article_editor/docs/CORE_METHODS_v0.8.md`에 있습니다.
-- 자료 검색 임베딩은 서버(Render → Cloudflare)로 처리하므로 색인과 팩트체크에는 로그인과 인터넷 연결이 필요합니다.

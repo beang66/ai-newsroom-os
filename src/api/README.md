@@ -4,6 +4,8 @@ UI가 코어(App Core)와 대화하는 방법은 **여기 하나뿐**입니다.
 
 데스크·보관함은 `listArticles()`로 목록을 조회하고, 선택한 원고는 `getArticle(id)`로 읽습니다. 원고 열기는 복원 API를 호출하거나 이력을 생성하지 않습니다. 사진은 참조로 받고 `editorial.js`에서 바이트를 읽어 편집기 데이터로 변환합니다.
 
+플랫폼 변환의 DB 기사 선택도 같은 `Workspace.changeArticle`을 사용합니다. 자동 임시 저장을 포함한 최신 원고를 읽고, 전환 전 수동 저장 확인·flush 정책과 늦은 조회 취소를 유지합니다. 원문 URL은 선택적 출처이며 수집 입력을 제공하지 않습니다. 플랫폼 생성은 `freezeArticle(article, {flush, strict:true})`로 기존 저장 큐를 비우고 `createSnapshot`을 호출하며, 표시 중인 제목·부제·HTML·출처와 고정본이 일치하지 않거나 저장 실패 시 중단합니다. `subtitle`과 `url`은 기사 저장/복원 및 Core 고정본의 선택적 메타데이터입니다.
+
 ```
 UI (assets/*.js, react/*.tsx)
         │  이름 붙은 메서드만 호출:  api.assist(...), api.searchPhotos(...)

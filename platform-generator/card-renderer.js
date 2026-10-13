@@ -12,6 +12,15 @@ function escapeHtml(value = "") {
 }
 
 function buildHtml(payload) {
+  if (payload.role || payload.content_version === 2 || payload.content?.answer !== undefined || payload.content?.detail !== undefined) {
+    const template=require('./lib/card-template');
+    const model=require('./lib/card-model');
+    const card=model.normalize(payload);
+    const error=model.layoutError(card);
+    if(error)throw Object.assign(new Error(error),{status:400});
+    if(card.image?.url&&!template.validImage(card.image.url))throw Object.assign(new Error('지원하지 않는 사진 주소입니다.'),{status:400});
+    return '<!doctype html><html lang="ko"><meta charset="utf-8"><style>body{margin:0}'+template.css+'</style>'+template.markup(card)+'</html>';
+  }
   const template = payload.template || "photo_body";
 
   const keyword = escapeHtml(payload.content?.keyword || "");
@@ -444,6 +453,11 @@ async function renderCardJpeg(payload) {
   try {
     const page = await browser.newPage({ viewport: { width: 1080, height: 1350 } });
     await page.setContent(buildHtml(payload), { waitUntil: "networkidle" });
+    if(payload.role || payload.content_version === 2 || payload.content?.answer !== undefined || payload.content?.detail !== undefined){
+      await page.evaluate(async()=>{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));});
+      const fit=await page.evaluate(require('./lib/card-template').fitCard);
+      if(!fit.measured||fit.overflow||fit.overlap)throw Object.assign(new Error(fit.overlap?'텍스트 박스가 겹칩니다. 위치를 조정한 뒤 다시 렌더해 주세요.':'글이 카드 영역을 넘습니다. 문장을 줄이거나 카드를 나눈 뒤 다시 렌더해 주세요.'),{status:400});
+    }
     return await page.screenshot({ type: "jpeg", quality: 90, fullPage: true });
   } finally {
     await browser.close();

@@ -70,6 +70,8 @@ class LocalServer:
             self._httpd.shutdown()  # 서빙 스레드가 아닌 쪽에서 호출해야 한다
             self._thread.join(timeout)
         self._httpd.server_close()
+        from core.api import CORE
+        CORE.platform.close()
         from core import storage
 
         storage.cleanup_open()  # 외부 프로그램으로 열었던 임시 복호화본

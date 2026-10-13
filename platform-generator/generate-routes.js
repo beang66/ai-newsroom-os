@@ -5,22 +5,26 @@ const { generateCardNews } = require("./card-news-generator");
 // 기존 모듈 호환용: 일괄 생성과 플랫폼 검수 분리 후 정리합니다.
 const { generateInstagram } = require("./instagram-generator");
 const { generateTextPlatform } = require("./text-generator");
+const { coreArticle } = require("./lib/article-contract");
 
 module.exports = function registerGenerateRoutes(app) {
   app.post("/api/generate/:platform", async (req, res) => {
     const platform = req.params.platform;
 
-    if (!["card_news", "instagram", "threads", "blog"].includes(platform)) {
+    if (!["card_news", "instagram", "threads"].includes(platform)) {
       return res.status(400).json({
         success: false,
-        error: "지원하지 않는 플랫폼입니다.",
+        error: "지원하지 않는 플랫폼입니다. Instagram·Threads·독립 카드뉴스만 지원합니다.",
       });
     }
 
     // 1. 필수 기사·키워드·요구사항 검증
     const input = req.body;
     const article = input?.article;
-
+    const keywords = input?.selected_keywords ?? []; // 선택 입력: 미입력도 허용
+    if (typeof article?.article_id !== "string" || !article.article_id.trim()) {
+      return res.status(400).json({success:false,error:"Core에서 저장된 기사 ID를 확인해주세요."});
+    }
     if (
       typeof article?.title !== "string" ||
       typeof article?.content !== "string" ||
@@ -41,10 +45,9 @@ module.exports = function registerGenerateRoutes(app) {
     }
 
     if (
-      !Array.isArray(input.selected_keywords) ||
-      input.selected_keywords.length === 0 ||
-      input.selected_keywords.length > 20 ||
-      input.selected_keywords.some(
+      !Array.isArray(keywords) ||
+      keywords.length > 20 ||
+      keywords.some(
         (keyword) =>
           typeof keyword !== "string" ||
           !keyword.trim() ||
@@ -53,7 +56,7 @@ module.exports = function registerGenerateRoutes(app) {
     ) {
       return res.status(400).json({
         success: false,
-        error: "키워드는 1~20개, 각각 100자 이내로 입력해주세요.",
+        error: "키워드는 선택 입력이며 최대 20개, 각각 100자 이내로 입력해주세요.",
       });
     }
 
@@ -71,10 +74,11 @@ module.exports = function registerGenerateRoutes(app) {
     // 2. 공통 입력 정규화 (URL 자동 수집 기능은 포함하지 않습니다.)
     // 원문 URL은 출처 정보로만 전달하며 AI가 주소를 생성하지 않습니다.
     let sourceUrl = "";
-    if (article.url !== undefined && article.url !== "") {
+    const providedUrl = article.url ?? input.source_url;
+    if (providedUrl !== undefined && providedUrl !== "") {
       try {
-        if (typeof article.url !== "string" || article.url.length > 2048) throw new Error();
-        const url = new URL(article.url.trim());
+        if (typeof providedUrl !== "string" || providedUrl.length > 2048) throw new Error();
+        const url = new URL(providedUrl.trim());
         if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error();
         sourceUrl = url.href;
       } catch {
@@ -82,20 +86,11 @@ module.exports = function registerGenerateRoutes(app) {
       }
     }
     const normalizedInput = {
-      article: {
-        url: sourceUrl,
-        article_id:
-          typeof article.article_id === "string" &&
-          article.article_id.trim()
-            ? article.article_id.trim()
-            : "article_01",
-
-        title: article.title.trim(),
-        content: article.content.trim(),
-      },
+      article: coreArticle(article),
+      source_url: sourceUrl,
 
       selected_keywords: [
-        ...new Set(input.selected_keywords.map((value) => value.trim())),
+        ...new Set(keywords.map((value) => value.trim())),
       ],
 
       requirements: (input.requirements || "").trim(),
@@ -112,7 +107,7 @@ module.exports = function registerGenerateRoutes(app) {
 
       res.json({
         success: true,
-        draft,
+        draft: { ...draft, source_url: sourceUrl },
       });
     } catch (error) {
       // 4. API 오류를 사용자 안내 문구로 변환

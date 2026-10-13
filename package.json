@@ -8,7 +8,7 @@
     "dev:pilot": "npm --prefix pilot run dev",
     "build": "vite build",
     "lint": "oxlint",
-    "test": "npm run check:api-boundary && node --test article_editor/dev/tests/datamap-*.test.mjs article_editor/dev/tests/workspace.test.mjs article_editor/dev/tests/core-api-contract.test.mjs article_editor/dev/tests/ipc-transport.test.mjs article_editor/dev/tests/draft-backup.test.mjs article_editor/dev/tests/vault-transfer.test.mjs",
+    "test": "npm run check:api-boundary && node --test article_editor/dev/tests/datamap-*.test.mjs article_editor/dev/tests/workspace.test.mjs article_editor/dev/tests/core-api-contract.test.mjs article_editor/dev/tests/ipc-transport.test.mjs article_editor/dev/tests/draft-backup.test.mjs article_editor/dev/tests/vault-transfer.test.mjs article_editor/dev/tests/platform-state.test.mjs",
     "check:api-boundary": "node article_editor/dev/checks/check-api-boundary.mjs",
     "test:ui": "npm --prefix article_editor run test:ui",
     "dev:core": "python article_editor/app/server.py",

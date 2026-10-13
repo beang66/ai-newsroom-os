@@ -56,3 +56,17 @@ npm run test:ui
 `sample-data/datamap/`의 마크다운 5개는 내부 링크, 백링크, 미해결 링크를 검증합니다. `sample-data/datamap/projects/`에는 오늘의 데스크 6개 프로젝트(폭염·가계부채·집중호우·영화제·국정감사·반도체)의 간략한 근거·취재 자료, 데스크 편성표, 오늘 출고한 기사 10건이 역할 폴더(`기획`·`원자료`·`인터뷰`·`검증`·`취재노트`·`기사`)별로 들어 있습니다(데모용 가상 자료). 데이터맵의 **폴더 추가**로 `sample-data/datamap/` 폴더를 고르면 전체 45개를 한 번에 넣을 수 있습니다.
 
 GitHub `origin/main` 이력을 연결했으며, UI 정리 직전 로컬 DataMap 변경은 `backup/local-before-ui-consolidation` 브랜치에 보존했습니다. 구형 UI는 이 브랜치에서 확인할 수 있습니다. 로컬 커밋은 별도 요청 전에는 GitHub로 push하지 않습니다.
+
+## 개발용 카드 편집실
+
+팀 메인 UI와 별도로 정민님의 카드·사진 편집 및 SNS 작성창 준비 기능을 유지합니다. 실제 게시에는 별도 사용자 동작이 필요합니다.
+
+```powershell
+cd platform-generator
+npm ci
+npm start
+```
+
+http://localhost:3001 에서 사용합니다. 기존 `.env`를 보존하고 OpenAI 설정은 `.env.example`을 참고하세요. Documents 초안 저장은 개발 전용 `PLATFORM_LOCAL_STORAGE=1`로 명시적으로 켜며, 팀 Core의 암호화 저장과 별개입니다. 공용 API·카드 모델·템플릿은 `lib/`에서 제공됩니다.
+
+저장 기사 선택과 고정본 생성은 팀 앱의 기존 보관함·기사 작성·변환·배포 흐름을 사용합니다. 개발용 편집실에는 DB 중계나 별도 기사 입력을 제공하지 않으며 기존 플랫폼 초안 복원과 카드·사진 편집용으로 유지합니다. 지원 결과물은 Instagram·Threads와 독립 카드뉴스입니다. 부제는 팀 화면의 표시 정보이며 현재 세 필드 생성 기사 입력에 포함되지 않습니다. Core 후속 요청과 실제 검증 범위는 [통합 기록](platform-generator/INTEGRATION_NOTES.md)을 참고하세요.

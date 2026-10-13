@@ -652,7 +652,7 @@ def content_hash(title, body_html):
 
 
 SNAPSHOT_FIELDS = ('id', 'workspace_id', 'article_id', 'revision_id', 'revision_no', 'title', 'body_html', 'body_text',
-                   'content_hash', 'created_at')
+                   'content_hash', 'created_at', 'subtitle', 'url')
 
 
 def _snapshot(row):
@@ -666,7 +666,8 @@ def _not_found(message):
 def create_snapshot(article_id, revision_id=None):
     """저장 이력 한 줄을 고정본(계약 ArticleSnapshot)으로 만든다. revision_id(UUID)를 안 주면 최신 이력.
     제목·본문·본문 글자를 **복사해** 두므로 이력이 정리돼도 남는다. 고정본은 고칠 수 없다(트리거).
-    같은 (원고, 이력, 내용 해시) 고정본이 이미 있으면 새로 만들지 않고 그것을 돌려준다. → 고정본"""
+    최신 고정은 제목·HTML·부제·출처가 같으면 플랫폼 초안 저장 이력과 무관하게 재사용한다.
+    명시적 revision_id 는 그 이력의 고정본을 만든다. 해시 레시피·UUID·불변 트리거는 유지한다."""
     article_id = _article_id(article_id)
     if revision_id is not None:
         try:
@@ -674,6 +675,8 @@ def create_snapshot(article_id, revision_id=None):
         except ids.IdError:
             raise RequestError('잘못된 저장 이력 ID입니다.')
     with SAVE_LOCK, vault.connect() as db:
+        if not db.execute('SELECT 1 FROM articles WHERE id = ? AND id NOT IN (SELECT article_id FROM article_deleted)', (article_id,)).fetchone():
+            raise _not_found('기사가 삭제되었거나 존재하지 않습니다.')
         if revision_id is None:
             row = db.execute('SELECT id, revision_no, draft_json FROM article_revisions WHERE article_id = ? '
                              'ORDER BY revision_no DESC LIMIT 1', (article_id,)).fetchone()
@@ -686,14 +689,27 @@ def create_snapshot(article_id, revision_id=None):
         title = draft.get('title') if isinstance(draft.get('title'), str) else ''
         body_html = draft.get('bodyHtml') if isinstance(draft.get('bodyHtml'), str) else ''
         digest = content_hash(title, body_html)
+        subtitle = draft.get('subtitle') if isinstance(draft.get('subtitle'), str) else ''
+        url = draft.get('url') if isinstance(draft.get('url'), str) else ''
         query = 'SELECT ' + ', '.join(SNAPSHOT_FIELDS) + ' FROM article_snapshots '
-        existing = db.execute(query + 'WHERE article_id = ? AND revision_id = ? AND content_hash = ?',
-                              (article_id, row[0], digest)).fetchone()
+        # v4에서 이미 고정한 이력은 metadata를 새 값으로 덮어쓸 수 없다. 저장 후 다시 고정해야 한다.
+        pinned = db.execute(query + 'WHERE article_id = ? AND revision_id = ? AND content_hash = ?',
+                            (article_id, row[0], digest)).fetchone()
+        if pinned:
+            return _snapshot(pinned)
+        # 플랫폼 초안만 저장한 새 이력은 원문을 바꾸지 않는다. 자동 최신 고정은 같은 원문을 재사용한다.
+        # 명시적으로 고른 과거 이력은 기존 revision_id 계약대로 그 이력에 묶는다.
+        where = 'WHERE article_id = ? AND content_hash = ? AND subtitle = ? AND url = ?'
+        args = (article_id, digest, subtitle, url)
+        if revision_id is not None:
+            where += ' AND revision_id = ?'
+            args += (row[0],)
+        existing = db.execute(query + where + ' ORDER BY created_at DESC LIMIT 1', args).fetchone()
         if existing:
             return _snapshot(existing)
         values = (str(uuid.uuid4()), vault.WORKSPACE_ID, article_id, row[0], row[1], title, body_html, _text_of(body_html),
-                  digest, _now())
-        db.execute('INSERT INTO article_snapshots (' + ', '.join(SNAPSHOT_FIELDS) + ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                  digest, _now(), subtitle, url)
+        db.execute('INSERT INTO article_snapshots (' + ', '.join(SNAPSHOT_FIELDS) + ') VALUES (' + ','.join('?' for _ in values) + ')',
                    values)
     return _snapshot(values)
 

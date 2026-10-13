@@ -1,29 +1,23 @@
 const express = require("express");
-const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 const { suggestKeywords } = require("./ai-client");
+function createApp({instagramService,threadsService,storageOptions={}}={}) {
 const app = express();
 
+// 로컬 게시 경로는 자체 JSON 크기 제한과 출처 검사를 먼저 적용합니다.
+const instagram=require("./instagram-local-routes")(app,instagramService);
+const threads=require("./threads-local-routes")(app,threadsService);
+app.locals.closeSns=()=>Promise.allSettled([instagram.close(),threads.close()]);
+
 app.use(express.json({ limit: "50mb" }));
+app.use(express.static(path.join(__dirname,"lib")));
+app.use(express.static(path.join(__dirname,"public")));
 
-// 기본은 저장 경로의 410 안내만 등록합니다. PLATFORM_LOCAL_STORAGE=1은 개발 전용입니다.
-require("./local-storage-routes")(app);
+// Development storage remains opt-in; test paths are injectable.
+require("./local-storage-routes")(app,storageOptions);
 
-// 공개 기사 URL에서 제목과 본문을 가져오는 입력 경로
-const { importArticle } = require("./article-source");
-app.post("/api/article/import", async (req, res) => {
-  try {
-    const article = await importArticle(req.body?.url);
-    res.json({ success: true, article });
-  } catch (error) {
-    const status = [400, 422, 502, 504].includes(error.status) ? error.status : 502;
-    res.status(status).json({
-      success: false,
-      error: error.status ? error.message : "기사 본문을 추출하지 못했습니다. 원문을 직접 붙여넣어주세요.",
-    });
-  }
-});
+// 개발용 편집실은 독립 편집·로컬 복원용이다. 저장 기사 연결은 팀 앱의 Core 경로만 사용한다.
 
 // 팀원 Python 사진 API의 기능·응답 형식을 Node 경로로 연결합니다.
 require("./photo-routes")(app);
@@ -40,77 +34,16 @@ if (!fs.existsSync(OUTPUT_DIR)) {
 
 app.use("/output", express.static(OUTPUT_DIR));
 
-const { buildHtml } = require("./card-renderer"); // 카드뉴스 HTML 은 card-renderer.js 로 옮겼다(동작 동일)
-
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-  });
-});
-
-app.post("/render", async (req, res) => {
-  let browser;
-
-  try {
-    const payload = req.body;
-
-    if (!payload.card_id) {
-      return res.status(400).json({
-        success: false,
-        error: "card_id is required",
-      });
-    }
-
-    const html = buildHtml(payload);
-
-    browser = await chromium.launch({
-      headless: true,
-    });
-
-    const page = await browser.newPage({
-      viewport: {
-        width: 1080,
-        height: 1350,
-      },
-    });
-
-    await page.setContent(html, {
-      waitUntil: "networkidle",
-    });
-
-    const fileName = `${payload.card_id}_${Date.now()}.jpg`;
-    const filePath = path.join(OUTPUT_DIR, fileName);
-
-    await page.screenshot({
-      path: filePath,
-      type: "jpeg",
-      quality: 90,
-      fullPage: true,
-    });
-
-    await browser.close();
-
-    res.json({
-      success: true,
-      card_id: payload.card_id,
-      file_name: fileName,
-      file_path: filePath,
-      image_url: `http://localhost:3000/output/${fileName}`,
-    });
-  } catch (error) {
-    if (browser) {
-      await browser.close();
-    }
-
-    console.error(error);
-
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
+app.get('/health',(req,res)=>res.json({status:'ok'}));
+app.post('/render',async(req,res)=>{try{
+ const payload=req.body;
+ if(typeof payload?.card_id!=='string'||!payload.card_id)return res.status(400).json({success:false,error:'card_id is required'});
+ const {renderCardJpeg}=require('./card-renderer');
+ const bytes=await renderCardJpeg(payload);
+ const fileName=require('crypto').randomUUID()+'.jpg';
+ await fs.promises.writeFile(path.join(OUTPUT_DIR,fileName),bytes);
+ res.json({success:true,card_id:payload.card_id,file_name:fileName,image_url:'/output/'+fileName});
+}catch(error){res.status(error.status||500).json({success:false,error:error.message});}});
 
 app.post("/api/article/keywords", async (req, res) => {
   const article = req.body?.article;
@@ -173,8 +106,11 @@ app.post("/api/article/keywords", async (req, res) => {
 
 
 
-app.listen(3001, () => {
-  console.log("현재 서버 파일:", __filename);
-  console.log("Main UI: run npm run dev from the repository root");
-  console.log("http://localhost:3001");
-});
+return app;
+}
+if(require.main===module){
+ const port=Number(process.env.PORT||3001);
+ const app=createApp();const server=app.listen(port,'127.0.0.1',()=>console.log('편집실: http://localhost:'+port));
+ let stopping=false;for(const signal of ['SIGINT','SIGTERM'])process.on(signal,async()=>{if(stopping)return;stopping=true;await app.locals.closeSns();server.close(()=>process.exit(0));});
+}
+module.exports={createApp};

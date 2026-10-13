@@ -11,6 +11,7 @@ Node 프로세스에는 OpenAI/Gemini 키를 넘기지 않는다.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shutil
@@ -19,7 +20,7 @@ import sys
 import threading
 from pathlib import Path
 
-from .. import media_assets
+from .. import media_assets, vault
 from ..errors import RequestError
 from ..storage import get_snapshot
 
@@ -28,8 +29,71 @@ _WITHHELD_ENV = ("OPENAI_API_KEY", "GEMINI_API_KEY", "AI_PROVIDER", "OPENAI_MODE
 
 
 class PlatformManager:
+    @staticmethod
+    def _render_origin_key(asset_id, article_id, snapshot_id, render_key):
+        origin=json.dumps([article_id,snapshot_id,render_key],ensure_ascii=False,separators=(',',':'))
+        return 'platform_render:'+asset_id+':'+hashlib.sha256(origin.encode('utf-8')).hexdigest()
+
     def __init__(self):
         self._timeout = 210
+        self._sns = None
+        self._sns_lock = threading.RLock()
+
+    def close(self):
+        with self._sns_lock:
+            if self._sns:
+                self._sns.close()
+                self._sns = None
+
+    def sns(self, data):
+        if not self._sns_lock.acquire(blocking=False):
+            raise RequestError('이전 SNS 작업이 진행 중입니다.', 409)
+        try:
+            return self._sns_operation(data)
+        finally:
+            self._sns_lock.release()
+
+    def _sns_operation(self, data):
+        platform, action = data.get('platform'), data.get('action')
+        if platform not in ('instagram', 'threads') or action not in ('connect', 'status', 'prepare', 'close'):
+            raise RequestError('지원하지 않는 SNS 작업입니다.')
+        payload = data.get('payload') or {}
+        if not isinstance(payload, dict): raise RequestError('SNS 입력을 확인해 주세요.')
+        if action == 'prepare':
+            article_id, snapshot_id = data.get('articleId'), data.get('snapshotId')
+            if not isinstance(article_id, str) or not article_id: raise RequestError('SNS 원고의 기사 ID가 필요합니다.')
+            if snapshot_id:
+                _, frozen = self._from_snapshot(data)
+                if frozen['article_id'] != article_id: raise RequestError('SNS 원고와 고정본의 기사가 다릅니다.', 409)
+            else:
+                from ..storage import get_article
+                get_article(article_id, photo_refs=True)
+            assets = payload.get('assets', [])
+            if not isinstance(assets, list) or len(assets) > 10: raise RequestError('첨부할 카드 0~10장을 확인해 주세요.')
+            files=[]
+            for index, item in enumerate(assets):
+                if not isinstance(item, dict): raise RequestError('카드 이미지 정보를 확인해 주세요.')
+                if not isinstance(item.get('key'), str) or not item['key']:
+                    raise RequestError('%s번 카드 이미지의 최신성을 확인할 수 없습니다. 다시 렌더해 주세요.' % (index+1), 409)
+                with vault.connect() as db:
+                    key=self._render_origin_key(str(item.get('id')),article_id,snapshot_id,item.get('key'))
+                    row=db.execute('SELECT value FROM app_meta WHERE key=?', (key,)).fetchone()
+                origin=json.loads(row[0]) if row else None
+                if not origin or origin.get('article_id')!=article_id or origin.get('snapshot_id')!=snapshot_id or origin.get('render_key')!=item.get('key'):
+                    raise RequestError('%s번 카드가 다른 기사·고정본의 이미지이거나 최신성을 확인할 수 없습니다. 다시 렌더해 주세요.' % (index+1), 409)
+                raw,mime=media_assets.media_asset_file(item['id'])
+                if mime!='image/jpeg':raise RequestError('SNS 첨부는 렌더한 JPG를 사용해 주세요.')
+                import base64
+                files.append({'order':index+1,'mime':mime,'name':'card_%02d.jpg'%(index+1),'data_url':'data:image/jpeg;base64,'+base64.b64encode(raw).decode('ascii')})
+            payload={**payload,'assets':files}
+        if self._sns is None:
+            from .sns_service import SnsService
+            self._sns=SnsService(self)
+        result=self._sns.call(platform, action, payload)
+        if action=='close':
+            statuses=[self._sns.call(name,'status',{}) for name in ('instagram','threads')]
+            if all(status.get('reason')=='browser_closed' for status in statuses):self.close()
+        return result
 
     @staticmethod
     def _generator_dir() -> Path:
@@ -163,7 +227,8 @@ class PlatformManager:
         if snapshot_id is None:
             return None, None
         snapshot = get_snapshot(snapshot_id)  # 형식 오류 400, 없으면 404
-        return snapshot["id"], {"article_id": snapshot["article_id"], "title": snapshot["title"], "content": snapshot["body_text"]}
+        return snapshot["id"], {"article_id": snapshot["article_id"], "title": snapshot["title"],
+                                "subtitle": snapshot["subtitle"], "url": snapshot["url"], "content": snapshot["body_text"]}
 
     def keywords(self, data: dict):
         snapshot_id, snapshot_article = self._from_snapshot(data)
@@ -191,6 +256,28 @@ class PlatformManager:
             return {**result, "snapshotId": snapshot_id} if isinstance(result, dict) else result
         return self._call({"action": "generate", "platform": platform, "payload": payload})
 
+    @staticmethod
+    def _check_origin(draft, article, snapshot_id):
+        if not isinstance(draft, dict):
+            raise RequestError("검수할 원고가 필요합니다.")
+        if draft.get("article_id") and draft["article_id"] != article.get("article_id"):
+            raise RequestError("원고와 기준 기사가 다릅니다. 해당 기사의 원고를 사용해 주세요.", 409)
+        if draft.get("snapshot_id") and draft["snapshot_id"] != snapshot_id:
+            raise RequestError("원고와 기준 고정본이 다릅니다.", 409)
+
+    def validate(self, data: dict):
+        """플랫폼 변환 왜곡·요구사항 검수. 취재자료 기반 기사 팩트체크와 별개다."""
+        payload = data.get("payload")
+        if not isinstance(payload, dict):
+            raise RequestError("검수 입력이 필요합니다.")
+        snapshot_id, frozen = self._from_snapshot(data)
+        article = frozen or payload.get("article")
+        if not isinstance(article, dict):
+            raise RequestError("검수 기준 기사가 필요합니다.")
+        self._check_origin(payload.get("draft"), article, snapshot_id)
+        result = self._call({"action": "validate", "payload": {**payload, "article": article}})
+        return {**result, **({"snapshotId": snapshot_id} if snapshot_id else {})}
+
     def render(self, data: dict):
         """카드뉴스 카드 하나를 이미지로 그려 암호화 저장소에 MediaAsset 으로 등록한다. → {cardId, asset[, snapshotId]}
         data: {payload: {card_id, template, content:{keyword, headline, body}, image?:{url, photographer}}, snapshotId?}
@@ -199,7 +286,9 @@ class PlatformManager:
         payload = data.get("payload")
         if not isinstance(payload, dict) or not isinstance(payload.get("card_id"), str) or not payload["card_id"].strip():
             raise RequestError("카드 정보(payload.card_id)가 필요합니다.")
-        snapshot_id, _ = self._from_snapshot(data)  # 있으면 존재 확인만(형식 오류 400, 없으면 404) 하고 응답에 싣는다
+        snapshot_id, frozen = self._from_snapshot(data)
+        if frozen and payload.get("article_id") and payload["article_id"] != frozen["article_id"]:
+            raise RequestError("카드와 렌더 기준 고정본의 기사가 다릅니다.", 409)
         result = self._call({"action": "render", "payload": payload})
         image = result.get("data") if isinstance(result, dict) else None
         if not isinstance(image, str) or result.get("mime_type") != "image/jpeg":
@@ -212,6 +301,10 @@ class PlatformManager:
             "caption": headline.strip()[:2000] if isinstance(headline, str) else "",
             "data": "data:image/jpeg;base64," + image,
         })
+        origin={'article_id':frozen['article_id'] if frozen else payload.get('article_id'), 'snapshot_id':snapshot_id, 'render_key':payload.get('render_key')}
+        with vault.connect() as db:
+            key=self._render_origin_key(asset['id'],origin['article_id'],snapshot_id,origin['render_key'])
+            db.execute('INSERT OR REPLACE INTO app_meta(key,value) VALUES (?,?)', (key,json.dumps(origin)))
         return {"cardId": card_id, "asset": asset, **({"snapshotId": snapshot_id} if snapshot_id else {})}
 
     def publish(self, data: dict):

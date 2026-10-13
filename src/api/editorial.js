@@ -43,8 +43,8 @@ export async function suggestSubtitles(body, currentHeadline = "") {
 }
 
 /** 기사에 맞는 사진 검색어(영어 3개) */
-export async function photoKeywords(body) {
-  return clean((await core.assist({ kind: "photo_keywords", body: textWithoutPhotos(body) })).keywords || []);
+export async function photoKeywords(body, card) {
+  return clean((await core.assist({ kind: "photo_keywords", body: textWithoutPhotos(body), ...(card ? {card} : {}) })).keywords || []);
 }
 
 /** 한글 사진 검색어 → Unsplash 에서 잘 찾히는 영어 검색어(영어·숫자만이면 그대로) */
@@ -374,7 +374,7 @@ async function fromMediaRef(value, loaded) {
 const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 /** 원고(content) → 발행·변환용 HTML. 문단은 빈 줄, 줄바꿈은 <br>, 사진 자리 줄은 v30 과 같은 <figure data-photo-id> */
-function bodyHtmlOf(content, photos) {
+export function bodyHtmlOf(content, photos) {
   const out = [];
   let para = [];
   const flush = () => {
@@ -421,6 +421,7 @@ async function draftOf(article, articleId) {
     ...(articleId ? { articleId } : {}),
     title: article.title || "",
     subtitle: article.subtitle || "",
+    url: typeof article.url === "string" ? article.url : "", // DB 원문 링크: 수집용 입력이 아닌 출처
     bodyHtml,
     photos,
     content: article.content || "", // 다시 열 때 그대로 복원(bodyHtml 은 발행·변환용)
@@ -440,15 +441,28 @@ async function draftOf(article, articleId) {
 
 /** 코어의 원고(draft) → 화면의 기사 객체. content 가 없는 옛 원고는 bodyHtml 에서 글자만 */
 function articleFromDraft(draft, empty) {
-  const content = draft.content ?? new DOMParser()
-    .parseFromString((draft.bodyHtml || "").replace(/<br\s*\/?>/g, "\n").replace(/<\/p>/g, "\n\n"), "text/html")
-    .body.textContent.trim();
+  if (draft.content != null && typeof draft.content !== "string" && typeof draft.bodyHtml !== "string") {
+    throw Error("기사 본문 형식을 읽을 수 없습니다. 기사 편집 화면에서 확인해 주세요.");
+  }
+  let content = draft.content;
+  if (typeof content !== "string") {
+    // 기존 HTML → 편집 본문 변환을 재사용한다. 사진 설명·삭제된 글을 기사 내용으로 보내지 않는다.
+    const document = new DOMParser().parseFromString((draft.bodyHtml || "").replace(/<br\s*\/?>/g, "\n").replace(/<\/p>/g, "\n\n"), "text/html");
+    document.querySelectorAll('s,del').forEach(element => element.remove());
+    document.querySelectorAll('figure').forEach(element => {
+      const id=element.getAttribute('data-photo-id');
+      if(id && (draft.photos || []).some(photo=>photo.id===id)) element.replaceWith(document.createTextNode(`\n[사진:${id}]\n`));
+      else element.remove();
+    });
+    content=document.body.textContent.trim();
+  }
   return {
     ...empty,
     articleId: draft.articleId,
     revisionNo: Number.isInteger(draft.revisionNo) ? draft.revisionNo : null,
     title: draft.title || "",
     subtitle: draft.subtitle || "",
+    url: typeof draft.url === "string" ? draft.url : "",
     content,
     category: draft.category || "",
     subcategory: draft.subcategory || "",
@@ -494,8 +508,12 @@ async function articleFromResponse(response, empty) {
 }
 
 /** 보관소·데스크에서 고른 기사(그 기사의 최신 원고)를 편집기용 기사 객체로 */
-export async function loadStoredArticle(articleId, empty) {
-  return hydrateArticle(await core.getArticle(articleId), empty);
+export async function loadStoredArticle(articleId, empty, signal) {
+  const response = await core.getArticle(articleId, undefined, signal);
+  if (!response?.draft) throw Error("기사가 삭제되었거나 조회되지 않습니다.");
+  const article = await hydrateArticle(response, empty);
+  if (signal?.aborted) throw new DOMException("기사 조회가 취소됐습니다.", "AbortError");
+  return article;
 }
 
 async function hydrateArticle({ draft, revisionKind, lastManual, published, editedAfterPublish, firstSavedAt }, empty) {

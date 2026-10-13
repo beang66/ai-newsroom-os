@@ -1,13 +1,14 @@
 const { validateDraft } = require("./draft-validator");
+const { coreArticle } = require("./lib/article-contract");
 
 module.exports = function registerValidationRoutes(app) {
   app.post("/api/validate", async (req, res) => {
     const input = req.body;
 
-    if (!["card_news", "instagram", "threads", "blog"].includes(input?.platform)) {
+    if (!["card_news", "instagram", "threads"].includes(input?.platform)) {
       return res.status(400).json({
         success: false,
-        error: "검수할 플랫폼을 확인해주세요.",
+        error: "지원하지 않는 검수 플랫폼입니다. Instagram·Threads·독립 카드뉴스만 지원합니다.",
       });
     }
 
@@ -64,7 +65,7 @@ module.exports = function registerValidationRoutes(app) {
     }
 
     try {
-      const validation = await validateDraft(input);
+      const validation = await validateDraft({ ...input, article: coreArticle(input.article) });
 
       res.json({
         success: true,

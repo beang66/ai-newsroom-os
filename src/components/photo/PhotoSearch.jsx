@@ -15,7 +15,7 @@ const SORTS = [["all", "전체"], ["latest", "최신순"], ["oldest", "오래된
 const UTM = "?utm_source=article_workspace&utm_medium=referral";
 const btn = "px-2.5 py-1 rounded-full text-[11px] font-bold border border-[#DDD6CB] bg-white hover:bg-[#F5F2ED] text-[#23211F] cursor-pointer disabled:opacity-50";
 
-export default function PhotoSearch({ body, onClose, onChoose }) {
+export default function PhotoSearch({ body, card, onClose, onChoose }) {
   const [query, setQuery] = useState("");
   const [keywords, setKeywords] = useState({ busy: false, list: [], error: "" });
   const [result, setResult] = useState({ busy: false, data: null, error: "", query: "", page: 1, searched: "" });
@@ -32,11 +32,13 @@ export default function PhotoSearch({ body, onClose, onChoose }) {
   }, [onClose]);
 
   useEffect(() => {
-    if ((body || "").trim().length < 80) return; // v30 과 같은 기준
+    if (!card && (body || "").trim().length < 80) return;
+    let cancelled=false;
     setKeywords({ busy: true, list: [], error: "" });
-    photoKeywords(body)
-      .then((list) => setKeywords({ busy: false, list, error: "" }))
-      .catch((e) => setKeywords({ busy: false, list: [], error: e.message }));
+    photoKeywords(body,card)
+      .then((list) => {if(!cancelled)setKeywords({ busy: false, list, error: "" });})
+      .catch((e) => {if(!cancelled)setKeywords({ busy: false, list: [], error: e.message });});
+    return ()=>{cancelled=true;};
     // 창을 열 때 한 번만
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

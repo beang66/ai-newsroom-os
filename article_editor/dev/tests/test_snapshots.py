@@ -26,6 +26,44 @@ def draft(article_id=None, **fields):
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_source_metadata_is_frozen_and_platform_only_save_reuses_snapshot(self):
+        aid = storage.save_article(draft(title='DB 기사', subtitle='실제 부제', url='https://example.test/source',
+                                         content='원문', bodyHtml='<p>원문</p>'))['articleId']
+        first = storage.create_snapshot(aid)
+        storage.save_article(draft(aid, title='DB 기사', subtitle='실제 부제', url='https://example.test/source',
+                                   content='원문', bodyHtml='<p>원문</p>', platformDrafts={'threads': {'opening': '사용자 편집'}}))
+        self.assertEqual(storage.create_snapshot(aid), first)
+        self.assertEqual((first['subtitle'], first['url']), ('실제 부제', 'https://example.test/source'))
+        # 부제만 변경해도 새로운 고정본. 기존 해시 규칙은 그대로이고 옛 고정본도 그대로다.
+        storage.save_article(draft(aid, title='DB 기사', subtitle='변경 부제', url='', content='원문', bodyHtml='<p>원문</p>'))
+        second = storage.create_snapshot(aid)
+        self.assertNotEqual(second['id'], first['id'])
+        self.assertEqual(second['content_hash'], first['content_hash'])
+        self.assertEqual(second['url'], '')
+        self.assertEqual(storage.get_snapshot(first['id']), first)
+        from core.managers.platform_manager import PlatformManager
+        sid, source = PlatformManager._from_snapshot({'snapshotId': first['id']})
+        self.assertEqual(sid, first['id'])
+        self.assertEqual(source, {'article_id': aid, 'title': 'DB 기사', 'subtitle': '실제 부제', 'url': 'https://example.test/source', 'content': '원문'})
+
+    def test_legacy_v4_migration_preserves_snapshot_and_unknown_metadata_stays_empty(self):
+        first = storage.create_snapshot(self.aid)
+        with vault.connect() as db:
+            db.execute('ALTER TABLE article_snapshots DROP COLUMN subtitle')
+            db.execute('ALTER TABLE article_snapshots DROP COLUMN url')
+            db.execute('PRAGMA user_version = 4')
+        self.assertEqual(storage.get_snapshot(first['id']), first)
+        with vault.connect() as db:
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], vault.SCHEMA_VERSION)
+
+    def test_deleted_article_cannot_make_new_snapshot_but_existing_evidence_remains(self):
+        first = storage.create_snapshot(self.aid)
+        storage.delete_article(self.aid)
+        with self.assertRaises(RequestError) as caught:
+            storage.create_snapshot(self.aid)
+        self.assertEqual(caught.exception.status, 404)
+        self.assertEqual(storage.get_snapshot(first['id']), first)
+
     def setUp(self):
         use_temp_vault(self)
         self.aid = storage.save_article(draft(title='제목1', bodyHtml=BODY1))['articleId']

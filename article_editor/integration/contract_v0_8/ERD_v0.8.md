@@ -102,6 +102,8 @@ Adapter에서 같은 legacy ID를 여러 번 변환해도 같은 canonical ID가
 
 **생성 후 기사 내용은 수정하지 않습니다.** 내용이 바뀌면 새 Snapshot을 만듭니다.
 
+2026-10-12 DB 기사 입력 연결: 원고 JSON의 `subtitle`, 선택적 출처 `url`도 같은 고정본에 복사합니다. 새 기사 저장소나 ID는 만들지 않습니다. DB schema v5는 기존 고정본을 수정하지 않고 빈 기본값의 열만 추가합니다. 기존 `content_hash(title, body_html)` 레시피는 유지하고 재사용 비교에 부제·출처도 포함합니다. 최신 자동 고정은 원문이 같으면 플랫폼 편집 저장 이력과 무관하게 재사용하며, 명시적인 `revision_id`로 고른 이력은 해당 이력의 고정본 계약을 유지합니다. 옛 고정본에 없던 메타데이터는 현재 기사에서 임의로 보충하지 않습니다.
+
 ### ReportingProject / ArticleSource — 취재건과 기사 자료
 `ReportingProject` 필수: `id`, `workspace_id`, `name`. 기존 critique-organizer의 `projects`를 받는 Workspace 내부 취재 컬렉션입니다.
 

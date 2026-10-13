@@ -2,7 +2,7 @@
 // AI_PROVIDER=gemini 또는 openai. 자동으로 다른 유료 API로 전환하지 않습니다.
 const { AI_ENDPOINTS } = require('./lib/api');
 function provider() {
-  const value = (process.env.AI_PROVIDER || 'gemini').trim().toLowerCase();
+  const value = (process.env.AI_PROVIDER || 'openai').trim().toLowerCase();
   if (!['gemini', 'openai'].includes(value)) throw new Error('AI_PROVIDER는 gemini 또는 openai로 설정해주세요.');
   return value;
 }
@@ -68,7 +68,7 @@ class AiProvider {
   async createGeminiResponse(request) {
     const key = apiKey();
     if (!key) throw problem('.env에 GEMINI_API_KEY를 입력해주세요.', 503, 'MISSING_API_KEY');
-    if (!AI_ENDPOINTS?.gemini) throw new Error('api.js의 AI_ENDPOINTS 설정이 없습니다. 전환 스크립트를 실행해주세요.');
+    if (!AI_ENDPOINTS?.gemini) throw new Error('lib/api.js의 AI_ENDPOINTS.gemini 설정을 확인해주세요.');
     const selectedModel = model().replace(/^models\//, '');
     if (!/^[A-Za-z0-9._-]+$/.test(selectedModel)) throw new Error('GEMINI_MODEL 값을 확인해주세요.');
     const schema = request.text?.format?.schema;

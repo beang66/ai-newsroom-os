@@ -4,7 +4,7 @@ import { getBackup, backupNow, listBackups, restoreBackups, disableBackup } from
 const when = (iso) => (iso ? new Date(iso).toLocaleString("ko-KR") : "");
 
 // 작성 중 기사의 서버 백업(암호문만 서버에, 열쇠는 우리 백엔드가 관리 — 사용자는 복구 키를 다루지 않는다).
-// 기사 텍스트·이력만 올리고 취재자료·사진·녹취는 올리지 않는다. 자동으로 올라가며(저장 뒤 30초 조용하면, 계속 쓰는 중에도 5분마다) 여기서는 상태·지금 백업·복구를 다룬다.
+// 기사 텍스트·이력만 올리고 취재자료·사진·녹취는 올리지 않는다. 자동으로 올라가며(저장 뒤 30초 조용하면, 계속 쓰는 중에도 5분마다) 여기서는 상태와 복구만 다룬다.
 export default function CloudBackupSection({ enabled: savedEnabled, ready, onToggle, onError }) {
   const [enabled, setEnabled] = useState(savedEnabled); // 누르면 바로 바뀌어 보이고, 실패하거나 취소하면 되돌린다
   useEffect(() => { setEnabled(savedEnabled); }, [savedEnabled]);
@@ -23,11 +23,10 @@ export default function CloudBackupSection({ enabled: savedEnabled, ready, onTog
     finally { setBusy(false); refresh(); }
   };
 
-  // 올리지 못한 이유가 있으면(백엔드 키 없음·인터넷 끊김 등) 성공처럼 보이지 않게 오류로 보여 준다
+  // 켤 때 이 PC 의 기사를 한 번 조용히 올린다(이미 있던 기사도 보호). 올리지 못한 이유가 있으면(백엔드 키 없음·인터넷 끊김 등) 오류로 보여 준다
   const upload = async () => {
     const result = await backupNow();
     if (result.error) onError(result.error);
-    else setNotice(`서버에 백업했어요(${result.uploaded}건).`);
   };
 
   const toggle = async (next) => {
@@ -78,8 +77,6 @@ export default function CloudBackupSection({ enabled: savedEnabled, ready, onTog
       )}
       {enabled && status?.error && <p data-testid="backup-error" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">백업이 지연되고 있어요: {status.error} (자동으로 다시 시도합니다)</p>}
       <div className="flex flex-wrap gap-2">
-        <button type="button" data-testid="backup-now" onClick={() => run(upload)}
-          disabled={!enabled || busy} className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer disabled:opacity-50">지금 백업</button>
         <button type="button" data-testid="backup-restore-open" onClick={openRestore} disabled={busy}
           className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer disabled:opacity-50">서버 백업에서 복구</button>
       </div>

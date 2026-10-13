@@ -417,11 +417,10 @@ try {
   });
   await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
   assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), true, "클라우드 백업 기본값은 켜짐");
-  await page.getByTestId("backup-now").click();
-  await page.getByTestId("backup-notice").getByText(/2건/).waitFor();
-  await page.getByTestId("backup-status").getByText(/마지막 백업/).waitFor();
+  assert.equal(await page.getByTestId("backup-now").count(), 0, "백업은 저장할 때 자동으로 되므로 '지금 백업' 버튼이 없다");
   // 서버 백업에서 복구: 목록에서 고르고 복구하면 화면을 다시 불러온다
   await page.getByTestId("backup-restore-open").click();
+  await page.getByTestId("backup-status").getByText(/마지막 백업/).waitFor();
   await page.getByTestId("backup-list").getByText("서버 백업 기사 하나").waitFor();
   await Promise.all([page.waitForEvent("load"), page.getByTestId("backup-restore").click()]);
   assert.deepEqual(backupCalls.find((c) => c.url.endsWith("/restore")).body.articleIds, ["a".repeat(32), "b".repeat(32)]);
@@ -436,7 +435,6 @@ try {
   backupError = "백업 키를 받지 못했어요(시험용 오류)";
   await page.getByTestId("settings-cloud-backup").check();
   await page.getByTestId("settings-error").getByText(/백업 키를 받지 못했어요/).waitFor();
-  assert.equal(await page.getByTestId("backup-notice").count(), 0, "올리지 못했으면 성공 안내를 보이지 않는다");
   backupError = "";
   // 로그인 유지: 로그인 때 켠 상태가 반영되고, 설정에서 끄고 켤 수 있다
   session = { ...session, keepLogin: true };

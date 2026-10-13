@@ -10,7 +10,6 @@ export const signUp = (email, password, remember = false) => core.signUp(email, 
 export const setKeepLogin = (enabled) => core.setKeepLogin(enabled);
 export const signOut = () => core.signOut();
 export const getBackup = (signal) => core.getBackup(signal);
-export const backupNow = (signal) => core.backupNow(signal);
 export const listBackups = (signal) => core.listBackups(signal);
 export const restoreBackups = (articleIds, signal) => core.restoreBackups(articleIds, signal);
 export const disableBackup = (deleteServer, signal) => core.disableBackup(deleteServer, signal);

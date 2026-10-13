@@ -404,11 +404,9 @@ try {
   await settings.waitFor();
   assert.equal(await page.getByTestId("models-install").count(), 0, "환경 설정 창에는 모델 설치가 없어야 합니다");
   const backupCalls = [];
-  let backupError = "";
-  await page.route(/\/api\/backup(?:\/(?:now|list|restore))?$/, async (route) => {
+  await page.route(/\/api\/backup(?:\/(?:list|restore))?$/, async (route) => {
     const url = route.request().url().replace(BASE, "");
     backupCalls.push({ url, body: route.request().method() === "POST" ? route.request().postDataJSON() : null });
-    if (url.endsWith("/now")) return reply(route, { uploaded: 2, enabled: true, pending: 0, lastUploadAt: "2026-10-13T01:00:00+09:00", error: backupError });
     if (url.endsWith("/list")) return reply(route, { backups: [
       { articleId: "a".repeat(32), title: "서버 백업 기사 하나", savedAt: "2026-10-13T00:10:00Z", bytes: 4096 },
       { articleId: "b".repeat(32), title: "서버 백업 기사 둘", savedAt: "2026-10-12T00:10:00Z", bytes: 2048 }] });
@@ -432,10 +430,8 @@ try {
   await page.getByRole("button", { name: "환경 설정", exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
   assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), false, "끈 설정이 유지됨");
-  backupError = "백업 키를 받지 못했어요(시험용 오류)";
-  await page.getByTestId("settings-cloud-backup").check();
-  await page.getByTestId("settings-error").getByText(/백업 키를 받지 못했어요/).waitFor();
-  backupError = "";
+  await page.getByTestId("settings-cloud-backup").check(); // 켜기: 저장할 때부터 자동으로 올라간다(켠 순간 일괄로 올리지 않는다)
+  assert.equal(backupCalls.some((c) => c.url.endsWith("/now")), false, "켤 때 기존 기사를 일괄로 올리지 않는다")
   // 로그인 유지: 로그인 때 켠 상태가 반영되고, 설정에서 끄고 켤 수 있다
   session = { ...session, keepLogin: true };
   await page.reload();

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getBackup, backupNow, listBackups, restoreBackups, disableBackup } from "../api/editorial";
+import { getBackup, listBackups, restoreBackups, disableBackup } from "../api/editorial";
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString("ko-KR") : "");
 
@@ -23,19 +23,10 @@ export default function CloudBackupSection({ enabled: savedEnabled, ready, onTog
     finally { setBusy(false); refresh(); }
   };
 
-  // 켤 때 이 PC 의 기사를 한 번 조용히 올린다(이미 있던 기사도 보호). 올리지 못한 이유가 있으면(백엔드 키 없음·인터넷 끊김 등) 오류로 보여 준다
-  const upload = async () => {
-    const result = await backupNow();
-    if (result.error) onError(result.error);
-  };
-
   const toggle = async (next) => {
     setEnabled(next);
     if (next) {
-      await run(async () => {
-        await onToggle(true);
-        await upload(); // 켜면 이 PC 의 기사를 한 번 올린다
-      });
+      await run(() => onToggle(true)); // 켜는 순간부터 저장할 때마다 자동으로 올라간다(이미 있던 기사는 다음에 저장할 때 올라간다)
       return;
     }
     if (!window.confirm("클라우드 백업을 끌까요?")) { setEnabled(true); return; }

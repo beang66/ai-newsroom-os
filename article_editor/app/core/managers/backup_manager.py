@@ -154,14 +154,6 @@ class BackupManager:
         self._last_upload = time.strftime('%Y-%m-%dT%H:%M:%S%z')
         return True
 
-    def backup_all(self):
-        """이 PC 의 모든 기사를 올린다(처음 켤 때·'지금 백업'). → 올린 수"""
-        from ..read_models import list_articles
-        now = self._clock()
-        for row in list_articles()['articles']:
-            self._dirty.setdefault(row['id'], {'user': self._user(), 'first': now, 'last': now, 'manual': True})
-        return self.flush()
-
     # ---- 복구 ----
     def list(self):
         """서버에 있는 백업 목록 → {backups: [{articleId, title, savedAt, bytes}]} (키로 풀어서 제목을 읽는다)"""

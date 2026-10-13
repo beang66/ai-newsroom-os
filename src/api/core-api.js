@@ -18,7 +18,6 @@ export const ROUTES = Object.freeze({
   backupKey: "/api/backup-key",
   backup: "/api/backup",
   backupList: "/api/backup/list",
-  backupNow: "/api/backup/now",
   backupRestore: "/api/backup/restore",
   backupDisable: "/api/backup/disable",
   transfer: "/api/transfer",
@@ -108,8 +107,6 @@ export function createCoreApi(transport) {
     /** 로컬 모델 상태(설치 여부·진행률·마지막 오류) — 첫 사용 때 내려받는다 */
     /** 작성 중 기사 서버 백업 상태 → { enabled, pending, lastUploadAt, error } */
     getBackup: (signal) => transport.json(ROUTES.backup, null, signal),
-    /** 이 PC 의 모든 기사를 지금 서버에 올린다 → { uploaded, ...상태 } */
-    backupNow: (signal) => transport.json(ROUTES.backupNow, {}, signal),
     /** 서버에 있는 내 백업 목록 → { backups: [{ articleId, title, savedAt, bytes }] } */
     listBackups: (signal) => transport.json(ROUTES.backupList, null, signal),
     /** 선택한 기사를 서버 백업에서 이 PC 로 복구 → { restored, skipped } */

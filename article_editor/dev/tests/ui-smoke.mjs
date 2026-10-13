@@ -193,15 +193,19 @@ try {
   page.on("dialog",acceptTestDialog);
 
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
-  // 사이드바(main 디자인)의 메뉴 이름 — 접힌 상태에서는 버튼 title 로 보인다
-  const NAV = { "오늘의 데스크": "오늘의 데스크", "기사 작성": "기사 작성", "녹음 파일": "인터뷰·녹취", "플랫폼 변환": "변환·배포", "데이터맵": "데이터맵", "보관함": "보관함" };
+  // 사이드바 버튼 title(내 사이드바)과 화면 제목(page-heading, 데이터 navigation.js)은 이름이 다르다.
+  // 기사 작성·인터뷰 화면은 상단 제목 대신 자체 작업 화면(저장 상태 표시 / 녹취 화면)이 열린다.
+  const NAV_BUTTON = { "오늘의 데스크": "오늘의 데스크", "기사 작성": "기사 작성", "녹음 파일": "인터뷰 & 오디오", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터 맵", "보관함": "기사 보관함" };
+  const NAV_HEADING = { "오늘의 데스크": "오늘의 데스크", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터맵", "보관함": "보관함" };
+  const READY = '[data-testid="page-heading"], [data-testid="save-status"], [data-testid="interview-studio"], .writer-workspace';
   const go = async (title) => {
-    await page.locator(`button[title="${NAV[title] || title}"]`).first().click();
-    await page.getByTestId('page-heading').filter({ hasText: NAV[title] || title }).waitFor();
+    await page.locator(`button[title="${NAV_BUTTON[title] || title}"]`).first().click();
+    if (NAV_HEADING[title]) await page.getByTestId('page-heading').filter({ hasText: NAV_HEADING[title] }).waitFor();
+    else await page.locator(READY).first().waitFor();
   };
   // 복구 후 HTML load와 실제 원고 조회 완료는 다르다. 작업 영역 재마운트가 끝난 뒤 다음 창을 연다.
   const waitWorkspaceReady = async () => {
-    await page.getByTestId('page-heading').waitFor();
+    await page.locator(READY).first().waitFor();
     await page.getByTestId('workspace-loading').waitFor({ state: 'detached' });
     await page.locator('header').getByText(session.email, { exact: true }).waitFor();
   };

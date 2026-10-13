@@ -16,6 +16,7 @@ import SettingsView from "./components/SettingsView";
 
 import { initialArticles } from "./data/mockData";
 import { createEmptyArticle } from "./data/article";
+import { destinations } from "./data/navigation";
 import { core } from "./api/core.js";
 import { listStoredArticles, loadArticleById, loadLatestArticle, saveArticle } from "./services/editorialStore";
 import PlatformStudio from "./components/PlatformStudio";
@@ -81,8 +82,17 @@ const getAmbientGradient = (activeTab, factCheckActive) => {
   return editorialSoftGradient;
 };
 
+// 마지막으로 보던 화면 — 이 PC 화면 설정이라 브라우저 저장소에 둔다(없거나 막혀도 동작). 처음 열면 오늘의 데스크(main 과 같음)
+const TAB_KEY = "ai-newsroom:lastTab";
+const readTab = () => { try { const tab = localStorage.getItem(TAB_KEY); return destinations.some((item) => item.id === tab) ? tab : "desk"; } catch { return "desk"; } };
+const writeTab = (tab) => { try { localStorage.setItem(TAB_KEY, tab); } catch { /* 저장 못 해도 그만 */ } };
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState("writer");
+  const [activeTab, setActiveTabState] = useState(readTab);
+  const setActiveTab = useCallback((target) => {
+    setActiveTabState(target);
+    if (destinations.some((item) => item.id === target)) writeTab(target);
+  }, []);
   const [article, setArticle] = useState(initialArticles[0]);
   const [storageStatus, setStorageStatus] = useState("최근 원고를 불러오는 중…");
   const revisionNo = useRef(null);
@@ -103,6 +113,9 @@ export default function App() {
   const savedIdRef = useRef(null); // 가장 최근에 Core 에 저장된 기사 ID(렌더를 기다리지 않고 바로 읽는다)
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
+  // 최근 원고를 불러오지 못했을 때(로그인 문제 제외): 빈 원고를 보여 저장하지 않고, 오류와 '다시 불러오기'를 보인다(main 과 같음)
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -119,12 +132,13 @@ export default function App() {
       })
       .catch((error) => {
         if (!active) return;
+        if (error.code !== "AUTH_REQUIRED") setLoadError(error?.message || "최근 원고를 불러오지 못했습니다.");
         setStorageStatus(error.code === "AUTH_REQUIRED"
           ? "로그인하면 저장된 원고를 불러옵니다."
           : `로컬 Core에 연결하지 못했습니다: ${error.message}`);
       });
     return () => { active = false; };
-  }, []);
+  }, [loadAttempt]);
 
   useEffect(() => {
     if (Number.isInteger(article.revisionNo)) revisionNo.current = article.revisionNo;
@@ -547,7 +561,12 @@ export default function App() {
             {!isPhotoEditing && (
               <p className="px-3 pb-1 text-[11px] text-slate-500" role="status">{storageStatus}</p>
             )}
-            {activeTab === "writer" || activeTab === "publish" || activeTab === "factcheck" ? (
+            {!isLoaded && loadError ? (
+              <div role="alert" className="py-24 text-center text-sm text-red-700">
+                <p>{loadError}</p>
+                <button type="button" onClick={() => { setLoadError(""); setLoadAttempt((attempt) => attempt + 1); }} className="mt-4 rounded-full border px-4 py-2 cursor-pointer">다시 불러오기</button>
+              </div>
+            ) : activeTab === "writer" || activeTab === "publish" || activeTab === "factcheck" ? (
               <ArticleWriter
                 article={article}
                 setArticle={setArticle}
@@ -580,7 +599,8 @@ export default function App() {
                 <DataMapView articleId={mapArticleId || article.articleId} />
               </main>
             ) : activeTab === "archive" ? (
-              <main className="flex-1 min-w-0 transition-all z-20 py-2">
+              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
+                <PageHeader page="archive" />
                 {listError && <div role="alert" className="workspace-global-error">저장된 기사 목록을 불러오지 못했습니다. {listError}</div>}
                 {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
                 <ArchiveView article={article} articles={archiveArticles} onOpen={(id) => changeArticle(id, "writer")} onDelete={deleteArticle}

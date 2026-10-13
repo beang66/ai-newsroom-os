@@ -1,5 +1,25 @@
 # 플랫폼 로컬 통합 및 검증 기록
 
+## 지정 팀 브랜치 업로드 준비 (2026-10-13, 현재 상태)
+
+- 사용자 승인 대상은 팀 origin `https://github.com/beang66/ai-newsroom-os.git`의 **feature/platform-generator 하나**입니다. 로컬 작업 브랜치 `feature/platform-update-20261009`를 유지하고 `git push origin HEAD:refs/heads/feature/platform-generator`만 사용합니다. main/다른 브랜치/태그/personal에는 쓰지 않으며 강제 푸시·PR 생성/병합·배포 설정 변경을 하지 않습니다.
+- 승인 후 실제 fetch 결과 main `95567ee`와 대상 브랜치 `9642134`가 모두 HEAD `e598981`의 조상입니다. 누락 변경·새 병합·충돌 없음. 최근 생성 오류 보완 5개 파일은 로컬 보존 커밋 `e598981`에 포함했습니다.
+- **PR #44 담당자 확인 반영:** ArchiveView.jsx, DeskView.jsx, src/data/desk.js는 최신 main과 같습니다. 실제 보관함은 전체/원고/송고 필터이며 stageOf는 없습니다. 데스크 예시의 CMS 이관은 convert로 이동합니다. 담당자가 현재 코드상 문제 없음으로 확인했으므로 두 항목은 최신 코드 유지/비교 완료로 기록합니다. 안내문을 근거로 단계 계약·필터를 새로 구현하지 않습니다. 실제 기사와 읽기 전용 예시는 계속 구분하고, 예시 ID를 Core 기사로 적용하지 않습니다. 아래 과거 절의 두 담당자 확인 대기는 이 확인으로 종료하며 PR #42·#43 별도 보완 대기는 유지합니다.
+- 변경 생산 코드는 모두 platform-generator 안에 있습니다. 편집실의 미리보기/명시적 원문 적용, App의 changeArticle(id, "convert"), 생성/검수/사진 편집/저장·복원/렌더/SNS 연결을 보존합니다. Core 입력은 {article_id,title,content}이며 새로운 DB 접근이나 ID 계약을 만들지 않습니다. Core Blog 허용 목록·고정본 부제·원문 캡션/대체 텍스트 분리는 담당자 후속 요청입니다.
+- 검증 재사용 근거: 루트 src/API/Core/시험/프론트 산출물은 통합 `3af8599` 이후 그대로이고, 최신 main도 동일합니다. 루트 npm test 44개(API 경계 포함), 프론트 build 및 UI smoke, Python 전체 418개(기존 skip 6), backend 16개 결과를 재사용합니다. 변경된 생성 코드에는 이후 실행한 플랫폼 45개+로컬 저장 검사 및 Python platform 25개 결과를 적용합니다. 실제 AI 재생성 성공·로그인 후 EXE 전체 작업 성공으로 확대하지 않습니다.
+- 업로드 후보 현재 트리와 main 이후 새 이력의 금지 데이터 경로, 변경 소스의 비밀값 패턴, KEEP 삭제, 예상하지 않은 팀 코드 삭제를 점검합니다. 기존 승인된 URL 수집 코드·미사용 수동 시험·n8n workflow 삭제만 유지합니다. EXE/vendor/빌드 정보/임시 출력물은 ignored이며 Git에 포함하지 않습니다.
+- EXE 패키징 첫 실행은 플랫폼 npm ci의 180초 제한으로 중단됐습니다. 캐시를 이용한 동일 build_ipc.bat 재실행에서 설치·소스 해시 검증·Node 번들 준비가 완료돼 PyInstaller 단계 진행 중입니다. 팀 스크립트/시간 제한/검사 규칙을 변경하지 않았습니다. 최종 결과는 아래에 기록합니다.
+
+### 최종 로컬 검증 및 업로드 전 점검
+
+- `article_editor/packaging/build_ipc.bat` 재실행 **exit 0**, 산출물 `article_editor/dist/ipc/AINewsroom/`. 빌드 정보는 생산 소스 커밋 `e598981`이며 이후 변경은 이 문서뿐입니다. EXE·배포 폴더·vendor·build_info.json은 ignored이고 stage하지 않습니다.
+- 동봉된 생성기 전체 소스 해시(`be607b47213994c1a6ba4bcb76c2eadbe77431630f247de5789e9d3560ed8a4c`), Node 해시, 프론트 파일 목록/바이트 일치 검사 **통과**. 동봉된 Node/생성기로 기존 generation-recovery 회귀 **8개 통과**, 실패/skip 0, exit 0.
+- 실제 EXE `--check`의 STARTUP CHECK PASSED 확인. 격리 경로의 실제 EXE `--smoke write` **8/8 통과**, 재실행 `--smoke read` **8/8 통과**, 두 실행 exit 0. React 마운트, Core HTTP 상태, IPC의 상태/읽기/401 AUTH_REQUIRED 오류, IndexedDB 쓰기/재실행 유지, 합성 파일 전달을 검사했습니다. 시험 창/서버는 자체 종료했습니다.
+- 시험 하네스의 CP949 출력 인코딩과 번들 기준 require 상대 경로를 ignored `platform-generator/output/ipc-exe-qa.py`에서만 수정했습니다. 최초 sandbox의 Node spawn EPERM은 동일 격리 검사를 승인된 실행으로 재시도했습니다. 제품 코드/검사 조건/timeout/skip을 변경하지 않았습니다. 이 하네스는 Core import 전에 env_isolation을 적용하고, 고유 APPDATA·문서·DB·설정·자격 증명 서비스·웹뷰 경로와 루프백 시험 backend를 사용합니다.
+- 현재 트리 566개 경로와 main/대상 브랜치 이후 새 이력 412개 객체(286개 blob)의 금지 데이터 경로/비밀값 패턴 검사 **통과**. 값은 출력하지 않았습니다. git diff --check 통과, 미해결 충돌 없음, KEEP 삭제 없음, 추가 팀 소스 삭제 없음.
+- 최종 fetch에서도 main `95567ee`, 대상 `9642134`가 그대로이며 모두 현재 HEAD에 포함됩니다. 새 병합·생산 코드 수정 없음. 문서 정리 후 로컬 커밋과 지정 refspec의 일반 푸시만 진행하고 원격 HEAD 일치를 확인합니다.
+- **미검증:** 실제 운영 AI로 사용자 원고 재생성, EXE 로그인 후 기사 선택/생성/검수/사진/렌더/SNS 전체 경로, 실제 로그인 유지·운영 backend·클라우드 업로드/PC 이전·실제 SNS 게시. 격리 EXE에는 판정 모델 가중치가 설치되지 않아 로컬 모델 추론은 미검증입니다. 앱 로그인 전 시작·IPC 시험을 전체 제품 기능 성공으로 표시하지 않습니다. 모델 변환 관련 onnx/pycparser 선택 모듈 수집 경고와 기존 support_report.py 문자열 SyntaxWarning은 빌드 중 관찰됐으며 소스를 임의 변경하지 않았습니다.
+
 ## PR #46·#47 재확인 및 IPC 패키징 (2026-10-13)
 
 - 실제 `git fetch origin` 후 최신 main은 `95567ee1ab4cdc17837a8857c1c4debe1b0e80be`입니다. 현재 HEAD `3af8599`에 PR #46 병합 `725fb3a`와 PR #47 병합 `95567ee`가 모두 포함되어 있고 HEAD..origin/main은 비어 있습니다. 새 병합·충돌 해결은 필요하지 않습니다.

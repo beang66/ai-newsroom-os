@@ -26,8 +26,8 @@
 - 검증·전사는 계약이 비동기(202 + 조회)지만 구현은 동기(`runFactcheck`, `transcribe`)로 결과를 바로 돌려준다. `Claim/EvidenceLink/VerificationRun` 정규화 저장은 없고 `factcheck_memo` 캐시만 있다.
 - 구현되지 않은 계약 4개: `searchEvidence`, `getVerificationRun`, `listPlatformOutputs`, `getPlatformOutput` (`x-status: deferred`). 플랫폼 결과는 기사 안의 `platformDrafts/cardNews`에 저장된다.
 - 인증은 로컬 호스트 검사 + 백엔드 로그인(JWT)이며 계약의 bearer/workspace 권한 규칙과 대응하지 않는다.
-- IPC(pywebview)는 아직 구현 전이다. `ipc.js`는 예정된 어댑터이고 HTTP가 유일한 실행 경로다.
-- 실제 EXE·IPC에서 기사 한 건을 저장 → 자료 연결 → 검증 → 지도 조회까지 통과한 확인은 아직 없다(v1.0 확정 조건).
+- IPC(pywebview) 브리지는 2026-10-12 구현됐다(`desktop/ipc_bridge.py`). 창은 IPC, `--browser`·시험은 HTTP 이며 같은 `Handler`를 거쳐 응답이 같다.
+- 기사 한 건을 저장 → 자료 연결 → 검증 → 지도 조회까지 끝까지 통과하는 점검은 팀원 브랜치 병합 뒤로 보류했다(v1.0 확정 조건). 팀원 PC 에서 IPC 빌드의 첫 실행·로그인·저장·재시작은 확인됐다.
 
 ## 1. 현재 실제 호출 경계
 

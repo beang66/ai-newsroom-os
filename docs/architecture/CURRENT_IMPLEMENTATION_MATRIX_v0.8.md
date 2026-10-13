@@ -5,6 +5,27 @@
 
 > 이 문서는 **“지금 각자 만든 기능이 어디까지 되어 있고, 합칠 때 무엇을 맞춰야 하는지”** 한눈에 보기 위한 문서입니다. 현재 코드를 무조건 정답으로 삼는 것이 아니라, 잘 만든 부분은 살리고 서로 다른 부분만 공통 규칙에 맞춥니다.
 
+## 구현 현황 (2026-10-13 갱신)
+
+아래 "기능별 현재 상태" 표는 2026-10-04 점검 시점의 기록이다. 그 뒤 App Core 에 구현된 것과 남은 것은 다음과 같다.
+
+| 기능 | 2026-10-13 현재 | 남은 일 |
+|---|---|---|
+| UI ↔ Core | 창: pywebview IPC 브리지, 브라우저·시험: HTTP. 같은 named method·같은 응답(시험으로 비교) | 팀원 브랜치 병합 후 재확인 |
+| 기사 저장 | 계정별 SQLCipher 저장소, `ArticleRevision`(UUID id, `expectedRevisionNo` 충돌 검사), 수동·자동 저장 | — |
+| 고정본 | `ArticleSnapshot` 구현. 키워드·생성·렌더·팩트체크가 `snapshotId`를 받음 | — |
+| 로그인/클라우드 | Supabase Auth(회원가입·로그인·로그인 유지). 기사·자료는 서버에 저장하지 않음 | 서버 저장·팀 공유(S1) |
+| 사진 | 로컬 `media` + `MediaAsset` 등록(`generated` 구분). 검색은 백엔드 경유 Unsplash | — |
+| STT | `transcripts` 저장, 목록·조회·원본 오디오 | 구간(Segment) 고정 ID |
+| 기사 검증 | 로컬 판정기 또는(설정) 외부 모델, 결과는 `factcheck_memo` 캐시. 동기 호출 | `Claim`/`EvidenceLink`/`VerificationRun` 정규화 저장, 비동기 실행 |
+| 근거 검색 | 자료 청킹 → `SourceChunk`·색인 상태 저장, 원격 임베딩 검색 | `EvidenceLink`(주장↔근거 위치) |
+| 플랫폼 변환 | 고정본을 입력, 결과는 기사 안(`platformDrafts`/`cardNews`)에 저장 | 목록·조회 계약(`deferred`) |
+| 이미지 렌더링 | Node 렌더 → JPEG 를 `MediaAsset` 으로 등록, localhost 파일 경로 없음 | — |
+| 작업 상태 | `ProcessingJob`(자료 색인): 조회·취소, 앱 종료 때 중단 처리 | 검증·STT 등을 작업으로 전환 |
+| Data Map | 코어 읽기 모델 `GET /api/knowledge-map` 을 화면이 변환해 표시 | 고도화(DM 마일스톤) |
+
+계약과 구현의 호출 이름·경로 대응은 `CONTRACT_VS_IMPLEMENTATION_v0.8.md`, 저장 현황은 `CORE_REALITY_AUDIT_2026-10-07.md` §0 에 있다.
+
 ## 한눈에 보는 결론
 
 1. 팀원별 기능이 서로 다른 방식으로 만들어져 있습니다. 화면은 React/Vite, 핵심 기능은 Python, 사진 저장은 Supabase, 플랫폼 변환은 Node등으로 나뉘어 있습니다.
@@ -59,8 +80,8 @@ AI 검증, STT, 이미지 생성/렌더링 처럼 바로 끝나지 않는 작업
 - [x] 공통 DB 구조 초안 `ERD_v0.8.md`
 - [x] 공통 API 규칙 초안 `OPENAPI_v0.8.yaml`
 - [x] 팀 공통 테스트용 예시 데이터 `vertical-slice-v0.8.json`
-- [ ] 각 팀원의 기존 기능을 공통 규칙에 연결
-- [ ] 실제 기사 1건으로 처음부터 끝까지 테스트
+- [ ] 각 팀원의 기존 기능을 공통 규칙에 연결 (진행 중: Core 쪽 연결은 위 현황 표 참고)
+- [ ] 실제 기사 1건으로 처음부터 끝까지 테스트 (팀원 브랜치 병합 후)
 - [ ] 테스트에서 발견된 충돌 수정
 - [ ] 모두 통과하면 Contract v1.0 확정
 

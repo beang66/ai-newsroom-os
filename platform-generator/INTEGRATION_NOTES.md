@@ -1,5 +1,26 @@
 # 플랫폼 로컬 통합 및 검증 기록
 
+## PR #46·#47 재확인 및 IPC 패키징 (2026-10-13)
+
+- 실제 `git fetch origin` 후 최신 main은 `95567ee1ab4cdc17837a8857c1c4debe1b0e80be`입니다. 현재 HEAD `3af8599`에 PR #46 병합 `725fb3a`와 PR #47 병합 `95567ee`가 모두 포함되어 있고 HEAD..origin/main은 비어 있습니다. 새 병합·충돌 해결은 필요하지 않습니다.
+- **적용 확인:** SettingsDialog의 다른 PC로 이전 마법사, TransferWizard의 파일 복제본 위치·삭제 안내, SettingsManager의 cloud_backup 기본 true, CloudBackupSection의 저장 시 기사 백업 안내, 암호 입력 백업 UI 제거. 관련 팀 생산 파일은 main과 동일합니다. 백업은 기사 최신 작업본·마지막 수동 저장본이며 사진·플랫폼 원고·카드·SNS 세션의 백업으로 확대 해석하지 않습니다.
+- **검증 재사용:** 통합 커밋 `3af8599`의 루트 npm test 44개(API 경계 포함), npm run build, 전체 Python 418개(기존 skip 6), UI smoke 및 backend 16개. 이후 변경은 이 폴더의 Node 생성 오류 보완과 문서뿐이며 최신 main도 변하지 않았습니다. 생성 오류 보완 후 플랫폼 45개·로컬 저장 검사와 Python platform 25개 통과 기록도 재사용합니다. 변경된 Node 코드의 검증을 이전 37개 결과로 대체하지 않습니다.
+- AGENTS.md 없음, merge/rebase 없음, 기존 사용자 Core PID 21512 유지. Python cloud_backup/transfer 관련 시험은 env_isolation을 vault_fixture 및 Core import보다 먼저 적용하는 기존 격리 패턴을 유지합니다. 이번에 Python 시험/생산 코드를 추가 변경하지 않습니다.
+- 최신 플랫폼 소스를 포함한 유효 EXE가 없어 `article_editor/packaging/build_ipc.bat`으로 새 패키징을 진행합니다. 빌드·실행 결과는 아래에 별도 기록합니다. 사용자 자료 이전·클라우드 업로드·실제 게시는 실행하지 않습니다. 배포 산출물은 Git에서 제외합니다.
+- PR #42·#43 별도 보완안과 PR #44 두 담당자 확인 대기, Core 부제/캡션 분리·Blog 허용 목록 후속 요청을 유지합니다.
+
+## Threads 이모지·카드뉴스 인용 실패 보완 (2026-10-13)
+
+사용자가 보여 준 생성 실패를 `platform-generator` 안에서만 수정했습니다. 수정 당시 HEAD는 통합 커밋 `3af8599`이며, PR #46·#47 재확인 단계에서 이 변경을 로컬 보존 커밋에 포함합니다. 팀 화면·Core·API·DB·프론트 산출물은 수정하지 않았습니다.
+
+- `text-generator.js`: 기존 스키마는 mode=use와 빈 emoji를 동시에 허용했지만 반환 검증은 이를 거부했습니다. presentation을 중첩 anyOf의 사용/생략 조합으로 제한합니다. 표시 공백과 동일 이모지의 variation selector만 정규화하며, 여전히 잘못된 선택이면 새 생성본의 presentation만 한 번 AI로 보완합니다. 본문·해시태그·근거·기사 ID·제작 조건은 그대로 유지합니다. 본문/태그 오류·거절·미완료 응답이나 보완 실패는 성공으로 처리하지 않습니다. 지원 스키마 확인: https://developers.openai.com/api/docs/guides/structured-outputs
+- `card-news-generator.js`, `lib/source-excerpts.js`: 화면의 p2는 주요 정보 ID이며 오류는 원문에 없는 인용입니다. 첫 배분표의 기존 검증과 최대 한 번 재작성 정책을 유지하고, 보완 요청에서는 AI가 실제 본문 구절 선택표의 번호를 선택하게 합니다. 서버가 이를 원문의 정확한 문자열로 연결해 기존 information_plan.source_evidence 형식으로 반환합니다. 잘못된 번호·가짜 인용·카드 배분 오류는 계속 거부합니다. 선택표는 생성기 내부 참조이며 공통 article_id/snapshot_id를 만들지 않습니다. 원문·사진 캡션·Unicode·숫자를 지우거나 요약하지 않고 제목을 본문 근거로 대신 쓰지 않습니다. 인용 존재와 의미 일치는 구분하며 기존 사실/요구사항 의미 검수도 유지합니다.
+- 기존 저장 초안이나 사용자가 편집한 결과를 자동으로 재작성하지 않습니다. 정상 생성에는 추가 AI 호출을 하지 않으며 Threads의 표시 오류 보완만 최대 한 번 추가 호출합니다. 카드뉴스 보완은 기존 한 번의 배분표 재시도 안에서 처리합니다.
+
+검증: `tests/generation-recovery.test.cjs` 8개 회귀 통과(불가능한 이모지 조합, 생략 조건, 표시 형식, 보완 한도/실패, 본문·태그·거절, 실제 인용 선택·번호 오류·캡션 보존, 실제 Node Core stdin/stdout 추가 요청). `npm test --prefix platform-generator`는 **45개 및 로컬 저장 검사 통과**, 실패/skip 0. `.runtime` 의존성의 `python -m unittest discover -s article_editor/dev/tests -p 'test_platform*.py'` **25개 통과**로 기존 실제 Core→Node 입력/출력 연결을 확인했습니다. AI는 대역이며 실계정·DB·SNS 게시를 사용하지 않습니다. 구문 검사·git diff --check 통과.
+
+프론트와 공통 API 소스/의존성이 바뀌지 않아 기존 `3af8599`의 루트 44개·빌드·UI 스모크 결과는 반복하지 않았습니다. 이번 오류의 실제 운영 AI 응답/사용자 화면 재생성은 아직 미검증입니다. 이 절의 자동 테스트를 실제 운영 AI 성공으로 표시하지 않습니다. PR #42·#43 별도 보완안과 PR #44 담당자 확인 대기는 유지하며 push·PR 없음.
+
 ## 최신 main 로컬 통합 승인·담당자 확인 대기 (2026-10-13)
 
 이번 승인은 기존 미커밋 플랫폼 기능을 커밋으로 보존한 뒤 최신 origin/main의 기존 변경을 작업 브랜치에 통합하고 필요한 검증·빌드·로컬 커밋을 수행하는 범위입니다. PR #42의 송고 중 편집 상태 보완과 PR #43의 계정 전환/백업 경쟁 조건·SNS 정리·IPC 미리보기·시험 격리 추가 보완은 별도 승인 대기이며 자동으로 실행하지 않습니다. main 직접 작업·push·PR 없음.

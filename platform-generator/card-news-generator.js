@@ -10,6 +10,7 @@ const path = require("path");
 const OpenAI = require("./ai-provider");
 const { getPlatformRules } = require("./platform-rules");
 const CardModel = require("./lib/card-model");
+const {sourceExcerpts,resolvePlanEvidence}=require('./lib/source-excerpts');
 
 if (process.env.PLATFORM_AI_BRIDGE !== "core") require("dotenv").config({
   path: path.join(__dirname, ".env"),
@@ -38,6 +39,14 @@ const informationPlanSchema=objectSchema({
   points:{type:'array',minItems:1,items:objectSchema({id:stringSchema,summary:stringSchema,body_page:{type:'integer',minimum:2,maximum:9},source_evidence:evidenceSchema})},
   closing_summary:stringSchema,
 });
+
+// 인용 실패를 보완할 때는 재작성 문자열 대신 실제 본문 선택표의 번호를 받는다.
+function referencedPlanSchema(excerpts){
+  return objectSchema({...informationPlanSchema.properties,points:{type:'array',minItems:1,
+    items:objectSchema({...informationPlanSchema.properties.points.items.properties,
+      source_evidence:{type:'array',minItems:1,items:{type:'integer',minimum:0,maximum:excerpts.length-1}},
+    })}});
+}
 
 const cardNewsSchema = objectSchema({
   recommended_card_count: { type: "integer", minimum:3, maximum:10 },
@@ -198,20 +207,22 @@ async function generateCardNews(input) {
   let informationPlan;
   let previousPlan;
   let previousPlanError;
+  const excerptCatalog=sourceExcerpts(input.article.content);
   for(let attempt=0;attempt<2;attempt++){
     const response=await client.responses.create({
       model:OpenAI.model?.trim()||'gpt-5',store:false,max_output_tokens:6000,
-      instructions:attempt===0?planInstructions:`${planInstructions}\n직전 배분표에 검증 오류가 있었습니다. 오류 내용과 이전 결과를 참고 자료로만 사용하고, 기사 본문에서 직접 복사한 실제 근거로 오류가 없는 배분표 전체를 다시 작성하세요.\n검증 오류: ${previousPlanError.message}`,
+      instructions:attempt===0?planInstructions:`${planInstructions}\n직전 배분표에 검증 오류가 있었습니다. 오류 내용과 이전 결과는 참고 자료입니다. 이번 source_evidence는 문자열이 아니라 source_excerpt_catalog 배열에서 관련 실제 원문 구절의 0부터 시작하는 번호를 하나 이상 선택하는 정수 배열입니다. 인용문을 직접 작성하거나 이전 잘못된 인용을 복사하지 마세요. 서버가 선택 번호를 원문의 정확한 구절로 연결합니다. 요약과 배정은 해당 근거로 뒷받침해야 합니다.\n검증 오류: ${previousPlanError.message}`,
       input:JSON.stringify({
         article:input.article,
         selected_keywords:input.selected_keywords,
         requirements:input.requirements??'',
-        ...(attempt===0?{}:{previous_information_plan:previousPlan,validation_error:previousPlanError.message}),
+        ...(attempt===0?{}:{previous_information_plan:previousPlan,validation_error:previousPlanError.message,source_excerpt_catalog:excerptCatalog}),
       }),
-      text:{format:{type:'json_schema',name:'card_news_information_plan',strict:true,schema:informationPlanSchema}},
+      text:{format:{type:'json_schema',name:'card_news_information_plan',strict:true,schema:attempt===0?informationPlanSchema:referencedPlanSchema(excerptCatalog)}},
     });
     informationPlan=readResponse(response);
     try{
+      if(attempt>0)informationPlan=resolvePlanEvidence(informationPlan,excerptCatalog);
       checkInformationPlan(informationPlan,input.article);
       break;
     }catch(error){

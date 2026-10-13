@@ -48,13 +48,16 @@ const evidenceSchema = {
 // 기존 text-editor-ui.js에서 사용하는 항목 이름을 유지합니다.
 // ============================================================
 // Threads: 제목과 문장별 근거를 생성하고 반환 시 기존 편집 형식도 제공합니다.
+// 이모지 사용/생략은 서로 다른 유효 조합이다. use+빈 문자열을 요청 스키마부터 허용하지 않는다.
+const presentationSchema = { anyOf: [
+  objectSchema({ mode: { type: "string", enum: ["use"] },
+    emoji: { type: "string", enum: ["📌", "📰", "📊", "💡", "🔎"] }, reason: stringSchema }),
+  objectSchema({ mode: { type: "string", enum: ["omit"] },
+    emoji: { type: "string", enum: [""] }, reason: stringSchema }),
+] };
 const threadsSchema = objectSchema({
   // 이모지는 사실 본문·근거와 분리해 선택하고 반환 직전에 제목에 적용합니다.
-  presentation: objectSchema({
-    mode: { type: "string", enum: ["use", "omit"] },
-    emoji: { type: "string", enum: ["", "📌", "📰", "📊", "💡", "🔎"] },
-    reason: stringSchema,
-  }),
+  presentation: presentationSchema,
   hashtags: { type: "array", items: stringSchema },
   title: stringSchema,
   title_source_evidence: evidenceSchema,
@@ -120,23 +123,49 @@ function validateDraftStructure(platform, draft) {
         draft.summary_blocks.some(block => !hasText(block?.text) || !hasEvidence(block.source_evidence))) {
       throw new Error("Threads 결과에 제목, 요약 문장 또는 원문 근거가 비어 있습니다.");
     }
-    const presentation = draft.presentation;
-    const allowed = ["📌", "📰", "📊", "💡", "🔎"];
-    if (!presentation || !["use", "omit"].includes(presentation.mode) ||
-        !hasText(presentation.reason) ||
-        (presentation.mode === "use" && !allowed.includes(presentation.emoji)) ||
-        (presentation.mode === "omit" && presentation.emoji !== "")) {
-      throw new Error("Threads 이모지 선택 결과가 올바르지 않습니다. 다시 생성해주세요.");
-    }
     const tags = draft.hashtags;
     if (!Array.isArray(tags) || tags.length < 3 || tags.length > 5 ||
         tags.some(tag => typeof tag !== "string" || !/^#[\p{L}\p{N}_]+$/u.test(tag)) ||
         new Set(tags.map(tag => tag.toLowerCase())).size !== tags.length) {
       throw new Error("관련 해시태그 3~5개가 올바르게 생성되지 않았습니다.");
     }
+    const presentation = draft.presentation;
+    const allowed = ["📌", "📰", "📊", "💡", "🔎"];
+    if (!presentation || !["use", "omit"].includes(presentation.mode) ||
+        !hasText(presentation.reason) ||
+        (presentation.mode === "use" && !allowed.includes(presentation.emoji)) ||
+        (presentation.mode === "omit" && presentation.emoji !== "")) {
+      throw Object.assign(new Error("Threads 이모지 선택 결과가 올바르지 않습니다. 다시 생성해주세요."),
+        { code: "INVALID_THREADS_PRESENTATION" });
+    }
     return;
   }
 
+}
+
+// 표시 형식의 공백/variation selector만 정규화한다. 아이콘 선택이나 생략 정책은 추측하지 않는다.
+function normalizePresentation(presentation) {
+  if (!presentation || typeof presentation !== "object") return presentation;
+  return { ...presentation,
+    mode: typeof presentation.mode === "string" ? presentation.mode.trim() : presentation.mode,
+    emoji: typeof presentation.emoji === "string" ? presentation.emoji.trim().replace(/[\uFE0E\uFE0F]/g, "") : presentation.emoji,
+    reason: typeof presentation.reason === "string" ? presentation.reason.trim() : presentation.reason,
+  };
+}
+
+// 응답의 거절/미완료/빈 텍스트는 보완 성공으로 처리하지 않는다.
+function readDraftResponse(response) {
+  const contents = (response.output || []).filter(item => item.type === "message").flatMap(item => item.content || []);
+  if (contents.some(item => item.type === "refusal")) throw new Error("AI가 이 요청의 초안을 생성하지 못했습니다.");
+  if (response.status !== "completed") {
+    throw new Error(response.incomplete_details?.reason === "max_output_tokens"
+      ? "생성 응답이 출력 한도에 도달했습니다. 요청 분량이나 기사 분량을 줄여 다시 시도해주세요."
+      : "AI 응답이 완료되지 않았습니다. 잠시 후 다시 시도해주세요.");
+  }
+  const outputText = contents.filter(item => item.type === "output_text").map(item => item.text).join("");
+  if (!outputText.trim()) throw new Error("AI 응답에 생성된 텍스트가 없습니다.");
+  try { return JSON.parse(outputText); }
+  catch { throw new Error("AI 응답을 JSON으로 읽지 못했습니다. 다시 생성해주세요."); }
 }
 // ============================================================
 // 7. 원문 근거 확인 함수 만들기
@@ -237,38 +266,23 @@ ${GENERATION_GUIDES[platform]}
   // 9. AI 응답 확인
   // 거절, 미완료, 텍스트 누락을 구분하여 안내합니다.
   // ==========================================================
-  const contents = (response.output || [])
-    .filter((item) => item.type === "message")
-    .flatMap((item) => item.content || []);
-  if (contents.some((item) => item.type === "refusal")) {
-    throw new Error("AI가 이 요청의 초안을 생성하지 못했습니다.");
+  let draft = readDraftResponse(response);
+  draft.presentation = normalizePresentation(draft.presentation);
+  try { validateDraftStructure(platform, draft); }
+  catch (error) {
+    if (error.code !== "INVALID_THREADS_PRESENTATION") throw error;
+    // 새 생성본의 표시 메타데이터만 한 번 보완한다. 이미 작성된 원고·해시태그·근거는 그대로 둔다.
+    const repaired = readDraftResponse(await client.responses.create({
+      model: OpenAI.model?.trim() || "gpt-5", store: false, max_output_tokens: 1000,
+      instructions: `${GENERATION_GUIDES.threads}\n제목과 요약은 수정하지 말고 presentation만 선택하세요. use에는 허용 이모지 하나, omit에는 빈 문자열을 사용하고 reason을 비우지 않습니다. 사용자 이모지 금지 요청과 민감한 주제의 생략 규칙을 지킵니다. 이전 잘못된 선택을 그대로 복사하지 않습니다.`,
+      input: JSON.stringify({ article: input.article, requirements: input.requirements ?? "",
+        title: draft.title, summary_blocks: draft.summary_blocks, previous_presentation: draft.presentation }),
+      text: { format: { type: "json_schema", name: "threads_presentation", strict: true,
+        schema: objectSchema({ presentation: presentationSchema }) } },
+    }));
+    draft = { ...draft, presentation: normalizePresentation(repaired.presentation) };
+    validateDraftStructure(platform, draft);
   }
-  if (response.status !== "completed") {
-    const reason = response.incomplete_details?.reason;
-    if (reason === "max_output_tokens") {
-      throw new Error(
-        "생성 응답이 출력 한도에 도달했습니다. " +
-          "요청 분량이나 기사 분량을 줄여 다시 시도해주세요.",
-      );
-    }
-    throw new Error(
-      "AI 응답이 완료되지 않았습니다. 잠시 후 다시 시도해주세요.",
-    );
-  }
-  const outputText = contents
-    .filter((item) => item.type === "output_text")
-    .map((item) => item.text)
-    .join("");
-  if (!outputText.trim()) {
-    throw new Error("AI 응답에 생성된 텍스트가 없습니다.");
-  }
-  let draft;
-  try {
-    draft = JSON.parse(outputText);
-  } catch {
-    throw new Error("AI 응답을 JSON으로 읽지 못했습니다. 다시 생성해주세요.");
-  }
-  validateDraftStructure(platform, draft);
   const checkEvidence = createEvidenceChecker(input.article);
   // ==========================================================
   // 11. Threads 결과 연결

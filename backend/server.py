@@ -19,6 +19,7 @@
     CF_BASE_URL           기본 https://api.cloudflare.com/client/v4 (시험용 대체 가능)
     CMS_PUBLISH_URL       실제 CMS 수신 API(HTTPS)
     CMS_BEARER_TOKEN      CMS 서버 인증 토큰
+    BACKUP_MASTER_KEY     기사 서버 백업의 마스터 키(32자 이상 무작위, 절대 바꾸거나 잃어버리지 말 것 — 바뀌면 기존 백업을 풀 수 없다)
 
 앱 계약
     GET  /ai/health
@@ -26,12 +27,16 @@
     POST /ai/audio/transcriptions                    (녹음 전사, multipart 본문 그대로 중계)
     POST /ai/embeddings                              (Cloudflare Workers AI qwen3-embedding-0.6b 로 본문 그대로 중계)
     POST /cms/publish                                (CMS_PUBLISH_URL 로 기사 송고)
+    POST /ai/backup-key                              (로그인한 사용자의 기사 백업 키: 마스터 키에서 사용자별로 파생, 무저장)
     GET  /unsplash/search/photos | /unsplash/photos/<id> | /unsplash/download/<...> | /unsplash/absolute?url=
 
 무저장: 요청·응답 본문을 로그나 디스크에 남기지 않는다(경로·상태·사용자만).
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import os
 import threading
@@ -169,6 +174,7 @@ class Handler(BaseHTTPRequestHandler):
                 'openai': bool(os.environ.get('OPENAI_API_KEY')),
                 'unsplash': bool(os.environ.get('UNSPLASH_ACCESS_KEY')),
                 'embeddings': bool(os.environ.get('CF_ACCOUNT_ID') and os.environ.get('CF_API_TOKEN')),
+                'backupKey': len(os.environ.get('BACKUP_MASTER_KEY', '')) >= 32,
             })
         if self._guard() is None:
             return
@@ -212,6 +218,16 @@ class Handler(BaseHTTPRequestHandler):
                 headers['Authorization'] = 'Bearer ' + token
             status, mime, raw = forward(target, body, headers, method='POST')
             return self._send(status, raw, mime)
+        if path == '/ai/backup-key':
+            user = self._guard()
+            if user is None:
+                return
+            master = os.environ.get('BACKUP_MASTER_KEY', '')
+            if len(master) < 32:
+                return self._json(503, {'error': '백업 키가 서버에 설정되지 않았습니다.'})
+            # 사용자별 키 = HMAC-SHA256(마스터, 'article-backup:' + 사용자 id). 마스터는 서버 밖으로 나가지 않는다.
+            key = hmac.new(master.encode(), b'article-backup:' + user.encode(), hashlib.sha256).digest()
+            return self._json(200, {'key': base64.b64encode(key).decode('ascii')})
         if not path.startswith('/ai/'):
             return self._json(404, {'error': '지원하지 않는 경로입니다.'})
         sub = path[len('/ai/'):]

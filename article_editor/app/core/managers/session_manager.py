@@ -10,9 +10,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import uuid
+from pathlib import Path
 
 from app_paths import APP_DATA
 
@@ -20,7 +22,8 @@ from .. import auth, config, saved_login, vault
 from ..errors import RequestError
 from ..integrations import supabase
 
-SETTINGS = APP_DATA / 'settings.json'
+# AI_NEWSROOM_SETTINGS: 시험이 사용자의 실제 설정(예: 로컬 팩트체크를 끈 것)을 읽거나 바꾸지 않게 파일 위치를 바꿀 수 있다
+SETTINGS = Path(os.environ.get('AI_NEWSROOM_SETTINGS') or APP_DATA / 'settings.json')
 
 
 def _settings() -> dict:

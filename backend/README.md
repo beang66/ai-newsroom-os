@@ -37,6 +37,7 @@
 | `RATE_LIMIT_PER_MIN` | | 기본 `120` |
 | `CMS_PUBLISH_URL` | CMS 송고 | 실제 CMS의 HTTPS 수신 API |
 | `CMS_BEARER_TOKEN` | CMS 인증 | 수신 API가 요구하는 서버 전용 Bearer 토큰 |
+| `BACKUP_MASTER_KEY` | 기사 서버 백업 | 32자 이상 무작위 문자열(예: `python -c "import secrets;print(secrets.token_hex(32))"`). 사용자별 백업 키가 이 값에서 파생된다 — **한 번 정하면 바꾸거나 잃어버리지 말 것**(바뀌면 이미 올라간 백업을 풀 수 없다). 안전한 곳에 따로 보관 |
 | `OPENAI_BASE_URL` / `UNSPLASH_BASE_URL` | | 시험용 대체 주소(기본은 실제 서비스) |
 
 또는 `render.yaml`(Blueprint)로 한 번에 만들 수 있다 — 비밀값은 `sync: false`라 대시보드에서 채운다.

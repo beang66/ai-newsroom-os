@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { exportVault, restoreVault, getSettings, saveSettings, setKeepLogin, getDiagnostics } from "../api/editorial";
 import AppDialog from "./AppDialog";
+import CloudBackupSection from "./CloudBackupSection";
 import { beginRestore, endRestore } from "../restoreState";
 
 // 환경 설정: 이 PC·계정의 설정만 다룬다(모델 설치는 ModelsDialog 가 따로 맡는다).
-export default function SettingsDialog({ onClose, onBeforeRestore, session, onSession }) {
+export default function SettingsDialog({ onClose, onBeforeRestore, session, onSession, onTransfer }) {
   const restoreInput = useRef(null);
   const [backupPassword, setBackupPassword] = useState("");
   const [backupPending, setBackupPending] = useState(false);
@@ -99,16 +100,9 @@ export default function SettingsDialog({ onClose, onBeforeRestore, session, onSe
 
   return (
     <AppDialog title="환경 설정" testId="settings-dialog" onClose={onClose}>
-      <section className="space-y-3" aria-labelledby="cloud-backup-title">
-        <h3 id="cloud-backup-title" className="font-black">작성 중 기사 클라우드 백업</h3>
-        <label className="flex items-center gap-2 text-sm font-bold">
-          <input type="checkbox" data-testid="settings-cloud-backup" checked={settings?.cloudBackup ?? true} disabled={!settings}
-            onChange={(event) => change({ cloudBackup: event.target.checked })} />
-          작성 중인 기사를 클라우드에 백업
-        </label>
-        <p className="text-xs text-[#666666] leading-relaxed">기본값은 켜짐입니다. 끄면 기사가 이 PC에만 저장됩니다. 취재자료는 이 설정과 관계없이 항상 이 PC에만 저장돼요. (지금은 설정만 저장하며, 실제 클라우드 저장은 아직 연결되지 않았어요.)</p>
-        {settingsError && <p role="alert" data-testid="settings-error" className="text-xs text-rose-700">{settingsError}</p>}
-      </section>
+      <CloudBackupSection enabled={settings?.cloudBackup ?? true} ready={Boolean(settings)} onError={setSettingsError}
+        onToggle={async (next, { alreadySaved } = {}) => { if (alreadySaved) setSettings({ ...settings, cloudBackup: next }); else await change({ cloudBackup: next }); }} />
+      {settingsError && <p role="alert" data-testid="settings-error" className="text-xs text-rose-700">{settingsError}</p>}
       <hr className="border-[#DDD6CB]" />
       <section className="space-y-3" aria-labelledby="keep-login-title">
         <h3 id="keep-login-title" className="font-black">로그인 유지</h3>
@@ -137,6 +131,13 @@ export default function SettingsDialog({ onClose, onBeforeRestore, session, onSe
           className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">진단 정보 복사</button>
         {diagnosticsNotice && <p role="status" data-testid="settings-diagnostics-notice" className="text-xs text-emerald-700">{diagnosticsNotice}</p>}
         {diagnostics && <textarea readOnly data-testid="settings-diagnostics-text" value={diagnostics} rows={9} className="w-full rounded-xl border border-[#DDD6CB] bg-white p-3 text-xs font-mono" />}
+      </section>
+      <hr className="border-[#DDD6CB]" />
+      <section className="space-y-3" aria-labelledby="transfer-title">
+        <h3 id="transfer-title" className="font-black">다른 PC로 이전</h3>
+        <p className="text-xs text-[#666666] leading-relaxed">PC를 바꿀 때 기사·취재자료를 옮기는 안내 마법사예요. 일회용 코드로 암호화한 이전 파일을 만들고, 새 PC에서 그 코드로 풀어요.</p>
+        <button type="button" data-testid="settings-open-transfer" onClick={onTransfer}
+          className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">이전 마법사 열기</button>
       </section>
       <hr className="border-[#DDD6CB]" />
       <section className="space-y-3" aria-labelledby="backup-title">

@@ -73,6 +73,11 @@ class LocalServer:
         from core import storage
 
         storage.cleanup_open()  # 외부 프로그램으로 열었던 임시 복호화본
+        try:  # 서버 백업에 쌓인 변경을 마지막으로 한 번 올린다(켜져 있고 복구 키가 있을 때만 의미가 있다)
+            from core.api import CORE
+            CORE.backup.shutdown()
+        except Exception:
+            pass
 
 
 def start_server(ports=PORT_RANGE):

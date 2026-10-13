@@ -17,7 +17,12 @@ export function createApi(base = "") {
       body: payload ? JSON.stringify(payload) : undefined,
       signal,
     });
-    const data = await r.json();
+    let data = {};
+    try {
+      data = await r.json();
+    } catch {
+      if (r.ok) throw Error("서버 응답을 읽지 못했어요.");
+    }
     if (!r.ok) {
       // 로그인이 필요하면 로그인 창을 열고, 로그인에 성공하면 같은 요청을 한 번만 다시 보낸다
       if (data.code === "AUTH_REQUIRED" && !retried && (await askLogin())) return json(path, payload, signal, true);

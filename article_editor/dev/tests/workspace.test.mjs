@@ -10,6 +10,16 @@ test("six prototype destinations keep desk, map and archive separate", () => {
   assert.equal(new Set(destinations.map((item) => item.number)).size, 6);
 });
 
+test("URL route restores pages and authentication screens with a safe fallback", async () => {
+  const { routeFromHash } = await import("../../../src/data/navigation.js");
+  assert.equal(typeof routeFromHash, "function");
+  assert.deepEqual(routeFromHash("#writer", "desk"), { page: "writer", auth: null });
+  assert.deepEqual(routeFromHash("#settings", "desk"), { page: "settings", auth: null });
+  assert.deepEqual(routeFromHash("#signup", "archive"), { page: "archive", auth: "signup" });
+  assert.deepEqual(routeFromHash("#unknown", "archive"), { page: "archive", auth: null });
+  assert.deepEqual(routeFromHash("#unknown", "unknown"), { page: "desk", auth: null });
+});
+
 test("stored UTC timestamps are shown in Korean time without changing unsaved local dates", () => {
   assert.equal(formatArticleTime("2026-10-11T11:12:00+00:00"), "2026-10-11 20:12");
   assert.equal(formatArticleTime("2026-10-11 20:12"), "2026-10-11 20:12");

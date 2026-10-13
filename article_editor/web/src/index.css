@@ -1,0 +1,476 @@
+/* 오프라인 데스크톱 앱: 외부 CDN을 쓰지 않는다. Pretendard(SIL OFL)는 src/assets/fonts 에 로컬 번들되어 있다. */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: local("Pretendard Variable"), url("./assets/fonts/PretendardVariable.woff2") format("woff2-variations");
+}
+
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", sans-serif;
+  --color-primary-text: #292929;
+  --color-secondary-text: #666666;
+  --color-muted-text: #999999;
+  --color-accent-orange: #F4A940;
+  --color-accent-orange-hover: #E59830;
+  --color-border-soft: #E7E4DE;
+  --color-canvas: #F8F7F4;
+  --color-card: #FFFFFF;
+}
+
+:root {
+  --bg-canvas: #F8F7F4;
+  --bg-card: #FFFFFF;
+  --text-primary: #292929;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+  --accent-orange: #F4A940;
+  --accent-orange-hover: #E59830;
+  --border-soft: #E7E4DE;
+  --lemon-accent: #F4A940;
+  --lemon-accent-hover: #E59830;
+}
+
+@layer base {
+  html, body, #root {
+    font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif !important;
+  }
+  
+  body {
+    background-color: #FAFAFA;
+    color: #292929;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* Typography Hierarchy Standards */
+  h1, h2, h3, h4, h5, h6 {
+    color: #292929;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  p, span, label {
+    letter-spacing: -0.01em;
+  }
+}
+
+/* UI Tools, Sidebar, Buttons, Inputs Pretendard Enforcement */
+button,
+input,
+select,
+textarea,
+nav,
+aside,
+header,
+.floating-soft-sidebar,
+.floating-soft-header {
+  font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif !important;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E0DDD6;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #CCC7BE;
+}
+
+/* Hide Scrollbar Utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Floating Soft Capsule Header System */
+.floating-soft-header {
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(16px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(140%) !important;
+  border-radius: 9999px;
+  border: 1px solid #E7E4DE !important;
+  box-shadow: 0 4px 20px -2px rgba(41, 41, 41, 0.04), 0 2px 6px rgba(41, 41, 41, 0.02) !important;
+}
+
+/* Floating Slim Sidebar System */
+.floating-soft-sidebar {
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-radius: 36px;
+  border: 1px solid #E7E4DE !important;
+  box-shadow: 0 8px 30px rgba(41, 41, 41, 0.04), 0 2px 8px rgba(41, 41, 41, 0.02) !important;
+}
+
+/* Main Content Warm Minimal Panel */
+.main-warm-container {
+  background: #FFFFFF !important;
+  border-radius: 32px;
+  border: 1px solid #E7E4DE;
+  box-shadow: 0 8px 30px rgba(41, 41, 41, 0.03), 0 2px 10px rgba(41, 41, 41, 0.02);
+}
+
+/* Soft Binder Tab System */
+.soft-tab-active {
+  background: #FFFFFF !important;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-top: 1px solid #E7E4DE;
+  border-left: 1px solid #E7E4DE;
+  border-right: 1px solid #E7E4DE;
+  border-bottom: 4px solid #FFFFFF !important;
+  margin-bottom: -3px;
+  position: relative;
+  z-index: 40;
+  box-shadow: 0 -4px 16px -2px rgba(41, 41, 41, 0.02);
+}
+
+.soft-tab-inactive {
+  background: #EAE7E1;
+  border: 1px solid rgba(231, 228, 222, 0.9);
+  border-radius: 9999px;
+  color: #666666;
+  box-shadow: 0 2px 6px rgba(41, 41, 41, 0.02);
+}
+.soft-tab-inactive:hover {
+  background: #DFDBD3;
+  color: #292929;
+}
+
+/* Organic Shape Fact Check Button */
+.organic-factcheck-btn {
+  background: linear-gradient(135deg, #F8AF91 0%, #E89BB6 45%, #9BB4F3 100%) !important;
+  border-radius: 28px 34px 26px 32px !important;
+  box-shadow: 0 8px 24px -4px rgba(232, 155, 182, 0.4), 0 2px 8px rgba(155, 180, 243, 0.25) !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.organic-factcheck-btn:hover {
+  transform: translateY(-1.5px) scale(1.02);
+  box-shadow: 0 10px 28px -4px rgba(232, 155, 182, 0.5), 0 4px 12px rgba(155, 180, 243, 0.35) !important;
+}
+.organic-factcheck-btn:active {
+  transform: translateY(0.5px) scale(0.98);
+}
+
+/* Primary Dark Action Button */
+.btn-primary-dark {
+  background-color: #292929 !important;
+  color: #FFFFFF !important;
+  border-radius: 9999px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 14px rgba(41, 41, 41, 0.12);
+}
+.btn-primary-dark:hover {
+  background-color: #1A1A1A !important;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(41, 41, 41, 0.18);
+}
+.btn-primary-dark:active {
+  transform: translateY(0);
+}
+
+/* Primary Warm Orange Accent CTA Button */
+.btn-primary-orange {
+  background-color: #F4A940 !important;
+  color: #FFFFFF !important;
+  border-radius: 9999px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 14px rgba(244, 169, 64, 0.32);
+}
+.btn-primary-orange:hover {
+  background-color: #E59830 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(244, 169, 64, 0.42);
+}
+.btn-primary-orange:active {
+  transform: translateY(0);
+}
+
+/* Soft Pill Button */
+.btn-soft-surface {
+  background-color: #F4F1EA;
+  color: #292929;
+  border: 1px solid #E7E4DE;
+  border-radius: 9999px;
+  transition: all 0.2s ease;
+}
+.btn-soft-surface:hover {
+  background-color: #EBE7DF;
+  color: #292929;
+}
+
+/* Animations */
+@keyframes floatIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-float-in {
+  animation: floatIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Silky smooth popup & fade transitions for dynamic UI elements */
+@keyframes smoothPopIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+    filter: blur(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+  }
+}
+
+@keyframes smoothFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-smooth-pop {
+  animation: smoothPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-smooth-in {
+  animation: smoothFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Design System: Pill Buttons with Glassmorphism & Modern Curvature
+   ───────────────────────────────────────────────────────────── */
+.btn-pill-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #18181B !important;
+  color: #FFFFFF !important;
+  border: 1px solid #27272A !important;
+  border-radius: 14px !important;
+  padding: 6px 7px 6px 16px;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16) !important;
+  cursor: pointer;
+}
+.btn-pill-dark:hover {
+  background-color: #09090B !important;
+  border-color: #3F3F46 !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.24) !important;
+  transform: translateY(-1px);
+}
+.btn-pill-dark:hover .btn-pill-badge {
+  transform: scale(1.06) translateX(1px);
+}
+.btn-pill-dark:active {
+  transform: translateY(0);
+}
+
+.btn-pill-white {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(16px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(160%) !important;
+  color: #292929 !important;
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  border-radius: 14px !important;
+  padding: 6px 7px 6px 16px;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+  cursor: pointer;
+}
+.btn-pill-white:hover {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-color: #E7E4DE !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+.btn-pill-white:hover .btn-pill-badge {
+  transform: scale(1.06) translateX(1px);
+}
+.btn-pill-white:active {
+  transform: translateY(0);
+}
+
+.btn-pill-badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 10px;
+  background-color: #F4A940;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+}
+
+.btn-circle-lemon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background-color: #F4A940;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(244, 169, 64, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+.btn-circle-lemon:hover {
+  background-color: #E59830;
+  transform: scale(1.05);
+  box-shadow: 0 4px 14px rgba(244, 169, 64, 0.5);
+}
+.btn-circle-lemon:active {
+  transform: scale(0.96);
+}
+
+/* Glassmorphism Surface Helpers */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(20px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03), inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
+}
+
+.glass-dark-card {
+  background: rgba(30, 32, 38, 0.78) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.18) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   System Palette Harmonization Layer (Warm Ivory + Charcoal + Warm Orange)
+   Directly maps legacy color utility classes across existing components
+   ───────────────────────────────────────────────────────────── */
+.bg-\[\#F1EEE8\] {
+  background-color: #F8F7F4 !important;
+}
+
+.bg-\[\#FAF8F5\] {
+  background-color: #FFFFFF !important;
+}
+
+.text-\[\#292B2F\] {
+  color: #292929 !important;
+}
+
+.bg-\[\#292B2F\] {
+  background-color: #292929 !important;
+}
+
+.border-\[\#E7E2D9\] {
+  border-color: #E7E4DE !important;
+}
+
+.text-\[\#57514A\] {
+  color: #666666 !important;
+}
+
+.text-\[\#8E8982\] {
+  color: #999999 !important;
+}
+
+.text-\[\#D8C76A\] {
+  color: #F4A940 !important;
+}
+
+.bg-\[\#D8C76A\] {
+  background-color: #F4A940 !important;
+}
+
+.border-\[\#D8C76A\] {
+  border-color: #F4A940 !important;
+}
+
+.bg-\[\#FEF065\] {
+  background-color: #F4A940 !important;
+}
+
+.text-\[\#FEF065\] {
+  color: #F4A940 !important;
+}
+
+/* 추천 키워드 -> 검색창 부드러운 상승 애니메이션 */
+@keyframes flyUpToSearch {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: translateY(-18px) scale(0.96);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-38px) scale(0.88);
+  }
+}
+
+@keyframes tagLandInSearch {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.92);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fly-up {
+  animation: flyUpToSearch 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-tag-land {
+  animation: tagLandInSearch 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+

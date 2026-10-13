@@ -34,3 +34,6 @@ __pycache__/
 .venv/
 AINewsroom/
 article_editor/.runtime/
+
+# Local CLOVA Speech STT results
+/backend/stt/data/stt/

@@ -1,178 +1,210 @@
-import React, { lazy, Suspense, useState, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import ArticleWriter from "./components/ArticleWriter";
-import { setLoginHandler } from "./api/auth-gate";
-
-const SourceSearch = lazy(() => import("./components/SourceSearch"));
-const InterviewStudio = lazy(() => import("./components/interview/InterviewStudio"));
-const FormatConverter = lazy(() => import("./components/FormatConverter"));
-const ArchiveView = lazy(() => import("./components/ArchiveView"));
-const DeskView = lazy(() => import("./components/DeskView"));
-const DataMapView = lazy(() => import("./features/data-map/DataMapView"));
-const LoginDialog = lazy(() => import("./components/LoginDialog"));
-const ModelsDialog = lazy(() => import("./components/ModelsDialog"));
-const SettingsDialog = lazy(() => import("./components/SettingsDialog"));
-const TransferWizard = lazy(() => import("./components/TransferWizard"));
-
-import { createEmptyArticle } from "./data/article";
-import { core, coreSnapshot } from "./api/core";
-import { loadLatestArticle, loadStoredArticle, getBackupKey } from "./api/editorial";
-import { clearBackup, readBackup, setBackupOwner, setBackupKey, sameDraft } from "./lib/draftBackup.js";
-import { useAutosave } from "./components/EditorialAssist";
-import { isRestoring } from "./restoreState";
+import SourceSearch from "./components/SourceSearch";
+import InterviewStudio from "./components/interview/InterviewStudio";
+import ArchiveView from "./components/ArchiveView";
+import DeskView from "./components/DeskView";
 import PageHeader from "./components/PageHeader";
-import { destinations } from "./data/navigation";
+import DataMapView from "./features/data-map/DataMapView";
 import "./workspace.css";
+import "./deskGlass.css";
+import "./pageTitle.css";
+import LoginScreen from "./components/LoginScreen";
+import SettingsView from "./components/SettingsView";
 
-// 마지막으로 보던 화면(작성·보관함 등) — 이 PC 화면 설정이라 브라우저 저장소에 둔다(없거나 막혀도 동작)
+import { initialArticles } from "./data/mockData";
+import { createEmptyArticle } from "./data/article";
+import { destinations } from "./data/navigation";
+import { core } from "./api/core.js";
+import { listStoredArticles, loadArticleById, loadLatestArticle, saveArticle } from "./services/editorialStore";
+import PlatformStudio from "./components/PlatformStudio";
+import { mergeStudioArticle, toStudioArticle } from "./lib/studioArticle.js";
+import { setLoginHandler } from "./services/authGate";
+import { getSession, signOut } from "./services/sessionService";
+import { isRestoring } from "./restoreState";
+import { getBackupKey, publishCms, publishDraft } from "./api/editorial";
+import { clearBackup, readBackup, sameDraft, setBackupKey, setBackupOwner, writeBackup } from "./lib/draftBackup.js";
+
+/**
+ * 전체 배경 Soft Ambient Gradient Theme:
+ * - 상단: 아주 은은한 Soft Blue glow (rgba(190, 220, 255, 0.25))
+ * - 중앙: 거의 흰색에 가까운 매우 부드러운 transition
+ * - 하단: 아주 은은한 Soft Lavender glow (rgba(215, 200, 255, 0.22))
+ * - 두 색상이 경계 없이 화면 전체에 공기처럼 넓게 퍼지며 어우러짐
+ */
+const getAmbientGradient = (activeTab, factCheckActive) => {
+  // 기사 작성 및 기본 메인 뷰: 상단 Soft Blue + 하단 Soft Lavender 완벽 블렌딩
+  const editorialSoftGradient = [
+    "radial-gradient(ellipse 95% 55% at 50% -5%, rgba(190, 220, 255, 0.25) 0%, rgba(255, 255, 255, 0) 75%)",
+    "radial-gradient(ellipse 95% 55% at 50% 105%, rgba(215, 200, 255, 0.22) 0%, rgba(255, 255, 255, 0) 75%)",
+    "#FAFAFA"
+  ].join(", ");
+
+  // 03 기사 검증 모드
+  if (activeTab === "factcheck" || (activeTab === "writer" && factCheckActive)) {
+    return [
+      "radial-gradient(ellipse 95% 50% at 50% -5%, rgba(190, 220, 255, 0.16) 0%, rgba(255, 255, 255, 0) 70%)",
+      "radial-gradient(ellipse 85% 65% at 15% 82%, rgba(190, 235, 215, 0.22) 0%, rgba(255, 255, 255, 0) 72%)",
+      "radial-gradient(ellipse 95% 50% at 50% 105%, rgba(215, 200, 255, 0.16) 0%, rgba(255, 255, 255, 0) 70%)",
+      "#FAFAFA"
+    ].join(", ");
+  }
+
+  // 01 STT 모드
+  if (activeTab === "interview") {
+    return [
+      "radial-gradient(ellipse 85% 55% at 20% 10%, rgba(190, 220, 255, 0.26) 0%, rgba(255, 255, 255, 0) 70%)",
+      "radial-gradient(ellipse 85% 50% at 50% 105%, rgba(215, 200, 255, 0.16) 0%, rgba(255, 255, 255, 0) 70%)",
+      "#FAFAFA"
+    ].join(", ");
+  }
+
+  // 04 아카이브 모드
+  if (activeTab === "archive") {
+    return [
+      "radial-gradient(ellipse 95% 50% at 50% -5%, rgba(190, 220, 255, 0.16) 0%, rgba(255, 255, 255, 0) 70%)",
+      "radial-gradient(ellipse 85% 55% at 85% 85%, rgba(250, 225, 200, 0.20) 0%, rgba(255, 255, 255, 0) 72%)",
+      "#FAFAFA"
+    ].join(", ");
+  }
+
+  // 05 환경 설정 모드
+  if (activeTab === "settings") {
+    return [
+      "radial-gradient(ellipse 95% 50% at 50% -5%, rgba(190, 220, 255, 0.20) 0%, rgba(255, 255, 255, 0) 70%)",
+      "radial-gradient(ellipse 85% 50% at 50% 105%, rgba(220, 215, 235, 0.18) 0%, rgba(255, 255, 255, 0) 70%)",
+      "#FAFAFA"
+    ].join(", ");
+  }
+
+  return editorialSoftGradient;
+};
+
+// 마지막으로 보던 화면 — 이 PC 화면 설정이라 브라우저 저장소에 둔다(없거나 막혀도 동작). 처음 열면 오늘의 데스크(main 과 같음)
 const TAB_KEY = "ai-newsroom:lastTab";
 const readTab = () => { try { const tab = localStorage.getItem(TAB_KEY); return destinations.some((item) => item.id === tab) ? tab : "desk"; } catch { return "desk"; } };
 const writeTab = (tab) => { try { localStorage.setItem(TAB_KEY, tab); } catch { /* 저장 못 해도 그만 */ } };
 
-/** 앱을 열면 가장 최근에 저장된 원고를 불러와 이어서 작업한다(없으면 새 원고) */
 export default function App() {
-  const [initial, setInitial] = useState(null);
-  const [core, setCore] = useState({ ok: false });
-  const [loadError, setLoadError] = useState("");
-  const [loadAttempt, setLoadAttempt] = useState(0);
-  const [workspaceVersion, setWorkspaceVersion] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    // 로그인 상태를 먼저 알아본다: 로그인 유지가 켜져 있으면 이 요청에서 로그인이 되살아나, 이어서 불러오는 원고가 바로 열린다
-    coreSnapshot()
-      .then((snapshot) => alive && setCore(snapshot))
-      .catch(() => alive && setCore({ ok: false }))
-      .then(() => alive && loadLatestArticle(createEmptyArticle()))
-      .then((a) => alive && a !== false && setInitial(a || createEmptyArticle()))
-      .catch((error) => alive && setLoadError(error?.message || "최근 원고를 불러오지 못했습니다."));
-    return () => { alive = false; };
-  }, [loadAttempt]);
-  // 원고를 불러오는 동안에도 앱 틀(헤더·사이드바)은 바로 그린다. 불러오면 작업 영역을 한 번 새로 연다(key) —
-  // 불러온 원고가 '변경'으로 잡히지 않아 자동 저장이 돌지 않는다.
-  return <Workspace key={initial ? `ready-${workspaceVersion}` : "loading"} initialArticle={initial} core={core} setCore={setCore}
-    onReplaceArticle={(next, tab = "writer") => { writeTab(tab); setInitial(next); setWorkspaceVersion((version) => version + 1); }}
-    loadError={loadError} onRetry={() => { setLoadError(""); setLoadAttempt((attempt) => attempt + 1); }} />;
-}
-
-function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetry, onReplaceArticle }) {
-  const loading = !initialArticle;
   const [activeTab, setActiveTabState] = useState(readTab);
-  const [interviewVisited, setInterviewVisited] = useState(activeTab === "interview");
-  // "evidence" 는 기사 작성 화면을 팩트체크·근거자료 서랍이 열린 채로 연다(데스크의 근거 확인·검증 작업)
-  const [evidenceOpen, setEvidenceOpen] = useState(false);
-  const setActiveTab = (target) => {
-    const tab = target === "evidence" ? "writer" : target;
-    setEvidenceOpen(target === "evidence");
-    if (tab === "interview") setInterviewVisited(true); if (tab === "map") setMapArticleId(null); setActiveTabState(tab); writeTab(tab);
-  };
-  const [article, setArticle] = useState(() => initialArticle || createEmptyArticle());
-  const [mapArticleId, setMapArticleId] = useState(null);
-  // 저장: 자동 임시 저장 + 수동 저장(저장 버튼·Ctrl+S) + 실시간 백업. 보관소 '원고'는 마지막 수동 저장본
-  const save = useAutosave(article, setArticle);
-  const { status: saveStatus, flush, unsynced } = save;
-  // Ctrl+S(맥은 Cmd+S) — 어느 화면에서든 수동 저장
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        save.saveNow();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [save]);
-  // 앱이 강제 종료돼 코어에 못 간 원고가 이 PC 에 남아 있으면 복구할지 묻는다(같은 내용이면 조용히 지운다)
-  const ownerId = coreState.session?.userId || "";
-  setBackupOwner(ownerId); // 렌더 중에 먼저 정해 둔다: 자식이 쓰는 백업에도 같은 계정이 적힌다
-  // 원고 백업을 암호화할 키(계정별)를 코어에서 받아 메모리에만 둔다. 못 받으면 백업을 건너뛴다
-  useEffect(() => {
-    if (ownerId) getBackupKey().then(({ key }) => setBackupKey(key, ownerId)).catch(() => {});
-  }, [ownerId]);
-  useEffect(() => {
-    if (loading || initialArticle?.restoredFromBackup || !ownerId) return undefined;
-    let alive = true;
-    readBackup().then((backup) => {
-      if (!alive || !backup?.article) return;
-      if (sameDraft(backup.article, article)) { void clearBackup(); return; }
-      const when = new Date(backup.at).toLocaleString("ko-KR");
-      if (window.confirm(`저장되지 않은 원고가 남아 있습니다.\n(${when} · ${backup.article.title || "제목 없음"})\n\n프로그램이 갑자기 종료되기 전의 내용입니다. 복구할까요?\n취소하면 남은 내용을 지웁니다.`)) {
-        onReplaceArticle({ ...backup.article, restoredFromBackup: true });
-      } else void clearBackup();
-    });
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, ownerId]);
-  const [storedArticles, setStoredArticles] = useState([]);
-  const [listError, setListError] = useState("");
-  const [listAttempt, setListAttempt] = useState(0);
+  const setActiveTab = useCallback((target) => {
+    setActiveTabState(target);
+    if (destinations.some((item) => item.id === target)) writeTab(target);
+  }, []);
+  const [article, setArticle] = useState(initialArticles[0]);
+  const [storageStatus, setStorageStatus] = useState("최근 원고를 불러오는 중…");
+  const revisionNo = useRef(null);
+  const loaded = useRef(false);
+
+  // 자동 저장: 마지막으로 Core 와 같아진 원고의 지문과, 진행 중인 자동 저장
+  const articleRef = useRef(article);
+  articleRef.current = article;
+  const syncedSnapshot = useRef("");
+  const autoRunning = useRef(null);
+  const retryTimer = useRef(null);
+  const signedInRef = useRef(false);
+  const [unsynced, setUnsynced] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const backupChecked = useRef(false);
+  const snapshotOf = (a) => JSON.stringify([a.title, a.subtitle, a.content, a.linkedSources, a.linkedInterviews, a.status,
+    a.platformDrafts, a.cardNews, a.platformGeneration, a.category, a.subcategory, (a.sources || []).map((source) => source.id)]);
+  const savedIdRef = useRef(null); // 가장 최근에 Core 에 저장된 기사 ID(렌더를 기다리지 않고 바로 읽는다)
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
-  const switchJob = useRef(null);
-  useEffect(() => () => { switchJob.current?.abort(); }, []);
+  // 최근 원고를 불러오지 못했을 때(로그인 문제 제외): 빈 원고를 보여 저장하지 않고, 오류와 '다시 불러오기'를 보인다(main 과 같음)
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+
   useEffect(() => {
-    if (loading) return;
-    const controller = new AbortController();
-    core.listArticles(controller.signal).then(({ articles }) => {
-      if (controller.signal.aborted) return;
-      setStoredArticles(articles.map((item) => ({ ...item, id: item.id.replaceAll("-", "") })));
-      setListError("");
-    }).catch((error) => { if (!controller.signal.aborted) setListError(error.message); });
-    return () => controller.abort();
-  }, [loading, activeTab, saveStatus, listAttempt]);
-  const currentId = article.articleId || article.id;
-  const storedCurrent = storedArticles.find((item) => item.id === currentId);
-  // 지금 편집 중인 기사는 화면의 값으로 보인다(보관소 원고/송고 구분도 지금 상태 기준)
-  const currentSummary = { ...storedCurrent, id: currentId,
-    title: article.title, subtitle: article.subtitle, status: article.status,
-    state: { "작성 중": "draft", "송고 완료": "published", "수정 중": "editing" }[save.phase],
-    published: save.published || storedCurrent?.published || null,
-    updated_at: storedCurrent?.updated_at || article.updatedAt };
-  const articles = storedCurrent ? storedArticles.map((item) => item.id === currentId ? currentSummary : item) : [currentSummary, ...storedArticles];
-  const changeArticle = async (id = null, destination = "writer") => {
-    if (switchJob.current) return;
-    if (id === currentId) { setActiveTab(destination); return; }
-    // 동기 잠금 + 조회 취소: 늦은 응답은 새 작업 영역을 덮어쓰지 않는다.
-    const controller = new AbortController(); switchJob.current = controller;
-    setSwitching(true); setSwitchError("");
-    try {
-    // 수동 저장하지 않은 변경이 있으면 먼저 묻는다(임시 저장은 아래에서 어차피 끝낸다)
-    if (save.dirty) {
-      if (!window.confirm("저장하지 않은 변경이 있습니다.\n지금 쓰던 내용을 저장한 뒤 열까요? (취소하면 열지 않습니다)")) return;
-      if (!(await save.saveNow())) {
-        setSwitchError("저장하지 못해 열지 않았습니다. 현재 원고는 유지됩니다. 상단의 저장 상태를 확인해 주세요.");
+    let active = true;
+    loadLatestArticle(initialArticles[0])
+      .then((stored) => {
+        if (!active) return;
+        syncedSnapshot.current = snapshotOf(stored); // 불러온 원고는 고치기 전까지 다시 저장하지 않는다
+        savedIdRef.current = stored.articleId || null;
+        setArticle(stored);
+        revisionNo.current = Number.isInteger(stored.revisionNo) ? stored.revisionNo : null;
+        loaded.current = true;
+        setIsLoaded(true);
+        setStorageStatus(stored.articleId ? "암호화 저장소에서 복원됨" : "새 원고 — 저장하면 암호화 저장소에 보관됩니다");
+      })
+      .catch((error) => {
+        if (!active) return;
+        if (error.code !== "AUTH_REQUIRED") setLoadError(error?.message || "최근 원고를 불러오지 못했습니다.");
+        setStorageStatus(error.code === "AUTH_REQUIRED"
+          ? "로그인하면 저장된 원고를 불러옵니다."
+          : `로컬 Core에 연결하지 못했습니다: ${error.message}`);
+      });
+    return () => { active = false; };
+  }, [loadAttempt]);
+
+  useEffect(() => {
+    if (Number.isInteger(article.revisionNo)) revisionNo.current = article.revisionNo;
+  }, [article.revisionNo]);
+
+  // 자동 임시 저장을 지금 끝낸다(타이머·기사 전환·창 닫기·로그아웃 전). 겹치지 않게 한 번에 하나만 돈다.
+  const flushRef = useRef(null);
+  const flush = useCallback((force = false) => {
+    if (autoRunning.current) return autoRunning.current;
+    const run = (async () => {
+      const target = articleRef.current;
+      const snapshot = snapshotOf(target);
+      const unchanged = snapshot === syncedSnapshot.current && !(force === true && !savedIdRef.current);
+      if (!loaded.current || isRestoring() || unchanged) return;
+      clearTimeout(retryTimer.current);
+      if (!signedInRef.current) {
+        // 로그인 전에는 Core 저장소를 열 수 없다 — 타이핑 중 로그인 창이 뜨지 않게 건너뛰고, 로그인하면 이어서 저장한다.
+        setStorageStatus("로그인하면 자동으로 저장됩니다.");
         return;
       }
-    }
-      if (article.articleId || article.title || article.content || article.sources.length || article.photos.length
-        || article.linkedSources.length || article.linkedInterviews.length || article.cardNews || Object.keys(article.platformDrafts).length) await flush();
-      const next = id ? await loadStoredArticle(id, createEmptyArticle(), controller.signal) : createEmptyArticle();
-      if (!controller.signal.aborted) onReplaceArticle(next, destination);
-    } catch (error) {
-      if (!controller.signal.aborted) setSwitchError(`기사 조회 실패 · 원고를 전환하지 못했습니다. 현재 원고는 유지됩니다. ${error.message}`);
-    } finally {
-      if (switchJob.current === controller) { switchJob.current = null; setSwitching(false); }
-    }
-  };
-  // 보관소의 × — 기사를 지운다. 지금 쓰던 기사면 새 기사로 바꾼다(남은 백업도 지운다)
-  const deleteArticle = async (id) => {
-    const target = articles.find((item) => item.id === id);
-    if (!window.confirm(`'${target?.title || "제목 없는 기사"}' 기사를 보관소에서 삭제할까요?
-삭제하면 보관소와 이어서 작업에서 사라집니다.`)) return;
-    setSwitchError("");
-    try {
-      await core.deleteArticle(id);
-    } catch (error) {
-      setSwitchError(`기사를 삭제하지 못했습니다. ${error.message}`);
-      return;
-    }
-    if (id === currentId) {
-      await clearBackup();
-      onReplaceArticle(createEmptyArticle());
-    } else {
-      setStoredArticles((list) => list.filter((item) => item.id !== id));
-    }
-  };
+      setStorageStatus("임시 저장 중…");
+      try {
+        const saved = await saveArticle(target, undefined, { kind: "auto" });
+        revisionNo.current = saved.revisionNo;
+        savedIdRef.current = saved.articleId;
+        syncedSnapshot.current = snapshot;
+        setArticle((current) => ({ ...current, id: saved.articleId, articleId: saved.articleId, revisionNo: saved.revisionNo }));
+        const caughtUp = snapshotOf(articleRef.current) === snapshot;
+        setUnsynced(!caughtUp);
+        if (caughtUp) void clearBackup(); // Core 에 최신 원고까지 들어갔다 → 이 PC 백업은 필요 없다
+        setStorageStatus("임시 저장됨");
+      } catch (error) {
+        setStorageStatus(`임시 저장 실패: ${error.message}`);
+        // 입력이 멈춘 뒤에도 Core 가 돌아오면 이어서 저장되도록 다시 시도한다.
+        retryTimer.current = setTimeout(() => void flushRef.current?.(), 8000);
+      }
+    })().finally(() => { autoRunning.current = null; });
+    autoRunning.current = run;
+    return run;
+  }, []);
+  flushRef.current = flush;
+
+  // 원고가 바뀌고 1.5초 멈추면 임시 저장한다(저장 버튼 없이도 작업본이 남는다).
+  useEffect(() => {
+    if (!loaded.current) return undefined;
+    const dirty = snapshotOf(article) !== syncedSnapshot.current;
+    setUnsynced(dirty);
+    if (!dirty) return undefined;
+    setStorageStatus("임시 저장 대기…");
+    const timer = setTimeout(() => { void flush(); }, 1500);
+    return () => clearTimeout(timer);
+    // 저장 대상 필드가 바뀔 때만(articleId·revisionNo 같은 저장 결과로는 다시 저장하지 않는다)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [article.title, article.subtitle, article.content, article.linkedSources, article.linkedInterviews, article.status,
+    article.platformDrafts, article.cardNews, article.platformGeneration, article.category, article.subcategory, article.sources, flush]);
+
+  // 강제 종료·Core 저장 실패에 대비해, 바뀐 원고를 0.3초 뒤 이 PC 에 암호화해 둔다(계정·키를 알 때만).
+  useEffect(() => {
+    if (!loaded.current || snapshotOf(article) === syncedSnapshot.current) return undefined;
+    const timer = setTimeout(() => void writeBackup(articleRef.current), 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [article.title, article.subtitle, article.content, article.linkedSources, article.linkedInterviews, article.status,
+    article.platformDrafts, article.cardNews, article.platformGeneration, article.category, article.subcategory, article.sources]);
+
+  // 창을 닫거나 화면이 숨겨질 때, 저장되지 않은 변경이 있으면 지금 저장한다.
   useEffect(() => {
     if (!unsynced) return undefined;
     const beforeUnload = (event) => {
@@ -190,46 +222,236 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
     };
   }, [unsynced, flush]);
 
-  // 로컬 코어 연결 상태 — 계약(src/api)만 쓴다. 창에서는 IPC, 브라우저에서는 HTTP.
-  const [showLogin, setShowLogin] = useState(false);
-  const [showModels, setShowModels] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showTransfer, setShowTransfer] = useState(false);
-  const loginWait = useRef([]); // 로그인 창 결과를 기다리는 요청들(AUTH_REQUIRED 로 멈춘 것)
-  const loggedIn = useRef(false);
-  useEffect(() => {
-    setLoginHandler(() => new Promise((resolve) => {
-      loginWait.current.push(resolve);
-      setShowLogin(true);
-    }));
-    return () => setLoginHandler(null);
-  }, []);
-  const onSession = (session) => {
-    loggedIn.current = Boolean(session?.signedIn);
-    // 로그아웃하면 화면에 남은 이전 계정의 기사·자료를 비운다(다시 열면 로그인부터 한다)
-    if (coreState.session?.signedIn && !session?.signedIn) { window.location.reload(); return; }
-    setCore((prev) => ({ ...prev, session }));
-  };
-  const closeLogin = () => {
-    setShowLogin(false);
-    const ok = loggedIn.current;
-    loggedIn.current = false;
-    loginWait.current.splice(0).forEach((resolve) => resolve(ok));
-  };
-  const session = coreState.session;
-  // 개발 자동 로그인처럼 로그인이 다른 경로로 끝나면 열려 있던 로그인 창을 닫고 기다리던 요청을 이어 간다
-  useEffect(() => {
-    if (session?.signedIn && showLogin) { loggedIn.current = true; closeLogin(); }
-  }, [session?.signedIn, showLogin]);
-  // 로그인하지 않았으면 자료를 볼 수 없으므로 로그인 창을 연다(코어가 자료 요청을 거절하기 전에도)
-  useEffect(() => {
-    if (session && !session.signedIn) setShowLogin(true);
-  }, [session?.signedIn, Boolean(session)]);
+  const persistArticle = useCallback(async () => {
+    if (isRestoring()) return false;
+    if (!loaded.current) {
+      setStorageStatus("Core 연결이 준비된 뒤 저장할 수 있습니다.");
+      return false;
+    }
+    await autoRunning.current; // 진행 중인 임시 저장이 끝난 뒤에 저장해 충돌 검사 번호가 어긋나지 않게 한다
+    setStorageStatus("암호화 저장소에 저장 중…");
+    try {
+      const saved = await saveArticle(article, revisionNo.current, { kind: "manual" });
+      revisionNo.current = saved.revisionNo;
+      savedIdRef.current = saved.articleId;
+      articleRef.current = { ...articleRef.current, id: saved.articleId, articleId: saved.articleId, revisionNo: saved.revisionNo };
+      syncedSnapshot.current = snapshotOf(article);
+      const caughtUp = snapshotOf(articleRef.current) === syncedSnapshot.current;
+      setUnsynced(!caughtUp);
+      if (caughtUp) void clearBackup();
+      setArticle((current) => ({ ...current, id: saved.articleId, articleId: saved.articleId, revisionNo: saved.revisionNo }));
+      setStorageStatus(`저장됨 · ${saved.revisionNo}번째 이력`);
+      return true;
+    } catch (error) {
+      setStorageStatus(`저장 실패: ${error.message}`);
+      return false;
+    }
+  }, [article]);
 
-  // Sidebar collapse state (main 디자인: 기본은 세로로 긴 슬림 사이드바 접힘)
+  // Ctrl+S(Mac 은 Cmd+S): 브라우저 저장 창 대신 저장 버튼과 같은 수동 저장(새 버전)
+  const persistRef = useRef(persistArticle);
+  persistRef.current = persistArticle;
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void persistRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // 스튜디오가 쓰는 flush: 진행 중인 임시 저장을 끝내고, 아직 저장된 적 없는 기사는 한 번 저장해 articleId 를 돌려준다.
+  const flushForStudio = useCallback(async () => {
+    await autoRunning.current;
+    await flush(true);
+    await autoRunning.current;
+    if (!savedIdRef.current) throw new Error("기사를 저장하지 못했습니다. 화면 위쪽의 저장 상태를 확인해 주세요.");
+    return savedIdRef.current;
+  }, [flush]);
+
+  // 다른 저장 기사로 전환: 현재 원고를 저장한 뒤 그 기사를 불러온다.
+  const changeArticle = useCallback(async (id, nextTab) => {
+    setSwitching(true);
+    setSwitchError("");
+    try {
+      await flush();
+      const next = await loadArticleById(id, articleRef.current);
+      syncedSnapshot.current = snapshotOf(next);
+      savedIdRef.current = next.articleId || null;
+      revisionNo.current = Number.isInteger(next.revisionNo) ? next.revisionNo : null;
+      setArticle(next);
+      setStorageStatus("저장된 기사를 불러왔습니다.");
+      if (nextTab) setActiveTab(nextTab);
+    } catch (error) {
+      setSwitchError(`기사를 전환하지 못했습니다. ${error?.message || error}`);
+      throw error;
+    } finally {
+      setSwitching(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flush]);
+
+  // 보관함(main): 저장된 기사 목록을 읽어 와 지금 편집 중인 기사는 화면의 값으로 보인다.
+  const [storedArticles, setStoredArticles] = useState([]);
+  const [listError, setListError] = useState("");
+  const [mapArticleId, setMapArticleId] = useState(null);
+  useEffect(() => {
+    if (activeTab !== "archive") return undefined;
+    let active = true;
+    core.listArticles().then(({ articles }) => {
+      if (!active) return;
+      setStoredArticles(articles.map((item) => ({ ...item, id: item.id.replaceAll("-", "") })));
+      setListError("");
+    }).catch((error) => { if (active) setListError(error.message); });
+    return () => { active = false; };
+  }, [activeTab, storageStatus]);
+  const currentId = article.articleId || article.id;
+  const storedCurrent = storedArticles.find((item) => item.id === currentId);
+  const currentSummary = { ...storedCurrent, id: currentId, title: article.title, subtitle: article.subtitle,
+    state: storedCurrent?.state || "draft", published: storedCurrent?.published || null,
+    updated_at: storedCurrent?.updated_at || article.updatedAt };
+  const archiveArticles = storedCurrent ? storedArticles.map((item) => item.id === currentId ? currentSummary : item) : [currentSummary, ...storedArticles];
+  // 보관소의 × — 기사를 지운다. 지금 쓰던 기사면 새 기사로 바꾼다(남은 백업도 지운다)
+  const deleteArticle = async (id) => {
+    const target = archiveArticles.find((item) => item.id === id);
+    if (!window.confirm(`'${target?.title || "제목 없는 기사"}' 기사를 보관소에서 삭제할까요?
+삭제하면 보관소와 이어서 작업에서 사라집니다.`)) return;
+    setSwitchError("");
+    try {
+      await core.deleteArticle(id);
+    } catch (error) {
+      setSwitchError(`기사를 삭제하지 못했습니다. ${error.message}`);
+      return;
+    }
+    if (id === currentId) {
+      const empty = createEmptyArticle();
+      syncedSnapshot.current = snapshotOf(empty);
+      savedIdRef.current = null;
+      revisionNo.current = null;
+      await clearBackup();
+      setArticle(empty);
+    }
+    setStoredArticles((list) => list.filter((item) => item.id !== id));
+  };
+
+  const studioArticle = useMemo(() => toStudioArticle(article), [article]);
+  const setStudioArticle = useCallback((update) => setArticle((previous) => {
+    const next = typeof update === "function" ? update(toStudioArticle(previous)) : update;
+    return mergeStudioArticle(previous, next);
+  }), []);
+
+  // 송고: ① 수동 저장으로 ID·최신 원고 확보 ② CMS 로 전송 ③ 성공하면 Core 에 송고본을 남긴다.
+  // CMS 전송이 실패하면 송고본은 바뀌지 않고 오류를 던진다(화면은 "발행 완료"로 바꾸지 않는다).
+  const handlePublish = useCallback(async () => {
+    if (isRestoring()) throw new Error("백업을 복구하는 중입니다.");
+    const saved = await persistArticle();
+    if (!saved) throw new Error("먼저 저장에 성공해야 송고할 수 있어요. 화면 위쪽의 저장 상태를 확인해 주세요.");
+    const target = articleRef.current;
+    const receipt = await publishCms(target);
+    const result = await publishDraft({ ...target, cmsReceipt: receipt }, target.articleId);
+    revisionNo.current = result.revisionNo ?? revisionNo.current;
+    const next = { ...target, articleId: result.articleId || target.articleId, status: "송고됨", cmsReceipt: receipt };
+    syncedSnapshot.current = snapshotOf(next); // 송고로 이미 저장됐다 — 상태 글자 변경을 다시 자동 저장하지 않는다
+    setArticle((current) => ({ ...current, ...next, revisionNo: revisionNo.current }));
+    setStorageStatus("송고 완료");
+    return receipt;
+  }, [persistArticle]);
+
+  // Sidebar collapse state (기본 상태: 세로로 긴 Slim Sidebar 접힘 상태)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+
+  // 팩트체크는 main 흐름: 취재자료를 기사에 등록하면 글이 멈출 때마다 자동으로 검증한다(ArticleWriter 의 useFactCheck).
+  // 여기서는 "팩트체크 패널을 열어 달라"는 요청 횟수만 들고 있다(데스크의 '근거 확인' 등에서 누를 때마다 다시 열린다).
+  const [factCheckRequest, setFactCheckRequest] = useState(0);
 
   // Quick Source Search Modal inside Article Writer
   const [showSearchModal, setShowSearchModal] = useState(false);
+
+  // Right side tools tab collapse state
+  const [isToolsCollapsed, setIsToolsCollapsed] = useState(false);
+
+  // Authentication screen view state: null | 'login' | 'signup'
+  const [authView, setAuthView] = useState(null);
+  const [reporterName, setReporterName] = useState("김동아 기자");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // Core 세션: 토큰은 Core 안에만 있고 화면은 로그인 여부와 이메일만 안다.
+  const [session, setSession] = useState(null);
+  signedInRef.current = Boolean(session?.signedIn);
+  const applySession = useCallback((nextSession) => {
+    setSession(nextSession);
+    setIsLoggedIn(Boolean(nextSession?.signedIn));
+    if (nextSession?.signedIn && nextSession.email) setReporterName(nextSession.email);
+  }, []);
+
+  useEffect(() => {
+    getSession().then(applySession).catch(() => {});
+  }, [applySession]);
+
+  // 변환·배포는 저장된 기사(ID)를 기준으로 고정본을 만든다. 아직 저장된 적 없는 기사는 이 탭에 들어올 때 한 번 저장한다.
+  useEffect(() => {
+    if (activeTab === "convert" && isLoaded && signedInRef.current && !savedIdRef.current) void flush(true);
+  }, [activeTab, isLoaded, session?.signedIn, flush]);
+
+  // 로그인하면(또는 세션이 복원되면) 로그인 전에 쌓인 변경을 바로 임시 저장한다.
+  useEffect(() => {
+    if (session?.signedIn) void flush();
+  }, [session?.signedIn, flush]);
+
+  // 작업 중 원고 백업은 계정마다 따로 두고, 키는 Core 가 계정에서 파생해 준다.
+  const backupOwner = session?.userId || "";
+  setBackupOwner(backupOwner); // 렌더 중에 먼저 정해 둔다
+  useEffect(() => {
+    if (backupOwner) getBackupKey().then(({ key }) => setBackupKey(key, backupOwner)).catch(() => {});
+  }, [backupOwner]);
+
+  // 앱을 열었을 때 Core 에 저장된 원고보다 새로운 백업이 남아 있으면 그것으로 이어서 작업한다(곧바로 Core 에 임시 저장된다).
+  useEffect(() => {
+    if (!isLoaded || !backupOwner || backupChecked.current) return;
+    backupChecked.current = true;
+    readBackup().then((backup) => {
+      if (!backup) return;
+      if (sameDraft(backup.article, articleRef.current)) {
+        void clearBackup();
+        return;
+      }
+      setArticle({ ...articleRef.current, ...backup.article });
+      setStorageStatus("저장되지 않았던 작업본을 이 PC의 백업에서 복구했습니다.");
+    });
+  }, [isLoaded, backupOwner]);
+
+  // Core가 AUTH_REQUIRED 로 답하면 로그인 창을 겹쳐 열고, 로그인하면 멈췄던 요청을 이어 간다.
+  const [gateOpen, setGateOpen] = useState(false);
+  const gateWaiters = useRef([]);
+  useEffect(() => {
+    setLoginHandler(() => new Promise((resolve) => {
+      gateWaiters.current.push(resolve);
+      setGateOpen(true);
+    }));
+    return () => setLoginHandler(null);
+  }, []);
+  const closeGate = (ok) => {
+    setGateOpen(false);
+    gateWaiters.current.splice(0).forEach((resolve) => resolve(ok));
+  };
+  const handleLoginSuccess = (session) => {
+    applySession(session);
+    setAuthView(null);
+    closeGate(true);
+  };
+  const handleLogout = async () => {
+    await flush(); // 로그아웃하기 전에 저장되지 않은 변경을 임시 저장한다
+    try { await signOut(); } catch { /* 이미 만료됐어도 화면 상태는 로그아웃으로 */ }
+    setIsLoggedIn(false);
+    setReporterName("김동아 기자");
+  };
+
+  const handleRunFactCheck = () => {
+    setFactCheckRequest((count) => count + 1);
+    setActiveTab("writer");
+  };
 
   const handleConnectSource = (source) => {
     const citation = `\n\n[출처 참고: ${source.title} (${source.category})]`;
@@ -242,112 +464,186 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
     alert(`"${source.title}" 자료가 작성 기사의 출처로 연결되었습니다.`);
   };
 
-  const handleReturnFromInterview = (editedTranscript, interview) => {
+  // 오늘의 데스크: "최근 활동"에 쓸 저장 기사 목록(실제 저장본). 데스크를 열 때마다 새로 읽는다.
+  const [deskArticles, setDeskArticles] = useState([]);
+  useEffect(() => {
+    if (activeTab !== "desk") return undefined;
+    let active = true;
+    listStoredArticles().then((list) => active && setDeskArticles(list)).catch(() => {});
+    return () => { active = false; };
+  }, [activeTab]);
+
+  // 데스크 일정의 "다음 작업" 이동. evidence 는 기사 작성 화면을 팩트체크·근거자료 패널이 열린 채로 연다.
+  const handleDeskNavigate = (to) => {
+    if (to === "evidence") handleRunFactCheck();
+    else setActiveTab(to);
+  };
+
+  const handleReturnFromInterview = (editedTranscript, source) => {
     if (editedTranscript) {
-      const interviewQuote = `\n\n[인터뷰 발췌]\n${editedTranscript}`;
-      setArticle((prev) => ({ ...prev, content: prev.content + interviewQuote,
-        linkedInterviews: interview ? [...(prev.linkedInterviews || []), interview] : prev.linkedInterviews }));
+      const interviewQuote = `\n\n[인터뷰 발췌 녹취: ${editedTranscript.slice(0, 80)}...]`;
+      setArticle((prev) => {
+        // 인용한 녹취를 기사에 연결해 둔다(저장하면 기사와 함께 Core에 보관된다).
+        const linked = prev.linkedInterviews || [];
+        const alreadyLinked = linked.some((item) => (item?.id || item) === source?.id);
+        return {
+          ...prev,
+          content: prev.content + interviewQuote,
+          linkedInterviews: source?.id && !alreadyLinked ? [...linked, { id: source.id, filename: source.filename || "" }] : linked,
+        };
+      });
     }
     setActiveTab("writer");
   };
 
+  const [isReaderPreview, setIsReaderPreview] = useState(false);
+  const [isPhotoEditing, setIsPhotoEditing] = useState(false);
+
   return (
-    <div className="min-h-screen flex flex-col font-sans selection:bg-[#F4A940] selection:text-white bg-transparent text-[#292929]">
-      {/* 1. Top Header */}
-      <Header
-        currentArticleTitle={article.title}
-        status={save.phase}
-        coreReady={coreState.ok}
-        coreLabel={coreState.ok ? "코어 연결됨" : "코어 대기"}
-        session={coreState.session}
-        onSession={onSession}
-        onLogin={() => setShowLogin(true)}
-        beforeLogout={() => (unsynced ? flush() : Promise.resolve())}
-        onModels={() => setShowModels(true)}
-        saveStatus={saveStatus}
-        onHome={() => setActiveTab("desk")}
-        onSearch={() => setActiveTab("archive")}
+    <div className={`newsroom-app min-h-screen flex flex-col font-sans selection:bg-[#8ECAE6]/40 selection:text-slate-900 text-[#292929] relative overflow-x-hidden ${isReaderPreview ? "bg-white" : "bg-transparent"}`}>
+      {/* ──────────────────────────────────────────────────────────
+          Soft Ambient Gradient Background Layer (콘텐츠 뒤 고정 앰비언트 레이어)
+          - 상단 Soft Blue (rgba(190, 220, 255, 0.25))
+          - 중앙 거의 흰색에 가까운 부드러운 transition
+          - 하단 Soft Lavender (rgba(215, 200, 255, 0.22))
+          - transition-all duration-700으로 화면 전환 시 부드러운 빛의 블렌딩 효과
+          - 독자 화면 미리보기 시에는 순수 흰색(#FFFFFF)으로 전환
+         ────────────────────────────────────────────────────────── */}
+      <div
+        className="fixed inset-0 pointer-events-none -z-10 transition-all duration-700 ease-out"
+        style={{
+          background: isReaderPreview ? "#FFFFFF" : getAmbientGradient(activeTab, factCheckRequest > 0),
+        }}
       />
 
-
-      {/* 2. Main Workspace Layout: Floating Slim Sidebar & Warm Minimal Workspace */}
-      {switchError && <p role="alert" className="workspace-global-error">{switchError}</p>}
-      {switching && <p role="status" className="px-6 py-2">현재 원고를 저장하고 작업을 전환합니다…</p>}
-      <div className="workspace-layout" inert={switching || undefined}>
-        <Sidebar
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          session={coreState.session}
-          onSettings={() => setShowSettings(true)}
+      {/* 1. Top Header (사진 편집 모드 시에만 숨김 처리) */}
+      {!isPhotoEditing && (
+        <Header
+          currentArticleTitle={article.title}
+          status={article.status}
+          reporterName={reporterName}
+          isLoggedIn={isLoggedIn}
+          setIsLoggedIn={setIsLoggedIn}
+          onOpenAuth={(mode) => setAuthView(mode)}
+          onLogout={handleLogout}
+          onSave={() => { void persistArticle(); }}
+          onArchive={async () => {
+            const saved = await persistArticle();
+            if (saved) setActiveTab("archive");
+            return saved;
+          }}
         />
+      )}
 
-        {/* Main Content Workspace */}
-        <div className="workspace-content">
-          <Suspense fallback={<div className="py-24 text-center text-sm text-slate-500">화면을 불러오는 중…</div>}>
-          <main>
-            <PageHeader page={activeTab} actions={['desk', 'archive'].includes(activeTab) &&
-              <button type="button" className="workspace-primary" disabled={loading || switching} onClick={() => changeArticle()}>+ 새 기사</button>} />
-            {listError && ['desk', 'archive'].includes(activeTab) && <div role="alert" className="workspace-global-error">저장된 기사 목록을 불러오지 못했습니다. {listError} <button type="button" onClick={() => setListAttempt((attempt) => attempt + 1)}>다시 시도</button></div>}
-            {loading && loadError && (
+      {/* 2. Main Workspace Layout 또는 로그인/회원가입 화면 (앰비언트 그라데이션 배경 유지) */}
+      {authView ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-[calc(100vh-80px)] z-20">
+          <LoginScreen
+            initialMode={authView}
+            onClose={() => setAuthView(null)}
+            onLoginSuccess={handleLoginSuccess}
+          />
+        </div>
+      ) : (
+        <div className={`newsroom-workspace flex flex-1 w-full relative min-h-[calc(100vh-70px)] ${isPhotoEditing ? "p-0" : "pl-6 md:pl-8 pr-5 md:pr-7 py-2.5 gap-4 md:gap-6"} items-start ${isReaderPreview ? "pt-5" : ""}`}>
+          {/* Left Sidebar attached to edge (사진 편집 화면 시 숨김) */}
+          {!isPhotoEditing && (
+            <Sidebar
+              isCollapsed={isSidebarCollapsed}
+              setIsCollapsed={setIsSidebarCollapsed}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+            />
+          )}
+
+          {/* Main Content Workspace (우측 여백 없이 전체 너비 자연스럽게 채움) */}
+          <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0">
+            {!isPhotoEditing && (
+              <p className="px-3 pb-1 text-[11px] text-slate-500" role="status">{storageStatus}</p>
+            )}
+            {!isLoaded && loadError ? (
               <div role="alert" className="py-24 text-center text-sm text-red-700">
                 <p>{loadError}</p>
-                <button type="button" onClick={onRetry} className="mt-4 rounded-full border px-4 py-2 cursor-pointer">다시 불러오기</button>
+                <button type="button" onClick={() => { setLoadError(""); setLoadAttempt((attempt) => attempt + 1); }} className="mt-4 rounded-full border px-4 py-2 cursor-pointer">다시 불러오기</button>
               </div>
-            )}
-            {loading && !loadError && (
-              <div data-testid="workspace-loading" className="py-24 text-center text-sm text-slate-500">최근 작업을 불러오는 중…</div>
-            )}
-            {!loading && (activeTab === "writer" || activeTab === "publish") && (
+            ) : activeTab === "writer" || activeTab === "publish" || activeTab === "factcheck" ? (
               <ArticleWriter
-                openEvidence={evidenceOpen}
                 article={article}
                 setArticle={setArticle}
                 onOpenSearch={() => setShowSearchModal(true)}
-                saveStatus={saveStatus}
-                onSave={save.saveNow}
-                unsaved={save.dirty}
-                onRestoredSaved={save.markSaved}
-                onPublish={save.publishNow}
-                published={save.published}
-                saveTimes={save.times}
-                onModels={() => setShowModels(true)}
+                onRunFactCheck={handleRunFactCheck}
+                factCheckRequest={factCheckRequest}
+                onPublish={handlePublish}
+                onModels={() => setActiveTab("settings")}
+                isToolsCollapsed={isToolsCollapsed}
+                setIsToolsCollapsed={setIsToolsCollapsed}
+                isSidebarCollapsed={isSidebarCollapsed}
+                onConnectSource={handleConnectSource}
+                isReaderPreview={isReaderPreview}
+                setIsReaderPreview={setIsReaderPreview}
+                isPhotoEditing={isPhotoEditing}
+                setIsPhotoEditing={setIsPhotoEditing}
               />
-            )}
+            ) : activeTab === "interview" ? (
+              <main className="flex-1 py-7 px-5 md:px-10 min-w-0 transition-all z-20">
+                <InterviewStudio onReturnToArticle={handleReturnFromInterview} />
+              </main>
+            ) : activeTab === "desk" ? (
+              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
+                <PageHeader page="desk" />
+                <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} busy={false} />
+              </main>
+            ) : activeTab === "map" ? (
+              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
+                <PageHeader page="map" />
+                <DataMapView articleId={mapArticleId || article.articleId} />
+              </main>
+            ) : activeTab === "archive" ? (
+              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
+                <PageHeader page="archive" />
+                {listError && <div role="alert" className="workspace-global-error">저장된 기사 목록을 불러오지 못했습니다. {listError}</div>}
+                {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
+                <ArchiveView article={article} articles={archiveArticles} onOpen={(id) => changeArticle(id, "writer")} onDelete={deleteArticle}
+                  onMap={(id) => { setActiveTab("map"); setMapArticleId(id === currentId ? null : id); }} busy={switching} />
+              </main>
+            ) : activeTab === "settings" ? (
+              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-4 md:px-8">
+                <SettingsView onReturnToArticle={() => setActiveTab("writer")} session={session} onSession={applySession} />
+              </main>
+            ) : (
+              <main className="main-warm-container flex-1 py-7 px-5 md:px-10 min-w-0 transition-all z-20">
+                {activeTab === "search" && (
+                  <SourceSearch onConnectToArticle={handleConnectSource} />
+                )}
 
-            {!loading && activeTab === "desk" && <DeskView articles={articles} onNavigate={setActiveTab} busy={switching} />}
-            {!loading && activeTab === "map" && <DataMapView articleId={mapArticleId || article.articleId} />}
-
-            {!loading && activeTab === "search" && (
-              <SourceSearch onConnectToArticle={handleConnectSource} connectedSourceIds={article.linkedSources} />
+                {activeTab === "convert" && (
+                  <>
+                    <PageHeader page="convert" />
+                    <PlatformStudio
+                      key={article.articleId || "unsaved"}
+                      article={studioArticle}
+                      setArticle={setStudioArticle}
+                      flush={flushForStudio}
+                      onApplyArticle={(id) => changeArticle(id, "convert")}
+                      onOpenArticles={() => setActiveTab("archive")}
+                      onEditArticle={() => setActiveTab("writer")}
+                      sourceLoading={switching}
+                      sourceError={switchError}
+                    />
+                  </>
+                )}
+              </main>
             )}
-
-            {!loading && interviewVisited && (
-              <div hidden={activeTab !== "interview"}><InterviewStudio active={activeTab === "interview"} onReturnToArticle={handleReturnFromInterview} /></div>
-            )}
-
-            {!loading && activeTab === "convert" && (
-              <FormatConverter article={article} setArticle={setArticle} flush={flush}
-                onApplyArticle={id => changeArticle(id, "convert")}
-                onOpenArticles={() => setActiveTab("archive")} onEditArticle={() => setActiveTab("writer")}
-                sourceLoading={switching} sourceError={switchError || listError}
-                />
-            )}
-
-            {!loading && activeTab === "archive" && (
-              <ArchiveView article={article} articles={articles} onOpen={changeArticle} onDelete={deleteArticle}
-                onMap={(id) => { setActiveTab("map"); setMapArticleId(id === article.id ? null : id); }} busy={switching} />
-            )}
-          </main>
-          </Suspense>
+          </div>
         </div>
-      </div>
+      )}
 
-      <Suspense fallback={null}>
-        {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} required={!session?.signedIn} />}
-        {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
-        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} session={session} onSession={onSession}
-          onTransfer={() => { setShowSettings(false); setShowTransfer(true); }} />}
-        {showTransfer && <TransferWizard onClose={() => setShowTransfer(false)} onBeforeRestore={() => (unsynced ? flush() : Promise.resolve())} />}
+      {/* 인증이 필요한 요청이 멈췄을 때: 작업 화면을 유지한 채 로그인 창만 겹쳐 연다 */}
+      {gateOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 overflow-auto bg-slate-900/30 backdrop-blur-sm">
+          <LoginScreen initialMode="login" required={!session?.signedIn} onClose={() => closeGate(false)} onLoginSuccess={handleLoginSuccess} />
+        </div>
+      )}
 
       {/* Quick Source Search Modal during Writing */}
       {showSearchModal && (
@@ -355,10 +651,9 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
           isModal={true}
           onClose={() => setShowSearchModal(false)}
           onConnectToArticle={handleConnectSource}
-          connectedSourceIds={article.linkedSources}
         />
       )}
-      </Suspense>
     </div>
   );
 }
+

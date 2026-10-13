@@ -112,6 +112,9 @@ export async function loadTranscript(id, signal) {
   return { ...transcript, audioUrl: URL.createObjectURL(audio) };
 }
 export const publishCms = (article, signal) => core.publishCms(article, signal);
+export const getTransferFile = (signal) => core.getTransferFile(signal);
+export const makeTransferFile = (code, signal) => core.makeTransferFile(code, signal);
+export const deleteTransferFile = (signal) => core.deleteTransferFile(signal);
 export const exportVault = (password, signal) => core.exportVault(password, signal);
 export const restoreVault = (password, data, signal) => core.restoreVault(password, data, signal);
 

@@ -24,6 +24,8 @@ export const ROUTES = Object.freeze({
   transferUpload: "/api/transfer/upload",
   transferDownload: "/api/transfer/download",
   transferDelete: "/api/transfer/delete",
+  transferFile: "/api/transfer/file",
+  transferFileDelete: "/api/transfer/file/delete",
   models: "/api/models",
   modelsInstall: "/api/models/install",
   modelsCancel: "/api/models/cancel",
@@ -121,6 +123,9 @@ export function createCoreApi(transport) {
     downloadTransfer: (code, signal) => transport.json(ROUTES.transferDownload, { code }, signal),
     /** 서버의 이전 파일 지우기(보낸 것을 취소) */
     deleteTransfer: (signal) => transport.json(ROUTES.transferDelete, {}, signal),
+    getTransferFile: (signal) => transport.json(ROUTES.transferFile, null, signal),
+    makeTransferFile: (code, signal) => transport.json(ROUTES.transferFile, { code }, signal),
+    deleteTransferFile: (signal) => transport.json(ROUTES.transferFileDelete, {}, signal),
     /** 원고 백업(브라우저 저장소) 암호화 키 → { key: base64 }. 계정별로 다르다. 화면은 메모리에만 두고 저장하지 않는다 */
     getBackupKey: (signal) => transport.json(ROUTES.backupKey, null, signal),
     /** 문제 보고용 진단 정보(앱 버전·모델 설치 상태·설정 요약). 원고·자료·이메일은 없다 */

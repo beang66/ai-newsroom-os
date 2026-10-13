@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import AppDialog from "./AppDialog";
 import { beginRestore, endRestore } from "../restoreState";
-import { getTransfer, uploadTransfer, downloadTransfer, deleteTransfer } from "../api/editorial";
-import { downloadTransferFile, generateTransferCode, normalizeTransferCode, restoreTransferFile } from "../lib/vaultTransfer";
+import { getTransfer, uploadTransfer, downloadTransfer, deleteTransfer, getTransferFile, makeTransferFile, deleteTransferFile } from "../api/editorial";
+import { generateTransferCode, normalizeTransferCode, restoreTransferFile } from "../lib/vaultTransfer";
 
 const size = (bytes) => (bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)}MB` : `${Math.max(1, Math.round(bytes / 1024))}KB`);
 const CODE_HELP = "이전 코드 형식을 확인해 주세요(영문 대문자와 숫자 20자, 예: ABCDE-FGHJK-LMNPQ-RSTUV).";
@@ -20,6 +20,11 @@ export default function TransferWizard({ onClose, onBeforeRestore }) {
   const [codeInput, setCodeInput] = useState(""); // 가져오기: 입력한 코드
   const [serverInfo, setServerInfo] = useState(null); // 가져오기: 서버 상태 { exists, bytes, updatedAt } | { error }
   const fileInput = useRef(null);
+  const [localFile, setLocalFile] = useState(null); // 이 PC 에 만들어 둔 이전 복제본 { exists, path, bytes }
+
+  useEffect(() => {
+    getTransferFile().then(setLocalFile).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (mode !== "import") return undefined;
@@ -50,7 +55,8 @@ export default function TransferWizard({ onClose, onBeforeRestore }) {
     setPending(true); setError(""); setCopied(false);
     const next = generateTransferCode();
     try {
-      setSentTo(await downloadTransferFile(next));
+      setLocalFile(await makeTransferFile(next));
+      setSentTo("file");
       setCode(next);
     } catch (e) { setError(e?.message || String(e)); }
     finally { setPending(false); }
@@ -59,6 +65,14 @@ export default function TransferWizard({ onClose, onBeforeRestore }) {
   const cancelServerCopy = async () => {
     setPending(true); setError("");
     try { await deleteTransfer(); setCode(""); setSentTo(""); }
+    catch (e) { setError(e?.message || String(e)); }
+    finally { setPending(false); }
+  };
+
+  const removeLocalFile = async () => {
+    if (!window.confirm("이 PC에 만든 이전 복제본 파일을 지울까요? 새 PC로 옮기기 전이면 다시 만들어야 해요.")) return;
+    setPending(true); setError("");
+    try { setLocalFile(await deleteTransferFile()); if (sentTo === "file") { setCode(""); setSentTo(""); } }
     catch (e) { setError(e?.message || String(e)); }
     finally { setPending(false); }
   };
@@ -103,20 +117,28 @@ export default function TransferWizard({ onClose, onBeforeRestore }) {
           <p className="text-xs text-[#666666] leading-relaxed">지금 로그인한 계정의 기사·취재자료·녹취를 <strong>일회용 코드로 암호화</strong>해서 서버로 보냅니다. 서버에는 암호문만 있고 코드는 가지 않아요. 새 PC에서 같은 계정으로 로그인해 이 코드만 입력하면 됩니다.</p>
           <div className="flex flex-wrap gap-2">
             <button type="button" data-testid="transfer-export-server" onClick={sendToServer} disabled={pending} className={primary}>
-              {pending ? "처리 중…" : code ? "새 코드로 다시 보내기" : "서버로 보내기 (권장)"}
+              {pending ? "처리 중…" : sentTo === "server" ? "새 코드로 다시 보내기" : "서버로 보내기 (권장)"}
             </button>
             <button type="button" data-testid="transfer-export-file" onClick={makeFile} disabled={pending} className={secondary}>파일로 만들기</button>
           </div>
           {tooLarge && <p data-testid="transfer-too-large" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3">자료가 서버 한도를 넘어요. <strong>파일로 만들기</strong>로 옮겨 주세요(메신저·클라우드로 보내도 됩니다).</p>}
           {code && (
             <div className="space-y-2 rounded-2xl border border-[#DDD6CB] bg-white p-4">
-              <p className="text-xs font-bold">{sentTo === "server" ? "서버에 올렸어요. 이전 코드" : `이전 코드 (파일: ${sentTo})`}</p>
+              <p className="text-xs font-bold">{sentTo === "server" ? "서버에 올렸어요. 이전 코드" : "이전 코드 (파일은 아래 위치에 만들었어요)"}</p>
               <p data-testid="transfer-code" className="select-all font-mono text-lg font-black tracking-wider">{code}</p>
               <div className="flex flex-wrap gap-2">
                 <button type="button" data-testid="transfer-copy" onClick={copyCode} className={secondary}>{copied ? "복사했어요" : "코드 복사"}</button>
                 {sentTo === "server" && <button type="button" data-testid="transfer-cancel-server" onClick={cancelServerCopy} disabled={pending} className={secondary}>서버에서 지우기</button>}
               </div>
-              <p className="text-xs text-[#666666] leading-relaxed">이 창을 닫으면 코드를 다시 볼 수 없어요. {sentTo === "server" ? "서버 파일은 새 PC에서 가져오면 자동으로 지워지고, 다시 보내면 덮어써요." : "파일은 가져온 뒤 지우세요. 파일과 코드는 서로 다른 방법으로 전달하세요."}</p>
+              <p className="text-xs text-[#666666] leading-relaxed">이 창을 닫으면 코드를 다시 볼 수 없어요. {sentTo === "server" ? "서버 파일은 새 PC에서 가져오면 자동으로 지워지고, 다시 보내면 덮어써요." : "파일과 코드는 서로 다른 방법으로 전달하세요."}</p>
+            </div>
+          )}
+          {localFile?.exists && (
+            <div data-testid="transfer-local-file" className="space-y-2 rounded-2xl border border-[#DDD6CB] bg-white p-4">
+              <p className="text-xs font-bold">이 PC에 이전 복제본 파일이 있어요 ({size(localFile.bytes)})</p>
+              <p data-testid="transfer-local-path" className="select-all break-all font-mono text-xs">{localFile.path}</p>
+              <p className="text-xs text-[#666666] leading-relaxed">이 파일을 새 PC로 옮겨(USB·메신저 등) 새 PC의 "이전 파일로 가져오기"에서 선택하세요. 암호화돼 있어 이전 코드 없이는 열 수 없지만, 옮기고 나면 지워 주세요.</p>
+              <button type="button" data-testid="transfer-delete-file" onClick={removeLocalFile} disabled={pending} className={secondary}>복제본 파일 지우기</button>
             </div>
           )}
         </section>

@@ -6,12 +6,15 @@
 """
 import os
 
+from app_paths import APP_DATA
 from .. import auth, vault
 from ..errors import RequestError
 from ..integrations import supabase
 
 BUCKET = 'transfers'
 NAME = 'transfer.db'
+FILE_DIR = APP_DATA / 'transfer-out'  # 파일로 만든 이전 복제본이 놓이는 곳(앱이 위치를 알아야 보여 주고 지울 수 있다)
+FILE_NAME = 'ai-newsroom-transfer.db'
 MAX_BYTES = int(float(os.environ.get('TRANSFER_MAX_MB') or 50) * 1024 * 1024)  # Supabase 무료 플랜의 파일당 한도
 
 
@@ -70,3 +73,21 @@ class TransferManager:
         token, path = self._target()
         supabase.storage_delete(BUCKET, path, token)
         return {'deleted': True}
+
+    # ---- 파일로 옮기기: 코어가 고정 위치에 암호화 복제본을 쓰고, 위치를 알려 주고, 지워 준다 ----
+    @staticmethod
+    def file_status():
+        path = FILE_DIR / FILE_NAME
+        return {'exists': path.is_file(), 'path': str(path), 'bytes': path.stat().st_size if path.is_file() else 0}
+
+    def make_file(self, payload):
+        """payload: {code} — 현재 계정 자료를 code 로 암호화한 복제본 파일을 만든다(이미 있으면 덮어쓴다)."""
+        raw = vault.export_backup(_code(payload))
+        FILE_DIR.mkdir(parents=True, exist_ok=True)
+        (FILE_DIR / FILE_NAME).write_bytes(raw)
+        return self.file_status()
+
+    @staticmethod
+    def delete_file():
+        (FILE_DIR / FILE_NAME).unlink(missing_ok=True)
+        return {'deleted': True, **TransferManager.file_status()}

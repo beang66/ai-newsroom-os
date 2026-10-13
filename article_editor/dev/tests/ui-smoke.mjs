@@ -164,7 +164,7 @@ try {
     if (r.url().endsWith("/api/articles/save") && r.ok()) savedIds.add((await r.json()).articleId);
   });
   // 화면의 alert 가 테스트를 멈추지 않게. 기사 전환 때 '저장하고 열까요?'는 수락(수동 저장 뒤 전환)
-  page.on("dialog", (d) => (/저장하지 않은 변경|삭제할까요|이전 파일의 자료로 바꿀까요/.test(d.message()) ? d.accept() : d.dismiss()));
+  page.on("dialog", (d) => (/저장하지 않은 변경|삭제할까요|이전 파일의 자료로 바꿀까요|클라우드 백업을 끌까요/.test(d.message()) ? d.accept() : d.dismiss()));
 
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
   // 사이드바(main 디자인)의 메뉴 이름 — 접힌 상태에서는 버튼 title 로 보인다
@@ -403,14 +403,41 @@ try {
   await page.getByRole("button", { name: "환경 설정", exact: true }).click();
   await settings.waitFor();
   assert.equal(await page.getByTestId("models-install").count(), 0, "환경 설정 창에는 모델 설치가 없어야 합니다");
+  const backupCalls = [];
+  let backupError = "";
+  await page.route(/\/api\/backup(?:\/(?:now|list|restore))?$/, async (route) => {
+    const url = route.request().url().replace(BASE, "");
+    backupCalls.push({ url, body: route.request().method() === "POST" ? route.request().postDataJSON() : null });
+    if (url.endsWith("/now")) return reply(route, { uploaded: 2, enabled: true, pending: 0, lastUploadAt: "2026-10-13T01:00:00+09:00", error: backupError });
+    if (url.endsWith("/list")) return reply(route, { backups: [
+      { articleId: "a".repeat(32), title: "서버 백업 기사 하나", savedAt: "2026-10-13T00:10:00Z", bytes: 4096 },
+      { articleId: "b".repeat(32), title: "서버 백업 기사 둘", savedAt: "2026-10-12T00:10:00Z", bytes: 2048 }] });
+    if (url.endsWith("/restore")) return reply(route, { restored: route.request().postDataJSON().articleIds, skipped: [] });
+    return reply(route, { enabled: true, pending: 1, lastUploadAt: "2026-10-13T00:00:00+09:00", error: "" });
+  });
   await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
   assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), true, "클라우드 백업 기본값은 켜짐");
-  await page.getByTestId("settings-cloud-backup").uncheck();
+  await page.getByTestId("backup-now").click();
+  await page.getByTestId("backup-notice").getByText(/2건/).waitFor();
+  await page.getByTestId("backup-status").getByText(/마지막 백업/).waitFor();
+  // 서버 백업에서 복구: 목록에서 고르고 복구하면 화면을 다시 불러온다
+  await page.getByTestId("backup-restore-open").click();
+  await page.getByTestId("backup-list").getByText("서버 백업 기사 하나").waitFor();
+  await Promise.all([page.waitForEvent("load"), page.getByTestId("backup-restore").click()]);
+  assert.deepEqual(backupCalls.find((c) => c.url.endsWith("/restore")).body.articleIds, ["a".repeat(32), "b".repeat(32)]);
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await settings.waitFor();
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
+  await page.getByTestId("settings-cloud-backup").uncheck(); // 끄기 확인(수락) → 서버 삭제 확인(취소) → 실제 코어가 설정을 끈다
   await settings.getByRole("button", { name: "닫기", exact: true }).click();
   await page.getByRole("button", { name: "환경 설정", exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
   assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), false, "끈 설정이 유지됨");
+  backupError = "백업 키를 받지 못했어요(시험용 오류)";
   await page.getByTestId("settings-cloud-backup").check();
+  await page.getByTestId("settings-error").getByText(/백업 키를 받지 못했어요/).waitFor();
+  assert.equal(await page.getByTestId("backup-notice").count(), 0, "올리지 못했으면 성공 안내를 보이지 않는다");
+  backupError = "";
   // 로그인 유지: 로그인 때 켠 상태가 반영되고, 설정에서 끄고 켤 수 있다
   session = { ...session, keepLogin: true };
   await page.reload();

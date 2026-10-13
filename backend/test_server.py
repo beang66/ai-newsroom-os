@@ -74,6 +74,7 @@ def load_proxy(upstream_base: str):
             'RATE_LIMIT_PER_MIN': '1000',
             'CMS_PUBLISH_URL': upstream_base + '/cms-target',
             'CMS_BEARER_TOKEN': 'cms-secret',
+            'BACKUP_MASTER_KEY': 'test-master-key-0123456789abcdef0123456789',
         }
     )
     spec = importlib.util.spec_from_file_location('backend_server', BACKEND / 'server.py')
@@ -144,6 +145,27 @@ class ProxyTests(unittest.TestCase):
         self.assertEqual((method, path), ('POST', '/cf/accounts/acct1/ai/run/@cf/qwen/qwen3-embedding-0.6b'))
         self.assertEqual(authorization, 'Bearer test-cf-token')
         self.assertEqual(self.call('/ai/embeddings', {'text': ['a']})[0], 401)
+
+    def test_backup_key_is_per_user_stable_and_needs_login(self):
+        import base64
+        import hashlib
+        import hmac
+        self.assertEqual(self.call('/ai/backup-key', {})[0], 401)
+        status, payload = self.call('/ai/backup-key', {}, token='good-token')
+        self.assertEqual(status, 200)
+        expected = hmac.new(b'test-master-key-0123456789abcdef0123456789', b'article-backup:u-1', hashlib.sha256).digest()
+        self.assertEqual(base64.b64decode(payload['key']), expected, '마스터 키에서 사용자 id 로 파생한 키')
+        self.assertEqual(self.call('/ai/backup-key', {}, token='good-token')[1]['key'], payload['key'], '같은 사용자는 늘 같은 키')
+        self.assertNotIn('test-master-key', json.dumps(payload), '마스터 키는 응답에 없다')
+        self.assertTrue(self.call('/ai/health')[1]['backupKey'])
+
+    def test_backup_key_unavailable_without_master_key(self):
+        saved = os.environ.pop('BACKUP_MASTER_KEY')
+        try:
+            self.assertEqual(self.call('/ai/backup-key', {}, token='good-token')[0], 503)
+            self.assertFalse(self.call('/ai/health')[1]['backupKey'])
+        finally:
+            os.environ['BACKUP_MASTER_KEY'] = saved
 
     def test_verified_token_is_cached_for_a_minute(self):
         self.call('/ai/embeddings', {'text': ['a']}, token='good-token')

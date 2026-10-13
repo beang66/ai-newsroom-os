@@ -189,6 +189,15 @@ def storage_delete(bucket: str, path: str, access_token: str) -> None:
     _call(request, expect_json=False, timeout=STORAGE_TIMEOUT)
 
 
+def storage_list(bucket: str, folder: str, access_token: str) -> list:
+    """폴더 안의 파일 이름 목록(최대 1000)."""
+    request = urllib.request.Request(
+        _base() + '/storage/v1/object/list/' + urllib.parse.quote(bucket),
+        data=json.dumps({'prefix': folder, 'limit': 1000, 'offset': 0}).encode(), method='POST',
+        headers=_headers(access_token, {'Content-Type': 'application/json'}))
+    return [row['name'] for row in (_call(request) or []) if row.get('name') and row.get('id')]  # id 없는 항목은 하위 폴더
+
+
 def storage_info(bucket: str, path: str, access_token: str) -> dict | None:
     """파일 정보 {bytes, updatedAt}. 없으면 None."""
     folder, _, name = path.rpartition('/')

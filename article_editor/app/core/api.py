@@ -34,6 +34,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():return self.send(403,{'error':'로컬 주소로 접속해 주세요.'})
         if self.path=='/api/status':return self.send(200,{'ready':bool(os.environ.get('OPENAI_API_KEY')),'headline_ready':headline_dependencies_ready(),'headline_model':HEADLINE_MODEL,'subtitle_model':SUBTITLE_MODEL,'pipeline_version':PIPELINE_VERSION,'unsplash_ready':bool(os.environ.get('UNSPLASH_ACCESS_KEY')),'workspace_version':'3.0.0','dev':not getattr(sys,'frozen',False)})
         if self.path=='/api/settings':return self.send(200,CORE.settings.get())
+        if self.path=='/api/backup':return self.send(200,CORE.backup.status())
+        if self.path=='/api/backup/list':
+            try:return self.send(200,CORE.backup.list())
+            except RequestError as e:return self.send(e.status,error_body(e))
         if self.path=='/api/transfer':
             try:return self.send(200,CORE.transfer.status())
             except RequestError as e:return self.send(e.status,error_body(e))
@@ -169,7 +173,7 @@ class Handler(BaseHTTPRequestHandler):
         job_cancel=re.fullmatch(r'/api/jobs/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/cancel',self.path)
         source_delete=re.fullmatch(r'/api/sources/([a-f0-9]{32}|[a-f0-9]{16})/delete',self.path)
         knowledge_file_delete=re.fullmatch(r'/api/knowledge-files/('+UUID+')/delete',self.path)
-        if not restore and not prune and not article_delete and not snapshot and not job_cancel and not source_delete and not knowledge_file_delete and self.path not in ('/api/media-assets','/api/knowledge-files/import','/api/assist','/api/articles/save','/api/articles/publish','/api/session','/api/session/signup','/api/session/keep','/api/transfer/upload','/api/transfer/download','/api/transfer/delete','/api/session/signout','/api/session/auto','/api/settings','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate','/api/platform/render','/api/cms/publish','/api/vault/export','/api/vault/restore'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        if not restore and not prune and not article_delete and not snapshot and not job_cancel and not source_delete and not knowledge_file_delete and self.path not in ('/api/media-assets','/api/knowledge-files/import','/api/assist','/api/articles/save','/api/articles/publish','/api/session','/api/session/signup','/api/session/keep','/api/transfer/upload','/api/backup/now','/api/backup/restore','/api/backup/disable','/api/transfer/download','/api/transfer/delete','/api/session/signout','/api/session/auto','/api/settings','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate','/api/platform/render','/api/cms/publish','/api/vault/export','/api/vault/restore'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
@@ -180,6 +184,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/session':return self.send(200,CORE.session.sign_in(data))
             if self.path=='/api/session/signup':return self.send(200,CORE.session.sign_up(data))
             if self.path=='/api/session/keep':return self.send(200,CORE.session.set_keep_login(data))
+            if self.path=='/api/backup/now':return self.send(200,{'uploaded':CORE.backup.backup_all(),**CORE.backup.status()})
+            if self.path=='/api/backup/restore':return self.send(200,CORE.backup.restore(data))
+            if self.path=='/api/backup/disable':return self.send(200,CORE.backup.disable(data))
             if self.path=='/api/transfer/upload':return self.send(200,CORE.transfer.upload(data))
             if self.path=='/api/transfer/download':return self.send(200,CORE.transfer.download(data))
             if self.path=='/api/transfer/delete':return self.send(200,CORE.transfer.delete())

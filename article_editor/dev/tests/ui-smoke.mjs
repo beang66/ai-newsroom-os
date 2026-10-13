@@ -180,7 +180,7 @@ try {
   );
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.setDefaultTimeout(60_000); // 전체 파이썬 시험 직후처럼 PC 가 바쁠 때 30초 기본값을 넘는 경우가 있었다
-  page.on("console", (m) => m.type() === "error" && !/status of (503|422|401)/.test(m.text())
+  page.on("console", (m) => m.type() === "error" && !/status of (503|422|401|400|413)/.test(m.text())
     && !(/status of 404/.test(m.text()) && expectedDbFailureUrls.has(m.location().url)) && problems.push("console: " + m.text()));
   page.on("pageerror", (e) => problems.push("pageerror: " + e.message));
   page.on("response", async (r) => {
@@ -189,7 +189,7 @@ try {
     if (r.url().endsWith("/api/articles/save") && r.ok()) savedIds.add((await r.json()).articleId);
   });
   // 화면의 alert 가 테스트를 멈추지 않게. 기사 전환 때 '저장하고 열까요?'는 수락(수동 저장 뒤 전환)
-  const acceptTestDialog=(d)=>(/저장하지 않은 변경|삭제할까요/.test(d.message())?d.accept():d.dismiss());
+  const acceptTestDialog=(d)=>(/저장하지 않은 변경|삭제할까요|이전 파일의 자료로 바꿀까요|클라우드 백업을 끌까요|복제본 파일을 지울까요/.test(d.message())?d.accept():d.dismiss());
   page.on("dialog",acceptTestDialog);
 
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
@@ -198,6 +198,12 @@ try {
   const go = async (title) => {
     await page.locator(`button[title="${NAV[title] || title}"]`).first().click();
     await page.getByTestId('page-heading').filter({ hasText: NAV[title] || title }).waitFor();
+  };
+  // 복구 후 HTML load와 실제 원고 조회 완료는 다르다. 작업 영역 재마운트가 끝난 뒤 다음 창을 연다.
+  const waitWorkspaceReady = async () => {
+    await page.getByTestId('page-heading').waitFor();
+    await page.getByTestId('workspace-loading').waitFor({ state: 'detached' });
+    await page.locator('header').getByText(session.email, { exact: true }).waitFor();
   };
   fs.mkdirSync(new URL('temp/', ROOT), { recursive: true });
   const snapshot = (name) => page.screenshot({ path: fileURLToPath(new URL(`temp/${name}.png`, ROOT)), fullPage: true });
@@ -429,17 +435,40 @@ try {
   await page.getByRole("button", { name: "환경 설정", exact: true }).click();
   await settings.waitFor();
   assert.equal(await page.getByTestId("models-install").count(), 0, "환경 설정 창에는 모델 설치가 없어야 합니다");
+  const backupCalls = [];
+  await page.route(/\/api\/backup(?:\/(?:list|restore))?$/, async (route) => {
+    const url = route.request().url().replace(BASE, "");
+    backupCalls.push({ url, body: route.request().method() === "POST" ? route.request().postDataJSON() : null });
+    if (url.endsWith("/list")) return reply(route, { backups: [
+      { articleId: "a".repeat(32), title: "서버 백업 기사 하나", savedAt: "2026-10-13T00:10:00Z", bytes: 4096 },
+      { articleId: "b".repeat(32), title: "서버 백업 기사 둘", savedAt: "2026-10-12T00:10:00Z", bytes: 2048 }] });
+    if (url.endsWith("/restore")) return reply(route, { restored: route.request().postDataJSON().articleIds, skipped: [] });
+    return reply(route, { enabled: true, pending: 1, lastUploadAt: "2026-10-13T00:00:00+09:00", error: "" });
+  });
   await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
   assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), true, "클라우드 백업 기본값은 켜짐");
-  await page.getByTestId("settings-cloud-backup").uncheck();
+  assert.equal(await page.getByTestId("backup-now").count(), 0, "백업은 저장할 때 자동으로 되므로 '지금 백업' 버튼이 없다");
+  // 서버 백업에서 복구: 목록에서 고르고 복구하면 화면을 다시 불러온다
+  await page.getByTestId("backup-restore-open").click();
+  await page.getByTestId("backup-status").getByText(/마지막 백업/).waitFor();
+  await page.getByTestId("backup-list").getByText("서버 백업 기사 하나").waitFor();
+  await Promise.all([page.waitForEvent("load"), page.getByTestId("backup-restore").click()]);
+  await waitWorkspaceReady();
+  assert.deepEqual(backupCalls.find((c) => c.url.endsWith("/restore")).body.articleIds, ["a".repeat(32), "b".repeat(32)]);
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await settings.waitFor();
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
+  await page.getByTestId("settings-cloud-backup").uncheck(); // 끄기 확인(수락) → 서버 삭제 확인(취소) → 실제 코어가 설정을 끈다
   await settings.getByRole("button", { name: "닫기", exact: true }).click();
   await page.getByRole("button", { name: "환경 설정", exact: true }).click();
   await page.waitForFunction(() => document.querySelector('[data-testid="settings-cloud-backup"]')?.disabled === false);
   assert.equal(await page.getByTestId("settings-cloud-backup").isChecked(), false, "끈 설정이 유지됨");
-  await page.getByTestId("settings-cloud-backup").check();
+  await page.getByTestId("settings-cloud-backup").check(); // 켜기: 저장할 때부터 자동으로 올라간다(켠 순간 일괄로 올리지 않는다)
+  assert.equal(backupCalls.some((c) => c.url.endsWith("/now")), false, "켤 때 기존 기사를 일괄로 올리지 않는다")
   // 로그인 유지: 로그인 때 켠 상태가 반영되고, 설정에서 끄고 켤 수 있다
   session = { ...session, keepLogin: true };
   await page.reload();
+  await waitWorkspaceReady();
   await page.locator('header').getByText('reporter@example.test',{exact:true}).waitFor();
   await page.getByRole("button", { name: "환경 설정", exact: true }).click();
   await settings.waitFor();
@@ -454,6 +483,102 @@ try {
   assert.match(diagText, /앱 버전: /);
   assert.match(diagText, /파이프라인: /);
   assert.equal(diagText.includes("reporter@example.test"), false, "진단 정보에 이메일이 없어야 합니다");
+  // 다른 PC로 이전 마법사(서버 경유): 서버는 Supabase 가 필요하므로 이 시험에서는 응답을 흉내 낸다. 파일 방식은 실제 코어로 돌린다
+  await page.getByTestId("settings-open-transfer").click();
+  const transfer = page.getByTestId("transfer-dialog");
+  await transfer.waitFor();
+  assert.equal(await settings.count(), 0, "마법사가 열리면 설정 창은 닫힌다");
+  const transferCalls = [];
+  let serverFile = null, uploadOutcome = "ok";
+  await page.route("**/api/transfer**", async (route) => {
+    const url = route.request().url();
+    const body = route.request().method() === "POST" ? route.request().postDataJSON() : null;
+    transferCalls.push({ url: url.replace(BASE, ""), body });
+    if (url.endsWith("/upload")) {
+      if (uploadOutcome === "large") return reply(route, { error: "자료가 너무 커서 서버로 보낼 수 없어요(최대 50MB). 파일로 옮겨 주세요.", code: "TRANSFER_TOO_LARGE" }, 413);
+      serverFile = { code: body.code };
+      return reply(route, { uploaded: true, bytes: 2048 });
+    }
+    if (url.endsWith("/download")) {
+      if (!serverFile || body.code !== serverFile.code) return reply(route, { error: "백업 암호가 맞지 않거나 파일이 손상됐습니다." }, 400);
+      serverFile = null;
+      return reply(route, { restored: true, serverCopyDeleted: true });
+    }
+    if (url.endsWith("/delete")) { serverFile = null; return reply(route, { deleted: true }); }
+    return reply(route, serverFile ? { exists: true, bytes: 2048, updatedAt: "2026-10-13T01:00:00Z", maxBytes: 52428800 } : { exists: false, bytes: 0, updatedAt: "", maxBytes: 52428800 });
+  });
+  // 서버가 한도를 넘었다고 하면 안내하고 파일 방식을 권한다
+  uploadOutcome = "large";
+  await page.getByTestId("transfer-export-server").click();
+  await page.getByTestId("transfer-too-large").waitFor();
+  assert.equal(await page.getByTestId("transfer-code").count(), 0, "올리지 못했으면 코드를 보여 주지 않는다");
+  // 서버로 보내기: 코드 형식, 서버로 간 요청에는 코드가 한 번만 실린다
+  uploadOutcome = "ok";
+  await page.getByTestId("transfer-export-server").click();
+  await page.getByTestId("transfer-code").waitFor();
+  const serverCode = (await page.getByTestId("transfer-code").textContent()).trim();
+  assert.match(serverCode, /^[A-HJ-NP-Z2-9]{5}(-[A-HJ-NP-Z2-9]{5}){3}$/, "이전 코드 형식");
+  assert.deepEqual(transferCalls.filter((c) => c.url.endsWith("/upload")).at(-1).body, { code: serverCode });
+  // 새 PC 쪽: 서버 상태를 보여 주고, 틀린 코드는 거절하고, 올바른 코드(소문자·공백도 허용)로는 가져와 화면을 다시 연다
+  await page.getByTestId("transfer-tab-import").click();
+  await page.getByTestId("transfer-server-status").getByText(/서버에 이전 파일이 있어요/).waitFor();
+  await page.getByTestId("transfer-code-input").fill("AAAAA-BBBBB-CCCCC-DDDDD");
+  await page.getByTestId("transfer-import-server").click();
+  await page.getByTestId("transfer-error").getByText(/맞지 않/).waitFor();
+  await page.getByTestId("transfer-code-input").fill("짧음");
+  await page.getByTestId("transfer-import-server").click();
+  await page.getByTestId("transfer-error").getByText(/코드 형식/).waitFor();
+  await page.getByTestId("transfer-tab-export").click();
+  await page.getByTestId("transfer-cancel-server").click(); // 보낸 것을 취소하면 서버 파일이 지워진다
+  await page.getByTestId("transfer-code").waitFor({ state: "detached" });
+  assert.equal(serverFile, null);
+  await page.getByTestId("transfer-tab-import").click();
+  await page.getByTestId("transfer-server-status").getByText(/서버에 이전 파일이 없어요/).waitFor();
+  assert.equal(await page.getByTestId("transfer-import-server").isDisabled(), true, "서버에 파일이 없으면 가져오기를 막는다");
+  await page.getByTestId("transfer-tab-export").click();
+  await page.getByTestId("transfer-export-server").click();
+  await page.getByTestId("transfer-code").waitFor();
+  const serverCode2 = (await page.getByTestId("transfer-code").textContent()).trim();
+  await page.getByTestId("transfer-tab-import").click();
+  await page.getByTestId("transfer-server-status").getByText(/서버에 이전 파일이 있어요/).waitFor();
+  await page.getByTestId("transfer-code-input").fill(serverCode2.toLowerCase().replaceAll("-", " "));
+  await Promise.all([page.waitForEvent("load"), page.getByTestId("transfer-import-server").click()]);
+  await waitWorkspaceReady();
+  await page.unroute("**/api/transfer**");
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await settings.waitFor();
+  // 파일 방식(실제 코어): 이전 파일 + 코드를 만들고, 틀린 코드는 거절하고, 올바른 코드로는 복구한다
+  await page.getByTestId("settings-open-transfer").click();
+  await transfer.waitFor();
+  await page.getByTestId("transfer-export-file").click();
+  await page.getByTestId("transfer-local-path").waitFor();
+  const transferPath = (await page.getByTestId("transfer-local-path").textContent()).trim();
+  const transferCode = (await page.getByTestId("transfer-code").textContent()).trim();
+  assert.match(transferCode, /^[A-HJ-NP-Z2-9]{5}(-[A-HJ-NP-Z2-9]{5}){3}$/, "이전 코드 형식");
+  assert.ok((await fs.promises.stat(transferPath)).size > 0, "이전 파일이 안내한 위치에 만들어진다");
+  await page.getByTestId("transfer-tab-import").click();
+  await page.locator("[data-testid=transfer-dialog] summary").click();
+  await page.getByTestId("transfer-file").setInputFiles(transferPath);
+  await page.getByTestId("transfer-code-input").fill("AAAAA-BBBBB-CCCCC-DDDDD"); // 형식은 맞지만 틀린 코드
+  await page.getByTestId("transfer-import-file").click();
+  await page.getByTestId("transfer-error").waitFor();
+  const articlesBefore = (await (await page.request.get(`${BASE}/api/articles`)).json()).articles.length;
+  await page.getByTestId("transfer-code-input").fill(transferCode.toLowerCase().replaceAll("-", " "));
+  await Promise.all([page.waitForEvent("load"), page.getByTestId("transfer-import-file").click()]);
+  await waitWorkspaceReady();
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await settings.waitFor();
+  const articlesAfter = (await (await page.request.get(`${BASE}/api/articles`)).json()).articles.length;
+  assert.equal(articlesAfter, articlesBefore, "이전 파일을 가져와도 기사가 그대로 있다");
+  // 복제본 파일은 가져온 뒤에도 남아 있고(안내된 위치), 지우기 버튼으로 지울 수 있다
+  await page.getByTestId("settings-open-transfer").click();
+  await page.getByTestId("transfer-local-file").waitFor();
+  await page.getByTestId("transfer-delete-file").click();
+  await page.getByTestId("transfer-local-file").waitFor({ state: "detached" });
+  assert.equal(fs.existsSync(transferPath), false, "복제본 파일이 지워진다");
+  await transfer.getByRole("button", { name: "닫기", exact: true }).click();
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await settings.waitFor();
   // 팩트체크 로컬 모델 사용: 기본 켜짐, 끄면 유지(끄면 모든 문장을 외부 모델이 판정)
   assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), true, "로컬 팩트체크 기본값은 켜짐");
   await page.getByTestId("settings-local-factcheck").uncheck();
@@ -749,6 +874,7 @@ try {
   await go("보관함");
   await page.waitForTimeout(2500);
   await page.reload();
+  await waitWorkspaceReady();
   await see("미디어 & 변환 자산");
   await page.getByText("취재자료 (1건)").waitFor();
   await go("기사 작성");
@@ -763,6 +889,7 @@ try {
   session = { ...session, signedIn: true, email: "dev@example.test",
     autoLogin: { available: true, enabled: true, email: "dev@example.test", error: "" } };
   await page.reload();
+  await waitWorkspaceReady();
   const autoLogin = page.getByTestId("auto-login-toggle");
   await autoLogin.waitFor();
   await autoLogin.getByText(/켜짐/).waitFor();
@@ -772,6 +899,7 @@ try {
   session = { ...session, signedIn: true, email: "reporter@example.test",
     autoLogin: { available: false, enabled: false, email: "", error: "" } };
   await page.reload();
+  await waitWorkspaceReady();
   await page.locator("header").getByText("reporter@example.test", { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await go('오늘의 데스크');
@@ -783,6 +911,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await go('기사 작성');
   await page.reload();
+  await waitWorkspaceReady();
   // 좁은 화면에서는 상태 배지를 일부러 숨긴다(hidden sm:inline-flex) → 그려졌는지만 본다
   await page.getByText("코어 연결됨").first().waitFor({ state: "attached", timeout: 10_000 });
   await page.locator("header").getByRole("button", { name: "모델 설치", exact: true }).click();
@@ -853,6 +982,7 @@ try {
   const manualSaved=page.waitForResponse(response=>response.url().endsWith('/api/articles/save')&&response.ok()&&response.request().postDataJSON()?.kind==='manual');
   await page.keyboard.press('Control+s');await manualSaved;await page.locator('header').getByText(/^저장됨/).waitFor();
   await page.reload();
+  await waitWorkspaceReady();
   const previewStored=async id=>{
     await go('보관함');
     const view=page.getByTestId('archive-view');
@@ -947,7 +1077,7 @@ try {
   await page.route(`**/api/articles/${linkedId}`,async route=>{const response=await route.fetch();queryStarted();await queryHold;await route.fulfill({response}).catch(()=>{});});
   await latePreview.getByRole('button',{name:'수정',exact:true}).click();await queryWaiting;
   await page.getByRole('status').filter({hasText:'현재 원고를 저장하고 작업을 전환합니다'}).waitFor();
-  await page.reload();await go('플랫폼 변환');await converter.getByTestId('loaded-title').getByText('URL과 부제 없는 DB 기사',{exact:true}).waitFor();
+  await page.reload();await waitWorkspaceReady();await go('플랫폼 변환');await converter.getByTestId('loaded-title').getByText('URL과 부제 없는 DB 기사',{exact:true}).waitFor();
   queryRelease();await page.unroute(`**/api/articles/${linkedId}`);
   assert.equal(await converter.getByTestId('loaded-title').textContent(),'URL과 부제 없는 DB 기사');
   await snapshot('db-article-platform-source');

@@ -11,6 +11,26 @@ PR #44는 이미 포함되어 있습니다. 다음 두 항목은 플랫폼 기�
 
 편집실 목록은 Core listArticles 결과만 사용하고, 보관함의 읽기 전용 데스크 예시 목록을 재사용하지 않습니다. 기존 기사 전환·미저장 보호·사진·Instagram/Threads·독립 카드뉴스·검수·저장/복원·렌더 경로를 보존합니다. 이후 통합 결과와 검증은 이 절에 추가 기록합니다.
 
+### 이번 통합 결과와 검증
+
+- 실제 fetch로 확인한 통합 대상은 `95567ee1ab4cdc17837a8857c1c4debe1b0e80be`입니다. 기존 `25e73af` 이후 PR #45·#46·#47의 문서·서버 백업·PC 이전·이전 파일 정리 변경을 포함합니다. 보존 커밋은 `3ec8387`이며 로컬 백업 브랜치는 `backup/platform-before-latest-main-20261013-9cc86426`입니다. 미커밋 60개 경로를 검토된 소스/문서/빌드 결과만 명시적으로 stage해 보존했습니다. 실제 .env·DB·세션·출력 사진·node_modules는 포함하지 않았습니다.
+- 소스 충돌 세 파일을 해결했습니다. `article_editor/app/core/api.py`는 팀의 백업/이전 경로와 기존 플랫폼 검수/SNS 경로를 모두 허용하고 각각의 처리 함수를 보존합니다. `package.json`은 팀의 vault-transfer 검사와 기존 platform-state 검사를 함께 실행합니다. `article_editor/dev/tests/ui-smoke.mjs`는 양쪽의 의도한 오류 주입·확인 대화상자·회귀 검증을 유지합니다. 전체 파일을 ours/theirs로 덮지 않았습니다.
+- UI 스모크에서 복구/재실행 후 HTML load와 Core 원고 조회 완료 사이의 차이로 먼저 연 설정/모델 창이 작업 영역 재마운트 때 닫히는 실패가 있었습니다. 시험이 실제 workspace-loading 종료와 현재 시험 세션 표시를 기다리도록 동기화했습니다. 제품 코드는 추가 변경하지 않았고 시험 삭제·skip 추가·시간 제한 증가·검증 완화 없이 최종 전체 스모크가 통과했습니다.
+- 프론트 산출물 충돌은 수동 편집하거나 임시 파일 버전을 선택하지 않았습니다. 루트 소스를 해결한 후 `npm run build`의 기존 emptyOutDir 설정으로 확인된 `article_editor/app/frontend/` 경로를 재생성하고 실제 결과를 stage했습니다.
+- `src/App.jsx`는 기존 기사 전환/편집실 함수 전달을 유지하면서 팀의 TransferWizard 연결을 받아들였습니다. 런타임은 기존 SNS 종료와 팀 백업 shutdown을 모두 보존합니다. PR #42·#44의 기사 작성·보관함·데스크·데이터맵·공통 스타일과 PR #43의 로그인/IPC/암호화 백업 구현은 별도 재설계하지 않았습니다. v5 저장소와 v4 변경을 포함한 마이그레이션을 유지하며 낮추지 않았습니다.
+
+실행한 검증:
+
+- 루트 `npm test`: **44개 통과**, 실패/skip 0. 내부 `npm run check:api-boundary` 통과. 팀 데이터맵·데스크·보관함·IPC·암호화 백업·이전 코드 및 플랫폼 상태 회귀를 모두 포함합니다.
+- 루트 `npm run build`: 통과, 1959개 모듈. 이후 변경은 시험 동기화와 문서뿐이어서 같은 소스를 재빌드하지 않았습니다.
+- `.runtime` 의존성을 지정한 `python -m unittest discover -s article_editor/dev/tests -p 'test_*.py'`: **418개 실행, 실패 0, 기존 skip 6개**. 계정별 저장소·저장 이력·고정본·IPC/HTTP·새 백업/이전 및 실제 Node 플랫폼 입력 경계를 포함합니다. 새 main의 Core 변경 때문에 실행했으며 PR #44 확인만을 위해 반복한 검사가 아닙니다. env_isolation의 임시 저장소·설정·고정 시험 계정과 대역을 사용했습니다.
+- `python backend/test_server.py`: **16개 통과**. 백업 키·인증·중계를 로컬 업스트림 대역으로 검사합니다. 일부 HTTPError ResourceWarning은 있었으나 실패는 없습니다.
+- `.runtime` 의존성을 지정한 `node article_editor/dev/tests/ui-smoke.mjs`: 최종 통과, 예상된 주입 오류 외 브라우저 오류 없음. 실제 팀 빌드/Core/임시 저장소/Edge로 기사 선택·명시적 적용·고정본·생성·검수·카드/사진 편집·렌더·저장/복원·기사 전환·늦은 조회/생성/검수/렌더·삭제·모바일과 최신 팀 백업/이전 UI를 검사했습니다. AI/플랫폼 어댑터/SNS/인증/서버 저장은 시험 대역입니다. 시험 실행 프로세스에서 부모의 실제 인증/DB 환경 설정을 제외했고 사용자 계정/DB/설정은 변경하지 않았습니다.
+
+재사용한 검증: `npm test --prefix platform-generator`의 **37개 및 로컬 저장 검사 통과** 결과. 이번 병합 전후 해당 Node 생산/시험 파일 변경이 없고 보존 커밋의 내용과 동일하므로 반복하지 않았습니다. 새 Core 연결 검증은 위 Python/UI 실행 결과로 구분합니다.
+
+미검증·후속: 실제 운영 AI/backend·서버 백업/PC 이전 배포 설정·실계정 SNS·최신 EXE 빌드/실행은 이번 검증에 포함하지 않았습니다. 기존 확인용 사용자 Core/브라우저는 임의 종료/재시작하지 않았고 시험 전용 서버/프로필/임시 파일만 시험의 정리 흐름을 따릅니다. PR #42·#43 별도 보완안, PR #44 두 담당자 확인 항목, Core 고정본 부제·원문 캡션/대체 텍스트 분리·Core Blog 허용 목록은 계속 대기합니다. workflows를 복구하거나 공통 ID/새 기사 저장소를 만들지 않았습니다.
+
 ## PR #41 호출 이름·API 경계 적용 확인 (2026-10-13)
 
 - 브랜치 `feature/platform-update-20261009`, HEAD `12ca52c7bd7600edbd4157019d7cc3476aac4e32`. 적용되는 AGENTS.md 없음, merge/rebase 진행 없음, index 비어 있음. 기존 미커밋 파일 60개를 ignored `output/PR41_CHECKPOINT_20261013_123644/`에 파일 사본·삭제 목록·SHA256·작업 트리/index patch로 보존한 뒤 origin을 fetch했습니다.

@@ -18,13 +18,25 @@ from .. import vault
 
 
 class StorageManager:
+    def __init__(self, on_saved=None):
+        self._on_saved = on_saved  # (article_id, kind) — 저장이 끝나면 부른다(서버 백업 알림). 실패해도 저장에는 영향 없음
+
+    def _saved(self, result, kind):
+        if self._on_saved and isinstance(result, dict) and result.get('articleId'):
+            try:
+                self._on_saved(result['articleId'], kind)
+            except Exception:
+                pass
+        return result
+
     def save_article(self, data):
         """Persist a draft request ``{"draft": {...}, "expectedRevisionNo"?: int}`` to local storage (409 on mismatch)."""
-        return guarded('article_save', _save_article, data)
+        result = guarded('article_save', _save_article, data)
+        return self._saved(result, result.get('kind', 'manual') if isinstance(result, dict) else 'manual')
 
     def publish_article(self, data):
         """CMS 최종 발행 ``{"draft": {...}}`` — 수동 저장 + 기사당 하나인 발행본 덮어쓰기(발행 시각 갱신)."""
-        return guarded('article_publish', _publish_article, data)
+        return self._saved(guarded('article_publish', _publish_article, data), 'manual')
 
     def get_article(self, article_id, version=None, photo_refs=False):
         """기사 하나를 편집기로 연다. 모양은 latest_article 과 같다.
@@ -59,7 +71,13 @@ class StorageManager:
 
     def restore_revision(self, article_id, revision_no):
         """옛 저장본을 새 최신 저장본으로 복원한다(이력은 지우지 않음)."""
-        return guarded('version_restore', _restore_revision, article_id, revision_no)
+        result = guarded('version_restore', _restore_revision, article_id, revision_no)
+        if self._on_saved:
+            try:
+                self._on_saved(article_id, 'manual')
+            except Exception:
+                pass
+        return result
 
     def delete_article(self, article_id):
         """보관소에서 기사 지우기(보관소·이어서 작업에서 빠지고 더 저장되지 않는다. 고정본은 그대로) → {deleted, articleId}."""

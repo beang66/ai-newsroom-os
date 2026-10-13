@@ -6,18 +6,18 @@
 
 > 이 문서는 **강창희가 만든 App Core를 공통 실행 기반으로 두고, 각 담당 기능을 HTTP 통합 단계와 최종 IPC 전환에서 같은 규칙으로 연결하기 위한 문서**입니다.
 
-> **구현 상태 확인 (2026-10-07):** 아래의 Snapshot, 공통 UUID, SourceChunk, Claim/EvidenceLink, ProcessingJob 및 KnowledgeMap은 **v0.8 목표**이며 현재 Core의 구현 사실이 아니다. 현행 Core는 `core-api.js` named method → `/api/*` HTTP → Python managers, SQLCipher `articles/article_revisions/sources/media` 저장을 제공한다. 현재 `/api/articles/latest`는 가장 최근 기사 한 건만 조회하고, IPC 브리지는 미구현이다. 실제 메서드·저장 스키마 및 누락·미정의·중복 항목은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md)을 따른다. 아래 실행 구조의 IPC/Supabase/Backend 연결 설명은 제품 설계와 구현 확인 범위를 구별해 읽는다.
+> **구현 상태 확인 (2026-10-13):** Snapshot, 공통 ID 변환(UUID v5), SourceChunk(색인), 작업 조회(`ProcessingJob`: 자료 색인), KnowledgeMap, MediaAsset, Transcript 저장은 **구현됐다**. 아직 구현되지 않은 것은 **Claim/EvidenceLink/VerificationRun 의 정규화 저장**(판정 결과는 `factcheck_memo` 캐시와 응답으로만 있음), 검색·검증 실행·플랫폼 결과 목록 조회 계약 4개(`x-status: deferred`), 다중 작업공간(`/workspaces/...` 경로)이다. 호출은 `core-api.js` named method → `/api/*` → Python managers 이며, 창에서는 pywebview IPC 브리지, `--browser`·시험에서는 HTTP 로 **같은 응답**을 준다. 계약 operation 별 실제 경로·본문은 `OPENAPI_v0.8.yaml` 의 `x-implementation` 과 [계약과 구현의 차이](./CONTRACT_VS_IMPLEMENTATION_v0.8.md)에 있고, 저장·누락 점검은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md)을 따른다.
 
 ## 0. 현재 Core와 목표 실행 구조
 
 | 구분 | 현재 코드에서 확인 | v0.8 목표 / 확인 필요 |
 |---|---|---|
-| UI 호출 | `createAppApi()` → `core-api.js` named methods → HTTP `/api/*` → Python `api.py`/managers | 기능별 메서드·인자와 오류를 공통 계약으로 고정 |
-| 로컬 저장 | SQLCipher의 `articles`, `article_revisions`, `sources`, `media` 및 검증 캐시. 기기 키는 OS 보안 저장소 | 공통 UUID/alias, Snapshot, 조회·자료 수명 주기 정의 |
-| EXE/IPC | `ipc.js`는 브리지 호출 형태를 준비했으나, 확인한 Python 라우터에는 해당 브리지 구현이 없다. 브리지 부재 시 `mode:"ipc"`도 HTTP로 전환 | 실제 pywebview 브리지 연결과 HTTP/IPC 동일 응답 검증 |
-| 클라우드/외부 기능 | 이 점검은 로컬 Core 저장·호출 파일을 기준으로 한다 | Auth·메타데이터·공유·외부 AI의 저장 경계는 기능별 통합 시 검증 |
+| UI 호출 | `createAppApi()` → `core-api.js` named methods → (창) IPC 브리지 / (브라우저·시험) HTTP `/api/*` → Python `Handler`/managers. 같은 `Handler`를 거쳐 두 전송의 응답·오류가 같다 | 호출 이름은 계약 operationId 와 통일(2026-10-12). 경로·본문은 앱 구현이 정본 |
+| 로컬 저장 | **계정별** SQLCipher 파일(`vault-<계정 id>.db`): 기사·수정 이력(UUID id)·고정본(Snapshot)·자료·SourceChunk·색인 상태·미디어 자산·작업·녹취·팩트체크 기록. 기기 키는 OS 보안 저장소 | 다중 작업공간·접근 권한은 없음(계정 안에서 작업공간 하나) |
+| EXE/IPC | `desktop/ipc_bridge.py`(`core`/`coreBytes`)를 pywebview `js_api`로 연결. EXE 빌드(IPC·HTTP 두 변형)와 실제 창 스모크 통과 | 팀 브랜치 병합 뒤 통합 점검에서 HTTP/IPC 동일 응답 재확인 |
+| 클라우드/외부 기능 | Supabase 는 **인증(회원가입·로그인·갱신 토큰)** 만. 기사·자료는 서버에 저장하지 않음. AI·임베딩은 백엔드(Render) 프록시 경유(무저장) | 서버 저장·공유(S1)는 미구현. "클라우드 백업" 설정은 값만 저장 |
 
-기사 본문과 자료 원본은 현재 로컬 암호화 DB에 저장된다. OpenAPI의 `/api/core/v0.8/*` 및 ERD의 새 엔티티는 바로 호출하거나 마이그레이션할 수 있는 구현 API/스키마로 해석하지 않는다. 상세 호출과 누락·중복 점검은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md)을 따른다.
+기사 본문과 자료 원본은 로그인한 계정의 로컬 암호화 DB에 저장된다. OpenAPI의 `/api/core/v0.8/*` 경로는 다중 작업공간을 도입할 때의 목표 형태이며 지금 호출하는 경로는 `/api/*` 이다(각 operation 의 `x-implementation` 참조). 상세 호출과 누락·중복 점검은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md)을 따른다.
 
 ## 1. 앞으로 개발하는 순서
 
@@ -171,6 +171,10 @@ v1.0을 확정하기 전에 실제 기사 하나를 아래 순서로 통과시�
 - [x] ERD v0.8 초안 작성
 - [x] OpenAPI v0.8 초안 작성
 - [x] 전체 연결 테스트용 예시 데이터 작성
+- [x] Core 구현: 고정본(Snapshot)·ID 변환·SourceChunk 색인·작업 조회·KnowledgeMap·MediaAsset·Transcript (2026-10)
+- [x] 호출 이름·경로 통일과 대응표(`CONTRACT_VS_IMPLEMENTATION_v0.8.md`), 계약에 `x-implementation` 기록 (2026-10-12)
+- [x] HTTP/IPC 동일 응답 시험과 EXE 스모크(IPC·HTTP 빌드), 팀원 PC 첫 실행 확인 (2026-10-12)
+- [ ] 팀원 브랜치 병합 후 실제 기사 1건 끝까지 통합 점검, 팀 리뷰 5가지 질문 답변, Contract v1.0 확정
 
 ## 10. 지금부터 팀원이 할 일
 

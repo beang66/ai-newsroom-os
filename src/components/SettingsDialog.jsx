@@ -1,15 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
-import { exportVault, restoreVault, getSettings, saveSettings, setKeepLogin, getDiagnostics } from "../api/editorial";
+import React, { useEffect, useState } from "react";
+import { getSettings, saveSettings, setKeepLogin, getDiagnostics } from "../api/editorial";
 import AppDialog from "./AppDialog";
-import { beginRestore, endRestore } from "../restoreState";
+import CloudBackupSection from "./CloudBackupSection";
 
 // 환경 설정: 이 PC·계정의 설정만 다룬다(모델 설치는 ModelsDialog 가 따로 맡는다).
-export default function SettingsDialog({ onClose, onBeforeRestore, session, onSession }) {
-  const restoreInput = useRef(null);
-  const [backupPassword, setBackupPassword] = useState("");
-  const [backupPending, setBackupPending] = useState(false);
-  const [backupNotice, setBackupNotice] = useState("");
-  const [backupError, setBackupError] = useState("");
+export default function SettingsDialog({ onClose, session, onSession, onTransfer }) {
   const [settings, setSettings] = useState(null);
   const [settingsError, setSettingsError] = useState("");
 
@@ -60,55 +55,11 @@ export default function SettingsDialog({ onClose, onBeforeRestore, session, onSe
     catch (e) { setSettings(before); setSettingsError(e?.message || String(e)); }
   };
 
-  const backup = async () => {
-    setBackupPending(true); setBackupError(""); setBackupNotice("");
-    try {
-      const result = await exportVault(backupPassword);
-      const raw = atob(result.data);
-      const bytes = Uint8Array.from(raw, (char) => char.charCodeAt(0));
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
-      link.href = url;
-      link.download = result.filename || "ai-newsroom-backup.db";
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
-      setBackupNotice("암호화 백업을 내려받았습니다. 암호를 별도로 안전하게 보관하세요.");
-      setBackupPassword("");
-    } catch (e) { setBackupError(e?.message || String(e)); }
-    finally { setBackupPending(false); }
-  };
-  const restore = async (file) => {
-    if (!file || !window.confirm("현재 자료를 선택한 백업으로 교체할까요? 교체 전 DB는 안전 복사본으로 남깁니다.")) return;
-    setBackupPending(true); setBackupError(""); setBackupNotice("");
-    try {
-      await onBeforeRestore?.();
-      beginRestore();
-      const data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
-      await restoreVault(backupPassword, data);
-      setBackupNotice("복구했습니다. 자료를 다시 불러옵니다.");
-      setBackupPassword("");
-      window.location.reload();
-    } catch (e) { endRestore(); setBackupError(e?.message || String(e)); }
-    finally { setBackupPending(false); if (restoreInput.current) restoreInput.current.value = ""; }
-  };
-
   return (
     <AppDialog title="환경 설정" testId="settings-dialog" onClose={onClose}>
-      <section className="space-y-3" aria-labelledby="cloud-backup-title">
-        <h3 id="cloud-backup-title" className="font-black">작성 중 기사 클라우드 백업</h3>
-        <label className="flex items-center gap-2 text-sm font-bold">
-          <input type="checkbox" data-testid="settings-cloud-backup" checked={settings?.cloudBackup ?? true} disabled={!settings}
-            onChange={(event) => change({ cloudBackup: event.target.checked })} />
-          작성 중인 기사를 클라우드에 백업
-        </label>
-        <p className="text-xs text-[#666666] leading-relaxed">기본값은 켜짐입니다. 끄면 기사가 이 PC에만 저장됩니다. 취재자료는 이 설정과 관계없이 항상 이 PC에만 저장돼요. (지금은 설정만 저장하며, 실제 클라우드 저장은 아직 연결되지 않았어요.)</p>
-        {settingsError && <p role="alert" data-testid="settings-error" className="text-xs text-rose-700">{settingsError}</p>}
-      </section>
+      <CloudBackupSection enabled={settings?.cloudBackup ?? true} ready={Boolean(settings)} onError={setSettingsError}
+        onToggle={async (next, { alreadySaved } = {}) => { if (alreadySaved) setSettings({ ...settings, cloudBackup: next }); else await change({ cloudBackup: next }); }} />
+      {settingsError && <p role="alert" data-testid="settings-error" className="text-xs text-rose-700">{settingsError}</p>}
       <hr className="border-[#DDD6CB]" />
       <section className="space-y-3" aria-labelledby="keep-login-title">
         <h3 id="keep-login-title" className="font-black">로그인 유지</h3>
@@ -139,23 +90,11 @@ export default function SettingsDialog({ onClose, onBeforeRestore, session, onSe
         {diagnostics && <textarea readOnly data-testid="settings-diagnostics-text" value={diagnostics} rows={9} className="w-full rounded-xl border border-[#DDD6CB] bg-white p-3 text-xs font-mono" />}
       </section>
       <hr className="border-[#DDD6CB]" />
-      <section className="space-y-3" aria-labelledby="backup-title">
-        <h3 id="backup-title" className="font-black">사용자 자료 백업·복구</h3>
-        <p className="text-xs text-[#666666] leading-relaxed">기사·취재자료·녹음·녹취를 이동식 암호화 백업으로 저장합니다. 이 PC의 기기 키는 백업에 포함하지 않습니다.</p>
-        <label className="block text-xs font-bold">백업 암호
-          <input type="password" value={backupPassword} onChange={(event) => setBackupPassword(event.target.value)} minLength={12} maxLength={200}
-            autoComplete="new-password" placeholder="12자 이상" className="mt-1 w-full rounded-xl border border-[#DDD6CB] px-3 py-2" />
-        </label>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={backup} disabled={backupPending || backupPassword.length < 12}
-            className="px-4 py-2 text-xs font-bold bg-[#23211F] text-white rounded-full disabled:opacity-50">암호화 백업 받기</button>
-          <button type="button" onClick={() => restoreInput.current?.click()} disabled={backupPending || backupPassword.length < 12}
-            className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full disabled:opacity-50">백업에서 복구</button>
-          <input ref={restoreInput} type="file" accept=".db,application/octet-stream" className="hidden" onChange={(event) => restore(event.target.files?.[0])} />
-        </div>
-        {backupPending && <p role="status" className="text-xs">암호화 자료를 처리하는 중…</p>}
-        {backupNotice && <p role="status" className="text-xs text-emerald-700">{backupNotice}</p>}
-        {backupError && <p role="alert" className="text-xs text-rose-700">{backupError}</p>}
+      <section className="space-y-3" aria-labelledby="transfer-title">
+        <h3 id="transfer-title" className="font-black">다른 PC로 이전</h3>
+        <p className="text-xs text-[#666666] leading-relaxed">PC를 바꿀 때 기사·취재자료를 옮기는 안내 마법사예요. 일회용 코드로 암호화한 이전 파일을 만들고, 새 PC에서 그 코드로 풀어요.</p>
+        <button type="button" data-testid="settings-open-transfer" onClick={onTransfer}
+          className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">이전 마법사 열기</button>
       </section>
     </AppDialog>
   );

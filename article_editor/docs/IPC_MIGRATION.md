@@ -3,6 +3,8 @@
 - 상태: **적용(2026-10-02)** · 결정: **개발 단계는 HTTP, 출시는 IPC**, 연결 지점은 지금부터 하나로 통일
 - 관련: `../../src/api/README.md`, `DESKTOP_SHELL.md`, `../ARCHITECTURE.md`(frontend/core 경계)
 
+> **2026-10-13 갱신:** 브리지는 구현됐다. `app/desktop/ipc_bridge.py`(`core`/`coreBytes`)가 `api.Handler`를 메모리 소켓으로 그대로 재사용해 경로·검증·오류 본문이 HTTP 와 같다. 창은 IPC, `--browser`·시험은 HTTP 이며 `AI_NEWSROOM_TRANSPORT=http` 또는 EXE 옆 `transport.txt`(HTTP 빌드)로 창에서도 HTTP 를 쓸 수 있다. 오류는 값으로 돌려받는다(`{status, body}`) — `code`/`details` 를 잃지 않으려는 것. 아래 "준비" 서술은 구현 전의 계획 기록이다. 화면 파일(JS·CSS)은 여전히 로컬 서버가 내려주므로 완전한 무포트는 아니다.
+
 ## 1. 결정
 
 | 항목 | 내용 |

@@ -9,6 +9,14 @@ export const signIn = (email, password, remember = false) => core.signIn(email, 
 export const signUp = (email, password, remember = false) => core.signUp(email, password, { remember });
 export const setKeepLogin = (enabled) => core.setKeepLogin(enabled);
 export const signOut = () => core.signOut();
+export const getBackup = (signal) => core.getBackup(signal);
+export const listBackups = (signal) => core.listBackups(signal);
+export const restoreBackups = (articleIds, signal) => core.restoreBackups(articleIds, signal);
+export const disableBackup = (deleteServer, signal) => core.disableBackup(deleteServer, signal);
+export const getTransfer = (signal) => core.getTransfer(signal);
+export const uploadTransfer = (code, signal) => core.uploadTransfer(code, signal);
+export const downloadTransfer = (code, signal) => core.downloadTransfer(code, signal);
+export const deleteTransfer = (signal) => core.deleteTransfer(signal);
 export const getBackupKey = (signal) => core.getBackupKey(signal);
 export const getDiagnostics = (signal) => core.getDiagnostics(signal);
 export const getSettings = (signal) => core.getSettings(signal);
@@ -104,6 +112,9 @@ export async function loadTranscript(id, signal) {
   return { ...transcript, audioUrl: URL.createObjectURL(audio) };
 }
 export const publishCms = (article, signal) => core.publishCms(article, signal);
+export const getTransferFile = (signal) => core.getTransferFile(signal);
+export const makeTransferFile = (code, signal) => core.makeTransferFile(code, signal);
+export const deleteTransferFile = (signal) => core.deleteTransferFile(signal);
 export const exportVault = (password, signal) => core.exportVault(password, signal);
 export const restoreVault = (password, data, signal) => core.restoreVault(password, data, signal);
 

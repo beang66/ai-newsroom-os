@@ -20,6 +20,24 @@ def _uuid(value):
         return value  # 옛 16자리 자료 id
 
 
+MAX_LINKED_INTERVIEWS = 20
+
+
+def _interviews(draft):
+    """원고에 연결된 인터뷰(녹취)의 id·파일명만 추린다. 문자열 id 와 {id, filename} 둘 다 받는다."""
+    out = []
+    for item in draft.get('linkedInterviews') or []:
+        if isinstance(item, str):
+            item = {'id': item}
+        if not isinstance(item, dict) or not isinstance(item.get('id'), str) or not item['id'].strip():
+            continue
+        filename = item.get('filename')
+        out.append({'id': item['id'].strip()[:80], 'filename': filename.strip()[:200] if isinstance(filename, str) else ''})
+        if len(out) >= MAX_LINKED_INTERVIEWS:
+            break
+    return out
+
+
 def _articles(db):
     counts = dict(db.execute("SELECT article_id, count(*) FROM article_revisions WHERE kind = 'manual' GROUP BY article_id").fetchall())
     unsaved = {row[0] for row in db.execute("SELECT article_id FROM article_revisions r WHERE kind = 'auto' AND revision_no = "
@@ -36,7 +54,7 @@ def _articles(db):
         out.append({'id': _uuid(article_id), 'title': draft.get('title') or '', 'subtitle': draft.get('subtitle') or '',
                     'status': draft.get('status') or '', 'created_at': created, 'updated_at': updated,
                     'excerpt': storage._plain(draft)[:120], 'photo_count': len(draft.get('photos') or []),
-                    'state': state, 'published': published, 'article_id': article_id,  # article_id: 편집기로 열 때 쓰는 32자 id
+                    'interviews': _interviews(draft), 'state': state, 'published': published, 'article_id': article_id,  # article_id: 편집기로 열 때 쓰는 32자 id
                     'revision_no': revision_no, 'revision_count': count, 'unsaved_changes': article_id in unsaved,
                     'source_ids': sorted(_uuid(i) for i in source_ids)})
     return out

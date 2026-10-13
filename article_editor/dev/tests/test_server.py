@@ -218,6 +218,16 @@ class ServerTests(ApiTestCase):
         self.assertEqual(self.request('/api/knowledge-files/' + files[1]['id'] + '/delete', {})[0], 200)
         self.assertEqual(len(json.loads(self.request('/api/knowledge-map')[1])['unresolved']), 1)
 
+    def test_article_list_carries_linked_interviews(self):
+        use_temp_vault(self)
+        draft = {'bodyHtml': '<p>x</p>', 'title': '인터뷰 기사',
+                 'linkedInterviews': ['int-1', {'id': 'abc-123', 'filename': 'test.m4a'}, {'id': ''}, {'filename': 'no-id'}, 7]}
+        self.request('/api/articles/save', {'draft': draft})
+        listed = json.loads(self.request('/api/articles')[1])['articles'][0]
+        self.assertEqual(listed['interviews'], [{'id': 'int-1', 'filename': ''}, {'id': 'abc-123', 'filename': 'test.m4a'}])
+        self.request('/api/articles/save', {'draft': {'bodyHtml': '<p>y</p>', 'title': '연결 없음'}})
+        self.assertEqual([a['interviews'] for a in json.loads(self.request('/api/articles')[1])['articles']], [[], [{'id': 'int-1', 'filename': ''}, {'id': 'abc-123', 'filename': 'test.m4a'}]])
+
     def test_media_asset_routes(self):
         import base64
         use_temp_vault(self)

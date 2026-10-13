@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Newsroom</title>
+    <!-- 오프라인 데스크톱 앱: 외부 CDN(구글 폰트·jsDelivr)을 쓰지 않는다.
+         Pretendard는 src/assets/fonts 로컬 번들(index.css @font-face)이며, 아래는 로드 전 시스템 폰트 폴백이다. -->
+    <style>
+      :root {
+        --font-sans: "Pretendard Variable", "Pretendard", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, -apple-system, sans-serif;
+      }
+      body { font-family: var(--font-sans); }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

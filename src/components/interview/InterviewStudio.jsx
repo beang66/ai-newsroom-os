@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { transcribeAudio, listTranscripts, loadTranscript } from "../../api/editorial";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript } from "../../services/sttService";
+import { mergeBySpeaker, speakerText, plainText } from "../../lib/transcriptText.js";
 import {
   Upload,
   Play,
@@ -10,92 +11,76 @@ import {
   Check,
   Download,
   Search,
-  FileText,
-  Users,
-  Clock,
-  AlignLeft,
-  MessageSquare,
   FileAudio,
-  ChevronDown
+  ChevronDown,
+  ArrowUpRight,
+  Sparkles,
+  RefreshCw,
+  Volume2,
+  VolumeX
 } from "lucide-react";
 
-// 초 단위를 '00:00' 또는 '00:00:00' 문자열로 포맷팅
+// 초 단위를 '00:00:00' (시:분:초) 형태의 시각 문자열로 포맷팅
 function formatDuration(seconds) {
-  if (isNaN(seconds) || seconds < 0) return "00:00";
+  if (isNaN(seconds) || seconds < 0) return "00:00:00";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
-  if (h > 0) {
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+// 절제된 오디오 파형 바 생성용 더미 높이 배열
+const WAVEFORM_BARS = [
+  30, 45, 60, 25, 75, 40, 85, 55, 90, 35, 65, 80, 45, 70, 95, 60, 40, 80, 50, 75,
+  35, 60, 90, 45, 70, 85, 30, 65, 50, 80, 40, 75, 90, 55, 65, 40, 70, 85, 35, 60
+];
 
-export default function InterviewStudio({ onReturnToArticle, active = true }) {
+export default function InterviewStudio({ onReturnToArticle }) {
   // 1. 녹음 파일 및 인터뷰 상태
   const [audioUrl, setAudioUrl] = useState(null);
+  // 저장된 전사를 다시 연 경우(원본 오디오 없음). 목록은 처음 펼칠 때 불러온다.
+  const [storedSource, setStoredSource] = useState(null);
+  const [storedMenu, setStoredMenu] = useState({ open: false, status: "idle", items: [], error: "" });
   const [fileName, setFileName] = useState("");
+  const [fileSize, setFileSize] = useState(0);
   const [dialogues, setDialogues] = useState([]);
-  const [sttStatus, setSttStatus] = useState(""); // "" | "전사 중…" | 오류 문구
-  const [selectedQuotes, setSelectedQuotes] = useState([]);
-  const [savedTranscripts, setSavedTranscripts] = useState([]);
-  const [transcriptId, setTranscriptId] = useState("");
+  const [sttStatus, setSttStatus] = useState("대기 중");
+  const [currentTranscript, setCurrentTranscript] = useState(null);
 
-  // 2. 뷰 모드 토글: 'speaker' (화자별 대화형) vs 'fullText' (전체 통 텍스트)
-  const [viewMode, setViewMode] = useState("speaker");
-
-  // 3. 검색 필터
+  // 2. 검색 및 선택 상태
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [selectedDialogueId, setSelectedDialogueId] = useState(null);
 
-  // 4. 오디오 플레이어 상태
+  // 3. 오디오 플레이어 상태
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0)
+  const [duration, setDuration] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
+  const [volume, setVolume] = useState(1.0);
+  const [isMuted, setIsMuted] = useState(false);
 
-  // 5. 복사 피드백 상태
+  // 4. 복사 피드백 및 드래그 상태
   const [copiedId, setCopiedId] = useState(null);
   const [isAllCopied, setIsAllCopied] = useState(false);
+  // 통합 텍스트 형태: "speaker" 화자·단락 구분 | "plain" 통글
+  const [textMode, setTextMode] = useState("speaker");
+  const [isDragging, setIsDragging] = useState(false);
 
-  // 가상 오디오 타이머 및 실제 Audio element ref
+  // 5. AI 요약 상태
+  const [aiSummary, setAiSummary] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
+  const [isSummaryCopied, setIsSummaryCopied] = useState(false);
+
+  // 6. 핵심요약 텍스트 드래그(선택) 기반 녹취 근거 하이라이트 상태
+  const [evidenceQuery, setEvidenceQuery] = useState("");
+
+  // 오디오 타이머 및 참조
   const audioRef = useRef(null);
-  useEffect(() => {
-    if (!active) audioRef.current?.pause();
-  }, [active]);
-  useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
   const fileInputRef = useRef(null);
-  const loadSeq = useRef(0); // only the latest transcript request may update the screen
-  const openTranscript = useCallback(async (id, signal) => {
-    const seq = ++loadSeq.current;
-    setSttStatus("녹취 불러오는 중…");
-    try {
-      const saved = await loadTranscript(id, signal);
-      if (seq !== loadSeq.current) { URL.revokeObjectURL(saved.audioUrl); return; }
-      setTranscriptId(saved.id);
-      setFileName(saved.filename);
-      setDialogues(saved.dialogues || []);
-      setDuration(saved.duration || 0);
-      setCurrentTime(0);
-      setAudioUrl(saved.audioUrl);
-      setSelectedQuotes([]);
-      setSttStatus("");
-    } catch (error) {
-      if (seq === loadSeq.current && !signal?.aborted) setSttStatus("녹취 불러오기 실패: " + (error?.message || error));
-    }
-  }, []);
-  useEffect(() => {
-    const request = new AbortController();
-    listTranscripts(request.signal).then(({ transcripts }) => {
-      if (request.signal.aborted) return;
-      setSavedTranscripts(transcripts || []);
-      if (transcripts?.[0] && !loadSeq.current) void openTranscript(transcripts[0].id, request.signal);
-    }).catch((error) => { if (!request.signal.aborted) setSttStatus("녹취 목록 실패: " + (error?.message || error)); });
-    return () => request.abort();
-  }, [openTranscript]);
 
-  // 오디오 객체 재생/시간 제어
+  // 오디오 타이머 제어
   useEffect(() => {
     let interval = null;
     if (isPlaying) {
@@ -112,7 +97,6 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
     return () => clearInterval(interval);
   }, [isPlaying, duration, playbackSpeed]);
 
-  // 실제 업로드 파일이 있는 경우 동기화
   const handleAudioTimeUpdate = () => {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
@@ -120,37 +104,148 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
     }
   };
 
-  // 1. 녹음 파일 업로드 핸들러
-  const handleFileUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setFileName(file.name);
-      const url = URL.createObjectURL(file);
-      setAudioUrl(url);
-
-      // 새 파일 로드 시 시간 초기화
-      setCurrentTime(0);
-      setIsPlaying(false);
-
-      // 코어 전사(Whisper) → 화자별 대화
-      setDialogues([]);
-      setTranscriptId("");
-      setSelectedQuotes([]);
-      setSttStatus("전사 중…");
-      transcribeAudio(file)
-        .then((result) => {
-          setDialogues(result.dialogues || []);
-          setTranscriptId(result.transcriptId || "");
-          if (result.transcriptId) setSavedTranscripts((items) => [{ id: result.transcriptId, filename: file.name,
-            duration: result.duration, createdAt: result.createdAt, segments: (result.dialogues || []).length },
-            ...items.filter((item) => item.id !== result.transcriptId)]);
-          setSttStatus("");
-        })
-        .catch((error) => setSttStatus("전사 실패: " + (error?.message || error)));
+  // 음량 조절
+  const handleVolumeChange = (newVol) => {
+    setVolume(newVol);
+    if (audioRef.current) {
+      audioRef.current.volume = newVol;
+    }
+    if (newVol > 0 && isMuted) {
+      setIsMuted(false);
     }
   };
 
-  // 4. 화자 발언별 개별 복사 핸들러
+  const handleToggleMute = () => {
+    if (isMuted) {
+      setIsMuted(false);
+      if (audioRef.current) audioRef.current.volume = volume || 1.0;
+    } else {
+      setIsMuted(true);
+      if (audioRef.current) audioRef.current.volume = 0;
+    }
+  };
+
+  // AI 요약 생성 함수
+  const handleGenerateSummary = (transcriptObj) => {
+    const target = transcriptObj || currentTranscript;
+    if (!target) return;
+    setIsAnalyzing(true);
+    setAnalysisError("");
+    requestInterviewAnalysis(target)
+      .then((res) => {
+        setAiSummary(res);
+        setIsAnalyzing(false);
+      })
+      .catch((err) => {
+        setAnalysisError(err?.message || "AI 요약 생성에 실패했습니다.");
+        setIsAnalyzing(false);
+      });
+  };
+
+  // 녹음 파일 처리 및 STT 요청 공통 함수
+  const processFile = (file) => {
+    if (!file) return;
+    setStoredSource(null);
+    setFileName(file.name);
+    setFileSize(file.size || 0);
+    const url = URL.createObjectURL(file);
+    setAudioUrl(url);
+
+    setCurrentTime(0);
+    setIsPlaying(false);
+
+    setDialogues([]);
+    setAiSummary(null);
+    setAnalysisError("");
+    setEvidenceQuery("");
+    setSttStatus("전사 진행 중…");
+
+    requestSTT(file)
+      .then((result) => {
+        if (result.dialogues && result.dialogues.length > 0) {
+          setDialogues(result.dialogues);
+          setSelectedDialogueId(result.dialogues[0].id);
+          setSttStatus("전사 완료 100%");
+          if (result.transcript) {
+            setCurrentTranscript(result.transcript);
+            handleGenerateSummary(result.transcript);
+          }
+        } else {
+          setSttStatus("전사 완료 (발언 없음)");
+        }
+      })
+      .catch((error) => {
+        setSttStatus("전사 실패: " + (error?.message || error));
+      });
+  };
+
+  // 저장된 전사 목록(독립 STT 서버의 JSON 저장소)
+  const toggleStoredMenu = async () => {
+    const open = !storedMenu.open;
+    setStoredMenu((prev) => ({ ...prev, open }));
+    if (!open) return;
+    setStoredMenu((prev) => ({ ...prev, status: "loading", error: "" }));
+    try {
+      const items = await listStoredTranscripts();
+      setStoredMenu((prev) => ({ ...prev, status: "done", items }));
+    } catch (error) {
+      setStoredMenu((prev) => ({ ...prev, status: "error", items: [], error: error.message }));
+    }
+  };
+
+  const openStoredTranscript = async (item) => {
+    setStoredMenu((prev) => ({ ...prev, open: false }));
+    setSttStatus("저장된 전사를 여는 중…");
+    try {
+      const result = await loadStoredTranscript(item.id);
+      setAudioUrl(null);
+      setStoredSource(item);
+      setFileName(item.filename || "저장된 전사");
+      setFileSize(0);
+      setCurrentTime(0);
+      setDuration(result.duration || 0);
+      setIsPlaying(false);
+      setAiSummary(null);
+      setAnalysisError("");
+      setEvidenceQuery("");
+      setDialogues(result.dialogues);
+      setSelectedDialogueId(result.dialogues[0]?.id ?? null);
+      setCurrentTranscript(result.transcript);
+      setSttStatus(result.dialogues.length > 0 ? "저장된 전사 불러옴" : "저장된 전사 (발언 없음)");
+    } catch (error) {
+      setSttStatus("저장된 전사 열기 실패: " + (error?.message || error));
+    }
+  };
+
+  // 파일 업로드 핸들러
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  // 드래그 앤 드롭 핸들러
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  // 화자 발언별 개별 복사
   const handleCopySentence = (id, text, speakerName) => {
     const formatted = `[${speakerName}]\n"${text}"`;
     navigator.clipboard.writeText(formatted);
@@ -160,59 +255,73 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
 
   // 통 텍스트 전체 복사
   const handleCopyAllText = () => {
-    const fullText = dialogues
-      .map((d) => `[${d.speakerName} · ${formatDuration(d.timestamp)}]\n${d.text}`)
-      .join("\n\n");
+    const fullText = textMode === "plain" ? plainText(dialogues) : speakerText(dialogues, formatDuration);
     navigator.clipboard.writeText(fullText);
     setIsAllCopied(true);
     setTimeout(() => setIsAllCopied(false), 2000);
   };
 
+  // AI 요약 전체 복사
+  const handleCopySummaryAll = () => {
+    if (!aiSummary) return;
+    const lines = [
+      `[AI 핵심 요약]`,
+      aiSummary.summary || "",
+      "",
+      `[주요 키워드]`,
+      (aiSummary.keywords || []).map((k) => `#${k}`).join(" "),
+      "",
+      `[핵심 발언]`,
+      ...(aiSummary.keyPoints || []).map((p, i) => `${i + 1}. ${p}`)
+    ];
+    navigator.clipboard.writeText(lines.join("\n"));
+    setIsSummaryCopied(true);
+    setTimeout(() => setIsSummaryCopied(false), 2000);
+  };
+
   // TXT 파일 다운로드
   const handleDownloadTxt = () => {
-    const fullText = dialogues
-      .map((d) => `[${d.speakerName} · ${formatDuration(d.timestamp)}]\n${d.text}`)
-      .join("\n\n");
-    const blob = new Blob([fullText], { type: "text/plain;charset=utf-8" });
+    const content = textMode === "plain" ? plainText(dialogues) : speakerText(dialogues, formatDuration);
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${fileName.replace(/\.[^/.]+$/, "")}_녹취록.txt`;
+    link.download = `${fileName ? fileName.replace(/\.[^/.]+$/, "") : "interview"}_${textMode === "plain" ? "plain" : "speakers"}_transcript.txt`;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  // 5. 오디오 제어: 재생/일시정지
+  // 재생/일시정지
   const handleTogglePlay = () => {
-    if (audioRef.current && audioUrl) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
-      }
+    if (!audioRef.current || !audioUrl) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play();
+      setIsPlaying(true);
     }
-    setIsPlaying(!isPlaying);
   };
 
-  // 되감기 / 빨리감기 (5초)
+  // 오디오 오프셋 이동
   const handleSeekOffset = (seconds) => {
-    const target = Math.max(0, Math.min(duration, currentTime + seconds));
+    if (!audioRef.current || !audioUrl) return;
+    const target = Math.max(0, Math.min(currentTime + seconds, duration));
     setCurrentTime(target);
-    if (audioRef.current && audioUrl) {
-      audioRef.current.currentTime = target;
-    }
+    audioRef.current.currentTime = target;
   };
 
-  // 재생 프로그레스 슬라이더 변경
+  // 슬라이더 이동
   const handleSliderSeek = (e) => {
-    const target = parseFloat(e.target.value);
-    setCurrentTime(target);
+    const val = parseFloat(e.target.value);
+    setCurrentTime(val);
     if (audioRef.current && audioUrl) {
-      audioRef.current.currentTime = target;
+      audioRef.current.currentTime = val;
     }
   };
 
-  // 재생 속도 변경
   const handleSpeedChange = (speed) => {
     setPlaybackSpeed(speed);
     if (audioRef.current) {
@@ -220,14 +329,40 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
     }
   };
 
-  // 6. 화자 발언 구간으로 즉시 이동 (다시듣기)
-  const handleJumpToTimestamp = (sec) => {
+  // 화자 선택 시 재생 및 우측 통합 텍스트 스크롤
+  const handleSelectDialogue = (sec, id) => {
     setCurrentTime(sec);
+    if (id) {
+      setSelectedDialogueId(id);
+      const targetEl = document.getElementById(`unified_text_${id}`);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }
     if (audioRef.current && audioUrl) {
       audioRef.current.currentTime = sec;
       audioRef.current.play();
     }
     setIsPlaying(true);
+  };
+
+  // 핵심요약 텍스트 드래그(선택) 시 녹취 근거 자동 매칭 & 스크롤
+  const handleSummaryTextSelection = () => {
+    const selection = window.getSelection();
+    const selectedText = selection?.toString()?.trim();
+    if (selectedText && selectedText.length >= 2) {
+      setEvidenceQuery(selectedText);
+      const matched = dialogues.find((d) =>
+        d.text.toLowerCase().includes(selectedText.toLowerCase())
+      );
+      if (matched) {
+        setSelectedDialogueId(matched.id);
+        const targetEl = document.getElementById(`unified_text_${matched.id}`);
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    }
   };
 
   // 현재 재생 중인 발언 식별
@@ -240,7 +375,7 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
     return dialogues[0]?.id || null;
   }, [currentTime, dialogues]);
 
-  // 검색 적용된 발언 목록
+  // 검색 필터 적용된 발언 목록
   const filteredDialogues = useMemo(() => {
     if (!searchKeyword.trim()) return dialogues;
     const query = searchKeyword.toLowerCase();
@@ -252,483 +387,718 @@ export default function InterviewStudio({ onReturnToArticle, active = true }) {
     });
   }, [dialogues, searchKeyword]);
 
-  // 전체 통 텍스트 문자열
-  const rawContinuousText = useMemo(() => {
-    return dialogues
-      .map((d) => `[${d.speakerName} · ${formatDuration(d.timestamp)}]\n${d.text}`)
-      .join("\n\n");
-  }, [dialogues]);
+  // 같은 화자의 연속 발언을 한 단락으로 묶은 목록(화자·단락 구분 표시용)
+  const paragraphs = useMemo(() => mergeBySpeaker(filteredDialogues), [filteredDialogues]);
 
-  // 통계 계산
-  const totalWords = useMemo(() => {
-    return dialogues.reduce((acc, cur) => acc + cur.text.split(/\s+/).length, 0);
-  }, [dialogues]);
+  // 핵심요약에서 드래그된 근거 매칭 세그먼트 ID Set
+  const evidenceMatchedIds = useMemo(() => {
+    if (!evidenceQuery.trim()) return new Set();
+    const q = evidenceQuery.toLowerCase();
+    const matched = new Set();
+    dialogues.forEach((d) => {
+      if (d.text.toLowerCase().includes(q)) {
+        matched.add(d.id);
+      }
+    });
+    return matched;
+  }, [dialogues, evidenceQuery]);
 
-  const totalChars = useMemo(() => {
-    return dialogues.reduce((acc, cur) => acc + cur.text.length, 0);
-  }, [dialogues]);
+  // 화자 태그별 차분한 색상 매핑 (접근성 높은 단색/파스텔톤)
+  const getSpeakerBadgeStyle = (speakerName) => {
+    if (speakerName.includes("1") || speakerName.includes("기자") || speakerName.includes("A")) {
+      return "bg-slate-100 text-slate-800 border-slate-300";
+    }
+    if (speakerName.includes("2") || speakerName.includes("취재") || speakerName.includes("B")) {
+      return "bg-blue-50 text-blue-800 border-blue-200";
+    }
+    return "bg-zinc-100 text-zinc-800 border-zinc-200";
+  };
+
+  // STT 처리 완료 여부 (하단 큰 결과 박스 표시 조건)
+  const hasSource = Boolean(audioUrl || storedSource);
+  const isSTTCompleted = hasSource && dialogues.length > 0;
 
   return (
-    <div className="w-full space-y-5 animate-float-in pb-16">
-      {/* 숨겨진 실제 HTML5 Audio 태그 (파일 업로드 시 구동) */}
+    <div className="w-full max-w-[1720px] mx-auto pb-16 font-sans text-slate-800">
+      {/* 실제 HTML5 오디오 요소 */}
       {audioUrl && (
         <audio
           ref={audioRef}
           src={audioUrl}
           onTimeUpdate={handleAudioTimeUpdate}
-          onPause={() => setIsPlaying(false)}
           onEnded={() => setIsPlaying(false)}
         />
       )}
 
-      {/* ──────────────────────────────────────────
-          1. 상단 정보 카드 & 파일 업로드
-         ────────────────────────────────────────── */}
-      <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-5 md:p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-slate-900 text-white shadow-2xs">
-              <FileAudio className="w-4 h-4 text-white" />
-            </span>
-            <h2 className="text-xl font-black text-slate-950 tracking-tight">
-              인터뷰·녹취 스튜디오
-            </h2>
-            <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-              {sttStatus || (dialogues.length ? "전사 완료" : fileName ? "전사 결과 없음" : "녹음 파일 없음")}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-medium pt-0.5">
-            <span className="text-slate-800 font-bold truncate max-w-xs">{fileName}</span>
-            <span>•</span>
-            <span className="flex items-center gap-1 text-slate-700 font-bold">
-              <Clock className="w-3.5 h-3.5 text-slate-400" />
-              총 {formatDuration(duration)}
-            </span>
-            <span>•</span>
-            <span>화자 {new Set(dialogues.map((d) => d.speaker)).size}명</span>
-            <span>•</span>
-            <span>{totalChars.toLocaleString()}자 ({totalWords.toLocaleString()}단어)</span>
-          </div>
-        </div>
-
-        {/* 상단 업로드 및 기사 연동 액션 버튼 */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {savedTranscripts.length > 0 && <select aria-label="저장된 녹취" value={transcriptId}
-            onChange={(event) => void openTranscript(event.target.value)}
-            className="max-w-[240px] px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold">
-            <option value="" disabled>저장된 녹취 선택</option>
-            {savedTranscripts.map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}
-          </select>}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold transition shadow-xs flex items-center gap-2 cursor-pointer"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span>새 녹음 파일 업로드</span>
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            accept="audio/*,video/*,.mp3,.m4a,.wav"
-            className="hidden"
-          />
-
-          {onReturnToArticle && (
+      {/* ──────────────────────────────────────────────────────────
+          상단 헤더 바
+         ────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between pb-5 mb-5 border-b border-slate-200">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">
+            STT 인터뷰 전사 & AI 요약
+          </h1>
+          <div className="relative mt-2">
             <button
-              onClick={() => onReturnToArticle(rawContinuousText)}
-              className="px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl text-xs font-extrabold transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
-              title="녹취록 핵심 발췌를 기사 작성 화면으로 인계합니다"
+              type="button"
+              data-testid="stored-transcripts-toggle"
+              onClick={toggleStoredMenu}
+              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+              title="이전에 전사해 저장된 인터뷰를 다시 엽니다"
             >
-              <FileText className="w-3.5 h-3.5 text-slate-600" />
-              <span>기사 작성기로 내보내기</span>
+              <FileAudio className="w-3 h-3 text-slate-500" />
+              <span>저장된 전사 불러오기</span>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
-          )}
-        </div>
-      </div>
-
-      {/* ──────────────────────────────────────────
-          4 & 5. 상단 고정(Sticky) 오디오 재생바 & 속도 조절
-          (1시간 분량의 긴 녹취를 스크롤하면서도 항상 상단에서 조작 가능)
-         ────────────────────────────────────────── */}
-      <div className="sticky top-2 z-40 bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/90 p-3.5 md:p-4 shadow-md space-y-2.5 transition-all">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          
-          {/* 재생 컨트롤 버튼 그룹: [ ▶ 재생하기 ] [ ↺ - 10초 ] [ +10초 ↻ ] [ 00:00 / 58:40 ] */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* 1. 메인 재생 / 일시정지 (가장 앞) */}
-            <button
-              onClick={handleTogglePlay}
-              className="px-5 py-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs md:text-sm flex items-center gap-2 shadow-xs transition cursor-pointer active:scale-95"
-            >
-              {isPlaying ? (
-                <>
-                  <Pause className="w-4 h-4 fill-white" />
-                  <span>일시정지</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 fill-white ml-0.5" />
-                  <span>재생하기</span>
-                </>
-              )}
-            </button>
-
-            {/* 2. 10초 뒤로: [ ↺ - 10초 ] */}
-            <button
-              onClick={() => handleSeekOffset(-10)}
-              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 hover:text-slate-950 text-xs font-black transition cursor-pointer flex items-center gap-1.5 active:scale-95 border border-slate-200/70 shadow-2xs"
-              title="10초 뒤로 이동"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
-              <span>- 10초</span>
-            </button>
-
-            {/* 3. 10초 앞으로: [ +10초 ↻ ] */}
-            <button
-              onClick={() => handleSeekOffset(10)}
-              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 hover:text-slate-950 text-xs font-black transition cursor-pointer flex items-center gap-1.5 active:scale-95 border border-slate-200/70 shadow-2xs"
-              title="10초 앞으로 이동"
-            >
-              <span>+10초</span>
-              <RotateCw className="w-3.5 h-3.5 text-slate-600" />
-            </button>
-
-            {/* 타임스탬프 표시: [ 00:00 / 58:40 ] */}
-            <div className="ml-1 font-mono text-xs md:text-sm font-black text-slate-900 bg-slate-100 px-3.5 py-2 rounded-xl border border-slate-200/70">
-              <span className="text-blue-600">{formatDuration(currentTime)}</span>
-              <span className="text-slate-400 mx-1">/</span>
-              <span className="text-slate-600">{formatDuration(duration)}</span>
-            </div>
-          </div>
-
-          {/* 재생 속도 조절: 버튼 클릭 시 드롭다운 컨트롤바가 아래로 내려옴 */}
-          <div className="relative self-end md:self-auto">
-            <button
-              onClick={() => setIsSpeedMenuOpen(!isSpeedMenuOpen)}
-              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs md:text-sm transition cursor-pointer flex items-center gap-1.5 border border-slate-200/80 shadow-2xs active:scale-95"
-              title="재생 속도 조절 메뉴 열기"
-            >
-              <Clock className="w-3.5 h-3.5 text-slate-500" />
-              <span>재생속도: <strong className="text-slate-950">{playbackSpeed}x</strong></span>
-              <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-200 ${isSpeedMenuOpen ? "rotate-180" : ""}`} />
-            </button>
-
-            {/* 드롭다운 컨트롤 메뉴 (0.8x, 1.0x, 1.25x, 1.5x, 2.0x 간결한 표시) */}
-            {isSpeedMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-32 bg-white rounded-2xl border border-slate-200 shadow-xl p-1.5 z-50 animate-float-in space-y-0.5">
-                {[
-                  { rate: 0.8, label: "0.8x" },
-                  { rate: 1.0, label: "1.0x" },
-                  { rate: 1.25, label: "1.25x" },
-                  { rate: 1.5, label: "1.5x" },
-                  { rate: 2.0, label: "2.0x" }
-                ].map((item) => (
+            {storedMenu.open && (
+              <div data-testid="stored-transcripts-menu" className="absolute left-0 top-full mt-1.5 w-[360px] max-h-72 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg z-30 p-1.5 space-y-0.5">
+                {storedMenu.status === "loading" && <p className="p-2 text-xs text-slate-500">저장된 전사를 불러오는 중…</p>}
+                {storedMenu.status === "error" && <p role="alert" className="p-2 text-xs text-rose-600">{storedMenu.error}</p>}
+                {storedMenu.status === "done" && storedMenu.items.length === 0 && (
+                  <p className="p-2 text-xs text-slate-500">저장된 전사가 없습니다.</p>
+                )}
+                {storedMenu.items.map((item) => (
                   <button
-                    key={item.rate}
-                    onClick={() => {
-                      handleSpeedChange(item.rate);
-                      setIsSpeedMenuOpen(false);
-                    }}
-                    className={`w-full px-3 py-2 text-left rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
-                      playbackSpeed === item.rate
-                        ? "bg-slate-950 text-white font-extrabold shadow-2xs"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
+                    key={item.id}
+                    type="button"
+                    onClick={() => openStoredTranscript(item)}
+                    className="w-full text-left p-2 rounded-lg hover:bg-slate-100 transition cursor-pointer"
                   >
-                    <span>{item.label}</span>
-                    {playbackSpeed === item.rate && <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />}
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-bold text-slate-900 truncate">{item.filename || "(파일명 없음)"}</span>
+                      <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                        {new Date(item.createdAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 truncate">{item.preview || "(내용 없음)"}</p>
+                    <p className="text-[10px] text-slate-400">발언 {item.segmentCount}개 · {formatDuration(item.durationSec)}</p>
                   </button>
                 ))}
               </div>
             )}
           </div>
-
         </div>
 
-        {/* 인터랙티브 타임라인 슬라이더 바 (호버 시 늘어나지 않고 h-2 크기 완전 고정) */}
-        <div className="relative flex items-center w-full">
-          <input
-            type="range"
-            min="0"
-            max={duration}
-            value={currentTime}
-            onChange={handleSliderSeek}
-            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-950"
-          />
-        </div>
+        {onReturnToArticle && (
+          <button
+            onClick={() => {
+              const exportParts = [];
+              if (aiSummary?.summary) {
+                exportParts.push(`[AI 핵심 요약]\n${aiSummary.summary}`);
+              }
+              const exportText = dialogues.map((d) => d.text).join("\n\n");
+              if (exportText) {
+                exportParts.push(`[통합 전사 전문]\n${exportText}`);
+              }
+              onReturnToArticle(exportParts.join("\n\n---\n\n"), { id: storedSource?.id || currentTranscript?.id, filename: fileName });
+            }}
+            className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs active:scale-95"
+            title="기사 작성기로 내보내기"
+          >
+            <span>기사 작성기로 내보내기</span>
+            <ArrowUpRight className="w-3.5 h-3.5 text-slate-300" />
+          </button>
+        )}
       </div>
 
-      {/* ──────────────────────────────────────────
-          2. 뷰 모드 전환 및 유틸리티 툴바 (화자 필터 제거 & 버튼 사이즈 확대)
-          [화자별 나누어 보기] vs [전체 통 텍스트 보기]
-         ────────────────────────────────────────── */}
-      <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-4 md:p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+      {/* ──────────────────────────────────────────────────────────
+          1. 상단 두 개 박스 (와이어프레임 상단 가로 2분할)
+             - 상단 왼쪽: 오디오 파일 업로드 및 재생
+             - 상단 오른쪽: AI 핵심 요약
+         ────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
         
-        {/* 좌측: 뷰 모드 전환 탭 (버튼 사이즈 크게 확대) */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/70 shadow-inner">
-          <button
-            onClick={() => setViewMode("speaker")}
-            className={`px-5 md:px-6 py-2.5 md:py-3 rounded-xl text-xs md:text-sm font-extrabold transition-all cursor-pointer flex items-center gap-2 ${
-              viewMode === "speaker"
-                ? "bg-white text-slate-950 shadow-sm font-black scale-[1.02]"
-                : "text-slate-600 hover:text-slate-950"
-            }`}
-          >
-            <MessageSquare className="w-4 h-4 md:w-5 md:h-5 text-slate-800" />
-            <span>화자별 나누어 보기</span>
-          </button>
-
-          <button
-            onClick={() => setViewMode("fullText")}
-            className={`px-5 md:px-6 py-2.5 md:py-3 rounded-xl text-xs md:text-sm font-extrabold transition-all cursor-pointer flex items-center gap-2 ${
-              viewMode === "fullText"
-                ? "bg-white text-slate-950 shadow-sm font-black scale-[1.02]"
-                : "text-slate-600 hover:text-slate-950"
-            }`}
-          >
-            <AlignLeft className="w-4 h-4 md:w-5 md:h-5 text-slate-800" />
-            <span>전체 통 텍스트 보기</span>
-          </button>
-        </div>
-
-        {/* 우측: 넉넉한 사이즈의 키워드 검색 및 전체 복사 / 다운로드 액션 */}
-        <div className="flex items-center gap-3 flex-1 sm:flex-initial justify-end flex-wrap">
-          {/* 키워드 검색창 */}
-          <div className="relative min-w-[200px] md:min-w-[260px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              placeholder="단어/키워드 검색..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs md:text-sm text-slate-900 outline-none focus:bg-white focus:border-slate-800 transition shadow-2xs"
-            />
-          </div>
-
-          {/* 전체 복사 버튼 (확대) */}
-          <button
-            onClick={handleCopyAllText}
-            className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-xs md:text-sm font-black transition cursor-pointer flex items-center gap-2 shadow-xs active:scale-95"
-            title="전체 인터뷰 녹취록 전문을 복사합니다"
-          >
-            {isAllCopied ? (
-              <>
-                <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
-                <span className="text-emerald-300">전체 복사됨</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-4 h-4 text-slate-200" />
-                <span>전체 복사</span>
-              </>
-            )}
-          </button>
-
-          {/* TXT 다운로드 (확대) */}
-          <button
-            onClick={handleDownloadTxt}
-            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl text-xs md:text-sm font-extrabold transition cursor-pointer flex items-center gap-1.5 shadow-2xs border border-slate-200 active:scale-95"
-            title="TXT 파일로 다운로드"
-          >
-            <Download className="w-4 h-4 text-slate-700" />
-            <span className="hidden sm:inline">TXT 저장</span>
-          </button>
-        </div>
-
-      </div>
-
-      {/* ──────────────────────────────────────────
-          MAIN WORKSPACE:
-          모드 1. [화자별 대화형 뷰]
-          모드 2. [전체 통 텍스트 뷰]
-         ────────────────────────────────────────── */}
-      <div className="interview-workspace"><div>
-      {viewMode === "speaker" ? (
-        /* ──────────────────────────────────────────
-            모드 1. 화자별 나누어 보기 (화자 카드 & 타임스탬프 다시듣기 & 작은 복사 아이콘)
-           ────────────────────────────────────────── */
-        <div className="space-y-3.5">
-          {filteredDialogues.length === 0 ? (
-            <div className="bg-white rounded-3xl border border-slate-200/90 p-12 text-center text-slate-400 space-y-2">
-              <Search className="w-8 h-8 text-slate-300 mx-auto" />
-              <p className="text-sm font-bold text-slate-600">검색 조건에 맞는 발언이 없습니다.</p>
+        {/* ==========================================================
+            [상단 왼쪽: 6컬럼] 오디오 파일 업로드 및 재생
+           ========================================================== */}
+        <div className="lg:col-span-6 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between min-h-[350px]">
+          {/* 카드 헤더 */}
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <FileAudio className="w-4 h-4 text-slate-700" />
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                오디오 파일 업로드 및 재생
+              </h2>
+            </div>
+            {hasSource && (
               <button
-                onClick={() => {
-                  setSearchKeyword("");
-                  setSpeakerFilter("all");
-                }}
-                className="text-xs text-blue-600 font-bold hover:underline"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                title="다른 파일로 변경"
               >
-                검색 조건 초기화
+                <Upload className="w-3 h-3 text-slate-500" />
+                <span>파일 변경</span>
               </button>
-            </div>
-          ) : (
-            filteredDialogues.map((item) => {
-              const isActive = activeDialogueId === item.id;
-              const isReporter = item.speaker === "reporter";
-
-              return (
-                <div
-                  key={item.id}
-                  className={`p-4 md:p-5 rounded-2xl border transition-all duration-200 group relative ${
-                    isActive
-                      ? "bg-blue-50/30 border-blue-400/80 shadow-md ring-2 ring-blue-500/20"
-                      : isReporter
-                      ? "bg-white/95 border-slate-200/90 hover:border-slate-300 shadow-2xs"
-                      : "bg-[#F8FAFC] border-slate-200/90 hover:border-slate-300 shadow-2xs"
-                  }`}
-                >
-                  {/* 카드 상단: 타임스탬프(다시듣기 링크) + 화자 명칭 + [복사 아이콘] */}
-                  <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-100">
-                    <div className="flex items-center gap-2.5">
-                      {/* 화자 뱃지 */}
-                      <span
-                        className={`text-xs font-black px-2.5 py-1 rounded-lg border flex items-center gap-1.5 ${
-                          isReporter
-                            ? "bg-blue-50 text-blue-800 border-blue-200"
-                            : "bg-slate-900 text-white border-slate-900"
-                        }`}
-                      >
-                        <Users className="w-3 h-3" />
-                        <span>{item.speakerName}</span>
-                      </span>
-
-                      {/* 6. 화자 발언 구간으로 이동 (다시듣기 버튼 - 확대) */}
-                      <button
-                        onClick={() => handleJumpToTimestamp(item.timestamp)}
-                        className={`px-3 py-1 rounded-lg font-mono text-xs md:text-sm font-black transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 ${
-                          isActive
-                            ? "bg-blue-600 text-white shadow-xs scale-102"
-                            : "bg-slate-100 hover:bg-slate-200 text-slate-800 hover:text-slate-950"
-                        }`}
-                        title="이 발언 구간으로 즉시 이동하여 다시 재생합니다"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>{formatDuration(item.timestamp)} 다시듣기</span>
-                      </button>
-
-                      {isActive && (
-                        <span className="text-[11px] font-extrabold text-blue-600 bg-blue-100 px-2.5 py-0.5 rounded-full animate-pulse">
-                          현재 재생 중
-                        </span>
-                      )}
-                    </div>
-
-                    {/* 3. 화자별 발언별 복사 아이콘 (확대) */}
-                    <button
-                      onClick={() => handleCopySentence(item.id, item.text, item.speakerName)}
-                      className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-200/70 transition cursor-pointer flex items-center gap-1.5 active:scale-90"
-                      title="이 발언 복사하기"
-                    >
-                      {copiedId === item.id ? (
-                        <>
-                          <Check className="w-4.5 h-4.5 text-emerald-600 stroke-[3]" />
-                          <span className="text-xs font-black text-emerald-600">복사됨!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4.5 h-4.5 text-slate-500 hover:text-slate-800" />
-                          <span className="text-xs font-bold text-slate-500 hidden sm:inline">복사</span>
-                        </>
-                      )}
-                    </button>
-                    <button type="button" aria-pressed={selectedQuotes.some((quote) => quote.id === item.id)}
-                      onClick={() => setSelectedQuotes((quotes) => quotes.some((quote) => quote.id === item.id) ? quotes.filter((quote) => quote.id !== item.id) : [...quotes, item])}
-                      className="ml-2 rounded-full border border-[#DDD6CB] px-3 py-2 text-xs font-bold cursor-pointer">
-                      {selectedQuotes.some((quote) => quote.id === item.id) ? "선택 취소" : "발언 선택"}
-                    </button>
-                  </div>
-
-                  {/* 발언 텍스트 (1시간 분량도 눈이 편안한 행간과 폰트 크기) */}
-                  <p className="text-xs md:text-sm text-slate-900 leading-relaxed font-sans select-text">
-                    {searchKeyword.trim() ? (
-                      // 검색어 하이라이트 표시
-                      item.text.split(new RegExp(`(${searchKeyword})`, "gi")).map((part, i) =>
-                        part.toLowerCase() === searchKeyword.toLowerCase() ? (
-                          <mark key={i} className="bg-amber-200 text-slate-950 font-bold px-0.5 rounded">
-                            {part}
-                          </mark>
-                        ) : (
-                          part
-                        )
-                      )
-                    ) : (
-                      item.text
-                    )}
-                  </p>
-                </div>
-              );
-            })
-          )}
-        </div>
-      ) : (
-        /* ──────────────────────────────────────────
-            모드 2. 전체 통 텍스트 보기 (조서/신문 문서형 연속 텍스트)
-           ────────────────────────────────────────── */
-        <div className="bg-white/95 rounded-3xl border border-slate-200/90 p-6 md:p-10 shadow-xs space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="text-base md:text-lg font-black text-slate-950 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-slate-700" />
-                인터뷰 줄글 전문 (통 텍스트 뷰)
-              </h3>
-              <p className="text-xs text-slate-500 font-medium">
-                1시간 분량의 긴 녹취록을 한눈에 끊김 없이 읽고 필요한 단락을 자유롭게 복사할 수 있습니다.
-              </p>
-            </div>
-
-            <button
-              onClick={handleCopyAllText}
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold transition shadow-xs cursor-pointer flex items-center gap-1.5"
-            >
-              {isAllCopied ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>전체 텍스트 복사 완료!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>통 텍스트 전체 복사</span>
-                </>
-              )}
-            </button>
+            )}
           </div>
 
-          {/* 편안한 리딩 뷰 (적절한 줄바꿈과 넉넉한 폰트 리딩감) */}
-          <div className="space-y-6 text-xs md:text-sm text-slate-800 leading-loose font-sans select-text max-w-4xl mx-auto">
-            {dialogues.map((item) => (
-              <div key={item.id} className="space-y-1">
-                <div className="flex items-center gap-2 text-xs font-extrabold text-slate-900">
-                  <span
-                    onClick={() => handleJumpToTimestamp(item.timestamp)}
-                    className="font-mono text-blue-600 hover:underline cursor-pointer"
-                    title="클릭 시 해당 시간부터 재생"
-                  >
-                    [{formatDuration(item.timestamp)}]
-                  </span>
-                  <span>{item.speakerName}</span>
-                </div>
-                <p className="text-slate-700 pl-4 border-l-2 border-slate-200">
-                  {item.text}
+          {/* 카드 본문: 업로드 전 vs 업로드 후 */}
+          {!hasSource ? (
+            /* [빈 상태] 드래그 앤 드롭 업로드 영역 */
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`flex-1 my-3 rounded-xl border border-dashed transition-all duration-200 cursor-pointer flex flex-col items-center justify-center p-6 text-center space-y-3 ${
+                isDragging
+                  ? "border-slate-900 bg-slate-100 scale-[1.01]"
+                  : "border-slate-300 hover:border-slate-400 bg-slate-50/50 hover:bg-slate-50"
+              }`}
+            >
+              <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-600 shadow-2xs">
+                <Upload className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-bold text-slate-800">
+                  음성 파일을 드래그하여 놓거나 클릭하여 선택하세요
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  지원 형식: MP3, M4A, WAV, WebM (최대 100MB)
                 </p>
               </div>
-            ))}
+              <button
+                type="button"
+                className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold transition shadow-xs"
+              >
+                파일 선택
+              </button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="audio/*,video/*,.mp3,.m4a,.wav,.webm"
+                className="hidden"
+              />
+            </div>
+          ) : (
+            /* [업로드 완료 상태] 파일 정보, 절제된 파형 미리보기, 오디오 컨트롤러 */
+            <div className="flex-1 flex flex-col justify-between py-2 space-y-4">
+              {/* 파일명 및 재생 시간 정보 */}
+              <div className="flex items-center justify-between text-xs pt-1">
+                <div className="flex items-center gap-2 truncate max-w-[65%]">
+                  <span className="font-bold text-slate-900 truncate" title={fileName}>
+                    {fileName}
+                  </span>
+                  {fileSize > 0 && (
+                    <span className="text-[11px] text-slate-400 font-mono shrink-0">
+                      ({(fileSize / (1024 * 1024)).toFixed(1)}MB)
+                    </span>
+                  )}
+                </div>
+                {storedSource && (
+                  <span className="text-[11px] text-slate-500 shrink-0 mr-2">저장된 전사 · 원본 오디오 없음</span>
+                )}
+                <div className="font-mono text-xs font-bold text-slate-600 shrink-0">
+                  <span className="text-slate-950 font-bold">{formatDuration(currentTime)}</span>
+                  <span className="mx-1 text-slate-300">/</span>
+                  <span>{formatDuration(duration)}</span>
+                </div>
+              </div>
+
+              {/* 절제된 파형 미리보기 (Waveform bars) */}
+              <div className="w-full h-12 bg-slate-50 border border-slate-100 rounded-xl px-4 flex items-center justify-between gap-1 overflow-hidden">
+                {WAVEFORM_BARS.map((heightPercent, idx) => {
+                  const barProgress = idx / WAVEFORM_BARS.length;
+                  const currentProgress = duration > 0 ? currentTime / duration : 0;
+                  const isPlayed = barProgress <= currentProgress;
+
+                  return (
+                    <div
+                      key={idx}
+                      className="flex-1 flex items-center justify-center h-full"
+                    >
+                      <div
+                        className={`w-full rounded-full transition-all duration-100 ${
+                          isPlayed ? "bg-slate-900" : "bg-slate-200"
+                        }`}
+                        style={{ height: `${heightPercent}%` }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* 프로그레스 슬라이더 */}
+              <div className="space-y-1">
+                <div className="relative flex items-center w-full h-3">
+                  <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden relative cursor-pointer">
+                    <div
+                      className="h-full bg-slate-900 rounded-full transition-all duration-700"
+                      style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max={duration || 100}
+                    value={currentTime}
+                    onChange={handleSliderSeek}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* 재생 컨트롤 바: 재생/일시정지, -10초, +10초, 볼륨, 재생속도 */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleTogglePlay}
+                    className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                  >
+                    {isPlaying ? (
+                      <>
+                        <Pause className="w-3.5 h-3.5 fill-white" />
+                        <span>일시정지</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+                        <span>재생</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => handleSeekOffset(-10)}
+                    className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1 transition cursor-pointer"
+                    title="10초 뒤로 이동"
+                  >
+                    <RotateCcw className="w-3 h-3 text-slate-500" />
+                    <span>-10초</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleSeekOffset(10)}
+                    className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1 transition cursor-pointer"
+                    title="10초 앞으로 이동"
+                  >
+                    <span>+10초</span>
+                    <RotateCw className="w-3 h-3 text-slate-500" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {/* 음량 조절 */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={handleToggleMute}
+                      className="text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                      title={isMuted ? "음소거 해제" : "음소거"}
+                    >
+                      {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                    </button>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={isMuted ? 0 : volume}
+                      onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                      className="w-16 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-900"
+                    />
+                  </div>
+
+                  {/* 재생 속도 */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setIsSpeedMenuOpen(!isSpeedMenuOpen)}
+                      className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <span>{playbackSpeed}x</span>
+                      <ChevronDown className="w-3 h-3 text-slate-400" />
+                    </button>
+                    {isSpeedMenuOpen && (
+                      <div className="absolute right-0 bottom-full mb-1 w-20 bg-white rounded-xl p-1 z-50 space-y-0.5 border border-slate-200 shadow-md">
+                        {[0.8, 1.0, 1.25, 1.5, 2.0].map((rate) => (
+                          <button
+                            key={rate}
+                            onClick={() => {
+                              handleSpeedChange(rate);
+                              setIsSpeedMenuOpen(false);
+                            }}
+                            className={`w-full px-2 py-1 text-left rounded-lg text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                              playbackSpeed === rate ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+                            }`}
+                          >
+                            <span>{rate}x</span>
+                            {playbackSpeed === rate && <Check className="w-3 h-3" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 하단 상태 텍스트 */}
+          <div className="pt-2 text-[11px] text-slate-400 font-medium border-t border-slate-100 flex items-center justify-between">
+            <span>상태: {sttStatus}</span>
+            {evidenceQuery && (
+              <span className="text-slate-600 bg-amber-100 px-1.5 py-0.5 rounded font-bold">
+                선택 근거 매칭 중
+              </span>
+            )}
           </div>
         </div>
+
+        {/* ==========================================================
+            [상단 오른쪽: 6컬럼] AI 핵심 요약
+           ========================================================== */}
+        <div
+          className="lg:col-span-6 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between min-h-[350px]"
+          onMouseUp={handleSummaryTextSelection}
+          onKeyUp={handleSummaryTextSelection}
+        >
+          {/* 카드 헤더 */}
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-slate-700" />
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                AI 핵심 요약
+              </h2>
+            </div>
+
+            {/* 재분석 / 복사 버튼 */}
+            <div className="flex items-center gap-1.5">
+              {currentTranscript && (
+                <button
+                  onClick={() => handleGenerateSummary()}
+                  disabled={isAnalyzing}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  title="AI 요약 다시 생성"
+                >
+                  <RefreshCw className={`w-3 h-3 text-slate-500 ${isAnalyzing ? "animate-spin" : ""}`} />
+                  <span>재분석</span>
+                </button>
+              )}
+              {aiSummary && (
+                <button
+                  onClick={handleCopySummaryAll}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                  title="요약 전체 복사"
+                >
+                  {isSummaryCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-slate-500" />}
+                  <span>{isSummaryCopied ? "복사됨" : "복사"}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 카드 본문: 첫 화면(빈 상태) vs 분석 중 vs 완료 */}
+          {!hasSource ? (
+            /* [첫 화면 빈 상태] */
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-2">
+              <p className="text-xs font-bold text-slate-700">
+                파일을 업로드하면 AI 핵심 요약이 표시됩니다
+              </p>
+              <p className="text-[11px] text-slate-400 max-w-xs">
+                STT 전사 완료 후 3~5문장 요약, 주요 키워드, 핵심 발언이 자동으로 도출됩니다.
+              </p>
+            </div>
+          ) : isAnalyzing ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-2">
+              <RefreshCw className="w-5 h-5 text-slate-700 animate-spin" />
+              <p className="text-xs font-bold text-slate-800">
+                AI가 녹취록 전문을 분석하고 있습니다…
+              </p>
+            </div>
+          ) : analysisError ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-2">
+              <p className="text-xs text-rose-600 font-medium">{analysisError}</p>
+              <button
+                onClick={() => handleGenerateSummary()}
+                className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold"
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : aiSummary ? (
+            /* [분석 완료 상태] 독립적으로 세로 스크롤 가능 (얇은 스크롤바) */
+            <div className="flex-1 my-2 max-h-[240px] overflow-y-auto pr-1 space-y-3.5 select-text cursor-text scrollbar-thin">
+              {/* 1. 핵심 요약 (3~5문장) */}
+              <div className="space-y-1">
+                <span className="text-[11px] font-bold text-slate-900">요약</span>
+                <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  {aiSummary.summary}
+                </p>
+              </div>
+
+              {/* 2. 주요 키워드 */}
+              {aiSummary.keywords && aiSummary.keywords.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-900">주요 키워드</span>
+                  <div className="flex flex-wrap gap-1">
+                    {aiSummary.keywords.map((kw, idx) => (
+                      <button
+                        key={`kw_${idx}`}
+                        onClick={() => setSearchKeyword(kw)}
+                        className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-700 cursor-pointer"
+                        title="이 키워드로 통합 텍스트 검색"
+                      >
+                        #{kw}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. 핵심 발언 내용 */}
+              {aiSummary.keyPoints && aiSummary.keyPoints.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-slate-900">핵심 발언</span>
+                  <div className="space-y-1">
+                    {aiSummary.keyPoints.map((point, idx) => (
+                      <div key={`kp_${idx}`} className="flex items-start gap-1.5 text-xs text-slate-700">
+                        <span className="text-slate-400 font-mono text-[10px] shrink-0 mt-0.5">
+                          {idx + 1}.
+                        </span>
+                        <span>{point}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-2">
+              <p className="text-xs text-slate-500">전사가 완료되었습니다.</p>
+              <button
+                onClick={() => handleGenerateSummary()}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold cursor-pointer"
+              >
+                AI 핵심 요약 생성
+              </button>
+            </div>
+          )}
+
+          {/* 하단 안내 문구 */}
+          <div className="pt-2 text-[11px] text-slate-400 font-medium border-t border-slate-100 flex items-center justify-between">
+            <span>요약 텍스트 드래그 시 하단 녹취 근거 자동 매칭</span>
+            {aiSummary && <span className="text-slate-600 font-bold">생성 완료</span>}
+          </div>
+        </div>
+
+      </div>
+
+      {/* ──────────────────────────────────────────────────────────
+          2. 하단 큰 전사 결과 박스 (STT 처리 완료 후에만 표시!)
+             - 중앙 세로 구분선(| divider)으로 좌우 분할
+             - 왼쪽: 화자별 전사 (화자 1, 화자 2 등 대화형 세그먼트 목록)
+             - 오른쪽: 통합 텍스트 (줄글 전문, 자체 스크롤, 검색/다운로드/복사)
+             - 하단: 배경과 경계 없이 자연스럽게 이어지는 그라데이션
+         ────────────────────────────────────────────────────────── */}
+      {isSTTCompleted && (
+        <div className="relative w-full mt-6">
+          <div className="w-full bg-white border-t border-x border-slate-200 rounded-t-2xl shadow-xs overflow-hidden">
+            <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+              
+              {/* ==========================================================
+                  [하단 왼쪽: 5컬럼] 화자별 전사 (진행 중인 화자 구간 박스 강조)
+                 ========================================================== */}
+              <div className="lg:col-span-5 p-5 flex flex-col justify-between space-y-3">
+                {/* 영역 헤더 */}
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      화자별 전사
+                    </h3>
+                    <span className="text-xs text-slate-400 font-mono">
+                      ({paragraphs.length}개 단락)
+                    </span>
+                  </div>
+                </div>
+
+                {/* 화자별 세그먼트 대화 목록 */}
+                <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
+                  {paragraphs.map((item) => {
+                    const isSelected = item.ids.includes(selectedDialogueId);
+                    const isCurrentActive = item.ids.includes(activeDialogueId);
+                    const isEvidence = item.ids.some((segmentId) => evidenceMatchedIds.has(segmentId));
+
+                    return (
+                      <div
+                        key={`speaker_segment_${item.id}`}
+                        onClick={() => handleSelectDialogue(item.timestamp, item.id)}
+                        className={`group p-3 rounded-xl transition cursor-pointer ${
+                          isCurrentActive
+                            ? "bg-white border-2 border-slate-900 shadow-sm ring-2 ring-slate-900/10"
+                            : isSelected
+                            ? "bg-slate-50 border border-slate-300"
+                            : isEvidence
+                            ? "bg-amber-50/90 border border-amber-300"
+                            : "bg-white border border-slate-200/70 hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        {/* 세그먼트 상단: 화자명 태그 + 타임스탬프 */}
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[11px] font-bold border ${getSpeakerBadgeStyle(
+                                item.speakerName
+                              )}`}
+                            >
+                              {item.speakerName}
+                            </span>
+                            <span className="font-mono text-[11px] text-slate-400">
+                              {formatDuration(item.timestamp)}
+                            </span>
+                            {isCurrentActive && isPlaying && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-900 bg-slate-100 border border-slate-300">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-900 animate-pulse" />
+                                재생 중
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            {isEvidence && (
+                              <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
+                                요약 근거
+                              </span>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopySentence(item.id, item.text, item.speakerName);
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-200 transition opacity-0 group-hover:opacity-100"
+                              title="발언 복사"
+                            >
+                              {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 발화 텍스트 */}
+                        <p className="text-xs text-slate-700 leading-relaxed font-sans pl-1">
+                          {item.text}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ==========================================================
+                  [하단 오른쪽: 7컬럼] 통합 텍스트 (박스 없는 순수 줄글 형태)
+                 ========================================================== */}
+              <div className="lg:col-span-7 p-5 flex flex-col justify-between space-y-3">
+                {/* 영역 헤더: 제목 + 검색창 + 다운로드/복사 툴바 */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      통합 텍스트
+                    </h3>
+                    <div className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5" role="group" aria-label="통합 텍스트 형태">
+                      {[["speaker", "화자·단락 구분"], ["plain", "통글"]].map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          aria-pressed={textMode === mode}
+                          data-testid={`text-mode-${mode}`}
+                          onClick={() => setTextMode(mode)}
+                          className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                            textMode === mode ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {/* 인라인 검색창 */}
+                    <div className="relative w-36 sm:w-44">
+                      <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={searchKeyword}
+                        onChange={(e) => setSearchKeyword(e.target.value)}
+                        placeholder="단어 검색..."
+                        className="w-full pl-7 pr-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 outline-none"
+                      />
+                    </div>
+
+                    {/* 전체 복사 버튼 */}
+                    <button
+                      onClick={handleCopyAllText}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
+                      title="전체 텍스트 복사"
+                    >
+                      {isAllCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-slate-500" />}
+                      <span>전체 복사</span>
+                    </button>
+
+                    {/* 전문 다운로드 버튼 */}
+                    <button
+                      onClick={handleDownloadTxt}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
+                      title="TXT 다운로드"
+                    >
+                      <Download className="w-3 h-3 text-slate-500" />
+                      <span>다운로드</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 통합 텍스트: 화자·단락 구분(같은 화자 발언을 한 단락으로) 또는 통글(이어진 한 덩어리 글) */}
+                <div className="max-h-[580px] overflow-y-auto pr-2 space-y-3.5 text-xs md:text-sm leading-relaxed select-text font-sans scrollbar-thin" data-testid="unified-text" data-mode={textMode}>
+                  {(() => {
+                    // 발언 하나의 글자(검색어·요약 근거 강조 포함). 눌러서 그 시점으로 이동하는 동작은 그대로 둔다.
+                    const segmentSpan = (item) => {
+                      const isSelected = selectedDialogueId === item.id;
+                      const isEvidence = evidenceMatchedIds.has(item.id);
+                      const isMatchKeyword = searchKeyword.trim() && item.text.toLowerCase().includes(searchKeyword.toLowerCase());
+                      const mark = (query) => item.text.split(new RegExp(`(${query})`, "gi")).map((part, i) =>
+                        part.toLowerCase() === query.toLowerCase() ? (
+                          <mark key={i} className="bg-amber-200 text-slate-950 font-bold px-0.5 rounded">{part}</mark>
+                        ) : part
+                      );
+                      return (
+                        <span
+                          key={`unified_text_${item.id}`}
+                          id={`unified_text_${item.id}`}
+                          onClick={() => {
+                            setSelectedDialogueId(item.id);
+                            if (audioRef.current && audioUrl) {
+                              setCurrentTime(item.timestamp);
+                              audioRef.current.currentTime = item.timestamp;
+                            }
+                          }}
+                          className={`cursor-pointer transition-colors ${isSelected ? "text-slate-950 font-medium" : "text-slate-700 hover:text-slate-900"}`}
+                        >
+                          {isMatchKeyword ? mark(searchKeyword) : isEvidence && evidenceQuery ? mark(evidenceQuery) : item.text}
+                        </span>
+                      );
+                    };
+                    const spaced = (items) => items.flatMap((item, index) => (index ? [" ", segmentSpan(item)] : [segmentSpan(item)]));
+                    if (textMode === "plain") {
+                      return <p className="leading-relaxed">{spaced(filteredDialogues)}</p>;
+                    }
+                    return paragraphs.map((paragraph) => (
+                      <div key={`unified_paragraph_${paragraph.id}`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${getSpeakerBadgeStyle(paragraph.speakerName)}`}>{paragraph.speakerName}</span>
+                          <span className="font-mono text-[11px] text-slate-400">{formatDuration(paragraph.timestamp)}</span>
+                        </div>
+                        <p className="leading-relaxed">{spaced(paragraph.items)}</p>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          {/* 하단에 큰 박스 밑에 배경과 박스와 구분 없는 자연스러운 페이드 그라데이션 */}
+          <div className="w-full h-16 bg-gradient-to-b from-white via-white/60 to-transparent pointer-events-none rounded-b-2xl border-b border-transparent" />
+        </div>
       )}
-      </div><aside className="workspace-panel quote-bank" aria-label="선택한 발언">
-        <span className="workspace-kicker">선택한 발언 · {selectedQuotes.length}</span><h2>기사에 사용할 인용</h2>
-        {!selectedQuotes.length && <p>녹취록에서 발언을 선택하면 이곳에 모입니다.</p>}
-        {selectedQuotes.map((quote) => <blockquote key={quote.id}><small>{formatDuration(quote.timestamp)} · {quote.speakerName}</small><p>{quote.text}</p><button type="button" onClick={() => setSelectedQuotes((quotes) => quotes.filter((item) => item.id !== quote.id))}>선택에서 제외</button></blockquote>)}
-        <div className="workspace-actions"><button type="button" className="workspace-primary" disabled={!selectedQuotes.length} onClick={() => {
-          const text = selectedQuotes.map((quote) => `[${quote.speakerName} · ${formatDuration(quote.timestamp)}]\n${quote.text}`).join("\n\n");
-          onReturnToArticle?.(text, { id: transcriptId || `interview-${Date.now()}`, name: fileName, quotes: selectedQuotes });
-          setSelectedQuotes([]);
-        }}>선택한 발언을 기사로 보내기</button></div>
-      </aside></div>
     </div>
   );
 }

@@ -1,0 +1,8 @@
+/* 팩트체크 결과 표시색 — main 의 HighlightedBody(MARK)와 같은 색. 본문 DOM 에는 아무것도 넣지 않는다(CSS Custom Highlight). */
+::highlight(fc-conflict) { background-color: rgba(254, 205, 211, 0.9); }
+::highlight(fc-gap) { background-color: rgba(253, 230, 138, 0.8); }
+::highlight(fc-review) { background-color: rgba(221, 214, 254, 0.75); }
+::highlight(fc-focus) { background-color: rgba(167, 243, 208, 0.85); }
+::highlight(fc-detail) { background-color: rgba(253, 230, 138, 0.9); }
+/* 순서형 검사로 보고 있는 문장: 색 위에 진한 밑줄(main 은 진한 윤곽) */
+::highlight(fc-active) { text-decoration: underline; text-decoration-thickness: 2px; text-decoration-color: #9f1239; text-underline-offset: 3px; }

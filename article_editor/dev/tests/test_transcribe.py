@@ -53,5 +53,48 @@ class TranscribeTests(unittest.TestCase):
         self.assertEqual(caught.exception.status, 413)
 
 
+    def test_clova_speech_diarization_and_transcript(self):
+        clova_segments = [
+            {'start': 0, 'end': 2000, 'text': '안녕하십니까.', 'confidence': 0.95, 'speaker': {'label': '1'}, 'words': [[0, 2000, '안녕하십니까']]},
+            {'start': 2100, 'end': 5000, 'text': '네 반갑습니다.', 'confidence': 0.98, 'speaker': {'label': '2'}, 'words': [[2100, 5000, '네 반갑습니다']]},
+        ]
+        # 1. group_segments_by_speaker 테스트
+        grouped = tr.clova_speech.group_segments_by_speaker(clova_segments)
+        self.assertEqual(len(grouped), 2)
+        self.assertEqual(grouped[0]['speakerName'], '화자 1')
+        self.assertEqual(grouped[1]['speakerName'], '화자 2')
+
+        # 2. to_clova_dialogues 테스트
+        dialogues = tr.clova_speech.to_clova_dialogues(clova_segments)
+        self.assertEqual(len(dialogues), 2)
+        self.assertEqual(dialogues[0]['speakerName'], '화자 1')
+        self.assertEqual(dialogues[1]['speakerName'], '화자 2')
+        self.assertEqual(dialogues[0]['timestamp'], 0)
+        self.assertEqual(dialogues[1]['timestamp'], 2)
+
+        # 3. normalize_transcript 테스트 (docs/architecture 규격)
+        transcript = tr.clova_speech.normalize_transcript({'text': '안녕하십니까. 네 반갑습니다.', 'segments': clova_segments})
+        self.assertEqual(transcript['status'], 'completed')
+        self.assertEqual(len(transcript['segments']), 2)
+        self.assertEqual(transcript['segments'][0]['start_ms'], 0)
+        self.assertEqual(transcript['segments'][0]['end_ms'], 2000)
+        self.assertEqual(transcript['segments'][0]['speaker'], '화자 1')
+
+        # 4. transcribe 호출 시 CLOVA mock 동작 테스트
+        with mock.patch.object(tr.clova_speech, 'is_clova_configured', return_value=True), \
+             mock.patch.object(tr.clova_speech, 'recognize_speech', return_value={
+                 'dialogues': dialogues,
+                 'transcript': transcript,
+                 'text': '전체 텍스트',
+                 'duration': 5.0,
+                 'engine': 'clova'
+             }):
+            out = tr.transcribe({'data': base64.b64encode(b'AUDIO').decode()})
+            self.assertEqual(out['engine'], 'clova')
+            self.assertEqual(len(out['dialogues']), 2)
+            self.assertEqual(out['dialogues'][0]['speakerName'], '화자 1')
+
+
 if __name__ == '__main__':
     unittest.main()
+

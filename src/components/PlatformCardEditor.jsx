@@ -4,8 +4,8 @@ import ImageEditor from "./photo/ImageEditor.jsx";
 import {importPhoto,dongaPhotoData,trackPhotoDownload} from "../api/editorial.js";
 import {blobToDataUrl,photoDataUrl,renderStoredCard} from "../api/platform.js";
 import {articleId,fingerprint,invalidateDraft,renderKey,selectedCardPhoto,currentRender,sourceText} from "../lib/platformState.js";
-import CardModel from "../../platform-generator/lib/card-model.js";
-import CardTemplate from "../../platform-generator/lib/card-template.js";
+import * as CardModel from "../../platform-generator/lib/card-model.js";
+import * as CardTemplate from "../../platform-generator/lib/card-template.js";
 
 const button="rounded-xl border px-3 py-2 text-xs font-bold disabled:opacity-50";
 const articleKey=article=>fingerprint([articleId(article),sourceText(article)]);

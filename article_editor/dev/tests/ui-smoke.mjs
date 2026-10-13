@@ -164,7 +164,7 @@ try {
     if (r.url().endsWith("/api/articles/save") && r.ok()) savedIds.add((await r.json()).articleId);
   });
   // 화면의 alert 가 테스트를 멈추지 않게. 기사 전환 때 '저장하고 열까요?'는 수락(수동 저장 뒤 전환)
-  page.on("dialog", (d) => (/저장하지 않은 변경|삭제할까요|이전 파일의 자료로 바꿀까요|클라우드 백업을 끌까요/.test(d.message()) ? d.accept() : d.dismiss()));
+  page.on("dialog", (d) => (/저장하지 않은 변경|삭제할까요|이전 파일의 자료로 바꿀까요|클라우드 백업을 끌까요|복제본 파일을 지울까요/.test(d.message()) ? d.accept() : d.dismiss()));
 
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
   // 사이드바(main 디자인)의 메뉴 이름 — 접힌 상태에서는 버튼 title 로 보인다
@@ -513,15 +513,15 @@ try {
   // 파일 방식(실제 코어): 이전 파일 + 코드를 만들고, 틀린 코드는 거절하고, 올바른 코드로는 복구한다
   await page.getByTestId("settings-open-transfer").click();
   await transfer.waitFor();
-  const downloadWait = page.waitForEvent("download");
   await page.getByTestId("transfer-export-file").click();
-  const transferFile = await downloadWait;
+  await page.getByTestId("transfer-local-path").waitFor();
+  const transferPath = (await page.getByTestId("transfer-local-path").textContent()).trim();
   const transferCode = (await page.getByTestId("transfer-code").textContent()).trim();
   assert.match(transferCode, /^[A-HJ-NP-Z2-9]{5}(-[A-HJ-NP-Z2-9]{5}){3}$/, "이전 코드 형식");
-  assert.ok((await fs.promises.stat(await transferFile.path())).size > 0, "이전 파일이 만들어진다");
+  assert.ok((await fs.promises.stat(transferPath)).size > 0, "이전 파일이 안내한 위치에 만들어진다");
   await page.getByTestId("transfer-tab-import").click();
   await page.locator("[data-testid=transfer-dialog] summary").click();
-  await page.getByTestId("transfer-file").setInputFiles(await transferFile.path());
+  await page.getByTestId("transfer-file").setInputFiles(transferPath);
   await page.getByTestId("transfer-code-input").fill("AAAAA-BBBBB-CCCCC-DDDDD"); // 형식은 맞지만 틀린 코드
   await page.getByTestId("transfer-import-file").click();
   await page.getByTestId("transfer-error").waitFor();
@@ -532,6 +532,15 @@ try {
   await settings.waitFor();
   const articlesAfter = (await (await page.request.get(`${BASE}/api/articles`)).json()).articles.length;
   assert.equal(articlesAfter, articlesBefore, "이전 파일을 가져와도 기사가 그대로 있다");
+  // 복제본 파일은 가져온 뒤에도 남아 있고(안내된 위치), 지우기 버튼으로 지울 수 있다
+  await page.getByTestId("settings-open-transfer").click();
+  await page.getByTestId("transfer-local-file").waitFor();
+  await page.getByTestId("transfer-delete-file").click();
+  await page.getByTestId("transfer-local-file").waitFor({ state: "detached" });
+  assert.equal(fs.existsSync(transferPath), false, "복제본 파일이 지워진다");
+  await transfer.getByRole("button", { name: "닫기", exact: true }).click();
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await settings.waitFor();
   // 팩트체크 로컬 모델 사용: 기본 켜짐, 끄면 유지(끄면 모든 문장을 외부 모델이 판정)
   assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), true, "로컬 팩트체크 기본값은 켜짐");
   await page.getByTestId("settings-local-factcheck").uncheck();

@@ -335,7 +335,7 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
       <Suspense fallback={null}>
         {showLogin && <LoginDialog onClose={closeLogin} onSession={onSession} required={!session?.signedIn} />}
         {showModels && <ModelsDialog onClose={() => setShowModels(false)} />}
-        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} onBeforeRestore={() => (unsynced ? flush() : Promise.resolve())} session={session} onSession={onSession}
+        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} session={session} onSession={onSession}
           onTransfer={() => { setShowSettings(false); setShowTransfer(true); }} />}
         {showTransfer && <TransferWizard onClose={() => setShowTransfer(false)} onBeforeRestore={() => (unsynced ? flush() : Promise.resolve())} />}
 

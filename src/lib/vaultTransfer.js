@@ -22,20 +22,6 @@ export function normalizeTransferCode(input) {
   return Array.from({ length: GROUPS }, (_, i) => letters.slice(i * GROUP_LENGTH, (i + 1) * GROUP_LENGTH)).join("-");
 }
 
-/** 이 PC 의 현재 계정 자료를 코드로 암호화해 파일로 내려받는다 → 파일 이름 */
-export async function downloadTransferFile(code) {
-  const result = await (await api()).exportVault(code);
-  const bytes = Uint8Array.from(atob(result.data), (char) => char.charCodeAt(0));
-  const link = document.createElement("a");
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
-  const filename = result.filename || "ai-newsroom-transfer.db";
-  link.href = url;
-  link.download = filename;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-  return filename;
-}
-
 /** 이전 파일을 코드로 풀어 이 PC 의 현재 계정 자료로 바꾼다(코어가 교체 전 DB 를 안전 복사본으로 남긴다) */
 export async function restoreTransferFile(code, file) {
   const data = await new Promise((resolve, reject) => {

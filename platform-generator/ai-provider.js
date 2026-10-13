@@ -68,7 +68,7 @@ class AiProvider {
   async createGeminiResponse(request) {
     const key = apiKey();
     if (!key) throw problem('.env에 GEMINI_API_KEY를 입력해주세요.', 503, 'MISSING_API_KEY');
-    if (!AI_ENDPOINTS?.gemini) throw new Error('api.js의 AI_ENDPOINTS 설정이 없습니다. 전환 스크립트를 실행해주세요.');
+    if (!AI_ENDPOINTS?.gemini) throw new Error('lib/api.js의 AI_ENDPOINTS.gemini 설정을 확인해주세요.');
     const selectedModel = model().replace(/^models\//, '');
     if (!/^[A-Za-z0-9._-]+$/.test(selectedModel)) throw new Error('GEMINI_MODEL 값을 확인해주세요.');
     const schema = request.text?.format?.schema;

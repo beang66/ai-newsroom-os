@@ -1,5 +1,16 @@
 # 플랫폼 로컬 통합 및 검증 기록
 
+## 승인된 플랫폼 정리 (2026-10-13)
+
+- 사용자의 마지막 승인인 **스크립트·안내와 ZIP 2개 모두 정리**를 적용했습니다. 이전 업로드 `ed01ea6`의 깨끗한 작업 트리에서 시작했고 추가 AGENTS.md/merge/rebase/KEEP 대상은 없었습니다.
+- 삭제: `switch-to-gemini.cjs`(미사용 일회성 소스 전환 도구). 저장소 전체 호출/문서/시험/빌드 참조 없음, 현재 대상 모듈들은 이미 ai-provider를 사용합니다. Gemini/OpenAI 제공자 지원은 유지합니다. `ai-provider.js`의 누락된 Gemini endpoint 오류 안내 1줄만 `lib/api.js` 설정 확인으로 고쳤습니다.
+- 로컬 삭제: `photo-routes.zip`(14,830,679 bytes), `tests.zip`(63,787,375 bytes). 두 과거 소스/이미지 압축은 처음부터 ignored·미추적이어서 추적 해제나 원격 파일 삭제는 없습니다. 승인 전에는 보존했고 마지막 명시적 승인 뒤에만 지정 파일을 삭제했습니다. 압축 내부 코드 KEEP 표시 없음, 실행·시험·배포 참조 없음.
+- 유지: 개발용 편집실·Core/Node 어댑터·SNS 서비스·배포 의존성·기존 회귀 시험, .env, node_modules, output의 JPG·개인 자료·시험 DB/브라우저 데이터·작업 백업 메모. .gitignore 변경과 폴더 밖 소스/문서/설정 변경 없음. 재분석 없는 이전 URL 수집/워크플로/미사용 수동 시험 삭제 상태도 유지합니다.
+- 이번 검증: ai-provider.js node --check, `PLATFORM_AI_BRIDGE=core`의 `node --test platform-generator/tests/writing-rules.test.cjs` **4개 통과**, 누락 endpoint의 새 안내·외부 호출 0을 확인한 VM 검사, git diff --check 및 정리 범위 확인. 최초 Node spawn EPERM은 동일 검사를 승인된 환경에서 재실행했고, 일회성 PowerShell→Node 입력의 인코딩 문제는 UTF-8로 고쳐 같은 검사를 통과했습니다. 검사 조건·skip·제품 기능을 변경하지 않았습니다.
+- 재사용: 이전 플랫폼 45개/로컬 저장, Python platform 25개 및 root/전체 Python/프론트 build/UI 기록 중 변경되지 않은 기능의 결과. 이번 endpoint 안내 자체는 위 새 검사로 확인했습니다. 프론트/Core 변화가 없어 전체 시험·프론트 build를 반복하지 않습니다.
+- EXE는 이전 e598981 생산 소스로 빌드한 결과를 유지합니다. 이번 안내 문자열은 EXE에 재패키징하지 않았으므로 현재 소스와 EXE의 전체 해시가 같다고 주장하지 않습니다. 새 EXE 빌드/실행·실제 AI/운영 backup/SNS는 이번 정리 범위에서 미실행입니다.
+- 업로드 전 `git fetch origin` 실행 승인이 거절되어 현재 최신 원격 확인/추가 푸시는 보류합니다. 마지막 확인 원격은 ed01ea6이며 이를 새 원격 확인으로 표시하지 않습니다. 로컬 보존 커밋 이후에도 지정 대상 하나만 일반 푸시한다는 제한을 유지합니다.
+
 ## 지정 팀 브랜치 업로드 준비 (2026-10-13, 현재 상태)
 
 - 사용자 승인 대상은 팀 origin `https://github.com/beang66/ai-newsroom-os.git`의 **feature/platform-generator 하나**입니다. 로컬 작업 브랜치 `feature/platform-update-20261009`를 유지하고 `git push origin HEAD:refs/heads/feature/platform-generator`만 사용합니다. main/다른 브랜치/태그/personal에는 쓰지 않으며 강제 푸시·PR 생성/병합·배포 설정 변경을 하지 않습니다.

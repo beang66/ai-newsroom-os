@@ -1,8 +1,135 @@
 # 플랫폼 로컬 통합 및 검증 기록
 
-## DB 기사 입력 변경 — 현재 기준 (2026-10-12)
+## 최신 main 로컬 통합 승인·담당자 확인 대기 (2026-10-13)
 
-이 절은 아래의 **DB 입력 변경 전 통합 기록과 과거 마일스톤보다 우선**합니다. `25e73af` 통합은 `4d3ec8b`에서 완료됐고 이번 변경은 같은 작업 브랜치에서 이어갑니다. 새 merge·abort·reset·clean·push·PR은 실행하지 않았습니다.
+이번 승인은 기존 미커밋 플랫폼 기능을 커밋으로 보존한 뒤 최신 origin/main의 기존 변경을 작업 브랜치에 통합하고 필요한 검증·빌드·로컬 커밋을 수행하는 범위입니다. PR #42의 송고 중 편집 상태 보완과 PR #43의 계정 전환/백업 경쟁 조건·SNS 정리·IPC 미리보기·시험 격리 추가 보완은 별도 승인 대기이며 자동으로 실행하지 않습니다. main 직접 작업·push·PR 없음.
+
+PR #44는 이미 포함되어 있습니다. 다음 두 항목은 플랫폼 기능을 막지 않으므로 현재 코드 그대로 보존하고 담당자 확인 대기로 기록합니다.
+
+- 보관함의 기사 단계 필터·stageOf()와 안내문의 차이: 실제 구현은 전체/원고/송고 필터입니다. 실제 저장 기사에 없는 데스크 단계를 추정하거나 Core 상태를 변경하지 않습니다.
+- 데스크 예시 ‘CMS 이관’의 플랫폼 편집실 이동 연결: 현행 링크를 유지합니다. 편집실은 실제 Core 기사의 명시적 적용 이후에만 생성하며, 데스크 예시를 실제 기사·고정본으로 적용하지 않으므로 플랫폼 사용을 막지 않습니다.
+
+편집실 목록은 Core listArticles 결과만 사용하고, 보관함의 읽기 전용 데스크 예시 목록을 재사용하지 않습니다. 기존 기사 전환·미저장 보호·사진·Instagram/Threads·독립 카드뉴스·검수·저장/복원·렌더 경로를 보존합니다. 이후 통합 결과와 검증은 이 절에 추가 기록합니다.
+
+## PR #41 호출 이름·API 경계 적용 확인 (2026-10-13)
+
+- 브랜치 `feature/platform-update-20261009`, HEAD `12ca52c7bd7600edbd4157019d7cc3476aac4e32`. 적용되는 AGENTS.md 없음, merge/rebase 진행 없음, index 비어 있음. 기존 미커밋 파일 60개를 ignored `output/PR41_CHECKPOINT_20261013_123644/`에 파일 사본·삭제 목록·SHA256·작업 트리/index patch로 보존한 뒤 origin을 fetch했습니다.
+- fetch 후 최신 `origin/main`은 `25e73af63116e46269452542e3df37b487e0c489` 그대로입니다. `git merge-base --is-ancestor origin/main HEAD`와 PR #41 병합 커밋 `2788ad2`의 HEAD 포함 검사가 모두 exit 0입니다. 중복 병합·보존 커밋·추가 생산 코드 수정은 필요하지 않았습니다.
+- **적용 확인:** Data Map은 `getKnowledgeMap`, 자료 추출은 `createSource(filename,data,signal)`, 기사 팩트체크는 `runFactcheck(nodes,materials,snapshotId,signal)`을 사용합니다. `verifySnapshot → runFactcheck`, `createPlatformOutput → generatePlatform`, `transcribeMedia → transcribe` 문서 대응도 실제 공개 함수와 일치합니다. `core-api.js`의 `ROUTES.knowledgeMap`·`ROUTES.factcheckRun`은 내부 경로 키이며 옛 공개 호출이 아니므로 변경하지 않았습니다.
+- **적용 확인:** 편집실·목록 모달·검수·카드 편집·SNS 준비는 `src/api/platform.js`와 기존 `src/api/editorial.js`의 공개 함수를 사용합니다. 편집실에 직접 Core 호출/요청 주소를 추가하지 않았으며, 사용자 허용된 App의 `changeArticle(id,"convert")` 연결을 유지합니다. 기사 팩트체크와 플랫폼 원고 검수(`validatePlatform`)의 목적은 구분되어 있습니다. Node 어댑터 내부 통신은 화면 API 경계와 별개입니다.
+- `searchEvidence`, `getVerificationRun`, `listPlatformOutputs`, `getPlatformOutput`은 deferred이며 현재 화면/플랫폼 어댑터에 의존이 없습니다. 새로 공개된 호출을 확인 목적으로 사용하지 않았고 실제 자료 삭제·작업 취소도 하지 않았습니다. 계약 단위 검사 안의 삭제/취소 호출은 실제 Core가 아닌 메모리 전송 대역입니다.
+
+### 이번 실행과 재사용 근거
+
+- **이번 실행:** `npm run check:api-boundary` 통과. `npm test` 39개 통과, 실패/skip 0. 이전 39개 실행 뒤 편집실 전환 완료 Promise가 변경된 불확실성이 있어 현재 코드에서 한 번 재검증했습니다. 이번 사용자 지시의 팀 필수 검증에 따라 실행했고, 앞선 재실행 거절 당시에는 우회하지 않았습니다. `git diff --check`와 index 검사 통과, 미해결 충돌 없음.
+- **재사용:** 직전 루트 `npm run build` 통과 결과(2026-10-13 12:25:48). 기준은 HEAD `12ca52c`에 현재 미커밋 편집실 변경을 더한 작업 트리이며 커밋된 코드만의 결과가 아닙니다. 마지막 소스 변경 12:25:21 이후 빌드되었고 이번 확인에서 루트 `src/`, package.json/lock, Vite 설정 중 빌드보다 뒤에 수정된 파일은 0개입니다. 이번 생산 코드/설정 변경 및 새 main 병합도 없어 동일 빌드를 반복하지 않았습니다. 프론트 생성 파일은 수동 수정하지 않았습니다.
+- **재사용:** 위 최종 빌드의 `npm run test:ui` 통과(브라우저 오류 0). 실제 팀 편집실의 기사 선택·적용·고정본·생성·검수·렌더와 전환/늦은 응답 보호를 검사했습니다. 실제 팀 Core·임시 DB·브라우저 경로이며 AI/플랫폼 어댑터·SNS·인증은 대역입니다. 이후 관련 연결/시험 소스 변경이 없어 재사용합니다.
+- **재사용:** `npm test --prefix platform-generator` 37개 및 로컬 저장 검사 통과. 이후 Node 플랫폼 코드 변경 없음. 이번 Python 생산 코드 변경이 없어 추가 Python 검사는 실행하지 않았습니다. 빌드/실계정 운영 AI/최신 EXE 검증을 혼동하지 않습니다.
+
+이번 수정 파일은 이 기록과 ignored 로컬 상태 메모뿐입니다. 기존 팀/Core/API 구현·검사 규칙·KEEP 코드·workflows 삭제 상태·사진 기능을 유지했습니다. 후속 요청은 기존 Core 고정본 부제 전달, 원문 캡션/대체 텍스트 분리, Core Blog 허용 목록 정리와 운영 AI/EXE 검증이며 PR #41 때문에 새로 필요한 팀 코드 수정은 없습니다. commit/push/PR/main 작업 없음.
+
+## 현재 기준 — 편집실 저장 기사 선택·미리보기·원문 적용 (2026-10-13)
+
+이 절이 아래 과거 기사 선택·적용 지시와 기록에 우선합니다. 앞선 미커밋 통합 변경을 보존하며 같은 브랜치/HEAD에서 작업합니다.
+
+### 실제 수정 범위와 팀 코드 보호
+
+- 실제 팀 화면은 루트 `src/components/FormatConverter.jsx`의 ‘플랫폼 콘텐츠 편집실’입니다. 전용 API 층 `src/api/platform.js`와 편집실 전용 상태 `src/lib/platformSource.js`, 전용 목록 모달 `src/components/PlatformArticlePicker.jsx`를 수정/추가했습니다.
+- `AppDialog`의 공개된 title/onClose/children 사용 방식과 `formatArticleTime`을 수정 없이 재사용합니다. 기존 `ArchiveView`는 선택 상태가 내부에 있고 데스크 예시/기사 편집 동작도 포함하여, 저장 기사 미리보기 선택 이벤트만 수정 없이 재사용할 수 없었습니다. 원래 보관함은 변경하지 않고 공통 모달 안에 Core 저장 기사 목록만 표시합니다.
+- 편집실 밖 연결은 사용자에게 대상/이유/영향/대안을 설명하고 **‘기존 기사 전환 함수 연결 허용’** 답변을 받은 뒤 `src/App.jsx`에 `onApplyArticle={id => changeArticle(id, "convert")}` 한 줄만 추가했습니다. 기존 changeArticle·보관함·기사 작성·자동/수동 저장 함수는 이번 단계에서 수정하지 않았습니다.
+- Core 코드, DB 스키마, 공통 API·상태 구조, 기존 본문/사진 복원기, KEEP 코드는 추가 수정하지 않았습니다. 파일명으로 담당자를 추정하지 않고 실제 호출 관계를 확인했습니다.
+
+### 선택·표시·적용·생성의 연결
+
+1. 왼쪽 ‘저장 기사에서 선택’ → 기존 Core `listArticles(signal)` → 내부 모달. 실제 title과 updated_at/created_at만 표시하고 기존 시간 표시 함수를 사용합니다. 검색은 불러온 목록의 제목만 대상으로 하며 Core 계약에 검색/페이지 인수가 없다는 안내를 표시합니다. 목록 없음·조회 중·오류·재시도 지원.
+2. 목록 선택 → `getStudioArticle` → 기존 Core `getArticle`와 공개된 `loadStoredArticle`. 기존 본문/사진 복원기를 수정 없이 재사용하고 원래 조회 응답의 subtitle 필드 존재 여부를 표시 정보로 따로 보존합니다. 두 조회 사이 기사 ID·버전·제목·부제·출처·문자열 본문이 바뀌면 차단합니다. 실제 부제/빈 부제/미전달을 구분하며 본문 전체 입력칸이나 기사 JSON 업로드는 없습니다.
+3. 미리보기는 편집실 내부 상태일 뿐 기존 작업 기사/적용 원문을 바꾸지 않습니다. 다른 기사 미리보기 중에도 적용 기사 제목과 차이를 명시합니다. 실패한 조회는 미리보기를 비우고 오류를 표시합니다.
+4. ‘이 기사로 콘텐츠 제작’은 원문 적용과 기존 저장·전환 정책만 수행합니다. AI와 createSnapshot은 호출하지 않습니다. 같은 작업 기사는 기존 flush로 저장 큐를 동기화한 후 재조회하며 미저장 편집을 DB 값으로 덮지 않습니다. 기사 객체 revisionNo는 초기 조회값일 수 있어 이를 실제 저장 큐 버전으로 추정하지 않습니다. 다른 기사는 기존 changeArticle로 미저장 결과를 저장/취소 정책대로 보호한 후 전환합니다. 새 편집실 마운트의 실제 기사 ID·원문 일치가 확인되어야 적용 완료입니다. 실패/취소를 성공으로 표시하지 않습니다.
+5. 적용 확인은 편집실 전용 메모리 상태이며 DB 저장소나 공통 상태/고정본 계약이 아닙니다. 원문 변경 후 재적용이 필요하고 새로고침/앱 재실행 후에도 명시적 적용이 필요합니다. 공통 ID나 고정본 ID를 만들지 않습니다.
+6. 추천/생성은 적용된 현재 팀 작업 기사만 사용합니다. 기존 flush → freezeArticle/createSnapshot → Core 고정본 → Node 첫 줄 JSON 경로를 유지합니다. 키워드 `input.article`, 생성 `input.payload.article`, 기사 `{article_id,title,content}` 계약 유지. 표시 부제를 생성 입력에 합치지 않습니다. 요청 중 기사/조건/원고 변경과 늦은 응답 보호도 유지합니다.
+
+URL 수집 없음, 사용자 키워드·제작 요구사항 유지, 내 카드 사진의 기존 별도 저장/복원/렌더/SNS 경로 유지, Blog UI/플랫폼 제거 및 과거 기록 보존 유지. Core 고정본 부제 전달·원문 캡션/대체 텍스트 분리·Blog 허용 목록 제거는 담당자 후속 요청입니다. 이번 모달 조회에서는 원래 JSON의 부제 미전달 상태를 보존하므로 공통 조회 변환기를 추가 수정하지 않습니다.
+
+### 검증
+
+- `npm test`: 39개 통과. 적용/미리보기 분리, 실제 전환 원문 확인, 취소·원문 변경 차단, 기존 API/IPC·JPG·팀 화면 상태 회귀 포함. 새 IPC 시험에서 singleton이 잡은 브리지 대역의 시험 간 오염을 고쳐 다시 통과했습니다. 테스트 삭제/skip/검증 완화 없음.
+- 루트 `npm run build`: 통과. `article_editor/app/frontend/**`는 실제 루트 소스 빌드 산출물이며 수동 수정하지 않습니다.
+- `npm test --prefix platform-generator`: 37개 및 로컬 저장 검사 통과. 기존 사진·카드·SNS 대역 회귀 유지.
+- 최종 `npm run test:ui`: 통과, 브라우저 오류 0. 목록 열기/제목 검색/선택/확인/적용/생성, 미적용 차단, 다른 기사 미리보기 중 적용 원문 유지, 실제 Core ID·본문 일치, 원문 변경 후 재적용, 기존 편집 저장/전환 취소 보존, 늦은 조회/생성, 적용 중 화면 이탈, 빈 목록/목록 오류/기사 조회 실패/삭제/본문 없음, 부제 있음/없음/원래 JSON 미전달까지 확인했습니다. 적용 버튼의 AI·고정본 요청 수가 늘지 않는 것도 검사했습니다.
+- `npm test` 추가 재실행 요청 1건은 거절되어 실행하지 않았습니다. 이미 39개 통과한 결과와 이후 컴포넌트/전환 수정의 최종 build/UI 검증을 구분합니다. 해당 명령을 우회해 실행하지 않았습니다.
+- Core/팀 Python 생산 코드는 이번 단계에서 추가 변경하지 않았습니다. UI smoke는 실제 팀 빌드·Core·임시 SQLCipher 저장소·브라우저를 사용하며 AI/플랫폼 어댑터·SNS·인증 응답은 대역입니다. 운영 AI·실계정 게시·최신 EXE 성공으로 확대해 보고하지 않습니다.
+
+이번 단계에서도 commit/push/PR/main 병합 없음. 기존 미커밋 수정과 workflows 삭제 상태를 유지합니다.
+
+검증 중 보완: 초기 기사 객체 revisionNo와 실제 저장 큐 버전을 혼동하던 비교를 제거하고 기존 flush로 동기화합니다. 다른 기사 전환 완료는 프레임/시간 추정 없이 새 편집실 마운트의 기사 ID·원문 확인 Promise로 확정합니다. 적용 조회 도중 화면을 떠나면 요청을 즉시 취소하고 오래된 콜백을 실행하지 않습니다. 기존 전환 확인 취소 시 원고와 적용 원문을 유지하는 회귀도 포함합니다. 팀 전환/저장 함수 자체는 변경하지 않았습니다.
+
+최종 `git diff --check` 통과, 미해결 충돌 없음, index 비어 있음. 이전 작업의 개발용 DB 중계 제거 외에 팀 소스 삭제 없음. 변경 파일 lint 오류 0이며 App의 기존 로그인 effect 경고 2개와 편집실 ref/state effect 관련 경고 5개가 남아 있습니다. 경고를 숨기지 않았고 해당 전환·취소·편집 동작은 최종 UI 회귀에서 검사했습니다. 이번 기능 연결에 필요한 편집실 밖 후속 수정은 없습니다. Core 계약/EXE/운영 AI·SNS 후속 검증은 위에 명시한 범위로 남습니다.
+
+## 과거 기록 — Core 기사 계약·부제 표시 분리·Blog 제거 (2026-10-13)
+
+이번 지시가 아래 과거 기사 입력·부제 기록을 대체합니다. 브랜치 `feature/platform-update-20261009`, 시작 HEAD `12ca52c`, 기존 `25e73af` 통합을 유지합니다. 이번 변경은 미커밋입니다. merge·abort·reset·clean·commit·push·PR·main 작업을 하지 않았습니다. 적용되는 AGENTS.md와 변경 대상의 KEEP 표시는 발견되지 않았습니다.
+
+### 기사 데이터 출처와 생성 입력
+
+현재 플랫폼 입력 계약은 **`{ article_id, title, content }`**이며 content는 Core 고정본의 기사 본문 텍스트입니다. `core-adapter.js` 첫 줄 JSON에서 키워드는 `input.article`, 생성은 `input.payload.article`, 검수는 기존 `input.payload.article`을 사용합니다. 새 DB·기사 저장소·JSON 기사 업로드·기사 선택 UI·공통 ID·snapshot_id를 만들지 않습니다.
+
+| 항목 | 화면/데이터 출처 | 생성 입력 |
+|---|---|---|
+| 기사 선택 | 기존 보관함 → 수정 → 기사 작성 → 변환·배포. Workspace.changeArticle의 조회·전환 저장 정책 재사용 | 변환 화면의 중복 기사 선택기 제거 |
+| 제목 | 현재 선택·편집 중인 팀 article.title | 저장 큐 flush → 기존 createSnapshot.title → article.title. 저장 시 제목과 본문 HTML 일치 검사 |
+| 부제 | 팀 화면이 제공하는 article.subtitle만 읽기 전용 표시 | **생성 원문에 넣지 않음**. 실제 값/빈 값/속성 미전달을 ‘실제 부제’/‘부제목 없음’/‘부제 전달 미연결’로 표시 |
+| 본문 | 고정본 body_text | article.content에 그대로 전달. 캡션·대체 텍스트를 추측하거나 정규식으로 삭제하지 않음 |
+| 기사·고정본 ID | 저장 응답 articleId, 고정본 응답 id | 생성·검수·렌더에 기존 Core ID 연결. 화면 편집 최신성 서명은 로컬 보호용이며 공통 ID·고정본 계약을 대신하지 않음 |
+| 출처 URL | 기존 데이터에 제공된 값만 표시 | 고정본에서 실제 제공된 URL만 별도 source_url 메타데이터로 보존. AI 기사 입력 밖에서 처리. URL이 없어도 생성 가능 |
+
+현재 로컬 Core의 `_from_snapshot`에는 이전 작업의 subtitle/url 전달 변경이 이미 존재합니다. 이를 되돌리거나 추가 수정하지 않았습니다. 플랫폼 `lib/article-contract.js` 및 실제 어댑터·생성·검수 경계에서 세 필드만 선택하므로 이전 Core의 부제·사진 필드가 AI 원문에 섞이지 않습니다. 키워드 모델에는 기존 구현대로 title/content만 전달됩니다. 최신 화면의 부제를 과거 고정본 본문에 합치지 않습니다.
+
+왼쪽 최상단 ‘불러온 기사’는 플랫폼·키워드·제작 요구사항보다 위에 있습니다. 긴 제목·부제는 전체 줄바꿈 표시, 수정은 기존 기사 작성 화면에서 처리합니다. 기사 미선택·본문 없음·불러오는 중·조회 실패를 안내하며 처리 중인 기사 제목과 고정본 처리 상태를 표시합니다. 별도 전체 본문 입력칸은 없습니다. 요청 중 기사·조건·원고·사진 변경과 늦은 조회/생성/검수/렌더 결과는 기존 생존 여부·ID·서명 검사로 보호합니다. 기사 전환 전 저장 확인/flush와 동일 원문 고정본 재사용을 유지합니다.
+
+**부제 미전달 상태의 제한:** 기존 `src/api/editorial.js` 조회 변환기가 누락된 부제도 빈 문자열로 정규화합니다. 따라서 실제 저장 기사 조회에서는 ‘없음’과 ‘미전달’을 완전히 구분할 수 없습니다. 화면 helper의 세 상태는 회귀 검사했지만 미전달의 실DB 연결 검증은 완료로 표시하지 않습니다. 화면의 부제 표시와 생성 입력의 부제 전달은 별개입니다.
+
+### 기능별 위치·호출·저장 방식
+
+| 기능 | UI와 호출 경로 | 저장/지원 상태 |
+|---|---|---|
+| Instagram·Threads·독립 카드뉴스 | 루트 src/components/FormatConverter.jsx → src/api/platform.js → 기존 Core → 실제 core-adapter.js | 기존 platformDrafts/cardNews/platformGeneration에 별도 결과 저장 |
+| 변환·요구사항 검수 | PlatformReview → Core validate → validation-routes/draft-validator | 기사 전체 팩트체크와 구분. 수정 후 재검수 필요, 수정 중 검수 결과 미적용. 차단 정책 새로 만들지 않음 |
+| 내 카드 사진 | PlatformCardEditor / 개발용 photo tools → 기존 팀 Core 사진 API / 개발용 사진 경로 | 추천·검색·업로드·선택·삭제, 확대·축소·위치·그라데이션, 캡션·출처 편집·보존, 저장·복원·렌더·SNS 첨부 유지. 본문/source_evidence에 자동 합치지 않음 |
+| 렌더·SNS 준비 | PlatformDelivery → 기존 Core 렌더/암호화 MediaAsset/SNS 준비 | 기사·고정본·이미지 최신성 확인 유지. JPG 내보내기와 Core 암호화 보관 구분. 실제 게시 없음 |
+| 개발용 편집실 | node server.js / public/article-input.js / 기존 초안 복원 | DB 선택·Core 중계 제거. 앞선 작업에서 만든 db-article-routes.js는 다른 기능 참조/KEEP가 없어 제거. 새 고정본을 만들지 않고 개발용 결과임을 표시. 카드·사진·로컬 초안 유지 |
+| URL 수집 | /api/article/import 및 article-source.js 참조 점검 | 앞선 삭제 상태 유지. URL 입력·불러오기 없음. workflows 복구 없음 |
+| Blog | 선택·버튼·탭·생성·초안 편집·검수·미리보기·내보내기 없음 | Node 생성/검수 요청 명시적 미지원 400. 규칙·스키마 없음. 기존 Blog 기록은 비노출 상태로 원래 값 그대로 보존, 새 지원 원고 저장 시에도 삭제하지 않음 |
+
+**Blog 전체 시스템 제거는 미완료:** Core platform_manager.py generate 허용 목록에 blog가 남아 있으며 이번 범위에서 수정하지 않았습니다. 실제 Core→Node 요청은 400으로 거부하는 회귀를 통과했지만 Core 허용 목록 정리는 담당자 후속 작업입니다. 최신 EXE/packaging 사본은 재빌드하지 않았으므로 EXE 제거 완료로 보고하지 않습니다.
+
+### Core 담당자 후속 요청
+
+1. 고정본 기준 부제 전달: 공식 세 필드 입력과 화면 표시를 분리합니다. 명시적 계약과 고정본 출처를 갖춘 전달은 담당자 후속 요청입니다.
+2. 원문 본문과 사진 캡션·대체 텍스트 분리: content에 혼입되면 추천 키워드·원고 주제·기사 근거·카드 정보 배분에 영향을 줄 수 있습니다. 플랫폼에서 임의 삭제하지 않습니다.
+3. 조회 시 부제 필드 존재 여부 보존: 누락을 빈 값으로 정규화하는 경로 때문에 실DB ‘미전달’ 상태 연결이 남습니다.
+4. Core의 Blog 허용 목록/관련 공통 계약 정리와 최신 EXE 패키징 반영.
+
+이번 작업에서 `_from_snapshot`, platform_manager.py, storage.py, vault.py, 공통 고정본 계약, src/api/editorial.js, src/api/core-api.js를 추가 수정하지 않았습니다. 이전 Core schema v5/본문 변환/캡션 관련 변경도 되돌리지 않았습니다. 내 카드 사진은 기존 별도 경로로 유지합니다.
+
+### 검증 결과와 한계
+
+- `npm test`: 37개 통과, skip 0.
+- `npm test --prefix platform-generator`: 37개 및 로컬 저장 검사 통과. 사진·출처·편집·저장·개발 UI·SNS 대역 검사 포함.
+- 팀 `.runtime` 의존성을 지정한 `python -m unittest discover -s article_editor/dev/tests -p 'test_platform*.py'`: 25개 통과. 실제 Core→실제 Node→AI 대역 경계에서 세 필드·캡션 유지·부제 배제·출처 메타데이터·Blog 거부 확인.
+- 같은 환경의 `python -m unittest discover -s article_editor/dev/tests -p 'test_snapshots.py'`: 20개 통과. 기존 저장·고정본 생성·재사용 회귀.
+- 루트 `npm run build`: 통과. 실제 화면 소스는 루트 src/, article_editor/app/frontend/**는 실제 빌드 산출물만 반영하며 수동 수정 없음.
+- 변경한 프론트 파일 oxlint: 오류 0, 기존 App 로그인 effect 의존성 경고 2.
+- 루트 `npm run test:ui`: 통과, 브라우저 오류 0. 실제 팀 화면에서 기존 보관함 선택 → 제목/부제 → 고정본 → 생성/편집/검수 → 저장/복원 → Core 렌더 확인. 긴 메타데이터, URL/부제 유무, 기사 미선택/본문 없음, 조회 실패/DB 삭제, 늦은 조회/생성, 생성 중 조건 수정, 고정본 재사용, Blog UI 비노출/기존 기록 보존 포함. 부제 미전달 실DB 경로는 위 제한 사항으로 남음.
+
+UI 시험의 첫 실패는 미저장 상태에서 새로고침해 기존 beforeunload 보호가 취소한 것이며, 수동 저장 완료를 확인하도록 수정했습니다. 두 번째는 DB 삭제 후 목록에서 사라진 행을 다시 누르는 시험 순서 오류였으며, 삭제 전에 미리 선택하고 실제 열기에서 삭제/404를 확인하도록 바꿨습니다. 앱 보호 정책·검증 기준을 완화하지 않았습니다. 최종 diff --check 통과, 미해결 충돌 없음, index 변경 없음, Core 담당자 파일 추가 수정 없음. 산출물 이외의 삭제는 사용처 확인 후 제거한 개발용 DB 중계 파일 1개뿐입니다.
+
+최초 sandbox 실행은 Node spawn EPERM으로 막혀 허용 환경에서 재실행했습니다. 기본 Python에는 keyring이 없어 팀 `.runtime` 의존성 경로를 지정해 다시 실행했습니다. 테스트 삭제/skip/검증 완화로 통과시키지 않았습니다. 폐지한 개발용 DB 중계 테스트는 경로 부재·세 필드 계약·읽기 전용 복원 검증으로 대체했습니다.
+
+UI 스모크는 실제 팀 빌드·Core·임시 SQLCipher 저장소·브라우저를 사용하지만 플랫폼 어댑터와 AI·사진·SNS·인증 응답은 대역입니다. 실제 Node 입력 경계는 별도 Python 회귀에서 검사합니다. 운영 AI·실계정 SNS·최신 EXE는 이번 변경 이후 미검증입니다. 과거 SNS 수동 확인과 개발용 편집실 성공을 현재 팀 앱·EXE 성공으로 간주하지 않습니다.
+
+## 과거 기록 — DB 기사 입력 변경 (2026-10-12, 현재 기준 아님)
+
+이 절은 당시의 작업 이력입니다. 현재 구현·지원 범위·검증 상태는 위 2026-10-13 절을 따릅니다. `25e73af` 통합은 `4d3ec8b`에서 완료됐고 이 과거 변경은 같은 작업 브랜치에서 이어갔습니다. 새 merge·abort·reset·clean·push·PR은 실행하지 않았습니다.
 
 새 DB·기사 JSON 업로드·URL 수집을 만들지 않았습니다. 기존 계정별 SQLCipher 저장소의 기사 JSON을 Core `listArticles/getArticle/saveArticle/createSnapshot`으로 사용합니다. 목록의 수동 저장 요약 정책은 유지하고 선택 조회는 임시 저장을 포함한 최신 원고입니다.
 

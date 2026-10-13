@@ -105,7 +105,7 @@ test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 �
   const source={article_id:'db-ready',url:'https://example.com/article',title:'기사',content:'보관 원문'};
   w.NewsInput.restore({article:source});assert.equal(w.NewsInput.getRequest().article.content,'보관 원문');assert.equal(w.NewsInput.getRequest().article.article_id,'db-ready');assert.equal(w.NewsInput.getRequest().selected_keywords.length,0);
   assert.equal(w.document.getElementById('article-url'),null);assert.equal(w.document.getElementById('import-article'),null);
-  assert.equal(w.document.getElementById('article-title').textContent,'기사');assert.equal(w.document.getElementById('article-subtitle').textContent,'부제목 없음');
+  assert.equal(w.document.getElementById('article-title').textContent,'기사');assert.equal(w.document.getElementById('article-subtitle').textContent,'부제 전달 미연결');
   const component=fs.readFileSync(path.join(root,'public/assets/photo-tools.js'),'utf8').replace('import.meta.url',"'http://localhost:3001/assets/photo-tools.js'").replace('export class','class');w.eval(component);
   w.HTMLDialogElement.prototype.close=function(){this.open=false};w.HTMLDialogElement.prototype.showModal=function(){this.open=true};
   w.eval(fs.readFileSync(path.join(root,'public/assets/photo-bridge.js'),'utf8').replace("import './photo-tools.js';",''));
@@ -171,11 +171,11 @@ test('실제 화면 스크립트 로드: 두 플랫폼·독립 카드, 오류 �
   w.TextEditor.showPlatform('threads');
   // 구형 저장본의 중단 플랫폼 데이터를 다시 켜지 않습니다.
   w.eval(`applySavedDraft({cards:state.cards,platforms:['instagram','threads','blog'],text_drafts:{threads:state.text_drafts.threads,blog:{title:'이전 자료'}},validation_results:{blog:{status:'passed'}}});`);
-  assert.equal(w.eval('state.text_drafts.blog'),undefined);assert.equal(w.eval('state.platforms.includes("blog")'),false);
+  assert.equal(w.eval('state.text_drafts.blog.title'),'이전 자료');assert.equal(w.eval('state.validation_results.blog.status'),'passed');assert.equal(w.eval('state.platforms.includes("blog")'),false);
+  assert.equal(w.document.querySelector('[data-platform="blog"]'),null);
   // 개별 버튼 없이도 선택한 플랫폼의 일괄 생성은 유지됩니다.
   const dbArticle={article_id:'a'.repeat(32),title:'기사',subtitle:'실제 부제',content:'원문',url:''};
   w.NewsInput.restore({article:dbArticle,selected_keywords:[],requirements:''});
-  w.NewsApi.freezeDbArticle=async article=>{assert.deepEqual(article,dbArticle);return {id:'fixed-db-snapshot',article_id:article.article_id,title:article.title,subtitle:article.subtitle,url:'',body_text:article.content}};
   [...w.document.querySelectorAll('.platform input')].forEach(el=>el.checked=true);
   const generated=[];w.NewsApi.generateDraft=async(platform,input)=>{generated.push(platform);assert.equal(input.selected_keywords.length,0);return {draft:platform==='instagram'?{platform,opening:'제목',paragraphs:['본문'],closing:'정리',hashtags:['#기사','#뉴스','#핵심'],source_evidence:[]}:{platform,opening:'📰 제목',paragraphs:['요약'],closing:'',source_evidence:[]}}};
   selectedButton.click();await new Promise(r=>setTimeout(r,10));assert.deepEqual(generated,['instagram','threads']);assert.equal(selectedButton.disabled,false);
@@ -214,10 +214,10 @@ test('생성 경로는 빈 키워드와 미지정 키워드를 허용하고 잘�
    let code=200,result;const res={status(c){code=c;return this},json(v){result=v;return this}};
    await handler({params:{platform:'card_news'},body:{article:{article_id:'db-id',title:'제목',subtitle:'DB 부제',content:'본문'},...(keywords===undefined?{}:{selected_keywords:keywords})}},res);
    assert.equal(code,200);assert.deepEqual(result.draft.selected_keywords,[]);
-   assert.equal(result.draft.article.article_id,'db-id');assert.equal(result.draft.article.subtitle,'DB 부제');assert.equal(result.draft.article.url,'');
+   assert.deepEqual(result.draft.article,{article_id:'db-id',title:'제목',content:'본문'});assert.equal(result.draft.source_url,'');
   }
   let code;await handler({params:{platform:'card_news'},body:{article:{article_id:'db-id',title:'제목',content:'본문'},selected_keywords:'invalid'}},{status(c){code=c;return this},json(){}});assert.equal(code,400);
-  for(const article of [{title:'제목',content:'본문'},{article_id:'db-id',title:'제목',content:{type:'doc'}},{article_id:'db-id',title:'제목',content:'본문',subtitle:{text:'부제'}}]) {
+  for(const article of [{title:'제목',content:'본문'},{article_id:'db-id',title:'제목',content:{type:'doc'}}]) {
    await handler({params:{platform:'card_news'},body:{article}},{status(c){code=c;return this},json(){}});assert.equal(code,400);
   }
  }finally{paths.forEach((p,i)=>{if(originals[i])require.cache[p]=originals[i];else delete require.cache[p]});if(prior)require.cache[route]=prior;else delete require.cache[route];}

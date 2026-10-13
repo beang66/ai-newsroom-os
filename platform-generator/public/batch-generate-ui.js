@@ -64,7 +64,7 @@
     const otherGenerationButtons = [cardButton];
 
     if (
-      get("db-article")?.disabled || otherGenerationButtons.some((item) => item.disabled)
+      otherGenerationButtons.some((item) => item.disabled)
     ) {
       status.textContent =
         "현재 진행 중인 요청이 끝난 뒤 실행해주세요.";
@@ -91,6 +91,7 @@
 
 
     const generationInput = {
+      ...request,
       article: request.article,
       selected_keywords: request.selected_keywords,
       requirements: request.requirements,
@@ -98,7 +99,7 @@
 
     const fields = [
       ...document.querySelectorAll(
-        "#db-article, #refresh-db-articles, #include-card-news, #custom-keywords, " +
+        "#include-card-news, #custom-keywords, " +
         "#article-requirements, " +
         ".platform input, #load-local-draft, #save, #load"
       ),
@@ -146,7 +147,7 @@
     updateProgress();
 
     try {
-      await window.NewsInput.freeze(generationInput);
+      window.NewsInput.capture(generationInput);
       for (const platform of platforms) {
         if (window.CardEditor.getRevision() !== expectedRevision) {
           progress[platform] =

@@ -755,8 +755,7 @@
             : ['instagram'],
           validation_status: 'not_checked',
         };
-        state.text_drafts = Object.fromEntries(Object.entries(state.text_drafts || {}).filter(([key]) => ['instagram','threads'].includes(key)));
-        state.validation_results = Object.fromEntries(Object.entries(state.validation_results || {}).filter(([key]) => ['instagram','threads','card_news'].includes(key)));
+        // 과거 미지원 플랫폼 기록은 숨기고 원래 데이터 그대로 저장·복원한다.
         active = 0;
         revision++;
         document.querySelectorAll('.platform input').forEach(input => {
@@ -932,8 +931,7 @@
           state.text_drafts.threads.attached_card_ids = [];
           state.text_drafts.threads.attachment_status = "needs_review";
         }
-        state.text_drafts = Object.fromEntries(Object.entries(state.text_drafts || {}).filter(([key]) => ['instagram','threads'].includes(key)));
-        state.validation_results = Object.fromEntries(Object.entries(state.validation_results || {}).filter(([key]) => ['instagram','threads','card_news'].includes(key)));
+        // 다른 플랫폼의 과거 기록을 카드 편집으로 삭제하지 않는다.
         active = 0;
         revision++;
         draw();

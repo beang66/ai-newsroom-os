@@ -8,23 +8,23 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
-import { freezeArticle, generatePlatform, suggestPlatformKeywords } from "../api/platform";
+import { freezeArticle, generatePlatform, suggestPlatformKeywords, getStudioArticle } from "../api/platform";
 
 import PlatformReview from "./PlatformReview.jsx";
 import PlatformCardEditor from "./PlatformCardEditor.jsx";
 import PlatformDelivery from "./PlatformDelivery.jsx";
-import {articleId, fingerprint, invalidateDraft, sourceText} from "../lib/platformState.js";
+import PlatformArticlePicker from './PlatformArticlePicker.jsx';
+import {appliedSource,applyCurrentSource,sourceReady,beginSourceTransition,claimSourceTransition,cancelSourceTransition} from '../lib/platformSource.js';
+import {articleId, fingerprint, invalidateDraft, sourceText, subtitleLabel, supportedPlatforms, visibleDrafts} from "../lib/platformState.js";
 
 const PLATFORM_LIST = [
   { id: "instagram", label: "Instagram", badge: "피드 원고" },
   { id: "threads", label: "Threads", badge: "짧은 요약" },
-  { id: "blog", label: "Blog", badge: "장문 원고" },
 ];
 
 const VIEW_LABELS = {
   instagram: "Instagram",
   threads: "Threads",
-  blog: "Blog",
   card_news: "카드뉴스",
 };
 
@@ -75,18 +75,10 @@ function draftToText(platform, draft) {
       .filter(Boolean)
       .join("\n\n");
   }
-  if (platform === "blog") {
-    return [
-      draft.title,
-      draft.intro,
-      ...(draft.sections || []).flatMap((section) => [section.heading, section.body]),
-      draft.conclusion,
-    ].filter(Boolean).join("\n\n");
-  }
   return "";
 }
 
-function PlatformDraftEditor({ platform, draft, onChange, onCopy, copied }) {
+function PlatformDraftEditor({ platform, draft, onChange }) {
   if (!draft) {
     return (
       <div className="rounded-3xl border border-dashed border-[#D7D0C6] bg-white/70 p-10 text-center">
@@ -173,71 +165,26 @@ function PlatformDraftEditor({ platform, draft, onChange, onCopy, copied }) {
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <TextArea
-        label="제목"
-        value={draft.title}
-        onChange={(value) => changed((next) => { next.title = value; })}
-        rows={3}
-      />
-      <TextArea
-        label="도입"
-        value={draft.intro}
-        onChange={(value) => changed((next) => { next.intro = value; })}
-      />
-      {(draft.sections || []).map((section, index) => (
-        <div key={section.section_id || index} className="rounded-2xl border border-[#DDD6CB] bg-[#FAF8F5]/70 p-3 space-y-3">
-          <TextArea
-            label={`소제목 ${index + 1}`}
-            value={section.heading}
-            onChange={(value) => changed((next) => { next.sections[index].heading = value; })}
-            rows={2}
-          />
-          <TextArea
-            label={`본문 ${index + 1}`}
-            value={section.body}
-            onChange={(value) => changed((next) => { next.sections[index].body = value; })}
-            evidence={section.source_evidence}
-            valid={section.evidence_valid}
-          />
-        </div>
-      ))}
-      <TextArea
-        label="결론"
-        value={draft.conclusion}
-        onChange={(value) => changed((next) => { next.conclusion = value; })}
-      />
-      <Evidence quotes={draft.source_evidence} valid={draft.evidence_valid} />
-      <button
-        type="button"
-        onClick={onCopy}
-        className="inline-flex items-center gap-2 rounded-full border border-[#292929] bg-[#292929] px-4 py-2 text-xs font-extrabold text-white"
-      >
-        <Copy className="h-3.5 w-3.5" />
-        {copied ? "복사됨" : "원고 전체 복사"}
-      </button>
-    </div>
-  );
+  return null;
 }
 
-export default function FormatConverter({ article, setArticle, flush, articles = [], onSelectArticle, onEditArticle,
-  sourceLoading = false, sourceError = "", onReloadArticles }) {
+export default function FormatConverter({ article, setArticle, flush, onOpenArticles, onEditArticle, onApplyArticle,
+  sourceLoading = false, sourceError = "" }) {
   const savedConfig = article.platformGeneration || {};
   const [selectedPlatforms, setSelectedPlatforms] = useState(
-    Array.isArray(savedConfig.selectedPlatforms) && savedConfig.selectedPlatforms.length
-      ? savedConfig.selectedPlatforms
+    supportedPlatforms(savedConfig.selectedPlatforms).length
+      ? supportedPlatforms(savedConfig.selectedPlatforms)
       : ["instagram", "threads"],
   );
   const [includeCardNews, setIncludeCardNews] = useState(savedConfig.includeCardNews === true);
   const [requirements, setRequirements] = useState(savedConfig.requirements || "");
   const [keywordCandidates, setKeywordCandidates] = useState([]);
   const [selectedKeywords, setSelectedKeywords] = useState(savedConfig.selectedKeywords || []);
-  const [drafts, setDrafts] = useState(article.platformDrafts || {});
+  const [drafts, setDrafts] = useState(visibleDrafts(article.platformDrafts));
   const initialCardNews = article.cardNews && !Array.isArray(article.cardNews) ? article.cardNews : null;
   const [cardNews, setCardNews] = useState(initialCardNews);
   const [activeView, setActiveView] = useState(
-    Object.keys(article.platformDrafts || {})[0] || (initialCardNews ? "card_news" : "instagram"),
+    Object.keys(visibleDrafts(article.platformDrafts))[0] || (initialCardNews ? "card_news" : "instagram"),
   );
   const [keywordLoading, setKeywordLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -246,16 +193,82 @@ export default function FormatConverter({ article, setArticle, flush, articles =
   const [copied, setCopied] = useState("");
   const [requestSource, setRequestSource] = useState(null);
   const [customKeyword, setCustomKeyword] = useState("");
+  // 미리보기와 적용 원문은 편집실 전용 상태다. 목록 선택은 팀 작업 기사를 바꾸지 않는다.
+  const [pickerOpen,setPickerOpen]=useState(false),[preview,setPreview]=useState({article:structuredClone(article),subtitle:article.subtitle});
+  const [previewLoading,setPreviewLoading]=useState(false),[previewError,setPreviewError]=useState('');
+  const [applying,setApplying]=useState(false),[applyError,setApplyError]=useState('');
+  const [applyReturned,setApplyReturned]=useState(0);
+  const [applied,setApplied]=useState(()=>appliedSource(article));
+  const lookup=useRef({epoch:0,controller:null}),application=useRef(null),previewLive=useRef(preview);
+  useLayoutEffect(()=>{previewLive.current=preview;},[preview]);
+  useLayoutEffect(()=>{
+    const claimed=claimSourceTransition(article);
+    if(claimed?.record){setApplied(claimed.record);setPreview({article:structuredClone(article),subtitle:claimed.display.subtitle});}
+    if(claimed?.error)setApplyError(claimed.error);
+  },[article]);
+  useLayoutEffect(()=>{
+    const operation=application.current;
+    // 기존 전환 함수가 종료됐는데 같은 편집실이 남아 있으면 취소/실패다. 성공은 새 마운트의 확인을 기다린다.
+    if(operation?.returned&&operation.transition&&!sourceLoading&&mounted.current)cancelSourceTransition(operation.transition);
+  },[sourceLoading,applyReturned]);
+  const ready=sourceReady(applied,article);
+  const selectPreview=async id=>{
+    lookup.current.controller?.abort();const controller=new AbortController(),ticket=++lookup.current.epoch;
+    lookup.current.controller=controller;setPreview(null);previewLive.current=null;setPreviewLoading(true);setPreviewError('');setApplyError('');
+    try{
+      const result=await getStudioArticle(id,controller.signal);
+      if(!controller.signal.aborted&&ticket===lookup.current.epoch){previewLive.current=result;setPreview(result);}
+    }catch(error){if(!controller.signal.aborted&&ticket===lookup.current.epoch)setPreviewError(error.message);}
+    finally{if(!controller.signal.aborted&&ticket===lookup.current.epoch)setPreviewLoading(false);}
+  };
+  const applyPreview=async()=>{
+    if(applying||previewLoading||sourceLoading||!preview?.article?.articleId||!preview.article.content?.trim())return;
+    const selected=preview,controller=new AbortController(),operation={controller,transition:null,returned:false};application.current=operation;
+    setApplying(true);setApplyError('');let transition;
+    try{
+      // 적용은 조회·기존 작업 전환만 한다. 고정본과 AI는 실제 생성 시 실행한다.
+      if(articleId(live.current.article)===selected.article.articleId){
+        if(!flush)throw Error('기존 저장 큐 연결이 없어 현재 기사 적용을 차단했습니다.');
+        const savedId=await flush();
+        if(!mounted.current||controller.signal.aborted)throw Error('편집실을 떠나 원문 적용을 취소했습니다.');
+        if(savedId!==selected.article.articleId)throw Error('저장 대상이 선택한 기사와 다릅니다. 적용하지 않았습니다.');
+      }
+      const checked=await getStudioArticle(selected.article.articleId,controller.signal);
+      if(!mounted.current||controller.signal.aborted)throw Error('편집실을 떠나 원문 적용을 취소했습니다.');
+      if(previewLive.current!==selected)throw Error('선택 기사가 변경됐습니다. 현재 미리보기를 다시 적용해 주세요.');
+      const current=structuredClone(live.current.article);
+      if(articleId(current)===checked.article.articleId){
+        if(sourceText(selected.article)!==sourceText(current))throw Error('미리보기와 현재 기사 편집 내용이 다릅니다. 기사 편집 화면에서 확인한 뒤 다시 적용해 주세요.');
+        // 같은 기사의 미저장 편집은 DB 값으로 덮지 않는다. 기존 저장 큐가 생성 시 고정한다.
+        setApplied(applyCurrentSource(structuredClone(current)));
+        const currentPreview={article:structuredClone(current),subtitle:current.subtitle===checked.article.subtitle?checked.subtitle:current.subtitle};
+        previewLive.current=currentPreview;setPreview(currentPreview);
+      }else{
+        if(sourceText(checked.article)!==sourceText(selected.article))throw Error('선택한 원문이 변경됐습니다. 다시 불러온 뒤 적용해 주세요.');
+        if(!onApplyArticle)throw Error('기존 기사 전환 연결이 없어 다른 기사 적용을 차단했습니다.');
+        transition=beginSourceTransition(checked.article,{subtitle:checked.subtitle});operation.transition=transition;
+        await onApplyArticle(checked.article.articleId);operation.returned=true;
+        if(mounted.current)setApplyReturned(value=>value+1);
+        // 시간 추정 대신 새 편집실의 실제 마운트 또는 기존 편집실의 취소 확인을 기다린다.
+        const outcome=await transition.completed;if(!outcome.ok)throw Error(outcome.error);
+      }
+    }catch(error){if(transition)cancelSourceTransition(transition);if(mounted.current)setApplyError(error.message);}
+    finally{if(application.current===operation)application.current=null;if(mounted.current)setApplying(false);}
+  };
   const mounted = useRef(true), pending = useRef(false);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useLayoutEffect(() => {
+    const lookups=lookup.current;mounted.current=true;
+    // 적용 조회 중 화면을 떠나면 이전 콜백이 새 작업 기사를 바꾸지 못하도록 즉시 취소한다.
+    return()=>{mounted.current=false;lookups.controller?.abort();application.current?.controller.abort();};
+  }, []);
 
-  const live=useRef({article,drafts,cardNews,requirements,selectedKeywords});
-  useLayoutEffect(()=>{live.current={article,drafts,cardNews,requirements,selectedKeywords};},[article,drafts,cardNews,requirements,selectedKeywords]);
+  const live=useRef({article,drafts,cardNews,requirements,selectedKeywords,selectedPlatforms,includeCardNews});
+  useLayoutEffect(()=>{live.current={article,drafts,cardNews,requirements,selectedKeywords,selectedPlatforms,includeCardNews};},[article,drafts,cardNews,requirements,selectedKeywords,selectedPlatforms,includeCardNews]);
   const origin=useRef({id:articleId(article),source:sourceText(article),photos:fingerprint(article.photos||[])});
 
 
   const targets = useMemo(
-    () => [...selectedPlatforms.filter(id=>id!=="blog"), ...(includeCardNews ? ["card_news"] : [])],
+    () => [...supportedPlatforms(selectedPlatforms), ...(includeCardNews ? ["card_news"] : [])],
     [selectedPlatforms, includeCardNews],
   );
 
@@ -264,7 +277,8 @@ export default function FormatConverter({ article, setArticle, flush, articles =
     const expected=live.current.article;
     setArticle((previous) => articleId(previous)!==articleId(expected)||sourceText(previous)!==sourceText(expected)?previous:({
       ...previous,
-      platformDrafts: nextDrafts,
+      // 미지원 과거 기록은 편집·노출하지 않고 원래 저장값 그대로 보존한다.
+      platformDrafts: { ...(previous.platformDrafts || {}), ...nextDrafts },
       cardNews: nextCardNews,
       platformGeneration: {
         ...(previous.platformGeneration || {}),
@@ -283,7 +297,10 @@ export default function FormatConverter({ article, setArticle, flush, articles =
     const next={id:articleId(article),source:sourceText(article),photos:fingerprint(article.photos||[])};
     const previous=origin.current;origin.current=next;
     if(previous.id!==next.id && (previous.id || previous.source!==next.source)){
-      setDrafts(article.platformDrafts||{});setCardNews(article.cardNews||null);
+      setDrafts(visibleDrafts(article.platformDrafts));setCardNews(article.cardNews||null);
+      setActiveView(Object.keys(visibleDrafts(article.platformDrafts))[0] || (article.cardNews ? "card_news" : "instagram"));
+      setSelectedPlatforms(supportedPlatforms(article.platformGeneration?.selectedPlatforms));
+      setIncludeCardNews(article.platformGeneration?.includeCardNews === true);
       setSelectedKeywords(article.platformGeneration?.selectedKeywords||[]);setRequirements(article.platformGeneration?.requirements||'');
       setKeywordCandidates([]);return;
     }
@@ -344,6 +361,7 @@ export default function FormatConverter({ article, setArticle, flush, articles =
   // 변환을 시작할 때 지금 글을 저장해 고정본으로 만든다. 한 생성 작업의 모든 결과는 같은 고정본을 쓴다.
   // 고정본을 만들지 못하면 중단한다. 저장 큐와 표시 중인 원문이 일치해야 한다.
   const freeze = async () => {
+    if(!sourceReady(applied,live.current.article))throw Error('생성 원문을 먼저 적용해 주세요. 원문 변경 후에는 재적용이 필요합니다.');
     const frozen = await freezeArticle(article, {flush, strict:true});
     if (!mounted.current || sourceText(article) !== sourceText(live.current.article)) throw Error("고정 중 기사가 변경됐습니다. 다시 실행해 주세요.");
     if (frozen?.articleId && frozen.articleId !== article.articleId && setArticle) {
@@ -358,12 +376,13 @@ export default function FormatConverter({ article, setArticle, flush, articles =
       setMessage("기사 제목과 본문을 먼저 작성해 주세요.");
       return;
     }
-    pending.current = true; setKeywordLoading(true); setRequestSource({title:article.title,subtitle:article.subtitle});
+    pending.current = true; setKeywordLoading(true); setRequestSource({title:article.title});
     setMessage("");
     try {
       const frozen = await freeze();
       const source=sourceText(article);
-      const candidates = await suggestPlatformKeywords({...article,articleId:frozen.articleId}, frozen.snapshotId);
+      setRequestSource({title:frozen.article.title, snapshotId:frozen.snapshotId});
+      const candidates = await suggestPlatformKeywords(frozen.article, frozen.snapshotId);
       if(!mounted.current || source!==sourceText(live.current.article) || frozen.articleId!==articleId(live.current.article))throw Error("키워드 추천 중 원본이 변경됐습니다. 다시 추천해 주세요.");
       setKeywordCandidates(candidates);
       if (!candidates.length) setMessage("추천할 키워드를 찾지 못했습니다.");
@@ -387,14 +406,15 @@ export default function FormatConverter({ article, setArticle, flush, articles =
       return;
     }
 
-    pending.current = true; setGenerating(true); setRequestSource({title:article.title,subtitle:article.subtitle});
+    pending.current = true; setGenerating(true); setRequestSource({title:article.title});
     setMessage("");
     const nextProgress = Object.fromEntries(list.map((id) => [id, "대기 중"]));
     setProgress({ ...nextProgress });
     const success = [];
-    const inputSource=sourceText(article),inputConfig=fingerprint({requirements,selectedKeywords});
+    const inputSource=sourceText(article),inputConfig=fingerprint({requirements,selectedKeywords,selectedPlatforms,includeCardNews});
+    const startingDrafts=Object.fromEntries(list.map(target=>[target,fingerprint(target==='card_news'?live.current.cardNews:live.current.drafts[target])]));
     let frozen;
-    try { frozen = await freeze(); }
+    try { frozen = await freeze(); setRequestSource({title:frozen.article.title, snapshotId:frozen.snapshotId}); }
     catch (error) {
       pending.current = false;
       if (mounted.current) { setMessage(error.message); setGenerating(false); setRequestSource(null); setProgress({}); }
@@ -406,18 +426,21 @@ export default function FormatConverter({ article, setArticle, flush, articles =
       nextProgress[target] = "생성 중";
       setProgress({ ...nextProgress });
       try {
-        const before=fingerprint(target==='card_news'?live.current.cardNews:live.current.drafts[target]);
+        const before=startingDrafts[target];
         const generated = await generatePlatform(
           target,
-          {...article,articleId:frozen.articleId},
+          frozen.article,
           selectedKeywords,
           requirements,
           frozen?.snapshotId,
+          article,
+          frozen.source_url,
         );
         if (!generated) throw new Error("생성 결과가 비어 있습니다.");
         if(!generated.article_id)throw Error("기사 ID를 확인할 수 없습니다. 기사를 저장한 뒤 다시 생성해 주세요.");
         if(generated.article_id!==frozen.articleId || generated.snapshot_id!==frozen.snapshotId)throw Error("생성 결과의 기사·고정본이 요청과 다릅니다. 결과를 적용하지 않았습니다.");
-        if(!mounted.current||inputSource!==sourceText(live.current.article)||articleId(live.current.article)!==frozen.articleId||inputConfig!==fingerprint({requirements:live.current.requirements,selectedKeywords:live.current.selectedKeywords})||before!==fingerprint(target==='card_news'?live.current.cardNews:live.current.drafts[target]))throw Error("생성 중 원문·조건·원고가 바뀌어 결과를 적용하지 않았습니다. 다시 생성해 주세요.");
+        const current=live.current;
+        if(!mounted.current||inputSource!==sourceText(current.article)||articleId(current.article)!==frozen.articleId||inputConfig!==fingerprint({requirements:current.requirements,selectedKeywords:current.selectedKeywords,selectedPlatforms:current.selectedPlatforms,includeCardNews:current.includeCardNews})||before!==fingerprint(target==='card_news'?current.cardNews:current.drafts[target]))throw Error("생성 중 원문·조건·원고가 바뀌어 결과를 적용하지 않았습니다. 다시 생성해 주세요.");
         if(target==='card_news')updateCardNews(generated);else updateDraft(target,generated);
         nextProgress[target] = "완료";
         success.push(target);
@@ -483,7 +506,7 @@ export default function FormatConverter({ article, setArticle, flush, articles =
         <button
           type="button"
           onClick={() => runGeneration()}
-          disabled={generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
+          disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
           className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-[#292929] px-5 py-2.5 text-xs font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
@@ -491,6 +514,7 @@ export default function FormatConverter({ article, setArticle, flush, articles =
         </button>
       </div>
 
+      {pickerOpen&&<PlatformArticlePicker onSelect={selectPreview} onClose={()=>setPickerOpen(false)}/>}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="space-y-4">
           <section className="rounded-3xl border border-[#DDD6CB] bg-white/90 p-5 shadow-sm">
@@ -498,30 +522,32 @@ export default function FormatConverter({ article, setArticle, flush, articles =
               <FileText className="mt-0.5 h-4 w-4 text-[#8E8982]" />
               <div className="min-w-0">
                 <h3 className="text-xs font-black">불러온 기사</h3>
-                {sourceLoading ? <p role="status">기사 불러오는 중…</p> : <div data-testid="loaded-article" className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                <button type="button" data-testid="choose-studio-article" disabled={applying||sourceLoading} onClick={()=>setPickerOpen(true)} className="mt-3 rounded-xl border px-3 py-2 text-xs font-bold">저장 기사에서 선택</button>
+                {previewLoading||sourceLoading ? <p role="status">기사 불러오는 중…</p> : <div data-testid="loaded-article" className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                   <span className="mt-3 block text-[10px] font-bold">기사 제목</span>
-                  <p data-testid="loaded-title" className="mt-0.5 text-sm font-black leading-6">{article.title || "기사 미선택"}</p>
+                  <p data-testid="loaded-title" className="mt-0.5 text-sm font-black leading-6">{preview?.article.title || "기사 미선택"}</p>
                   <span className="mt-3 block text-[10px] font-bold">부제목</span>
-                  <p data-testid="loaded-subtitle" className="mt-0.5 text-xs leading-6">{article.subtitle || "부제목 없음"}</p>
-                  {!article.content?.trim() && <p role="status" className="mt-2 text-xs">{article.title ? "기사 본문 없음 · 기사 편집 화면에서 확인해 주세요." : "DB 기사를 선택해 주세요."}</p>}
-                  {/^https?:\/\//iu.test(article.url || "") && <a href={article.url} target="_blank" rel="noreferrer" className="mt-2 block text-xs underline">원문 출처 링크</a>}
+                  <p data-testid="loaded-subtitle" className="mt-0.5 text-xs leading-6">{subtitleLabel({subtitle:preview?.subtitle})}</p>
+                  <p className="mt-2 text-[10px] leading-5 text-[#8E8982]">부제는 기사 화면의 표시 정보입니다. 생성 입력의 부제 전달은 미연결입니다.</p>
+                  {!preview?.article.content?.trim() && <p role="status" className="mt-2 text-xs">{preview?.article.title ? "기사 본문 없음 · 기사 편집 화면에서 확인해 주세요." : "DB 기사를 선택해 주세요."}</p>}
+                  {/^https?:\/\//iu.test(preview?.article.url || "") && <a href={preview.article.url} target="_blank" rel="noreferrer" className="mt-2 block text-xs underline">원문 출처 링크</a>}
+                  <span className="mt-2 block text-[10px] text-[#8E8982]">본문 {(preview?.article.content || '').length.toLocaleString()}자</span>
                 </div>}
+                {previewError&&<p role="alert" className="mt-2 text-xs text-red-700">기사 조회 실패: {previewError}</p>}
+                <button type="button" data-testid="apply-studio-article" disabled={applying||previewLoading||sourceLoading||!preview?.article.articleId||!preview.article.content?.trim()} onClick={applyPreview} className="mt-3 rounded-xl bg-[#292929] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{applying?'기사 적용 중…':'이 기사로 콘텐츠 제작'}</button>
+                {applyError&&<p role="alert" className="mt-2 text-xs text-red-700">적용 실패: {applyError}</p>}
+                <p role="status" data-testid="applied-source" className="mt-3 whitespace-pre-wrap break-words text-xs leading-6">
+                  {ready?`적용 완료 · ${applied.title}`:applied?'원문이 변경됐습니다. 재적용이 필요합니다.':'생성 원문 미적용 · 기사를 확인한 뒤 이 기사로 콘텐츠 제작을 눌러 주세요.'}
+                  {preview&&ready&&articleId(preview.article)!==applied.id&&<><br/>미리보기 기사와 적용 기사가 다릅니다. 생성은 적용 기사로 진행합니다.</>}
+                </p>
                 {sourceError && <p role="alert" className="mt-2 text-xs text-red-700">{sourceError}</p>}
-                {onSelectArticle && <><label className="mt-3 block text-xs" htmlFor="platform-article">DB 기사 선택</label>
-                  <select id="platform-article" data-testid="platform-article" value={article.articleId || ""} disabled={sourceLoading}
-                    onChange={event => event.target.value && onSelectArticle(event.target.value)} className="mt-1 w-full rounded-lg border p-2 text-xs">
-                    <option value="">기사 선택</option>{articles.map(item => <option key={item.id} value={item.id}>{item.title || "제목 없는 기사"}</option>)}
-                  </select></>}
                 <div className="mt-2 flex flex-wrap gap-3 text-xs">
                   {onEditArticle && <button onClick={onEditArticle} className="underline">기사 편집</button>}
-                  {onReloadArticles && <button onClick={onReloadArticles} className="underline">목록 새로고침</button>}
+                  {onOpenArticles && <button onClick={onOpenArticles} className="underline">저장 기사 목록</button>}
                 </div>
                 {requestSource && <div role="status" data-testid="request-source" className="mt-3 whitespace-pre-wrap break-words text-xs leading-6">
-                  처리 기준 기사: {requestSource.title}<br />부제목: {requestSource.subtitle || "부제목 없음"}
+                  처리 기준 기사: {requestSource.title}<br />{requestSource.snapshotId ? "Core 고정본의 제목·본문으로 처리 중" : "저장·고정본 확인 중"}
                 </div>}
-                <span className="mt-1 block text-[10px] text-[#8E8982]">
-                  본문 {(article.content || "").length.toLocaleString()}자
-                </span>
               </div>
             </div>
 
@@ -538,7 +564,6 @@ export default function FormatConverter({ article, setArticle, flush, articles =
                       key={platform.id}
                       type="button"
                       onClick={() => togglePlatform(platform.id)}
-                      disabled={platform.id==="blog"}
                       className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2.5 text-left transition ${
                         selected
                           ? "border-[#292929] bg-[#292929] text-white"
@@ -602,7 +627,7 @@ export default function FormatConverter({ article, setArticle, flush, articles =
               <button
                 type="button"
                 onClick={suggestKeywords}
-                disabled={keywordLoading || generating || sourceLoading || !article.content?.trim()}
+                disabled={!ready || applying || keywordLoading || generating || sourceLoading || !article.content?.trim()}
                 className="inline-flex items-center gap-1 text-[10px] font-bold text-[#57514A] disabled:opacity-50"
               >
                 {keywordLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
@@ -751,7 +776,7 @@ export default function FormatConverter({ article, setArticle, flush, articles =
               type="button"
               data-testid="generate-active"
               onClick={() => runGeneration([activeView])}
-              disabled={generating || keywordLoading || sourceLoading || activeView==="blog" || !article.title?.trim() || !article.content?.trim()}
+              disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
               title="이 항목만 생성합니다. 이미 있는 결과와 수정 내용은 새 결과로 바뀝니다."
               className="inline-flex items-center gap-1.5 rounded-full bg-[#292929] px-3 py-2 text-[11px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -782,8 +807,6 @@ export default function FormatConverter({ article, setArticle, flush, articles =
               platform={activeView}
               draft={drafts[activeView]}
               onChange={(next) => updateDraft(activeView, next)}
-              onCopy={() => copyDraft(activeView)}
-              copied={copied === activeView}
             />
           )}
         </main>

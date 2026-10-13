@@ -5,6 +5,7 @@ const registerValidationRoutes = require("./validation-routes");
 const { suggestKeywords } = require("./ai-client");
 const { readInput } = require("./core-bridge");
 const { renderCardJpeg } = require("./card-renderer");
+const { coreArticle, generationPayload } = require("./lib/article-contract");
 
 function getHandler(register, route) {
   let handler = null;
@@ -47,14 +48,14 @@ async function main() {
   const input = JSON.parse((await readInput()) || "{}");
 
   if (input.action === "keywords") {
-    const candidates = await suggestKeywords(input.article || {});
+    const candidates = await suggestKeywords(coreArticle(input.article));
     return { candidates };
   }
   if (input.action === "generate") {
     if (typeof input.platform !== "string") throw new Error("플랫폼을 지정해주세요.");
-    return generate(input.platform, input.payload || {});
+    return generate(input.platform, generationPayload(input.payload));
   }
-  if (input.action === "validate") return validate(input.payload || {});
+  if (input.action === "validate") return validate(generationPayload(input.payload));
   if (input.action === "render") {
     // 카드 하나를 JPEG 로 그려 base64 로 돌려준다. 파일·localhost 주소를 만들지 않는다(코어가 암호화 저장소에 등록).
     const payload = input.payload || {};

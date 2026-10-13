@@ -1,13 +1,18 @@
-import { textWithoutPhotos } from "./photoMarks.js";
-
 const excluded = new Set(["validation_status", "evidence_status", "validation_review", "rendered_image", "generation_review", "evidence_valid", "block_evidence_valid"]);
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
   ? Object.fromEntries(Object.keys(value).sort().filter(key => !excluded.has(key)).map(key => [key, canonical(value[key])])) : value;
 export const fingerprint = value => JSON.stringify(canonical(value));
 // 부제·출처가 바뀌어도 기존 플랫폼 결과는 별도로 남고 새 원문의 결과로 재사용하지 않는다.
 export const sourceText = article => JSON.stringify([String(article?.title || "").trim(), String(article?.subtitle || "").trim(),
-  typeof article?.content === "string" ? textWithoutPhotos(article.content).trim() : "", String(article?.url || "").trim()]);
+  typeof article?.content === "string" ? article.content : "", String(article?.url || "").trim()]);
 export const articleId = article => String(article?.articleId || article?.article_id || article?.id || "");
+// 부제는 화면에서 전달받은 값만 표시한다. 생성 입력에 포함됐다는 의미가 아니다.
+export const subtitleLabel = article => article?.subtitle === undefined ? "부제 전달 미연결"
+  : typeof article.subtitle === "string" && article.subtitle.trim() ? article.subtitle : "부제목 없음";
+export const supportedPlatforms = values => Array.isArray(values) ? values.filter(value => ["instagram", "threads"].includes(value)) : [];
+export const visibleDrafts = drafts => Object.fromEntries(Object.entries(drafts || {}).filter(([key]) => ["instagram", "threads"].includes(key)));
+export const sameGenerationSource = (draft, article) => typeof draft?.generation_source === "string"
+  ? draft.generation_source === sourceText(article) : sourceText(draft?.generation_input?.article) === sourceText(article);
 export const reviewLabel = status => ({passed:"검수 통과", needs_revision:"수정 필요", needs_recheck:"재검수 필요", not_checked:"미검수"}[status] || "미검수");
 export function reviewStatus(draft) {
   if(draft?.validation_status==='needs_recheck')return 'needs_recheck';
@@ -28,9 +33,10 @@ export function assertSameSource(draft, cards, article) {
   if (!draft) throw Error("현재 원고를 먼저 생성해 주세요.");
   const origin = draft.generation_input?.article;
   if (!articleId(article) || draft.article_id !== articleId(article)) throw Error("다른 기사 또는 출처를 확인할 수 없는 결과입니다. 현재 기사로 다시 생성해 주세요.");
-  if (!origin || sourceText(origin) !== sourceText(article)) throw Error("원본 기사가 바뀌었습니다. 현재 기사로 다시 생성해 주세요. 카드 편집 변경과는 별개입니다.");
+  if (!origin || !sameGenerationSource(draft, article)) throw Error("원본 기사가 바뀌었거나 연결을 확인할 수 없습니다. 현재 기사로 다시 생성해 주세요. 카드 편집 변경과는 별개입니다.");
   if (cards && (cards.article_id !== draft.article_id || (cards.snapshot_id || null) !== (draft.snapshot_id || null)
-    || sourceText(cards.generation_input?.article) !== sourceText(origin))) throw Error("원고와 카드뉴스의 기사·고정본이 다릅니다. 같은 고정본으로 함께 생성해 주세요.");
+    || JSON.stringify(cards.generation_input?.article) !== JSON.stringify(origin)
+    || !sameGenerationSource(cards, article))) throw Error("원고와 카드뉴스의 기사·고정본이 다릅니다. 같은 고정본으로 함께 생성해 주세요.");
 }
 export function currentRender(card, photo, draft) {
   const rendered = card?.rendered_image;

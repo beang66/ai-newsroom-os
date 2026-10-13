@@ -325,10 +325,10 @@ function Workspace({ initialArticle, core: coreState, setCore, loadError, onRetr
 
             {!loading && activeTab === "convert" && (
               <FormatConverter article={article} setArticle={setArticle} flush={flush}
-                articles={articles.filter(item => !item.id.startsWith("art-"))}
-                onSelectArticle={id => changeArticle(id, "convert")} onEditArticle={() => setActiveTab("writer")}
+                onApplyArticle={id => changeArticle(id, "convert")}
+                onOpenArticles={() => setActiveTab("archive")} onEditArticle={() => setActiveTab("writer")}
                 sourceLoading={switching} sourceError={switchError || listError}
-                onReloadArticles={() => setListAttempt(attempt => attempt + 1)} />
+                />
             )}
 
             {!loading && activeTab === "archive" && (

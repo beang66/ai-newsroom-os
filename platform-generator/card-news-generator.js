@@ -179,6 +179,7 @@ function checkStructure(draft) {
 
 // 4. 카드뉴스 전용 생성 요청
 async function generateCardNews(input) {
+  input = require("./lib/article-contract").generationPayload(input);
   if (!hasText(input?.article?.title) || !hasText(input?.article?.content)) {
     throw new Error("기사 제목과 원문을 입력해주세요.");
   }
@@ -267,7 +268,7 @@ async function generateCardNews(input) {
   draft=readPlannedDraft(draft,informationPlan);
 
   // 6. 인용 존재 여부 확인 (의미 일치는 별도 검수 대상)
-  const sources = [normalize(input.article.title), normalize(input.article.subtitle || ""), normalize(input.article.content)];
+  const sources = [normalize(input.article.title), normalize(input.article.content)];
   const checkEvidence = (quotes) => hasEvidence(quotes) && quotes.every(
     (quote) => sources.some((source) => source.includes(normalize(quote)))
   );

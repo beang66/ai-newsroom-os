@@ -17,8 +17,7 @@ app.use(express.static(path.join(__dirname,"public")));
 // Development storage remains opt-in; test paths are injectable.
 require("./local-storage-routes")(app,storageOptions);
 
-// 개발용 편집실도 팀 Core의 기존 기사 DB·고정본만 사용한다.
-require("./db-article-routes")(app);
+// 개발용 편집실은 독립 편집·로컬 복원용이다. 저장 기사 연결은 팀 앱의 Core 경로만 사용한다.
 
 // 팀원 Python 사진 API의 기능·응답 형식을 Node 경로로 연결합니다.
 require("./photo-routes")(app);

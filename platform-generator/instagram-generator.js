@@ -17,6 +17,7 @@ const normalize = value => String(value).replace(/\s+/g, " ").trim();
 const tagPattern = /^#[\p{L}\p{N}_]+$/u;
 
 async function generateInstagram(input) {
+  input = require("./lib/article-contract").generationPayload(input);
   // 2. 기존 Gemini/OpenAI 어댑터 사용. API 키를 브라우저에 전달하지 않습니다.
   const apiKey = AI.apiKey?.trim();
   if (!apiKey) throw new Error(".env의 선택한 AI API 키를 확인해주세요.");
@@ -74,7 +75,7 @@ ${correction}`,
     continue;
   }
   // 4. 인용 존재 확인은 의미의 정확성을 보증하지 않습니다. 전체 검수는 별도입니다.
-  const sources = [input.article.title, input.article.subtitle || "", input.article.content].map(normalize);
+  const sources = [input.article.title, input.article.content].map(normalize);
   const exists = quote => sources.some(source => source.includes(normalize(quote)));
   const allQuotes = [...new Set(blocks.flatMap(x => x.source_evidence))];
   return {

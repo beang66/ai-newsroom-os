@@ -213,7 +213,6 @@ function extractDraft(platform, draft) {
 function createQuoteChecker(article) {
   const sourceParts = [
     normalizeText(article.title),
-    normalizeText(article.subtitle || ""),
     normalizeText(article.content),
   ].filter(Boolean);
   const quoteExists=function(quote) {
@@ -454,6 +453,7 @@ function buildCheckResult(issues, quoteExists) {
 // 사실 검수 → 요구사항 검수 순서로 진행합니다.
 // ============================================================
 async function validateDraft(input, options={}) {
+  input = require("./lib/article-contract").generationPayload(input);
   if (!hasText(input?.article?.title) || !hasText(input?.article?.content)) {
     throw new Error("검수에 사용할 기사 제목과 원문이 필요합니다.");
   }
@@ -493,7 +493,7 @@ async function validateDraft(input, options={}) {
 \- 실제 오류나 명확한 규칙 위반만 지적합니다.
 \- 취향 차이와 자연스러운 바꿔쓰기를 오류로 판단하지 않습니다.
 \- location은 cards[0].content.body, paragraphs[1],
-  sections[0].body처럼 전달된 원고의 실제 위치를 적습니다.
+  cards[0].content.headline처럼 전달된 원고의 실제 위치를 적습니다.
 \- problematic_text는 문제가 있는 현재 원고의 표현을 그대로 인용합니다.
 \- 누락 문제에는 problematic_text를 빈 문자열로 작성할 수 있습니다.
 \- source_evidence는 기사 제목 또는 본문에서 그대로 인용합니다.

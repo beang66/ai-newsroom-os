@@ -352,7 +352,7 @@
       ...document.querySelectorAll(
         "#custom-keywords, " +
           "#article-requirements, " +
-          ".platform input, #db-article, #refresh-db-articles, #include-card-news, #load-local-draft, #save, #load",
+          ".platform input, #include-card-news, #load-local-draft, #save, #load",
       ),
       ...generationButtons,
       button,

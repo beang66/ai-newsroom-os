@@ -1,66 +1,41 @@
+// 기존 개발용 DB 우회 검증을 폐지 경로·Core 입력 계약·읽기 전용 복원 회귀로 대체한다.
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {JSDOM}=require('jsdom');
 const fs=require('fs'),path=require('path');
-const id='a'.repeat(32),snapshot={id:'frozen',article_id:id,title:'DB 기사',subtitle:'DB 부제',url:'',body_text:'DB 본문'};
-test('개발 Core 중계는 기존 POST Origin 전제조건과 기사 ID 경로를 지킨다',async()=>{
- const http=require('http'),express=require('express');let seen;
- const coreServer=http.createServer((req,res)=>{
-  seen={origin:req.headers.origin,method:req.method,path:req.url};
-  const valid=req.headers.origin===`http://127.0.0.1:${coreServer.address().port}`;
-  res.writeHead(valid?200:403,{'Content-Type':'application/json'});res.end(JSON.stringify(valid?snapshot:{error:'Origin required'}));
- });
- await new Promise(resolve=>coreServer.listen(0,'127.0.0.1',resolve));
- const previous=process.env.NEWSROOM_CORE_ORIGIN;process.env.NEWSROOM_CORE_ORIGIN=`http://127.0.0.1:${coreServer.address().port}`;
- const app=express();app.use(express.json());require('../db-article-routes')(app);
- const editor=app.listen(0,'127.0.0.1');await new Promise(resolve=>editor.once('listening',resolve));
- try {
-  const origin=`http://127.0.0.1:${editor.address().port}`;
-  const response=await fetch(origin+'/api/core/freeze',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({article:{article_id:id,title:snapshot.title,subtitle:snapshot.subtitle,url:'',content:snapshot.body_text}})});
-  assert.equal(response.status,200);assert.equal((await response.json()).id,snapshot.id);
-  assert.deepEqual(seen,{origin:process.env.NEWSROOM_CORE_ORIGIN,method:'POST',path:`/api/articles/${id}/snapshots`});
- } finally {
-  if(previous===undefined)delete process.env.NEWSROOM_CORE_ORIGIN;else process.env.NEWSROOM_CORE_ORIGIN=previous;
-  await new Promise(resolve=>editor.close(resolve));await new Promise(resolve=>coreServer.close(resolve));
- }
+const {coreArticle,generationPayload}=require('../lib/article-contract');
+test('Core 세 필드 계약은 본문 속 캡션을 그대로 유지하고 부제·사진 메타데이터를 합치지 않음',()=>{
+ const article={article_id:'a'.repeat(32),title:'기사 제목',content:'본문입니다.\n사진 설명: 실제 본문에 섞인 텍스트\n[사진:원본]',subtitle:'표시 전용 부제',url:'https://example.test/source',photos:[{caption:'별도 사진 캡션'}]};
+ assert.deepEqual(coreArticle(article),{article_id:article.article_id,title:article.title,content:article.content});
+ const payload=generationPayload({article,selected_keywords:[],requirements:''});
+ assert.deepEqual(Object.keys(payload.article),['article_id','title','content']);assert.equal(payload.source_url,article.url);
+ assert(!JSON.stringify(payload.article).includes(article.subtitle));assert(!JSON.stringify(payload.article).includes('별도 사진 캡션'));
+ assert.equal(generationPayload({article:{...article,url:''},source_url:'https://other.test/live'}).source_url,'','고정본의 빈 출처를 현재 화면 URL로 채우지 않는다');
 });
-test('개발 입력도 Core DB·고정본을 사용하고 다른 기사·삭제·원문 변경은 거부',async()=>{
- const handlers=new Map(),calls=[];
- const core={listArticles:async()=>({articles:[{id,title:snapshot.title}]}),getArticle:async()=>({draft:{articleId:id}}),
-  createSnapshot:async()=>snapshot,getSnapshot:async()=>snapshot,
-  generatePlatform:async(...args)=>{calls.push(args);return {success:true,draft:{article_id:id}}},
-  validatePlatform:async(...args)=>{calls.push(args);return {success:true}}};
- require('../db-article-routes')({get:(url,fn)=>handlers.set(url,fn),post:(url,fn)=>handlers.set(url,fn)},core);
- const invoke=async(url,body,params={},headers={})=>{let status=200,result;await handlers.get(url)({body,params,socket:{remoteAddress:'127.0.0.1'},headers:{host:'localhost:3001','content-type':'application/json',...headers}},{status(code){status=code;return this},json(value){result=value}});return {status,result}};
- const article={article_id:id,title:'DB 기사',subtitle:'DB 부제',url:'',content:'DB 본문'};
- assert.equal((await invoke('/api/core/freeze',{article})).result.id,'frozen');
- assert.equal((await invoke('/api/core/freeze',{article},{},{origin:'https://other.test'})).status,403);
- assert.equal((await invoke('/api/core/freeze',{article:{...article,subtitle:'변경 부제'}})).status,409);
- await invoke('/api/core/generate',{platform:'threads',snapshot_id:'frozen',payload:{article}});
- assert.equal(calls[0][0],'threads');assert.equal(calls[0][2],'frozen');
- assert.equal((await invoke('/api/core/generate',{snapshot_id:'frozen',payload:{article:{article_id:'other'}}})).status,409);
- core.createSnapshot=async()=>{throw Object.assign(Error('기사가 삭제됐습니다.'),{status:404})};
- assert.equal((await invoke('/api/core/freeze',{article})).status,404);
+test('개발 서버에는 DB 조회·고정본·Core 중계와 URL 수집 경로가 없음',async()=>{
+ const {createApp}=require('../server'),app=createApp();
+ const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+ const base='http://127.0.0.1:'+server.address().port;
+ try{
+  for(const route of ['/api/core/articles','/api/core/articles/'+ 'a'.repeat(32)])assert.equal((await fetch(base+route)).status,404);
+  for(const route of ['/api/core/freeze','/api/core/generate','/api/core/validate','/api/article/import'])assert.equal((await fetch(base+route,{method:'POST',headers:{'Content-Type':'application/json',Origin:base},body:'{}'})).status,404);
+ }finally{await app.locals.closeSns();await new Promise(resolve=>server.close(resolve));}
 });
-test('DB 화면: 제목·부제 읽기 전용, HTML 본문 호환, 느린 조회·삭제 실패와 이전 편집 보호',async()=>{
+test('개발 화면은 새 기사 입력 없이 기존 초안 복원, 부제 표시 분리, 조건 변경 결과 보호',()=>{
  const dom=new JSDOM('<aside class="left"><section id="platform-panel"></section></aside><input id="include-card-news" type="checkbox">',{runScripts:'outside-only',url:'http://localhost:3001/'}),w=dom.window;
- w.structuredClone=structuredClone;w.confirm=()=>true;let resets=0,saveFails=false,editorRevision=0;
- w.CardEditor={getRevision:()=>editorRevision,snapshot:()=>({edited:true}),resetForArticle:()=>{resets++;editorRevision++;}};
- w.NewsApi={listDbArticles:async()=>({articles:[]}),getDbArticle:async()=>({draft:{articleId:id,title:'실제 제목',subtitle:'',content:{type:'doc'},bodyHtml:'<p>실제 HTML 본문</p>'}}),
-  saveLocalDraft:async()=>{if(saveFails)throw Error('저장 실패');return {success:true}},freezeDbArticle:async()=>snapshot};
- w.eval(fs.readFileSync(path.resolve(__dirname,'../public/article-input.js'),'utf8'));
- await new Promise(resolve=>setTimeout(resolve,0));
- assert.equal(w.document.getElementById('article-url'),null);assert.equal(w.document.getElementById('article-content'),null);
- await w.NewsInput.select(id);assert.equal(w.NewsInput.getRequest().article.content,'실제 HTML 본문');
- assert.equal(w.document.getElementById('article-subtitle').textContent,'부제목 없음');assert.equal(w.document.getElementById('article-title').tagName,'P');
- saveFails=true;editorRevision++;await w.NewsInput.select('b'.repeat(32));assert.equal(w.NewsInput.getRequest().article.article_id,id);assert.match(w.document.getElementById('article-import-status').textContent,/저장 실패/);
- saveFails=false;let release;w.NewsApi.getDbArticle=()=>new Promise(resolve=>release=resolve);
- const selecting=w.NewsInput.select('b'.repeat(32));await new Promise(resolve=>setTimeout(resolve,0));
- w.NewsInput.restore({article:{article_id:'c'.repeat(32),title:'현재 기사',subtitle:'현재 부제',content:'현재 본문'}});
- release({draft:{articleId:'b'.repeat(32),title:'늦은 기사',content:'옛 본문'}});await selecting;
- assert.equal(w.document.getElementById('article-title').textContent,'현재 기사');assert.equal(w.document.getElementById('article-subtitle').textContent,'현재 부제');
- w.NewsApi.getDbArticle=async()=>{throw Error('DB 기사가 삭제됐습니다.')};await w.NewsInput.select(id);
- assert.equal(w.document.getElementById('article-title').textContent,'기사 미선택');assert.equal(w.NewsInput.getRequest().article.content,'');
- assert.match(w.document.getElementById('article-import-status').textContent,/삭제/);assert.equal(resets,1);
- dom.window.close();
+ w.structuredClone=structuredClone;w.NewsApi=new Proxy({},{get(){throw Error('개발용 DB/API 조회 금지')}});
+ try{
+  w.eval(fs.readFileSync(path.resolve(__dirname,'../public/article-input.js'),'utf8'));
+  for(const id of ['article-url','article-content','db-article','refresh-db-articles','import-article'])assert.equal(w.document.getElementById(id),null);
+  w.NewsInput.restore({article:{article_id:'actual-id',title:'긴 제목 '.repeat(50),content:'원문\n사진 캡션도 그대로'}});
+  assert.equal(w.document.getElementById('article-subtitle').textContent,'부제 전달 미연결');
+  const input=w.NewsInput.getRequest();assert.deepEqual(Object.keys(input.article),['article_id','title','content']);
+  w.NewsInput.capture(input);assert.equal(input.development_only,true);assert.equal(input.snapshot_id,undefined);
+  w.document.getElementById('article-requirements').value='변경 조건';assert.equal(w.NewsInput.isCurrent(input),false);
+  w.NewsInput.restore({article:{article_id:'next-id',title:'다른 기사',content:''},article_display:{subtitle:''}});
+  assert.equal(w.document.getElementById('article-subtitle').textContent,'부제목 없음');assert.equal(w.NewsInput.isCurrent(input),false);
+  w.NewsInput.restore({article:{article_id:'next-id',title:'다른 기사',content:'본문',subtitle:'실제 부제'}});
+  assert.equal(w.document.getElementById('article-subtitle').textContent,'실제 부제');assert.equal(w.NewsInput.getRequest().article.subtitle,undefined);
+  assert.equal(w.document.getElementById('article-title').tagName,'P');
+ }finally{w.close()}
 });

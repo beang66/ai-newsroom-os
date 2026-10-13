@@ -68,3 +68,5 @@ npm start
 ```
 
 http://localhost:3001 에서 사용합니다. 기존 `.env`를 보존하고 OpenAI 설정은 `.env.example`을 참고하세요. Documents 초안 저장은 개발 전용 `PLATFORM_LOCAL_STORAGE=1`로 명시적으로 켜며, 팀 Core의 암호화 저장과 별개입니다. 공용 API·카드 모델·템플릿은 `lib/`에서 제공됩니다.
+
+저장 기사 선택과 고정본 생성은 팀 앱의 기존 보관함·기사 작성·변환·배포 흐름을 사용합니다. 개발용 편집실에는 DB 중계나 별도 기사 입력을 제공하지 않으며 기존 플랫폼 초안 복원과 카드·사진 편집용으로 유지합니다. 지원 결과물은 Instagram·Threads와 독립 카드뉴스입니다. 부제는 팀 화면의 표시 정보이며 현재 세 필드 생성 기사 입력에 포함되지 않습니다. Core 후속 요청과 실제 검증 범위는 [통합 기록](platform-generator/INTEGRATION_NOTES.md)을 참고하세요.

@@ -5,6 +5,7 @@ const { generateCardNews } = require("./card-news-generator");
 // 기존 모듈 호환용: 일괄 생성과 플랫폼 검수 분리 후 정리합니다.
 const { generateInstagram } = require("./instagram-generator");
 const { generateTextPlatform } = require("./text-generator");
+const { coreArticle } = require("./lib/article-contract");
 
 module.exports = function registerGenerateRoutes(app) {
   app.post("/api/generate/:platform", async (req, res) => {
@@ -13,7 +14,7 @@ module.exports = function registerGenerateRoutes(app) {
     if (!["card_news", "instagram", "threads"].includes(platform)) {
       return res.status(400).json({
         success: false,
-        error: "지원하지 않는 플랫폼입니다.",
+        error: "지원하지 않는 플랫폼입니다. Instagram·Threads·독립 카드뉴스만 지원합니다.",
       });
     }
 
@@ -24,10 +25,6 @@ module.exports = function registerGenerateRoutes(app) {
     if (typeof article?.article_id !== "string" || !article.article_id.trim()) {
       return res.status(400).json({success:false,error:"Core에서 저장된 기사 ID를 확인해주세요."});
     }
-    if (article.subtitle !== undefined && (typeof article.subtitle !== "string" || article.subtitle.length > 30000)) {
-      return res.status(400).json({success:false,error:"기사 부제목 형식을 확인해주세요."});
-    }
-
     if (
       typeof article?.title !== "string" ||
       typeof article?.content !== "string" ||
@@ -77,10 +74,11 @@ module.exports = function registerGenerateRoutes(app) {
     // 2. 공통 입력 정규화 (URL 자동 수집 기능은 포함하지 않습니다.)
     // 원문 URL은 출처 정보로만 전달하며 AI가 주소를 생성하지 않습니다.
     let sourceUrl = "";
-    if (article.url !== undefined && article.url !== "") {
+    const providedUrl = article.url ?? input.source_url;
+    if (providedUrl !== undefined && providedUrl !== "") {
       try {
-        if (typeof article.url !== "string" || article.url.length > 2048) throw new Error();
-        const url = new URL(article.url.trim());
+        if (typeof providedUrl !== "string" || providedUrl.length > 2048) throw new Error();
+        const url = new URL(providedUrl.trim());
         if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error();
         sourceUrl = url.href;
       } catch {
@@ -88,18 +86,8 @@ module.exports = function registerGenerateRoutes(app) {
       }
     }
     const normalizedInput = {
-      article: {
-        url: sourceUrl,
-        article_id:
-          typeof article.article_id === "string" &&
-          article.article_id.trim()
-            ? article.article_id.trim()
-            : "",
-
-        title: article.title.trim(),
-        subtitle: (article.subtitle || "").trim(),
-        content: article.content.trim(),
-      },
+      article: coreArticle(article),
+      source_url: sourceUrl,
 
       selected_keywords: [
         ...new Set(keywords.map((value) => value.trim())),
@@ -119,7 +107,7 @@ module.exports = function registerGenerateRoutes(app) {
 
       res.json({
         success: true,
-        draft,
+        draft: { ...draft, source_url: sourceUrl },
       });
     } catch (error) {
       // 4. API 오류를 사용자 안내 문구로 변환

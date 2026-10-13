@@ -150,7 +150,6 @@ function validateDraftStructure(platform, draft) {
 function createEvidenceChecker(article) {
   const sourceParts = [
     normalizeText(article.title),
-    normalizeText(article.subtitle || ""),
     normalizeText(article.content),
   ].filter(Boolean);
   return function checkEvidence(quotes) {
@@ -168,6 +167,7 @@ function createEvidenceChecker(article) {
 // 기존 generate-routes.js에서 사용하는 함수 이름을 유지합니다.
 // ============================================================
 async function generateTextPlatform(platform, input) {
+  input = require("./lib/article-contract").generationPayload(input);
   if (platform !== "threads") {
     throw new Error("Threads만 지원합니다.");
   }
@@ -309,7 +309,7 @@ ${GENERATION_GUIDES[platform]}
       source_evidence: allEvidence,
       evidence_valid: checkEvidence(allEvidence),
       // 원문 주소는 AI 출력에서 가져오지 않고 서버 입력값만 사용합니다.
-      source_url: getSourceUrl(input.article.url),
+      source_url: getSourceUrl(input.source_url),
       validation_status: "not_checked",
     };
   }

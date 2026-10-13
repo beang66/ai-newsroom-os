@@ -1,5 +1,16 @@
 # 플랫폼 로컬 통합 및 검증 기록
 
+## main 재동기화 및 PR 검증 (2026-10-13)
+
+- 사용자 요청에 따라 작업 브랜치 `feature/platform-update-20261009`의 HEAD `69a4e76`와 깨끗한 작업 트리를 확인했습니다. AGENTS.md·미커밋 작업·merge/rebase 없음. 기존 변경은 이미 커밋/업로드되어 추가 보존용 빈 커밋을 만들지 않았습니다.
+- `git pull origin main`을 rebase 없이 실행해 **Already up to date**를 확인했습니다. 최신 main은 `95567ee`, PR #42 병합 `8ee7a3b`는 HEAD의 조상입니다. 새 병합·충돌·생산 소스 수정 없음. KEEP 코드와 삭제 상태를 보존합니다.
+- `src/components/EditorialAssist.jsx`의 useAutosave, ArticleWriter의 저장/송고 버튼, ArchiveView는 origin/main과 같습니다. auto/manual kind, 저장 요청 큐, saveNow/publishNow/flush, 원고·송고본 구분은 기존 구현을 유지합니다. core-api.js/editorial.js의 플랫폼 추가 연결은 기존 saveArticle의 kind 전달을 바꾸지 않습니다. App의 changeArticle(id, "convert") 보호도 유지합니다.
+- 새로 실행: **루트 npm test 44개 및 API 경계 통과**, **Python 전체 418개 통과(기존 조건부 skip 4개), exit 0**, **node article_editor/dev/tests/ui-smoke.mjs 통과, exit 0**. Python은 .runtime 의존성을 사용하고 Core import 전 기존 env_isolation을 적용한 unittest discover로 실행했습니다. UI는 부모의 실제 인증/DB 설정을 제외한 기존 시험 하네스의 임시 Core·DB·Edge와 AI/인증/SNS 대역을 사용했습니다.
+- 최초 sandbox Python 실행은 임시 폴더 접근 거부로 실패했고 승인된 환경에서 재실행했습니다. 그 전체 실행의 모델 설치 취소 검사 1개 실패는 현재 브랜치·분리 origin/main의 같은 단독 검사에서 각각 통과했으며, 병행 작업 종료 후 동일 전체 실행도 통과했습니다. 타이밍에 민감한 검사 이력을 기록하고 main의 확정된 실패로 표시하지 않습니다. 테스트 삭제·skip 추가·조건 완화·Core 모델 코드 수정 없음.
+- 프론트 소스/산출물 변화·충돌이 없어 기존 루트 빌드를 재사용했고 frontend 생성물을 수동 수정하지 않았습니다. 변경 없는 플랫폼 45개/로컬 저장, 마지막 정리의 설정 안내/원고 규칙 4개 검증도 재사용합니다. 현재 통과를 운영 AI·현재 전체 EXE·실제 CMS/SNS 송고/게시 성공으로 확대하지 않습니다.
+- 기존 팀 PR **#48** (`feature/platform-generator` → main, jeongminimi 작성)이 이미 열려 있어 중복 PR을 만들지 않고 제목/빈 템플릿 본문을 현재 변경·검증·후속 요청으로 갱신합니다. main에 푸시/병합하지 않으며 지정 origin 브랜치에만 일반 푸시합니다.
+- Core 고정본 부제/원문 캡션·대체 텍스트 분리/Blog 허용 목록, PR #42·#43 별도 미승인 보완안은 계속 후속 사항입니다. 실제 운영 AI 재생성·로그인 후 전체 EXE 경로·운영 backup/PC 이전·실제 송고/게시 등 미검증 사항은 PR에 구분해 기록합니다. 이후 변경은 이 검증 기록뿐입니다.
+
 ## 승인된 플랫폼 정리 (2026-10-13)
 
 - 사용자의 마지막 승인인 **스크립트·안내와 ZIP 2개 모두 정리**를 적용했습니다. 이전 업로드 `ed01ea6`의 깨끗한 작업 트리에서 시작했고 추가 AGENTS.md/merge/rebase/KEEP 대상은 없었습니다.

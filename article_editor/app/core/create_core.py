@@ -10,6 +10,7 @@ from .managers.platform_manager import PlatformManager
 from .managers.session_manager import SessionManager
 from .managers.settings_manager import SettingsManager
 from .managers.storage_manager import StorageManager
+from .managers.transfer_manager import TransferManager
 
 
 class Core:
@@ -19,6 +20,7 @@ class Core:
         self.session = SessionManager()
         self.models = ModelManager()
         self.settings = SettingsManager()
+        self.transfer = TransferManager(self.session)
         self.platform = PlatformManager()
         self.jobs = JobManager()
         try:

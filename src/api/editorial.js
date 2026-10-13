@@ -9,6 +9,10 @@ export const signIn = (email, password, remember = false) => core.signIn(email, 
 export const signUp = (email, password, remember = false) => core.signUp(email, password, { remember });
 export const setKeepLogin = (enabled) => core.setKeepLogin(enabled);
 export const signOut = () => core.signOut();
+export const getTransfer = (signal) => core.getTransfer(signal);
+export const uploadTransfer = (code, signal) => core.uploadTransfer(code, signal);
+export const downloadTransfer = (code, signal) => core.downloadTransfer(code, signal);
+export const deleteTransfer = (signal) => core.deleteTransfer(signal);
 export const getBackupKey = (signal) => core.getBackupKey(signal);
 export const getDiagnostics = (signal) => core.getDiagnostics(signal);
 export const getSettings = (signal) => core.getSettings(signal);

@@ -25,6 +25,7 @@ from .. import config
 from ..errors import RequestError
 
 TIMEOUT = 20
+STORAGE_TIMEOUT = 180  # 큰 파일(최대 50MB)을 올리고 내려받는 데 걸리는 시간
 
 
 def configured() -> bool:
@@ -57,29 +58,35 @@ def _headers(access_token: str = '', extra: dict | None = None) -> dict:
     return headers
 
 
-def _call(request: urllib.request.Request, expect_json: bool = True):
+def _call(request: urllib.request.Request, expect_json: bool = True, timeout: int = TIMEOUT):
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read()
             return json.loads(raw) if (expect_json and raw) else None
     except urllib.error.HTTPError as error:
-        body = {}
-        try:
-            body = json.loads(error.read() or b'{}')
-        except (ValueError, TypeError):
-            body = {}
-        message = body.get('error_description') or body.get('msg') or body.get('message') or body.get('error')
-        if error.code == 401:
-            raise RequestError(message or '로그인이 필요합니다. 다시 로그인해 주세요.', 401) from None
-        if error.code == 403:
-            raise RequestError(message or '이 데이터에 접근할 권한이 없습니다.', 403) from None
-        if error.code in (400, 422):  # 가입·로그인 입력 오류(이미 가입, 약한 비밀번호 등)는 사용자 오류로 돌려준다
-            raise RequestError(_korean(message) or '입력을 확인해 주세요.', 400) from None
-        if error.code == 429:
-            raise RequestError(_korean(message) or '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.', 502) from None
-        raise RequestError(message or 'Supabase 요청이 실패했습니다.', 502) from None
+        _call_error(error)
     except (TimeoutError, urllib.error.URLError):
         raise RequestError('Supabase에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.', 504) from None
+
+
+def _call_error(error: urllib.error.HTTPError):
+    body = {}
+    try:
+        body = json.loads(error.read() or b'{}')
+    except (ValueError, TypeError):
+        body = {}
+    message = body.get('error_description') or body.get('msg') or body.get('message') or body.get('error')
+    if error.code == 401:
+        raise RequestError(_korean(message) or '로그인이 필요합니다. 다시 로그인해 주세요.', 401) from None
+    if error.code == 403:
+        raise RequestError(_korean(message) or '이 데이터에 접근할 권한이 없습니다.', 403) from None
+    if error.code == 413:
+        raise RequestError('파일이 서버 한도를 넘었어요.', 413, code='TRANSFER_TOO_LARGE') from None
+    if error.code in (400, 422):  # 가입·로그인 입력 오류(이미 가입, 약한 비밀번호 등)는 사용자 오류로 돌려준다
+        raise RequestError(_korean(message) or '입력을 확인해 주세요.', 400) from None
+    if error.code == 429:
+        raise RequestError(_korean(message) or '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.', 502) from None
+    raise RequestError(_korean(message) or 'Supabase 요청이 실패했습니다.', 502) from None
 
 
 def _korean(message):
@@ -87,6 +94,10 @@ def _korean(message):
     text = (message or '').lower()
     if 'rate limit' in text:
         return '인증 메일을 너무 많이 보내서 잠시 막혔어요. 잠시 뒤(약 1시간)에 다시 시도하거나 관리자에게 알려 주세요.'
+    if 'bucket not found' in text:
+        return '이전용 저장 공간이 아직 만들어지지 않았어요. 관리자에게 알려 주세요(Supabase 설정 필요).'
+    if 'row-level security' in text or 'new row violates' in text:
+        return '이전 파일을 저장할 권한이 없어요. 관리자에게 알려 주세요(Supabase 접근 규칙 필요).'
     if 'invalid login credentials' in text:
         return '이메일 또는 비밀번호를 확인해 주세요.'
     if 'already registered' in text or 'already been registered' in text:
@@ -145,6 +156,50 @@ def sign_out(access_token: str) -> None:
         _base() + '/auth/v1/logout', data=b'', headers=_headers(access_token), method='POST'
     )
     _call(request, expect_json=False)
+
+
+def _storage_url(bucket: str, path: str, kind: str = '') -> str:
+    return _base() + '/storage/v1/object/' + (kind + '/' if kind else '') + urllib.parse.quote(bucket) + '/' + urllib.parse.quote(path, safe='/')
+
+
+def storage_upload(bucket: str, path: str, data: bytes, access_token: str) -> None:
+    """파일 올리기(같은 경로면 덮어쓴다). 사용자 JWT + RLS — 계정 폴더 밖에는 쓸 수 없다."""
+    request = urllib.request.Request(
+        _storage_url(bucket, path), data=data, method='POST',
+        headers=_headers(access_token, {'Content-Type': 'application/octet-stream', 'x-upsert': 'true'}))
+    _call(request, expect_json=False, timeout=STORAGE_TIMEOUT)
+
+
+def storage_download(bucket: str, path: str, access_token: str) -> bytes | None:
+    """파일 받기. 없으면 None."""
+    request = urllib.request.Request(_storage_url(bucket, path, 'authenticated'), headers=_headers(access_token))
+    try:
+        with urllib.request.urlopen(request, timeout=STORAGE_TIMEOUT) as response:
+            return response.read()
+    except urllib.error.HTTPError as error:
+        if error.code in (400, 404):  # Supabase Storage 는 없는 객체를 400(Object not found)로도 답한다
+            return None
+        _call_error(error)
+    except (TimeoutError, urllib.error.URLError):
+        raise RequestError('Supabase에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.', 504) from None
+
+
+def storage_delete(bucket: str, path: str, access_token: str) -> None:
+    request = urllib.request.Request(_storage_url(bucket, path), method='DELETE', headers=_headers(access_token))
+    _call(request, expect_json=False, timeout=STORAGE_TIMEOUT)
+
+
+def storage_info(bucket: str, path: str, access_token: str) -> dict | None:
+    """파일 정보 {bytes, updatedAt}. 없으면 None."""
+    folder, _, name = path.rpartition('/')
+    request = urllib.request.Request(
+        _base() + '/storage/v1/object/list/' + urllib.parse.quote(bucket),
+        data=json.dumps({'prefix': folder, 'search': name, 'limit': 5}).encode(), method='POST',
+        headers=_headers(access_token, {'Content-Type': 'application/json'}))
+    for row in _call(request) or []:
+        if row.get('name') == name:
+            return {'bytes': int((row.get('metadata') or {}).get('size') or 0), 'updatedAt': row.get('updated_at') or row.get('created_at') or ''}
+    return None
 
 
 def select(table: str, params: dict | None = None, access_token: str = '') -> list:

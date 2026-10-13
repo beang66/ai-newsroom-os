@@ -16,6 +16,10 @@ export const ROUTES = Object.freeze({
   settings: "/api/settings",
   diagnostics: "/api/diagnostics",
   backupKey: "/api/backup-key",
+  transfer: "/api/transfer",
+  transferUpload: "/api/transfer/upload",
+  transferDownload: "/api/transfer/download",
+  transferDelete: "/api/transfer/delete",
   models: "/api/models",
   modelsInstall: "/api/models/install",
   modelsCancel: "/api/models/cancel",
@@ -97,6 +101,14 @@ export function createCoreApi(transport) {
     /** 공용 테스트 계정 자동 로그인 켜기/끄기(개발 실행 전용) → session() 과 같은 모양 */
     setAutoLogin: (enabled, signal) => transport.json(ROUTES.sessionAuto, { enabled }, signal),
     /** 로컬 모델 상태(설치 여부·진행률·마지막 오류) — 첫 사용 때 내려받는다 */
+    /** 다른 PC로 이전(서버 경유): 서버에 내 이전 파일이 있는가 → { exists, bytes, updatedAt, maxBytes } */
+    getTransfer: (signal) => transport.json(ROUTES.transfer, null, signal),
+    /** 현재 계정 자료를 일회용 코드로 암호화해 서버에 올린다. 한도를 넘으면 413 code TRANSFER_TOO_LARGE */
+    uploadTransfer: (code, signal) => transport.json(ROUTES.transferUpload, { code }, signal),
+    /** 서버의 이전 파일을 코드로 풀어 이 PC 의 현재 계정 자료로 바꾼다(성공하면 서버 파일 삭제). 없으면 404 code TRANSFER_MISSING */
+    downloadTransfer: (code, signal) => transport.json(ROUTES.transferDownload, { code }, signal),
+    /** 서버의 이전 파일 지우기(보낸 것을 취소) */
+    deleteTransfer: (signal) => transport.json(ROUTES.transferDelete, {}, signal),
     /** 원고 백업(브라우저 저장소) 암호화 키 → { key: base64 }. 계정별로 다르다. 화면은 메모리에만 두고 저장하지 않는다 */
     getBackupKey: (signal) => transport.json(ROUTES.backupKey, null, signal),
     /** 문제 보고용 진단 정보(앱 버전·모델 설치 상태·설정 요약). 원고·자료·이메일은 없다 */

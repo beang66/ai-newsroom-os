@@ -4,7 +4,7 @@ import AppDialog from "./AppDialog";
 import { beginRestore, endRestore } from "../restoreState";
 
 // 환경 설정: 이 PC·계정의 설정만 다룬다(모델 설치는 ModelsDialog 가 따로 맡는다).
-export default function SettingsDialog({ onClose, onBeforeRestore, session, onSession }) {
+export default function SettingsDialog({ onClose, onBeforeRestore, session, onSession, onTransfer }) {
   const restoreInput = useRef(null);
   const [backupPassword, setBackupPassword] = useState("");
   const [backupPending, setBackupPending] = useState(false);
@@ -137,6 +137,13 @@ export default function SettingsDialog({ onClose, onBeforeRestore, session, onSe
           className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">진단 정보 복사</button>
         {diagnosticsNotice && <p role="status" data-testid="settings-diagnostics-notice" className="text-xs text-emerald-700">{diagnosticsNotice}</p>}
         {diagnostics && <textarea readOnly data-testid="settings-diagnostics-text" value={diagnostics} rows={9} className="w-full rounded-xl border border-[#DDD6CB] bg-white p-3 text-xs font-mono" />}
+      </section>
+      <hr className="border-[#DDD6CB]" />
+      <section className="space-y-3" aria-labelledby="transfer-title">
+        <h3 id="transfer-title" className="font-black">다른 PC로 이전</h3>
+        <p className="text-xs text-[#666666] leading-relaxed">PC를 바꿀 때 기사·취재자료를 옮기는 안내 마법사예요. 일회용 코드로 암호화한 이전 파일을 만들고, 새 PC에서 그 코드로 풀어요.</p>
+        <button type="button" data-testid="settings-open-transfer" onClick={onTransfer}
+          className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">이전 마법사 열기</button>
       </section>
       <hr className="border-[#DDD6CB]" />
       <section className="space-y-3" aria-labelledby="backup-title">

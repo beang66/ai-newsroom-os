@@ -156,7 +156,7 @@ try {
   );
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.setDefaultTimeout(60_000); // 전체 파이썬 시험 직후처럼 PC 가 바쁠 때 30초 기본값을 넘는 경우가 있었다
-  page.on("console", (m) => m.type() === "error" && !/status of (503|422|401)/.test(m.text()) && problems.push("console: " + m.text()));
+  page.on("console", (m) => m.type() === "error" && !/status of (503|422|401|400)/.test(m.text()) && problems.push("console: " + m.text()));
   page.on("pageerror", (e) => problems.push("pageerror: " + e.message));
   page.on("response", async (r) => {
     // 503 = 모델·런타임 미설치(정상 상태) — 화면이 안내를 띄우는지는 단계에서 따로 본다; 422 = 깨진 자료 파일(4단계에서 일부러 올림)
@@ -164,7 +164,7 @@ try {
     if (r.url().endsWith("/api/articles/save") && r.ok()) savedIds.add((await r.json()).articleId);
   });
   // 화면의 alert 가 테스트를 멈추지 않게. 기사 전환 때 '저장하고 열까요?'는 수락(수동 저장 뒤 전환)
-  page.on("dialog", (d) => (/저장하지 않은 변경|삭제할까요/.test(d.message()) ? d.accept() : d.dismiss()));
+  page.on("dialog", (d) => (/저장하지 않은 변경|삭제할까요|이전 파일의 자료로 바꿀까요/.test(d.message()) ? d.accept() : d.dismiss()));
 
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
   // 사이드바(main 디자인)의 메뉴 이름 — 접힌 상태에서는 버튼 title 로 보인다
@@ -426,6 +426,33 @@ try {
   assert.match(diagText, /앱 버전: /);
   assert.match(diagText, /파이프라인: /);
   assert.equal(diagText.includes("reporter@example.test"), false, "진단 정보에 이메일이 없어야 합니다");
+  // 다른 PC로 이전 마법사: 이전 파일 + 일회용 코드를 만들고, 틀린 코드로는 가져오지 못한다
+  await page.getByTestId("settings-open-transfer").click();
+  const transfer = page.getByTestId("transfer-dialog");
+  await transfer.waitFor();
+  assert.equal(await settings.count(), 0, "마법사가 열리면 설정 창은 닫힌다");
+  const downloadWait = page.waitForEvent("download");
+  await page.getByTestId("transfer-export").click();
+  const transferFile = await downloadWait;
+  const transferCode = (await page.getByTestId("transfer-code").textContent()).trim();
+  assert.match(transferCode, /^[A-HJ-NP-Z2-9]{5}(-[A-HJ-NP-Z2-9]{5}){3}$/, "이전 코드 형식");
+  assert.ok((await fs.promises.stat(await transferFile.path())).size > 0, "이전 파일이 만들어진다");
+  await page.getByTestId("transfer-tab-import").click();
+  await page.getByTestId("transfer-file").setInputFiles(await transferFile.path());
+  await page.getByTestId("transfer-code-input").fill("AAAAA-BBBBB-CCCCC-DDDDD"); // 형식은 맞지만 틀린 코드
+  await page.getByTestId("transfer-import").click();
+  await page.getByTestId("transfer-error").waitFor();
+  await page.getByTestId("transfer-code-input").fill("짧음");
+  await page.getByTestId("transfer-import").click();
+  await page.getByTestId("transfer-error").getByText(/코드 형식/).waitFor();
+  // 올바른 코드(소문자·공백으로 입력해도 됨)로는 가져와지고 화면이 다시 열린다(같은 자료로 교체되므로 이후 단계는 그대로 이어진다)
+  const articlesBefore = (await (await page.request.get(`${BASE}/api/articles`)).json()).articles.length;
+  await page.getByTestId("transfer-code-input").fill(transferCode.toLowerCase().replaceAll("-", " "));
+  await Promise.all([page.waitForEvent("load"), page.getByTestId("transfer-import").click()]);
+  await page.getByRole("button", { name: "환경 설정", exact: true }).click();
+  await settings.waitFor();
+  const articlesAfter = (await (await page.request.get(`${BASE}/api/articles`)).json()).articles.length;
+  assert.equal(articlesAfter, articlesBefore, "이전 파일을 가져와도 기사가 그대로 있다");
   // 팩트체크 로컬 모델 사용: 기본 켜짐, 끄면 유지(끄면 모든 문장을 외부 모델이 판정)
   assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), true, "로컬 팩트체크 기본값은 켜짐");
   await page.getByTestId("settings-local-factcheck").uncheck();

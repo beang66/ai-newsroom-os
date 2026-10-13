@@ -9,7 +9,7 @@
 - 이번 검증: ai-provider.js node --check, `PLATFORM_AI_BRIDGE=core`의 `node --test platform-generator/tests/writing-rules.test.cjs` **4개 통과**, 누락 endpoint의 새 안내·외부 호출 0을 확인한 VM 검사, git diff --check 및 정리 범위 확인. 최초 Node spawn EPERM은 동일 검사를 승인된 환경에서 재실행했고, 일회성 PowerShell→Node 입력의 인코딩 문제는 UTF-8로 고쳐 같은 검사를 통과했습니다. 검사 조건·skip·제품 기능을 변경하지 않았습니다.
 - 재사용: 이전 플랫폼 45개/로컬 저장, Python platform 25개 및 root/전체 Python/프론트 build/UI 기록 중 변경되지 않은 기능의 결과. 이번 endpoint 안내 자체는 위 새 검사로 확인했습니다. 프론트/Core 변화가 없어 전체 시험·프론트 build를 반복하지 않습니다.
 - EXE는 이전 e598981 생산 소스로 빌드한 결과를 유지합니다. 이번 안내 문자열은 EXE에 재패키징하지 않았으므로 현재 소스와 EXE의 전체 해시가 같다고 주장하지 않습니다. 새 EXE 빌드/실행·실제 AI/운영 backup/SNS는 이번 정리 범위에서 미실행입니다.
-- 업로드 전 `git fetch origin` 실행 승인이 거절되어 현재 최신 원격 확인/추가 푸시는 보류합니다. 마지막 확인 원격은 ed01ea6이며 이를 새 원격 확인으로 표시하지 않습니다. 로컬 보존 커밋 이후에도 지정 대상 하나만 일반 푸시한다는 제한을 유지합니다.
+- 정리 커밋은 `fbd1258`입니다. 최초 `git fetch origin` 실행 승인 거절로 업로드를 보류했으나, 사용자가 **원격 확인·지정 브랜치 푸시 재개**를 승인한 뒤 실제 fetch가 성공했습니다. 최신 main은 `95567ee`, 대상 브랜치는 `ed01ea6`이며 둘 다 현재 HEAD에 포함됩니다. 새 변경·병합·충돌이 없어 정리 검증을 재사용합니다. 이 기록을 커밋한 뒤 `git push origin HEAD:refs/heads/feature/platform-generator`로 지정 대상 하나만 일반 푸시하고 서버의 HEAD 일치를 확인합니다. 다른 원격 브랜치·태그·personal에는 쓰지 않습니다.
 
 ## 지정 팀 브랜치 업로드 준비 (2026-10-13, 현재 상태)
 

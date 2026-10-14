@@ -610,27 +610,25 @@ export default function App() {
               <main className="flex-1 min-w-0 transition-all z-20 py-6 px-4 md:px-8">
                 <SettingsView onReturnToArticle={() => setActiveTab("writer")} session={session} onSession={applySession} />
               </main>
+            ) : activeTab === "convert" ? (
+              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
+                <PageHeader page="convert" />
+                <PlatformStudio
+                  key={article.articleId || "unsaved"}
+                  article={studioArticle}
+                  setArticle={setStudioArticle}
+                  flush={flushForStudio}
+                  onApplyArticle={(id) => changeArticle(id, "convert")}
+                  onOpenArticles={() => setActiveTab("archive")}
+                  onEditArticle={() => setActiveTab("writer")}
+                  sourceLoading={switching}
+                  sourceError={switchError}
+                />
+              </main>
             ) : (
               <main className="main-warm-container flex-1 py-7 px-5 md:px-10 min-w-0 transition-all z-20">
                 {activeTab === "search" && (
                   <SourceSearch onConnectToArticle={handleConnectSource} />
-                )}
-
-                {activeTab === "convert" && (
-                  <>
-                    <PageHeader page="convert" />
-                    <PlatformStudio
-                      key={article.articleId || "unsaved"}
-                      article={studioArticle}
-                      setArticle={setStudioArticle}
-                      flush={flushForStudio}
-                      onApplyArticle={(id) => changeArticle(id, "convert")}
-                      onOpenArticles={() => setActiveTab("archive")}
-                      onEditArticle={() => setActiveTab("writer")}
-                      sourceLoading={switching}
-                      sourceError={switchError}
-                    />
-                  </>
                 )}
               </main>
             )}

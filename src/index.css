@@ -559,20 +559,6 @@ body { background: #edf2f7; }
   box-shadow: 0 16px 38px rgba(16, 42, 67, .075) !important;
 }
 
-.writer-workspace div[class*="bg-white/90"][class*="rounded-\[16px\]"]::before {
-  content: "LIVE ARTICLE  /  AUTO-SAVED";
-  display: block;
-  margin: -24px -32px 25px;
-  padding: 10px 32px;
-  color: #486581;
-  background: #f0f4f8;
-  border-bottom: 1px solid var(--line);
-  font-family: "Plus Jakarta Sans", "Pretendard", sans-serif;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .12em;
-}
-
 .writer-workspace input[type="text"] { color: var(--ink) !important; }
 
 .writer-workspace input[class*="text-2xl"] {

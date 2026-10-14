@@ -492,20 +492,10 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
 
   return (
     <div className="w-full space-y-5 animate-float-in text-[#292929]" data-testid="format-converter">
-      <div className="flex flex-col gap-3 border-b border-[#E7E2D9] pb-4 sm:flex-row sm:items-end sm:justify-end">
-        <button
-          type="button"
-          onClick={() => runGeneration()}
-          disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
-          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-[#292929] px-5 py-2.5 text-xs font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {generating ? "선택 항목 생성 중" : "선택 항목 생성"}
-        </button>
-      </div>
 
       {pickerOpen&&<PlatformArticlePicker onSelect={selectPreview} onClose={()=>setPickerOpen(false)}/>}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+        {/* 왼쪽: 불러온 기사 박스 */}
         <aside className="space-y-4">
           <section className="rounded-3xl border border-[#DDD6CB] bg-white/90 p-5 shadow-sm">
             <div className="flex items-start gap-3 border-b border-[#EFECE6] pb-4">
@@ -608,7 +598,121 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
               </label>
             </div>
           </section>
+        </aside>
 
+        <main className={`min-w-0 ${activeView === "threads" ? "space-y-4" : "rounded-3xl border border-[#DDD6CB] bg-white/90 p-4 shadow-sm md:p-6"}`}>
+          {/* 편집 화면 상단 바: 좌측에 현재 선택된 플랫폼 이름 및 탭, 우측에 선택 항목 생성 버튼 */}
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#EFECE6] pb-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-base font-black text-[#101010]" data-testid="active-platform-name">
+                {VIEW_LABELS[activeView] || activeView}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {PLATFORM_LIST.filter((platform) =>
+                  selectedPlatforms.includes(platform.id) || drafts[platform.id]
+                ).map((platform) => (
+                  <button
+                    key={platform.id}
+                    type="button"
+                    onClick={() => setActiveView(platform.id)}
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-extrabold transition ${
+                      activeView === platform.id
+                        ? "bg-[#292929] text-white"
+                        : "bg-[#EFECE6] text-[#57514A]"
+                    }`}
+                  >
+                    {platform.label}
+                    {drafts[platform.id] && <span className="ml-1.5 opacity-60">●</span>}
+                  </button>
+                ))}
+                {(includeCardNews || cardNews) && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveView("card_news")}
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-extrabold transition ${
+                      activeView === "card_news"
+                        ? "bg-[#292929] text-white"
+                        : "bg-[#EFECE6] text-[#57514A]"
+                    }`}
+                  >
+                    카드뉴스
+                    {cardNews && <span className="ml-1.5 opacity-60">●</span>}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 편집 화면 상단으로 이동한 선택 항목 생성 버튼 */}
+            <button
+              type="button"
+              onClick={() => runGeneration()}
+              disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
+              className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#292929] px-4 py-2 text-xs font-extrabold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {generating ? "선택 항목 생성 중" : "선택 항목 생성"}
+            </button>
+          </div>
+
+          <div className="mb-5 flex items-start justify-between gap-3">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#8E8982]">
+                GENERATED DRAFT
+              </span>
+              <h3 className="mt-0.5 text-lg font-black">
+                {VIEW_LABELS[activeView] || "플랫폼 원고"} 편집
+              </h3>
+              <p className="mt-1 text-[11px] leading-5 text-[#8E8982]">
+                {currentDraft?.validation_status === "needs_recheck"
+                  ? "생성 뒤 수정된 내용입니다. 원문 근거 재검수가 필요합니다."
+                  : currentDraft
+                  ? "실제 생성 엔진 결과입니다. 발행 전 사람이 최종 검토해야 합니다."
+                  : "아직 생성 결과가 없습니다."}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              data-testid="generate-active"
+              onClick={() => runGeneration([activeView])}
+              disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
+              title="이 항목만 생성합니다. 이미 있는 결과와 수정 내용은 새 결과로 바뀝니다."
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#292929] px-3 py-2 text-[11px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {activeView === "card_news"
+                ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
+                : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
+            </button>
+            {activeView !== "card_news" && drafts[activeView] && (
+              <button
+                type="button"
+                onClick={() => copyDraft(activeView)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#DDD6CB] bg-white px-3 py-2 text-[11px] font-bold"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                {copied === activeView ? "복사됨" : "전체 복사"}
+              </button>
+            )}
+            </div>
+          </div>
+
+          {activeView === "threads" ? (
+            // Threads: 중간 화면에는 스레드 화면 편집 배치
+            <div className="w-full flex min-w-0 justify-center" data-testid="threads-layout">
+              {draftEditor}
+            </div>
+          ) : (
+            <>
+              {reviewPanel}
+              {deliveryPanel}
+              {activeView === "card_news" ? cardEditor : draftEditor}
+            </>
+          )}
+        </main>
+
+        {/* 오른쪽 사이드 박스: 텍스트 입력 영역 (키워드 및 추가 요구사항) */}
+        <aside className="space-y-4">
           <section className="rounded-3xl border border-[#DDD6CB] bg-white/90 p-5 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-1.5 text-xs font-black">
@@ -695,6 +799,14 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
             </div>
           </section>
 
+          {/* 스레드 화면: 플랫폼 원고 검수 및 이미지 내보내기·SNS 작성창 준비 박스를 오른쪽 핵심 키워드 하단에 배치 */}
+          {activeView === "threads" && (
+            <div className="space-y-4" data-testid="threads-side">
+              {reviewPanel}
+              {deliveryPanel}
+            </div>
+          )}
+
           {(Object.keys(progress).length > 0 || message) && (
             <section className="rounded-3xl border border-[#DDD6CB] bg-[#FAF8F5] p-4 text-[11px]">
               {Object.entries(progress).map(([id, status]) => (
@@ -709,99 +821,6 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
             </section>
           )}
         </aside>
-
-        <main className="min-w-0 rounded-3xl border border-[#DDD6CB] bg-white/90 p-4 shadow-sm md:p-6">
-          <div className="mb-5 flex flex-wrap gap-2 border-b border-[#EFECE6] pb-4">
-            {PLATFORM_LIST.filter((platform) =>
-              selectedPlatforms.includes(platform.id) || drafts[platform.id]
-            ).map((platform) => (
-              <button
-                key={platform.id}
-                type="button"
-                onClick={() => setActiveView(platform.id)}
-                className={`rounded-full px-4 py-2 text-xs font-extrabold transition ${
-                  activeView === platform.id
-                    ? "bg-[#292929] text-white"
-                    : "bg-[#EFECE6] text-[#57514A]"
-                }`}
-              >
-                {platform.label}
-                {drafts[platform.id] && <span className="ml-1.5 opacity-60">●</span>}
-              </button>
-            ))}
-            {(includeCardNews || cardNews) && (
-              <button
-                type="button"
-                onClick={() => setActiveView("card_news")}
-                className={`rounded-full px-4 py-2 text-xs font-extrabold transition ${
-                  activeView === "card_news"
-                    ? "bg-[#292929] text-white"
-                    : "bg-[#EFECE6] text-[#57514A]"
-                }`}
-              >
-                카드뉴스
-                {cardNews && <span className="ml-1.5 opacity-60">●</span>}
-              </button>
-            )}
-          </div>
-
-          <div className="mb-5 flex items-start justify-between gap-3">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#8E8982]">
-                GENERATED DRAFT
-              </span>
-              <h3 className="mt-0.5 text-lg font-black">
-                {VIEW_LABELS[activeView] || "플랫폼 원고"} 편집
-              </h3>
-              <p className="mt-1 text-[11px] leading-5 text-[#8E8982]">
-                {currentDraft?.validation_status === "needs_recheck"
-                  ? "생성 뒤 수정된 내용입니다. 원문 근거 재검수가 필요합니다."
-                  : currentDraft
-                  ? "실제 생성 엔진 결과입니다. 발행 전 사람이 최종 검토해야 합니다."
-                  : "아직 생성 결과가 없습니다."}
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              data-testid="generate-active"
-              onClick={() => runGeneration([activeView])}
-              disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
-              title="이 항목만 생성합니다. 이미 있는 결과와 수정 내용은 새 결과로 바뀝니다."
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#292929] px-3 py-2 text-[11px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              {activeView === "card_news"
-                ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
-                : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
-            </button>
-            {activeView !== "card_news" && drafts[activeView] && (
-              <button
-                type="button"
-                onClick={() => copyDraft(activeView)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[#DDD6CB] bg-white px-3 py-2 text-[11px] font-bold"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                {copied === activeView ? "복사됨" : "전체 복사"}
-              </button>
-            )}
-            </div>
-          </div>
-
-          {activeView === "threads" ? (
-            // Threads: 편집 화면은 가운데, 검수·내보내기 패널은 오른쪽 사이드(기능은 그대로, 배치만 바꾼다)
-            <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]" data-testid="threads-layout">
-              <div className="flex min-w-0 justify-center">{draftEditor}</div>
-              <aside className="min-w-0 space-y-3 xl:sticky xl:top-4" data-testid="threads-side">{reviewPanel}{deliveryPanel}</aside>
-            </div>
-          ) : (
-            <>
-              {reviewPanel}
-              {deliveryPanel}
-              {activeView === "card_news" ? cardEditor : draftEditor}
-            </>
-          )}
-        </main>
       </div>
     </div>
   );

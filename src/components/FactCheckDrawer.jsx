@@ -11,12 +11,20 @@ import {
   Trash2, 
   FileCheck, 
   Plus, 
+  Check,
   ShieldCheck,
   RefreshCw
 } from "lucide-react";
 import { registerSource, openSourceFile, sourcePreview, sourceChunks, isDevMode } from "../api/editorial";
 import { supportedClaimRanges } from "../api/claim-details.js";
 import { core } from "../api/core.js";
+import { buildChecks, verifiedPercent, FACT_CATEGORY_EVENT } from "./ArticleCheckModal";
+
+const STATE_STYLE = {
+  ok: "bg-[#dcfce7] text-[#16a34a]",
+  warn: "bg-[#fef9c3] text-[#ca8a04]",
+  idle: "bg-stone-100 text-stone-400",
+};
 
 /** 자료별 색인 상태 — 색인 중인 자료가 있는 동안만 2초마다 코어에 물어본다. → { [sourceId]: { state, progress? } } */
 function useSourceIndex(ids) {
@@ -67,7 +75,10 @@ export default function FactCheckDrawer({
   setArticle,
   // 팩트체크 실행·결과는 ArticleWriter(useFactCheck)가 맡는다 — 글쓰기가 멈추면 자동으로 돌고, 본문 하이라이트에도 쓴다
   factCheck,
-  onModels
+  onModels,
+  onStartCheck,
+  className = "",
+  style = {}
 }) {
   const { results: evidenceList, busy: isAnalyzing, error: checkError, run: runCheck } = factCheck;
   // 등록된 취재자료는 기사(article.sources)에 둔다 — 서랍을 닫아도, 보관함에서도 보인다. 실패한 파일만 여기
@@ -76,6 +87,48 @@ export default function FactCheckDrawer({
   const indexes = useSourceIndex(sources.map((s) => s.id));
   const { setFocus } = factCheck;
   useEffect(() => () => setFocus(null), [setFocus]); // 카드에 마우스를 둔 채 서랍을 닫아도 본문 초록 표시가 남지 않게
+
+  // 기사 검증률 계산 (ArticleCheckModal과 일치)
+  const summary = evidenceList.length
+    ? {
+        total: evidenceList.length,
+        counts: evidenceList.reduce((acc, item) => ({ ...acc, [item.verdict]: (acc[item.verdict] || 0) + 1 }), {})
+      }
+    : null;
+  // 분류별 모아보기(UI): 검증률의 분류 버튼이 FACT_CATEGORY_EVENT 를 보내면 아래 카드 목록을 그 분류만 보여 준다(검증률·분류별 개수는 전체 기준 그대로)
+  const GROUP_TITLE = { SUPPORTED: "팩트 일치", CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요" };
+  const GROUP_TONE = {
+    SUPPORTED: "border-emerald-200 bg-emerald-50/70 text-emerald-800",
+    CONFLICT: "border-rose-200 bg-rose-50/70 text-rose-800",
+    EVIDENCE_GAP: "border-amber-200 bg-amber-50/70 text-amber-900",
+    REVIEW: "border-violet-200 bg-violet-50/70 text-violet-800",
+  };
+  const groupOf = (verdict) => (["SUPPORTED", "CONFLICT", "EVIDENCE_GAP"].includes(verdict) ? verdict : "REVIEW");
+  const [categoryFilter, setCategoryFilter] = useState(null);
+  useEffect(() => {
+    const onCategory = (event) => setCategoryFilter((current) => (current === event.detail ? null : event.detail));
+    window.addEventListener(FACT_CATEGORY_EVENT, onCategory);
+    return () => window.removeEventListener(FACT_CATEGORY_EVENT, onCategory);
+  }, []);
+  const visibleList = categoryFilter ? evidenceList.filter((item) => groupOf(item.verdict) === categoryFilter) : evidenceList;
+
+  const checks = buildChecks(article, summary);
+  const percentage = verifiedPercent(summary);
+  const warnCount = checks.filter((check) => check.state === "warn").length;
+
+  const radius = 34;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - ((percentage ?? 0) / 100) * circumference;
+
+  const headline = percentage === null ? "검증 전입니다" : warnCount > 0 ? "검토가 필요합니다" : "확인할 항목이 없습니다";
+  const subline = percentage === null
+    ? "전체 검증을 실행해 주세요."
+    : warnCount > 0 ? `${warnCount}개의 항목을 확인해주세요.` : "모든 항목이 통과했습니다.";
+
+  const handleFullCheck = () => {
+    if (onStartCheck) onStartCheck();
+    else void runCheck(true);
+  };
 
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -142,26 +195,14 @@ export default function FactCheckDrawer({
        ────────────────────────────────────────── */
     <aside 
       aria-label="팩트체크 및 근거자료"
-      className="order-first lg:order-none w-full min-w-0 lg:w-[360px] xl:w-[380px] flex-shrink-0 bg-white/95 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col h-[calc(100vh-170px)] min-h-[640px] lg:sticky lg:top-4 overflow-hidden animate-float-in z-20"
+      style={style}
+      className={`order-first lg:order-none w-full min-w-0 ${className ? className : "lg:w-[380px] xl:w-[420px]"} flex-shrink-0 bg-white/95 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col h-[calc(100vh-120px)] min-h-[640px] overflow-hidden animate-float-in z-20`}
     >
       {/* 상단 헤더 */}
       <div className="p-4 md:p-5 border-b border-slate-200/90 flex items-center justify-between bg-slate-50/70">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 shrink-0 rounded-full bg-[#23211F] text-white flex items-center justify-center shadow-xs">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div>
-            <h2 className="text-sm md:text-base font-extrabold text-slate-900 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>팩트체크 & 근거자료 검증</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                실시간 연동
-              </span>
-            </h2>
-            <p className="text-[11px] text-slate-500 font-medium">
-              취재자료와 기사 본문의 수치와 주장을 대조·검증합니다
-            </p>
-          </div>
-        </div>
+        <h2 className="text-sm md:text-base font-extrabold text-slate-900">
+          팩트체크 & 근거자료 검증
+        </h2>
 
         <button
           onClick={onClose}
@@ -172,70 +213,185 @@ export default function FactCheckDrawer({
         </button>
       </div>
 
-        {/* 메인 스크롤 콘텐츠 영역 */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-6">
+      {/* 메인 스크롤 콘텐츠 영역 */}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.hwp,.hwpx,.docx,.txt,.md,.csv,.json,.html,.htm"
+          className="hidden"
+          onChange={(e) => handleFileUpload(e.target.files)}
+        />
+        
+        {/* ─────────────────────────────────────────
+            [상단 2분할] 기사 검증률 | 파일 넣는 공간 (1:1 비율 시 나란히 배치)
+           ───────────────────────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200/90 pb-5 border-b border-slate-200/80 gap-5 md:gap-0">
           
-          {/* ─────────────────────────────────────────
-              [A] 취재자료/증빙 파일 업로드 섹션
-             ───────────────────────────────────────── */}
-          <div className="space-y-3">
+          {/* [좌측] 기사 검증률 (박스 구분 없이 | 수직선 좌측에 플랫하게 배치) */}
+          <div className="pr-0 md:pr-5 pb-5 md:pb-0 space-y-4 select-none flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-extrabold tracking-wider text-stone-400 uppercase">
+                  ARTICLE CHECK
+                </span>
+              </div>
+
+              <h3 className="text-base font-black text-stone-900 tracking-tight mb-3">
+                기사 검증률
+              </h3>
+
+              {/* 원형 도넛 게이지 & 안내 문구 */}
+              <div className="flex items-center gap-3.5 mb-3.5 pb-1">
+                <div className="relative w-16 h-16 flex-shrink-0 flex items-center justify-center">
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 96 96">
+                    <circle
+                      cx="48"
+                      cy="48"
+                      r={radius}
+                      className="stroke-stone-200/80"
+                      strokeWidth="7"
+                      fill="transparent"
+                    />
+                    {percentage !== null && (
+                      <circle
+                        cx="48"
+                        cy="48"
+                        r={radius}
+                        stroke="#84cc16"
+                        strokeWidth="7"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                        fill="transparent"
+                      />
+                    )}
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center font-black text-stone-900 tracking-tight">
+                    {percentage === null ? (
+                      <span className="text-xl font-black leading-none text-stone-300">—</span>
+                    ) : (
+                      <>
+                        <span className="text-xl font-black leading-none" data-testid="check-percent">{percentage}</span>
+                        <span className="text-xs font-bold self-start mt-2.5 ml-0.5">%</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-0.5 min-w-0">
+                  <h4 className="text-xs font-extrabold text-stone-900 tracking-tight truncate">
+                    {headline}
+                  </h4>
+                  <p className="text-[11px] text-stone-500 font-medium">
+                    {subline}
+                  </p>
+                  {percentage !== null && (
+                    <p className="text-[10px] text-stone-400">일치율 ({summary.total}문장 기준)</p>
+                  )}
+                </div>
+              </div>
+
+              {/* 4대 체크리스트 항목 */}
+              <div className="divide-y divide-stone-100 border-t border-stone-100 mb-3">
+                {checks.map((check) => (
+                  <div key={check.key} className="flex items-start gap-2 py-1.5" data-testid={`check-${check.key}`} data-state={check.state}>
+                    <div className={`w-4.5 h-4.5 rounded-full ${STATE_STYLE[check.state]} flex items-center justify-center shrink-0 mt-0.5 shadow-2xs leading-none font-bold text-[10px]`}>
+                      {check.state === "ok" ? <Check className="w-3 h-3 stroke-[3]" /> : check.state === "warn" ? "!" : "–"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h5 className="text-[11px] font-bold text-stone-900 tracking-tight">
+                        {check.title}
+                      </h5>
+                      <p className="text-[10px] text-stone-400 font-normal truncate">
+                        {check.text}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 하단 전체 검증 실행 버튼 */}
+            <button
+              type="button"
+              onClick={handleFullCheck}
+              disabled={isAnalyzing}
+              className="w-full py-2.5 rounded-xl bg-stone-950 hover:bg-black text-white text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-98 shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              <span>{isAnalyzing ? "전체 검증 진행 중…" : "전체 검증 실행"}</span>
+              <span className="text-xs font-light">→</span>
+            </button>
+          </div>
+
+          {/* [우측] 취재·검증자료 파일 넣는 공간 (| 수직선 우측에 배치) */}
+          <div className="pl-0 md:pl-5 pt-5 md:pt-0 flex flex-col justify-between space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
                 <UploadCloud className="w-4 h-4 text-blue-600" />
-                취재·검증자료 파일 업로드
+                취재·검증자료 파일
               </span>
+              {/* 파일이 이미 들어간 상태일 때 + 버튼으로 파일 추가 */}
+              {fileRows.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition cursor-pointer"
+                  title="파일 추가하기"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>파일 추가</span>
+                </button>
+              )}
             </div>
 
-            {/* 드래그 앤 드롭 업로드 박스 */}
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-2 ${
-                isDragging
-                  ? "border-blue-500 bg-blue-50/80 scale-[0.99]"
-                  : "border-slate-300 hover:border-slate-500 bg-slate-50/50 hover:bg-slate-50"
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".pdf,.hwp,.hwpx,.docx,.txt,.md,.csv,.json,.html,.htm"
-                className="hidden"
-                onChange={(e) => handleFileUpload(e.target.files)}
-              />
+            {/* 파일이 없을 때: 실선의 파일 넣는 박스 */}
+            {fileRows.length === 0 ? (
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`h-full min-h-[220px] border-2 border-solid rounded-2xl p-6 text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-2.5 ${
+                  isDragging
+                    ? "border-blue-500 bg-blue-50/80 scale-[0.99]"
+                    : "border-slate-300 hover:border-slate-400 bg-slate-50/50 hover:bg-slate-50"
+                }`}
+              >
+                <div className="w-11 h-11 rounded-2xl bg-white shadow-xs border border-slate-200 flex items-center justify-center text-blue-600">
+                  {isAnalyzing || isUploading ? (
+                    <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
+                  ) : (
+                    <FileText className="w-5 h-5" />
+                  )}
+                </div>
 
-              <div className="w-11 h-11 rounded-2xl bg-white shadow-xs border border-slate-200 flex items-center justify-center text-blue-600">
-                {isAnalyzing || isUploading ? (
-                  <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
-                ) : (
-                  <FileText className="w-5 h-5" />
-                )}
+                <div>
+                  <p className="text-xs font-bold text-slate-800">
+                    {isUploading ? "문서에서 글자를 읽는 중..." : isAnalyzing ? "문서를 읽고 팩트 대조 중..." : "검증할 문서나 보도자료를 끌어다 놓으세요"}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    클릭 또는 드래그하여 파일 넣기<br />
+                    PDF · HWP · HWPX · DOCX · TXT
+                  </p>
+                </div>
               </div>
-
-              <div>
-                <p className="text-xs font-bold text-slate-800">
-                  {isUploading ? "문서에서 글자를 읽는 중..." : isAnalyzing ? "문서를 읽고 기사와 팩트 대조 중..." : "검증할 문서나 보도자료를 이곳에 끌어다 놓으세요"}
-                </p>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  PDF · HWP · HWPX · DOCX · TXT 지원 (스캔 PDF 제외)
-                </p>
-              </div>
-            </div>
-
-            {/* 업로드된 파일 리스트 */}
-            {fileRows.length > 0 && (
-              <div className="space-y-2 pt-1">
-                <span className="text-[11px] font-bold text-slate-500">
-                  등록된 검증 원천자료 ({sources.length}건)
-                </span>
-                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+            ) : (
+              /* 파일이 들어간 후: 실선 박스 대신 파일 목록이 자리잡고, 드래그나 + 버튼으로 추가 가능 */
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`h-full min-h-[220px] flex flex-col justify-between rounded-2xl p-2.5 transition-all ${
+                  isDragging ? "bg-blue-50/80 ring-2 ring-blue-400 ring-dashed" : "bg-slate-50/60 border border-slate-200/80"
+                }`}
+              >
+                <div className="space-y-1.5 flex-1 overflow-y-auto max-h-[260px] pr-1">
                   {fileRows.map((file) => (
                     <div
                       key={file.id}
-                      className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-100/70 hover:bg-slate-100 rounded-xl text-xs border border-slate-200/80 transition"
+                      className="flex flex-wrap items-center justify-between gap-2 p-2 bg-white rounded-xl text-xs border border-slate-200/80 shadow-2xs hover:border-slate-300 transition"
                     >
                       <div className="flex flex-1 items-center gap-2 min-w-0">
                         {file.failed ? <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" /> : <FileCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />}
@@ -257,11 +413,11 @@ export default function FactCheckDrawer({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
                         {(() => {
                           const [label, color, hint] = file.failed ? [file.error, "bg-red-100 text-red-800", file.error] : indexBadge(indexes[file.id]);
                           return (
-                            <span title={hint || file.path} data-testid="source-index-badge" className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md max-w-[160px] truncate ${color}`}>
+                            <span title={hint || file.path} data-testid="source-index-badge" className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md max-w-[130px] truncate ${color}`}>
                               {label}
                             </span>
                           );
@@ -269,7 +425,7 @@ export default function FactCheckDrawer({
                         <button
                           onClick={() => handleDeleteFile(file.id)}
                           className="p-1 text-slate-400 hover:text-red-600 rounded transition cursor-pointer"
-                          title={file.failed ? "목록에서 지우기" : "기사에서 연결 해제(보관된 원본 유지)"}
+                          title={file.failed ? "목록에서 지우기" : "기사에서 연결 해제"}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -277,9 +433,18 @@ export default function FactCheckDrawer({
                     </div>
                   ))}
                 </div>
+
+                {/* 드래그 추가 안내 바 */}
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-2 py-2 px-3 border border-dashed border-slate-300 hover:border-blue-400 rounded-xl text-center text-[11px] text-slate-500 hover:text-blue-600 cursor-pointer bg-white/70 transition"
+                >
+                  {isDragging ? "여기에 파일을 놓아 추가" : "+ 파일을 끌어다 놓거나 클릭하여 추가"}
+                </div>
               </div>
             )}
           </div>
+        </div>
 
           <div className="w-full h-px bg-slate-200" />
 
@@ -336,7 +501,17 @@ export default function FactCheckDrawer({
                   {sources.length ? "본문을 작성하면 등록한 자료와 자동으로 대조합니다." : "취재자료를 등록하고 본문을 작성하면 문장별 검증 결과가 표시됩니다."}
                 </p>
               )}
-              {evidenceList.map((item) => (
+              {categoryFilter && (
+                <div data-testid="factcheck-collect" className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${GROUP_TONE[categoryFilter]}`}>
+                  <span className="text-xs font-black">{GROUP_TITLE[categoryFilter]} {visibleList.length}문장만 모아보기</span>
+                  <button type="button" data-testid="factcheck-collect-clear" onClick={() => setCategoryFilter(null)}
+                    className="rounded-lg bg-white/80 px-2.5 py-1 text-[11px] font-bold text-slate-700 border border-slate-200 cursor-pointer">전체 보기</button>
+                </div>
+              )}
+              {categoryFilter && visibleList.length === 0 && (
+                <p className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-xs text-slate-500">해당하는 문장이 없습니다.</p>
+              )}
+              {visibleList.map((item) => (
                 <div
                   key={item.id}
                   onMouseEnter={() => item.verdict === "SUPPORTED" && factCheck.setFocus(item.id)}

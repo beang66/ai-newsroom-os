@@ -1,44 +1,46 @@
 import React from "react";
 import { Check, MoreHorizontal } from "lucide-react";
 
-const MIN_BODY_CHARS = 100;
+// 검증 항목은 main 의 팩트체크 판정 기준(서랍 배지와 같은 이름·색)으로 나눈다.
+//  팩트 일치(SUPPORTED, 초록) · 자료와 불일치(CONFLICT, 빨강) · 근거 부족(EVIDENCE_GAP, 노랑) · 검토 필요(REVIEW·EXTERNAL_REQUIRED·UNAVAILABLE, 보라)
+// 항목의 버튼을 누르면 FACT_CATEGORY_EVENT 가 발생하고, 기사 작성 화면이 그 분류의 문장만 모아 보여 준다.
+export const FACT_CATEGORY_EVENT = "factcheck-category";
 
-const plainLength = (html) =>
-  (html || "").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim().length;
+const CATEGORIES = [
+  { key: "SUPPORTED", title: "팩트 일치", tone: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100", count: (c) => c.SUPPORTED || 0 },
+  { key: "CONFLICT", title: "자료와 불일치", tone: "text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100", count: (c) => c.CONFLICT || 0 },
+  { key: "EVIDENCE_GAP", title: "근거 부족", tone: "text-amber-800 bg-amber-50 border-amber-200 hover:bg-amber-100", count: (c) => c.EVIDENCE_GAP || 0 },
+  { key: "REVIEW", title: "검토 필요", tone: "text-violet-700 bg-violet-50 border-violet-200 hover:bg-violet-100", count: (c) => (c.REVIEW || 0) + (c.EXTERNAL_REQUIRED || 0) + (c.UNAVAILABLE || 0) },
+];
 
 /**
  * 항목 상태를 계산한다. state: ok(통과) | warn(확인 필요) | idle(아직 확인할 수 없음)
- * - 기사 구조: 제목·부제·본문 분량(화면에 있는 값으로 바로 계산)
- * - 출처 확인 / 사실관계: 팩트체크 실행 결과(summary)가 있을 때만 판정한다
- * - 맞춤법: 연결된 검사기가 없어 판정하지 않는다
+ * 팩트체크 실행 결과(summary)가 있을 때만 분류별 문장 수를 센다.
  */
+// eslint-disable-next-line no-unused-vars
 export function buildChecks(article, summary) {
-  const missing = [];
-  if (!(article?.title || "").trim()) missing.push("제목");
-  if (!(article?.subtitle || "").trim()) missing.push("부제");
-  if (plainLength(article?.content) < MIN_BODY_CHARS) missing.push(`본문 ${MIN_BODY_CHARS}자 이상`);
-
   const counts = summary?.counts || {};
-  const gap = counts.EVIDENCE_GAP || 0;
-  const conflict = counts.CONFLICT || 0;
-  const review = (counts.REVIEW || 0) + (counts.EXTERNAL_REQUIRED || 0) + (counts.UNAVAILABLE || 0);
-
-  return [
-    { key: "spelling", title: "맞춤법 및 문장", state: "idle", text: "맞춤법 검사기가 연결되어 있지 않습니다." },
-    missing.length === 0
-      ? { key: "structure", title: "기사 구조", state: "ok", text: "제목·부제·본문이 갖춰져 있습니다." }
-      : { key: "structure", title: "기사 구조", state: "warn", text: `채워야 할 항목: ${missing.join(", ")}` },
-    !summary
-      ? { key: "source", title: "출처 확인", state: "idle", text: "전체 검증을 실행하면 확인됩니다." }
-      : gap === 0
-        ? { key: "source", title: "출처 확인", state: "ok", text: "모든 문장에서 관련 근거를 찾았습니다." }
-        : { key: "source", title: "출처 확인", state: "warn", text: `근거를 찾지 못한 문장이 ${gap}개 있습니다.` },
-    !summary
-      ? { key: "fact", title: "사실관계 검증", state: "idle", text: "전체 검증을 실행하면 확인됩니다." }
-      : conflict === 0 && review === 0
-        ? { key: "fact", title: "사실관계 검증", state: "ok", text: "근거와 충돌하는 내용이 없습니다." }
-        : { key: "fact", title: "사실관계 검증", state: "warn", text: `근거와 충돌 ${conflict}건 · 추가 검토 ${review}건` },
-  ];
+  return CATEGORIES.map((category) => {
+    const count = category.count(counts);
+    if (!summary) return { key: category.key, title: category.title, state: "idle", text: "전체 검증을 실행하면 확인됩니다." };
+    if (count === 0) return { key: category.key, title: category.title, state: category.key === "SUPPORTED" ? "idle" : "ok", text: "해당하는 문장이 없습니다." };
+    return {
+      key: category.key,
+      title: category.title,
+      state: category.key === "SUPPORTED" ? "ok" : "warn",
+      text: (
+        <button
+          type="button"
+          data-testid={`check-category-${category.key}`}
+          onClick={() => window.dispatchEvent(new CustomEvent(FACT_CATEGORY_EVENT, { detail: category.key }))}
+          title="이 분류의 문장만 모아 봅니다"
+          className={`px-2 py-0.5 rounded-full border text-[11px] font-bold cursor-pointer transition ${category.tone}`}
+        >
+          {count}문장 · 모아보기
+        </button>
+      ),
+    };
+  });
 }
 
 /** 일치로 판정된 문장의 비율(%). 검증 전이면 null. */

@@ -9,7 +9,7 @@ import { textWithoutPhotos } from "../lib/photoMarks.js";
 import PhotoSideDrawer from "./PhotoSideDrawer";
 import PhotoEditorView from "./PhotoEditorView";
 import SourceSearch from "./SourceSearch";
-import ArticleCheckModal from "./ArticleCheckModal";
+import ArticleCheckModal, { FACT_CATEGORY_EVENT } from "./ArticleCheckModal";
 import VersionHistoryModal from "./VersionHistoryModal";
 import DongaPreview from "./DongaPreview.jsx";
 import { SECTIONS } from "../data/sections.js";
@@ -98,6 +98,39 @@ export default function ArticleWriter({
   // 저장 이력 및 복원 모달 열림 상태
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
+  // 팩트체크 패널과 에디터 간 분할 비율 (기본 1:1 = 50%)
+  const [factCheckSplitRatio, setFactCheckSplitRatio] = useState(50);
+  const isResizingFactCheck = useRef(false);
+  const mainLayoutRef = useRef(null);
+
+  const handleSplitMouseDown = (e) => {
+    e.preventDefault();
+    isResizingFactCheck.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMouseMove = (moveEvent) => {
+      if (!isResizingFactCheck.current || !mainLayoutRef.current) return;
+      const rect = mainLayoutRef.current.getBoundingClientRect();
+      const availableWidth = rect.width - 110;
+      if (availableWidth <= 0) return;
+      const relativeX = moveEvent.clientX - rect.left;
+      const newRatio = (relativeX / availableWidth) * 100;
+      setFactCheckSplitRatio(Math.min(70, Math.max(30, newRatio)));
+    };
+
+    const onMouseUp = () => {
+      isResizingFactCheck.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
   // 팩트체크(main 흐름): 취재자료를 기사에 등록하면, 글이 멈출 때마다 문장별로 자동 검증한다.
   // main 엔진은 content 를 일반 텍스트로 보므로 어댑터를 거친다(내 에디터 HTML 은 그대로).
   const studioArticle = useMemo(() => toStudioArticle(article), [article]);
@@ -131,6 +164,23 @@ export default function ArticleWriter({
   const currentIssue = factCheckIssues[reviewAt];
   const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요", EXTERNAL_REQUIRED: "검토 필요" };
   const factIssueCount = factCheckIssues.length;
+
+  // 분류별 모아보기(UI): 검증률의 분류 버튼(팩트 일치·자료와 불일치·근거 부족·검토 필요)을 누르면 그 분류의 문장만 모아 보여 준다
+  const FACT_GROUP_TITLE = { SUPPORTED: "팩트 일치", CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요" };
+  const FACT_GROUP_TONE = {
+    SUPPORTED: "border-emerald-200 bg-emerald-50/70 text-emerald-800",
+    CONFLICT: "border-rose-200 bg-rose-50/70 text-rose-800",
+    EVIDENCE_GAP: "border-amber-200 bg-amber-50/70 text-amber-900",
+    REVIEW: "border-violet-200 bg-violet-50/70 text-violet-800",
+  };
+  const factGroupOf = (verdict) => (["SUPPORTED", "CONFLICT", "EVIDENCE_GAP"].includes(verdict) ? verdict : "REVIEW");
+  const [categoryFilter, setCategoryFilter] = useState(null);
+  const collectedItems = categoryFilter ? factCheck.results.filter((item) => factGroupOf(item.verdict) === categoryFilter) : [];
+  useEffect(() => {
+    const onCategory = (event) => setCategoryFilter((current) => (current === event.detail ? null : event.detail));
+    window.addEventListener(FACT_CATEGORY_EVENT, onCategory);
+    return () => window.removeEventListener(FACT_CATEGORY_EVENT, onCategory);
+  }, []);
   const factCheckSummary = useMemo(() => (factCheck.results.length
     ? { total: factCheck.results.length, counts: factCheck.results.reduce((acc, item) => ({ ...acc, [item.verdict]: (acc[item.verdict] || 0) + 1 }), {}) }
     : null), [factCheck.results]);
@@ -387,13 +437,13 @@ export default function ArticleWriter({
       return undefined;
     }
     const frame = requestAnimationFrame(() => {
-      located.current = paint(root, factCheck.results, {
+      located.current = paint(root, categoryFilter ? (categoryFilter === "SUPPORTED" ? [] : collectedItems) : factCheck.results, {
         focusId: factCheck.focus,
         activeId: review && currentIssue ? currentIssue.id : null,
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [factCheck.results, factCheck.focus, article.content, review, currentIssue?.id, viewMode, showFactMarks]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [factCheck.results, factCheck.focus, article.content, review, currentIssue?.id, viewMode, showFactMarks, categoryFilter]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => clearPaint(), []);
 
   // 에디터 마우스 움직임 감지: 칠해진 문제 문장 위에 마우스가 있으면 사유 팝업을 띄운다
@@ -1301,15 +1351,21 @@ export default function ArticleWriter({
       )}
 
       {/* 메인 좌우 레이아웃: 기존 위치에서 우측으로 부드럽게 펼쳐지는 사이드 박스 */}
-      <div className="w-full flex items-start justify-center min-w-0 gap-3.5 md:gap-4 transition-all duration-300 ease-out">
+      <div
+        ref={mainLayoutRef}
+        className="w-full flex items-start justify-center min-w-0 gap-3.5 md:gap-4 transition-all duration-300 ease-out max-w-full"
+      >
         {/* 1. 중앙/좌측 메인 작업 영역: [에디터] / [나란히 보기] */}
         <div
+          style={activeSidePanel === "factcheck" ? { width: `calc((${factCheckSplitRatio} * (100% - 110px)) / 100)`, maxWidth: "none", flex: "none" } : undefined}
           className={`min-w-0 space-y-5 transition-all duration-300 ease-out ${!isSidePanelOpen
             ? "w-full max-w-4xl"
-            : `flex-1 min-w-[460px] ${!isSidebarCollapsed
-              ? "max-w-2xl xl:max-w-3xl"
-              : "max-w-3xl xl:max-w-4xl"
-            }`
+            : activeSidePanel === "factcheck"
+              ? "min-w-[280px]"
+              : `flex-1 min-w-[460px] ${!isSidebarCollapsed
+                ? "max-w-2xl xl:max-w-3xl"
+                : "max-w-3xl xl:max-w-4xl"
+              }`
             }`}
         >
 
@@ -1552,6 +1608,28 @@ export default function ArticleWriter({
 
 
                 {/* 순서형 검사(main): 문제 문장을 한 건씩 넘겨 본다 */}
+                {showFactMarks && categoryFilter && (
+                  <div data-testid="factcheck-collect" className={`mb-3 rounded-xl border px-4 py-3 text-sm ${FACT_GROUP_TONE[categoryFilter]}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-black">{FACT_GROUP_TITLE[categoryFilter]} {collectedItems.length}문장만 모아보기</span>
+                      <button type="button" data-testid="factcheck-collect-clear" onClick={() => setCategoryFilter(null)} className="rounded-lg bg-white/80 px-2.5 py-1 text-xs font-bold text-slate-700 border border-slate-200 cursor-pointer">전체 보기</button>
+                    </div>
+                    {collectedItems.length === 0 ? (
+                      <p className="mt-2 text-xs text-slate-600">해당하는 문장이 없습니다.</p>
+                    ) : (
+                      <ol className="mt-2 space-y-2">
+                        {collectedItems.map((item, index) => (
+                          <li key={item.id || index} className="rounded-lg bg-white/80 px-3 py-2 text-slate-900">
+                            <p className="text-sm font-semibold">{item.claimText}</p>
+                            {item.comment && <p className="mt-1 text-xs text-slate-600">{item.comment}</p>}
+                            {item.quote && <p className="mt-1 text-xs text-slate-500">{item.sourceDoc ? `[${item.sourceDoc}] ` : ""}{item.quote}</p>}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                )}
+
                 {review && currentIssue && (
                   <div data-testid="factcheck-review" className="mb-3 rounded-xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-sm">
                     <div className="flex items-center justify-between gap-2">
@@ -1960,22 +2038,28 @@ export default function ArticleWriter({
           </div>
         )}
 
+        {/* 기사 작성 화면과 팩트체크 박스 사이 크기 조절 | 핸들 */}
         {viewMode !== "preview" && activeSidePanel === "factcheck" && (
-          <div className="flex items-start gap-4 flex-shrink-0 z-20">
-            {/* 1. 기사 검증률 팝업 박스 (오른쪽 사이드 박스와 동시에 나란히 배치) */}
-            {showCheckModal && (
-              <ArticleCheckModal
-                isOpen={true}
-                isSideBySide={true}
-                article={article}
-                summary={factCheckSummary}
-                onClose={() => setShowCheckModal(false)}
-                onStartCheck={startFullCheck}
-              />
-            )}
+          <div
+            onMouseDown={handleSplitMouseDown}
+            className="flex-shrink-0 self-stretch flex items-center justify-center w-5 cursor-col-resize group select-none z-30 sticky top-6"
+            title="좌우 크기 조절 (드래그)"
+          >
+            <div className="w-1 h-full bg-slate-200/70 group-hover:bg-blue-400 group-active:bg-blue-600 rounded-full transition-colors relative flex items-center justify-center">
+              <span className="w-5 h-8 rounded-md bg-white border border-slate-300/90 shadow-xs flex items-center justify-center text-xs font-mono font-bold text-slate-500 group-hover:text-blue-600 group-hover:border-blue-400 transition-all select-none">
+                |
+              </span>
+            </div>
+          </div>
+        )}
 
-            {/* 2. 팩트체크 & 근거자료 검증 사이드 박스 (main 의 패널) */}
+        {viewMode !== "preview" && activeSidePanel === "factcheck" && (
+          <div
+            style={{ width: `calc((${100 - factCheckSplitRatio} * (100% - 110px)) / 100)`, flex: "none" }}
+            className="min-w-[280px] flex-shrink-0 z-20 sticky top-6 self-start"
+          >
             <FactCheckDrawer
+              className="w-full"
               onClose={() => {
                 setActiveSidePanel(null);
                 setShowCheckModal(false);
@@ -1984,11 +2068,13 @@ export default function ArticleWriter({
                 setReview(false); // 닫으면 순서형 검사도 끝낸다(카드와 진한 밑줄이 남지 않게)
                 setReviewIdx(0);
                 setShowFactMarks(false); // 본문 표시와 헤더 상태 문구도 함께 숨긴다
+                setCategoryFilter(null);
               }}
               article={article}
               setArticle={setArticle}
               factCheck={factCheck}
               onModels={onModels}
+              onStartCheck={startFullCheck}
             />
           </div>
         )}

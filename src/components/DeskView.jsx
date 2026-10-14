@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AlertTriangle, ArrowRight, Plus } from "lucide-react";
 import { formatArticleTime } from "../data/article";
+import DeskCalendar from "./DeskCalendar.jsx";
 import { deskSchedule, countByStage, deadlineQueue, focusStory, WRITING_STEPS } from "../data/desk";
 
 const ISSUE_ICONS = { verify: AlertTriangle, evidence: AlertTriangle, link: Plus };
@@ -14,6 +15,13 @@ export default function DeskView({ articles, onNavigate, busy }) {
   const recent = articles.filter((item) => item.revision_no).slice(0, 2);
   const todayStamp = today.toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
   const todayFormatted = new Intl.DateTimeFormat("ko-KR", { dateStyle: "full", timeZone: "Asia/Seoul" }).format(today);
+  // 달력에서 고른 날짜(기간). 데스크 편성표는 오늘 일정이라, 고른 날짜에 오늘이 들어 있으면 오늘의 마감 큐를, 아니면 빈 일정을 보인다.
+  const [range, setRange] = useState(() => ({ start: todayStamp, end: null, picking: false }));
+  const rangeEnd = range.end || range.start;
+  const isTodayOnly = range.start === todayStamp && !range.end;
+  const shown = range.start <= todayStamp && todayStamp <= rangeEnd ? queue : [];
+  const md = (stamp) => { const [, m, d] = stamp.split("-").map(Number); return `${m}월 ${d}일`; };
+  const queueTitle = isTodayOnly ? "오늘의 마감 큐" : `${md(range.start)}${range.end ? ` ~ ${md(range.end)}` : ""} 일정`;
 
   return <div data-testid="desk-view">
     {/* 상단: 왼쪽은 날짜(작은 영문 표제 크기) + "좋은 기사를 위한 오늘의 업무", 오른쪽 빈 자리에는 상태별 기사 칸(편집 중·검증 대기·송고 준비·출고 완료) */}
@@ -68,19 +76,24 @@ export default function DeskView({ articles, onNavigate, busy }) {
       </aside>
     </div>}
 
-    <section className="workspace-panel" aria-labelledby="desk-queue-title">
-      <h2 id="desk-queue-title">오늘의 마감 큐 <small>마감 임박순 · {queue.length}건</small></h2>
-      <div className="desk-queue" role="table" aria-label="오늘의 마감 큐">
-        <div role="row" className="desk-queue-head"><span role="columnheader">마감</span><span role="columnheader">기사</span><span role="columnheader">담당</span><span role="columnheader">현재 상태</span><span role="columnheader">다음 작업</span></div>
-        {queue.map((item) => <div role="row" key={item.id} aria-current={item.id === story?.id || undefined}>
-          <strong role="cell" className="desk-queue-time">{item.deadline}</strong>
-          <span role="cell" className="desk-queue-title"><small>{item.desk}</small>{item.slug}</span>
-          <span role="cell">{item.owner}</span>
-          <span role="cell"><span className="workspace-status">{item.status}</span></span>
-          <span role="cell">{item.next && <button type="button" onClick={() => onNavigate(item.next.to)} aria-label={`${item.slug}: ${item.next.label}`}>{item.next.label}<ArrowRight aria-hidden="true" /></button>}</span>
-        </div>)}
-      </div>
-    </section>
+    {/* 마감 큐는 폭을 줄이고 오른쪽에 달력을 둔다. 날짜를 고르면 그 날짜의 일정이 나온다 */}
+    <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <section className="workspace-panel" aria-labelledby="desk-queue-title">
+        <h2 id="desk-queue-title">{queueTitle} <small>마감 임박순 · {shown.length}건</small></h2>
+        <div className="desk-queue" role="table" aria-label={queueTitle}>
+          <div role="row" className="desk-queue-head"><span role="columnheader">마감</span><span role="columnheader">기사</span><span role="columnheader">담당</span><span role="columnheader">현재 상태</span><span role="columnheader">다음 작업</span></div>
+          {shown.map((item) => <div role="row" key={item.id} aria-current={item.id === story?.id || undefined}>
+            <strong role="cell" className="desk-queue-time">{item.deadline}</strong>
+            <span role="cell" className="desk-queue-title"><small>{item.desk}</small>{item.slug}</span>
+            <span role="cell">{item.owner}</span>
+            <span role="cell"><span className="workspace-status">{item.status}</span></span>
+            <span role="cell">{item.next && <button type="button" onClick={() => onNavigate(item.next.to)} aria-label={`${item.slug}: ${item.next.label}`}>{item.next.label}<ArrowRight aria-hidden="true" /></button>}</span>
+          </div>)}
+        </div>
+        {!shown.length && <p className="workspace-muted" data-testid="desk-queue-empty">선택한 날짜에 잡힌 일정이 없습니다.</p>}
+      </section>
+      <DeskCalendar value={range} today={todayStamp} onChange={setRange} />
+    </div>
 
     <footer className="desk-recent">
       <span className="desk-recent-label">최근 활동</span>

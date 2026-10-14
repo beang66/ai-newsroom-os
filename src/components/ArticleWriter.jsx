@@ -1978,6 +1978,8 @@ export default function ArticleWriter({
                 setShowCheckModal(false);
                 setHighlightedClaim(null);
                 setHoveredIssue(null);
+                setReview(false); // 닫으면 순서형 검사도 끝낸다(카드와 진한 밑줄이 남지 않게)
+                setReviewIdx(0);
               }}
               article={article}
               setArticle={setArticle}

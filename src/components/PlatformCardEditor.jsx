@@ -1,31 +1,52 @@
-import {useEffect,useLayoutEffect,useRef,useState} from "react";
+import {Component,useEffect,useLayoutEffect,useRef,useState} from "react";
 import PhotoSearch from "./photo/PhotoSearch.jsx";
 import ImageEditor from "./photo/ImageEditor.jsx";
 import {importPhoto,dongaPhotoData,trackPhotoDownload} from "../api/editorial.js";
 import {blobToDataUrl,photoDataUrl,renderStoredCard} from "../api/platform.js";
 import {articleId,fingerprint,invalidateDraft,renderKey,selectedCardPhoto,currentRender,sourceText} from "../lib/platformState.js";
-import * as CardModel from "../../platform-generator/lib/card-model.js";
-import * as CardTemplate from "../../platform-generator/lib/card-template.js";
+import {CardModel,CardTemplate} from "../lib/cardRuntime.js";
 
 const button="rounded-xl border px-3 py-2 text-xs font-bold disabled:opacity-50";
 const articleKey=article=>fingerprint([articleId(article),sourceText(article)]);
+class CardPreviewBoundary extends Component {
+  state={failed:false,card:this.props.card};
+  static getDerivedStateFromProps(props,state){return props.card!==state.card?{failed:false,card:props.card}:null;}
+  static getDerivedStateFromError(){return {failed:true};}
+  render(){return this.state.failed
+    ?<p role="alert" className="p-4 text-sm text-rose-700">{this.props.page}번 카드 미리보기를 표시하지 못했습니다. 카드 데이터를 확인해 주세요.</p>
+    :this.props.children;}
+}
+function CardPreview({card,index,total,photo,previewPhoto}){
+  const normalized=CardModel.normalize({...card,image:photo&&previewPhoto?.photo===photo?{...photo,url:previewPhoto.url,photographer:photo.photographer||photo.source,profile:photo.profile||photo.sourceUrl}:undefined,page:index+1,total_pages:total});
+  const html='<!doctype html><html lang="ko"><meta charset="utf-8"><style>body{margin:0}'+CardTemplate.css+'</style>'+CardTemplate.markup(normalized)+'<script>('+CardTemplate.fitCard.toString()+')();</script></html>';
+  return <iframe title="카드 미리보기" sandbox="allow-scripts" srcDoc={html} style={{width:1080,height:1350,border:0,transform:'scale(.3)',transformOrigin:'top left'}}/>;
+}
 export default function PlatformCardEditor({draft,article,onChange,onAddPhoto}) {
   const [activeIndex,setActiveIndex]=useState(0),[rendering,setRendering]=useState(false),[error,setError]=useState("");
   const [searching,setSearching]=useState(false),[editing,setEditing]=useState(null);
   const live=useRef({draft,article});useLayoutEffect(()=>{live.current={draft,article};},[draft,article]);
   const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
-  const cards=draft?.cards||[],active=cards[activeIndex]||cards[0],photo=selectedCardPhoto(active,article);
+  const cards=Array.isArray(draft?.cards)?draft.cards:[],index=activeIndex<cards.length?activeIndex:0,active=cards[index];
+  const invalid=cards.length>0&&(!active||typeof active!=='object'||Array.isArray(active)||typeof active.card_id!=='string'||!active.card_id
+    ||(active.content!==undefined&&(!active.content||typeof active.content!=='object'||Array.isArray(active.content))));
+  const photo=active&&!invalid?selectedCardPhoto(active,article):null;
   const [previewPhoto,setPreviewPhoto]=useState(null);
   useEffect(()=>{
     let cancelled=false;
     if(photo)photoDataUrl(photo).then(url=>{if(!cancelled)setPreviewPhoto({photo,url});}).catch(e=>{if(!cancelled){setPreviewPhoto(null);setError(e.message);}});
     return()=>{cancelled=true;};
   },[photo]);
-  if(!active)return <p className="p-6 text-sm">아직 생성된 카드뉴스가 없습니다.</p>;
-  const index=cards.indexOf(active),content=active.content||active;
-  const patch=change=>onChange(current=>invalidateDraft({...current,cards:current.cards.map(card=>card.card_id===active.card_id?{...card,...change,validation_status:"needs_recheck"}:card)}));
+  if(draft?.cards!==undefined&&!Array.isArray(draft.cards))return <p role="alert" className="p-6 text-sm text-rose-700">카드 목록 데이터 형식을 확인할 수 없습니다. 생성 결과를 다시 확인해 주세요.</p>;
+  if(!cards.length)return <p className="p-6 text-sm">아직 생성된 카드뉴스가 없습니다.</p>;
+  if(invalid)return <div className="space-y-3" data-testid="platform-card-editor">
+    <div className="flex flex-wrap gap-2">{cards.map((_,i)=><button className={button} key={i} onClick={()=>setActiveIndex(i)} aria-pressed={i===index}>{i+1}번 카드</button>)}</div>
+    <p role="alert" className="rounded-xl border border-rose-300 p-4 text-sm text-rose-700">{index+1}번 카드 데이터 형식을 확인할 수 없습니다. 다른 카드는 선택해 확인할 수 있습니다.</p>
+  </div>;
+  const content=active.content||active;
+  const patch=change=>onChange(current=>invalidateDraft({...current,cards:current.cards.map(card=>card?.card_id===active.card_id?{...card,...change,validation_status:"needs_recheck"}:card)}));
   const setField=(key,value)=>patch({content:{...content,[key]:value}});
   const makeImage=async()=>{
+    if(cards.some(card=>!card||typeof card!=='object')){setError('다른 카드의 데이터 형식을 먼저 확인해 주세요.');return;}
     const copy=structuredClone(active),origin=structuredClone(draft),key=renderKey(copy,photo,origin),source=sourceText(article);
     setRendering(true);setError("");
     try{
@@ -39,7 +60,7 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto}) 
     const cardId=active.card_id,originKey=fingerprint(draft.generation_input),sourceKey=articleKey(article);
     const imported=p.provider==='donga'?{id:'donga-'+p.id,url:await dongaPhotoData(p),caption:p.title,source:'동아일보 DB',provider:'donga',sourceUrl:'https://www.donga.com/archive/newslibrary/list?m=photo'}:await importPhoto(p);
     imported.original=imported.url;
-    if(articleKey(live.current.article)!==sourceKey||fingerprint(live.current.draft?.generation_input)!==originKey||!live.current.draft.cards.some(c=>c.card_id===cardId))throw Error("사진을 가져오는 동안 기사가 바뀌었습니다. 다시 선택해 주세요.");
+    if(articleKey(live.current.article)!==sourceKey||fingerprint(live.current.draft?.generation_input)!==originKey||!live.current.draft.cards.some(c=>c?.card_id===cardId))throw Error("사진을 가져오는 동안 기사가 바뀌었습니다. 다시 선택해 주세요.");
     if(action==='download'){const a=document.createElement('a');a.href=imported.url;a.download='photo.jpg';a.click();return;}
     setSearching(false);
     if(action==='edit'){setEditing({photo:imported,cardId,articleKey:sourceKey});return;}
@@ -54,15 +75,12 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto}) 
     setEditing({photo:{id:'photo-'+crypto.randomUUID(),url,original:url,caption:file.name,source:'직접 업로드',provider:'upload'},cardId,articleKey:sourceKey});
   };
   const editPhoto=async()=>{const sourceKey=articleKey(article),cardId=active.card_id;try{const url=await photoDataUrl(photo);if(articleKey(live.current.article)!==sourceKey)throw Error('사진을 불러오는 동안 기사가 바뀌었습니다.');setEditing({photo:{...photo,url},cardId,articleKey:sourceKey});}catch(e){setError(e.message);}};
-  const normalized=CardModel.normalize({...active,image:photo&&previewPhoto?.photo===photo?{...photo,url:previewPhoto.url,photographer:photo.photographer||photo.source,profile:photo.profile||photo.sourceUrl}:undefined,page:index+1,total_pages:cards.length});
-  const template=CardTemplate;
-  const html='<!doctype html><html lang="ko"><meta charset="utf-8"><style>body{margin:0}'+template.css+'</style>'+template.markup(normalized)+'<script>('+template.fitCard.toString()+')();</script></html>';
-  const modern=normalized.content_version===2;
-  const rendered=currentRender(active,photo,draft);
+  const modern=active.content_version===2||(active.content_version!==1&&(typeof content.answer==='string'||typeof content.detail==='string'));
+  const rendered=cards.every(card=>card&&typeof card==='object')?currentRender(active,photo,draft):null;
   return <div className="space-y-4" data-testid="platform-card-editor">
-    <div className="flex flex-wrap gap-2">{cards.map((c,i)=><button className={button} key={c.card_id} onClick={()=>setActiveIndex(i)} aria-pressed={c===active}>{i+1}번 카드</button>)}</div>
+    <div className="flex flex-wrap gap-2">{cards.map((c,i)=><button className={button} key={c?.card_id||i} onClick={()=>setActiveIndex(i)} aria-pressed={c===active}>{i+1}번 카드</button>)}</div>
     <div className="grid gap-5 lg:grid-cols-2">
-      <div className="relative overflow-hidden rounded-2xl bg-black" style={{width:324,height:405}}><iframe title="카드 미리보기" sandbox="allow-scripts" srcDoc={html} style={{width:1080,height:1350,border:0,transform:'scale(.3)',transformOrigin:'top left'}}/></div>
+      <div className="relative overflow-hidden rounded-2xl bg-black" style={{width:324,height:405}}><CardPreviewBoundary card={active} page={index+1}><CardPreview card={active} index={index} total={cards.length} photo={photo} previewPhoto={previewPhoto}/></CardPreviewBoundary></div>
       <div className="space-y-3">
         {['keyword','headline',...(modern?['answer','detail']:['body']),'farewell'].map(key=><label className="block text-xs font-bold" key={key}>{({keyword:'카드 키워드',headline:'카드 제목',answer:'핵심 답변',detail:'상세 설명',body:'카드 본문',farewell:'끝인사'})[key]}<textarea aria-label={key} rows={key==='detail'||key==='body'?4:2} className="mt-1 w-full rounded-xl border p-2 text-sm" value={content[key]||''} onChange={e=>setField(key,e.target.value)}/></label>)}
         <label className="block text-xs">정보 배치 <select aria-label="카드 정보 배치" value={active.design?.layout||'standard'} onChange={e=>patch({design:{...active.design,layout:e.target.value}})}>{['standard','comparison','list','steps','stat'].map(value=><option key={value}>{value}</option>)}</select></label>

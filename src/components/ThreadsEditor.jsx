@@ -8,8 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AlignLeft, BadgeCheck, Hash, Image as ImageIcon, MoreHorizontal, Mic, Smile } from "lucide-react";
 import { photoDataUrl } from "../api/platform.js";
 import { selectedCardPhoto } from "../lib/platformState.js";
-import * as CardModel from "../../platform-generator/lib/card-model.js";
-import * as CardTemplate from "../../platform-generator/lib/card-template.js";
+import {CardModel,CardTemplate} from "../lib/cardRuntime.js";
 
 const LIMIT = 500; // Threads 게시물 글자 수 제한
 const ACCOUNT = "ai_newsroom";

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -145,6 +145,19 @@ function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
   }
 
   return null;
+}
+
+class CardViewBoundary extends Component {
+  state = { failed: false, draft: this.props.draft };
+  static getDerivedStateFromProps(props, state) {
+    return props.draft !== state.draft ? { failed: false, draft: props.draft } : null;
+  }
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed
+      ? <p role="alert" className="rounded-2xl border border-rose-300 p-4 text-sm text-rose-700">카드뉴스 화면을 표시하지 못했습니다. 생성된 결과는 보존되어 있습니다. 다른 플랫폼 탭은 계속 확인할 수 있습니다.</p>
+      : this.props.children;
+  }
 }
 
 export default function PlatformStudio({ article, setArticle, flush, onOpenArticles, onEditArticle, onApplyArticle,
@@ -740,18 +753,24 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
             </div>
           </div>
 
-          <PlatformReview key={"review:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} article={article} onChange={change=>activeView==='card_news'?updateCardNews(change):updateDraft(activeView,change)}/>
-          <PlatformDelivery key={"delivery:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} cards={cardNews} article={article} onCards={updateCardNews}/>
           {activeView === "card_news" ? (
-            <PlatformCardEditor key={articleId(article)} draft={cardNews} article={article} onChange={updateCardNews} onAddPhoto={addCardPhoto} />
+            <CardViewBoundary key={articleId(article)} draft={cardNews}>
+              <PlatformReview platform={activeView} draft={cardNews} article={article} onChange={updateCardNews}/>
+              <PlatformDelivery platform={activeView} draft={cardNews} cards={cardNews} article={article} onCards={updateCardNews}/>
+              <PlatformCardEditor draft={cardNews} article={article} onChange={updateCardNews} onAddPhoto={addCardPhoto} />
+            </CardViewBoundary>
           ) : (
-            <PlatformDraftEditor
-              platform={activeView}
-              draft={drafts[activeView]}
-              onChange={(next) => updateDraft(activeView, next)}
-              cards={cardNews?.cards || []}
-              article={article}
-            />
+            <>
+              <PlatformReview key={"review:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} article={article} onChange={change=>updateDraft(activeView,change)}/>
+              <PlatformDelivery key={"delivery:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} cards={cardNews} article={article} onCards={updateCardNews}/>
+              <PlatformDraftEditor
+                platform={activeView}
+                draft={drafts[activeView]}
+                onChange={(next) => updateDraft(activeView, next)}
+                cards={cardNews?.cards || []}
+                article={article}
+              />
+            </>
           )}
         </main>
       </div>

@@ -77,7 +77,7 @@ export default function DeskView({ articles, onNavigate, busy }) {
     </div>}
 
     {/* 마감 큐는 폭을 줄이고 오른쪽에 달력을 둔다. 날짜를 고르면 그 날짜의 일정이 나온다 */}
-    <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+    <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
       <section className="workspace-panel" aria-labelledby="desk-queue-title">
         <h2 id="desk-queue-title">{queueTitle} <small>마감 임박순 · {shown.length}건</small></h2>
         <div className="desk-queue" role="table" aria-label={queueTitle}>

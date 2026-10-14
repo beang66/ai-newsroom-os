@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
 import { useFactCheck } from "./EditorialAssist";
 import { toStudioArticle, plainContent } from "../lib/studioArticle.js";
-import { paint, clearPaint, hitTest } from "../lib/factHighlights.js";
+import { paint, clearPaint, hitTest, locate } from "../lib/factHighlights.js";
 import { suggestHeadlines, suggestSubtitles } from "../services/assistService";
 import FlowSummaryButton from "./FlowSummaryButton";
 import { textWithoutPhotos } from "../lib/photoMarks.js";
@@ -411,6 +411,25 @@ export default function ArticleWriter({
   // 팩트체크 결과 표시: 본문 DOM 은 건드리지 않고 글자 구간에만 색을 입힌다(src/lib/factHighlights.js).
   // 결과가 바뀌거나 본문이 바뀌면 다시 칠하고, 오래된 표시는 남기지 않는다.
   const located = useRef([]);
+  const [flashId, setFlashId] = useState(null); // 서랍 카드를 눌러 이동한 문장을 잠시 진하게 표시
+  const flashTimer = useRef(null);
+  const handleDrawerCardClick = (event) => {
+    if (event.target.closest("button, a, input, textarea, select, summary")) return; // 카드 안의 버튼·링크는 원래 동작대로
+    const card = event.target.closest("div.rounded-2xl");
+    const root = bodyInputRef.current;
+    if (!card || !root) return;
+    const text = card.innerText || "";
+    const item = factCheck.results.find((r) => r.claimText && text.includes(r.claimText))
+      || factCheck.results.find((r) => r.claimText && text.includes(r.claimText.slice(0, 40)));
+    if (!item) return;
+    const entry = locate(root, [item], { focusId: item.id })[0];
+    if (!entry) return; // 본문에서 그 문장을 찾지 못하면(고치는 중) 움직이지 않는다
+    setFlashId(item.id);
+    if (item.verdict === "SUPPORTED") factCheck.setFocus(item.id); // 팩트 일치는 평소 칠하지 않으므로 초록으로 보여 준다(서랍에서 마우스를 올릴 때와 같은 표시)
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => { setFlashId(null); factCheck.setFocus(null); }, 3500);
+    entry.sentence.startContainer.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
   const [showFactMarks, setShowFactMarks] = useState(true); // 서랍을 닫으면 본문 표시·상태 문구를 숨긴다(결과 계산은 main 그대로)
   useEffect(() => {
     const root = bodyInputRef.current;
@@ -422,11 +441,11 @@ export default function ArticleWriter({
     const frame = requestAnimationFrame(() => {
       located.current = paint(root, factCheck.results, {
         focusId: factCheck.focus,
-        activeId: review && currentIssue ? currentIssue.id : null,
+        activeId: flashId || (review && currentIssue ? currentIssue.id : null),
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [factCheck.results, factCheck.focus, article.content, review, currentIssue?.id, viewMode, showFactMarks]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [factCheck.results, factCheck.focus, article.content, review, currentIssue?.id, viewMode, showFactMarks, flashId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => clearPaint(), []);
 
   // 에디터 마우스 움직임 감지: 칠해진 문제 문장 위에 마우스가 있으면 사유 팝업을 띄운다
@@ -2018,6 +2037,7 @@ export default function ArticleWriter({
           <div
             style={{ width: `calc((${100 - factCheckSplitRatio} * (100% - 110px)) / 100)`, flex: "none" }}
             className="min-w-[280px] flex-shrink-0 z-20 sticky top-6 self-start"
+            onClick={handleDrawerCardClick}
           >
             <FactCheckDrawer
               className="w-full"

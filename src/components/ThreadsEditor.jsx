@@ -67,7 +67,7 @@ export function CardThumb({ card, index, total, article }) {
   );
 }
 
-function Post({ label, value, onChange, media, evidenceNode }) {
+function Post({ id, label, value, onChange, media, onFocus }) {
   const ref = useRef(null);
   // 글 길이에 맞춰 입력칸 높이를 늘린다(스크롤 없이 게시물처럼 보이게)
   useLayoutEffect(() => {
@@ -90,6 +90,8 @@ function Post({ label, value, onChange, media, evidenceNode }) {
           <span className="text-[13px] text-[#999]">커뮤니티 또는 주제</span>
         </div>
         <textarea
+          id={id}
+          onFocus={onFocus}
           ref={ref}
           value={value || ""}
           rows={2}
@@ -112,7 +114,6 @@ function Post({ label, value, onChange, media, evidenceNode }) {
             {length}/{LIMIT}
           </span>
         </div>
-        {evidenceNode}
       </div>
     </div>
   );
@@ -129,7 +130,15 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
       set: (value) => changed((next) => { next.paragraphs[index] = value; }),
     })),
   ];
+  const [activePost, setActivePost] = useState(null);
+  const postId = (key) => `threads-post-${key}`;
+  const goTo = (key) => {
+    const el = document.getElementById(postId(key));
+    el?.focus();
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
   return (
+    <div className="flex w-full min-w-0 flex-col items-center gap-4 lg:flex-row lg:items-start lg:justify-center">
     <div className="w-full min-w-0 max-w-[620px]" data-testid="threads-editor">
       <div className="mx-auto w-full overflow-hidden rounded-[24px] border border-[#E7E2D9] bg-white shadow-[0_10px_35px_rgba(0,0,0,0.08)]">
         {/* 상단 헤더: 취소 · 새로운 스레드 · 초안/더보기 */}
@@ -160,7 +169,8 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
               label={post.label}
               value={post.value}
               onChange={post.set}
-              evidenceNode={<Evidence quotes={post.evidence} valid={post.valid} />}
+              id={postId(post.key)}
+              onFocus={() => setActivePost(post.key)}
               media={index === 0 && showCards ? (
                 <div className="mt-3" data-testid="threads-media">
                   {cards.length > 0 ? (
@@ -211,6 +221,25 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
           </button>
         </div>
       </div>
+    </div>
+
+    {/* 오른쪽 옆: 단락별 흐름(게시물 순서대로 무엇을 말하는지). 누르면 그 게시물로 이동한다 */}
+    <aside className="w-full max-w-[620px] space-y-1.5 lg:w-[200px] lg:max-w-none lg:sticky lg:top-4" data-testid="threads-flow">
+      {posts.map((post, index) => (
+        <button
+          key={post.key}
+          type="button"
+          onClick={() => goTo(post.key)}
+          className={`block w-full rounded-xl border px-2.5 py-2 text-left transition cursor-pointer ${activePost === post.key ? "border-[#292929] bg-white" : "border-[#E7E2D9] bg-white/70 hover:bg-white"}`}
+        >
+          <span className="flex items-center justify-between text-[11px] font-bold text-[#57514A]">
+            <span>{index + 1}. {post.label}</span>
+            <span className="font-mono text-[10px] font-normal text-[#B0AAA2]">{(post.value || "").length}</span>
+          </span>
+          <span className="mt-1 block text-[11px] leading-snug text-[#756F67] line-clamp-3">{post.value || "—"}</span>
+        </button>
+      ))}
+    </aside>
     </div>
   );
 }

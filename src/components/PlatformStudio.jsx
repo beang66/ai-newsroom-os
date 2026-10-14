@@ -11,6 +11,7 @@ import {
   Type,
   BookOpen,
   ArrowRight,
+  FolderOpen,
 } from "lucide-react";
 import { freezeArticle, generatePlatform, suggestPlatformKeywords, getStudioArticle } from "../api/platform";
 
@@ -486,9 +487,11 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
           <section className="rounded-[28px] bg-white p-5 shadow-[0_8px_28px_rgba(0,0,0,0.06)]" data-testid="studio-side">
             {/* 1. 불러온 기사 */}
             <div className="border-b border-[#F0EFEA] pb-4">
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-[11px] font-bold text-[#8E8982]"><FileText className="h-3.5 w-3.5" />불러온 기사</span>
-                <button type="button" data-testid="choose-studio-article" disabled={applying||sourceLoading} onClick={()=>setPickerOpen(true)} className="rounded-full border border-[#E7E2D9] px-2.5 py-1 text-[11px] font-bold text-[#57514A] hover:bg-[#FAF8F5] disabled:opacity-50">저장 기사에서 선택</button>
+              {/* 저장된 기사 불러오기(불러온 뒤에는 '기사 다시 불러오기') — 테두리 없는 아이콘 버튼 */}
+              <div className="flex justify-end">
+                <button type="button" data-testid="choose-studio-article" disabled={applying||sourceLoading} onClick={()=>setPickerOpen(true)} className="inline-flex items-center gap-1.5 text-xs font-bold text-[#57514A] hover:text-[#101010] disabled:opacity-50 cursor-pointer">{preview?.article?.title
+                  ? <><RefreshCw className="h-3.5 w-3.5" />기사 다시 불러오기</>
+                  : <><FolderOpen className="h-3.5 w-3.5" />저장된 기사 불러오기</>}</button>
               </div>
               {previewLoading||sourceLoading ? <p role="status" className="mt-2 text-xs text-[#8E8982]">기사 불러오는 중…</p> : <div data-testid="loaded-article" className="mt-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                 <p data-testid="loaded-title" className="text-[15px] font-black leading-6 text-[#101010]">{preview?.article.title || "기사 미선택"}</p>

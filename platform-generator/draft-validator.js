@@ -461,7 +461,15 @@ async function validateDraft(input, options={}) {
   }
   const rules = getPlatformRules(input.platform);
   const draft = extractDraft(input.platform, input.draft);
-  const evidenceContext = quoteContexts(input.article, draft);
+  // Only the isolated mock runner passes this option. Product routes never do.
+  const experiment = options.experiment;
+  if (experiment && !['A', 'B0', 'B1'].includes(experiment.arm)) {
+    throw new Error('알 수 없는 모의 비교 실험군입니다.');
+  }
+  const evidenceContext = experiment?.arm === 'A' ? undefined : quoteContexts(input.article, draft);
+  if (experiment?.arm === 'B1' && !Array.isArray(experiment.mockCandidates)) {
+    throw new Error('B1 모의 후보 목록이 필요합니다.');
+  }
   const apiKey = (options.apiKey||OpenAI.apiKey)?.trim();
   if (!apiKey) {
     throw new Error(".env의 OPENAI_API_KEY를 확인해주세요.");
@@ -505,8 +513,8 @@ async function validateDraft(input, options={}) {
 \- 수정 제안에도 원문에 없는 사실, 수치, 사례를 추가하지 않습니다.
 \- 같은 문제를 여러 분류로 중복하여 나열하지 않습니다.
 \- already_detected에 있는 문제는 반복해서 반환하지 않습니다.
-- evidence_context는 기존 인용의 본문 위치와 앞뒤 문맥 안내입니다. 전체 원문 검토를 대신하지 않습니다.
-- matched 인용도 주체·기간·조건·주장 의미를 별도로 확인합니다. unmatched 또는 context_complete=false만으로 주장을 거짓으로 판정하지 않습니다.
+${experiment?.arm === 'A' ? '' : '- evidence_context는 기존 인용의 본문 위치와 앞뒤 문맥 안내입니다. 전체 원문 검토를 대신하지 않습니다.\n- matched 인용도 주체·기간·조건·주장 의미를 별도로 확인합니다. unmatched 또는 context_complete=false만으로 주장을 거짓으로 판정하지 않습니다.'}
+${experiment?.arm === 'B1' ? '- mock_search_candidates는 연결 확인용으로 준비된 원문 조각입니다. 검색 정확도나 사실 판정 결과가 아니며 전체 원문 검토를 대신하지 않습니다.' : ''}
 [생성에 적용한 공통 기준]
 ${rules.common_rules}
 [생성에 적용한 플랫폼 기준]
@@ -534,7 +542,8 @@ ${instructions}
             {card_id:card.card_id,page:card.page,role:card.role,closing_type:'service',excluded_from_article_fact_check:true}:{...card,content:{...card.content,farewell:''}}),
         }:draft,
         already_detected: alreadyDetected,
-        evidence_context: evidenceContext,
+        ...(evidenceContext === undefined ? {} : { evidence_context: evidenceContext }),
+        ...(experiment?.arm === 'B1' ? { mock_search_candidates: experiment.mockCandidates } : {}),
       }),
       text: {
         format: {

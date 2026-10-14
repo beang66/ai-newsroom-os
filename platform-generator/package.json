@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test-local-storage.js && node --test tests/*.test.cjs"
+    "test": "node test-local-storage.js && node --test tests/*.test.cjs",
+    "mock:search-compare": "node experiments/mock-search-compare.cjs"
   },
   "keywords": [],
   "author": "",

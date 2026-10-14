@@ -13,9 +13,19 @@ export default function DeskView({ articles, onNavigate, busy }) {
   const story = focusStory(deskSchedule);
   const recent = articles.filter((item) => item.revision_no).slice(0, 2);
   const todayStamp = today.toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  const todayFormatted = new Intl.DateTimeFormat("ko-KR", { dateStyle: "full", timeZone: "Asia/Seoul" }).format(today);
+
   return <div data-testid="desk-view">
-    <p className="workspace-date">{new Intl.DateTimeFormat("ko-KR", { dateStyle: "full", timeZone: "Asia/Seoul" }).format(today)}</p>
-    <section className="workspace-metrics workspace-metrics--inline" aria-label="상태별 기사">{countByStage(deskSchedule).map(([label, count]) => <div key={label}><span>{label}</span><strong>{String(count).padStart(2, "0")}</strong></div>)}</section>
+    {/* 상단: 왼쪽은 날짜(작은 영문 표제 크기) + "좋은 기사를 위한 오늘의 업무", 오른쪽 빈 자리에는 상태별 기사 칸(편집 중·검증 대기·송고 준비·출고 완료) */}
+    <header className="mb-7 flex flex-wrap items-end justify-between gap-6">
+      <div className="min-w-0">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.28em] text-[#8E8982]">{todayFormatted}</p>
+        <h1 data-testid="page-heading" className="mt-2 text-[40px] md:text-[56px] font-black leading-[1.04] tracking-[-0.045em] text-[#111]">
+          좋은 기사를 위한<br />오늘의 업무
+        </h1>
+      </div>
+      <section className="workspace-metrics workspace-metrics--inline !my-0 w-full max-w-[620px] lg:w-auto lg:min-w-[520px]" aria-label="상태별 기사">{countByStage(deskSchedule).map(([label, count]) => <div key={label}><span>{label}</span><strong>{String(count).padStart(2, "0")}</strong></div>)}</section>
+    </header>
 
     {story && <div className="workspace-master-detail">
       <section className="workspace-panel desk-focus" aria-labelledby="desk-focus-heading">

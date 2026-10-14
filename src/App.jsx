@@ -590,7 +590,6 @@ export default function App() {
               </main>
             ) : activeTab === "desk" ? (
               <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
-                <PageHeader page="desk" />
                 <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} busy={false} />
               </main>
             ) : activeTab === "map" ? (

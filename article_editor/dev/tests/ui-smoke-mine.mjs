@@ -117,7 +117,7 @@ try {
 
   // 1. 첫 화면은 오늘의 데스크
   await page.goto(BASE);
-  await heading("오늘의 데스크");
+  await heading("좋은 기사를 위한");
   await page.getByTestId("desk-view").waitFor();
   step("처음 열면 오늘의 데스크");
 

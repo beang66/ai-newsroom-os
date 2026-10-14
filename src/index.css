@@ -549,7 +549,7 @@ body { background: #edf2f7; }
 }
 
 .newsroom-sidebar .text-\[\#8ECAE6\] { color: #6ba3d6 !important; }
-.writer-workspace > div > div:first-child { max-width: 1080px !important; }
+.writer-workspace > div > div:first-child { max-width: 980px; }
 
 .writer-workspace div[class*="bg-white/90"][class*="rounded-\[16px\]"] {
   overflow: hidden;

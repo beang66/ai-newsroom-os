@@ -1,5 +1,5 @@
 // Instagram 편집 화면 — 실제 Instagram 게시물 모양(계정 줄 · 사진 · 좋아요/댓글/보내기/저장 아이콘 · 캡션)으로 보이고, 캡션을 그 자리에서 바로 고친다.
-//  - 캡션 안에는 단락 이름을 넣지 않는다. 단락별 구분(도입·본문·마무리·해시태그)과 원문 근거는 오른쪽 옆 목록에서 본다(누르면 그 단락으로 이동).
+//  - 캡션 안에는 단락 이름을 넣지 않는다. 단락별 흐름(도입·본문·마무리·해시태그)은 오른쪽 옆 목록에서 본다(누르면 그 단락으로 이동).
 //  - 데이터와 수정 규칙은 기존 Instagram 편집과 같다: opening · paragraphs[] · closing · hashtags 를 고치면
 //    validation_status 가 needs_recheck 로 바뀌어 원문 근거 재검수를 요구한다(changed). 여기서는 겉모습과 배치만 바꾼다.
 import { useLayoutEffect, useRef, useState } from "react";
@@ -121,20 +121,21 @@ export default function InstagramEditor({ draft, changed, Evidence, cards = [], 
         </div>
       </article>
 
-      {/* 오른쪽 옆: 단락별 구분과 원문 근거 */}
-      <aside className="w-full max-w-[470px] space-y-1.5 lg:w-[180px] lg:max-w-none lg:sticky lg:top-4" data-testid="instagram-parts">
-        {parts.map((part) => (
-          <div key={part.key} className={`rounded-xl border px-2.5 py-2 transition ${activePart === part.key ? "border-[#292929] bg-white" : "border-[#E7E2D9] bg-white/70"}`}>
-            <button
-              type="button"
-              onClick={() => goTo(part.key)}
-              className="flex w-full items-center justify-between gap-2 text-left text-[11px] font-bold text-[#57514A] cursor-pointer"
-            >
-              <span>{part.label}</span>
+      {/* 오른쪽 옆: 단락별 흐름(캡션 순서대로 무엇을 말하는지). 누르면 그 단락으로 이동한다 — Threads 와 같은 모양 */}
+      <aside className="w-full max-w-[470px] space-y-1.5 lg:w-[200px] lg:max-w-none lg:sticky lg:top-4" data-testid="instagram-parts">
+        {parts.map((part, index) => (
+          <button
+            key={part.key}
+            type="button"
+            onClick={() => goTo(part.key)}
+            className={`block w-full rounded-xl border px-2.5 py-2 text-left transition cursor-pointer ${activePart === part.key ? "border-[#292929] bg-white" : "border-[#E7E2D9] bg-white/70 hover:bg-white"}`}
+          >
+            <span className="flex items-center justify-between text-[11px] font-bold text-[#57514A]">
+              <span>{index + 1}. {part.label}</span>
               <span className="font-mono text-[10px] font-normal text-[#B0AAA2]">{(part.value || "").length}</span>
-            </button>
-            {part.evidence && <Evidence quotes={part.evidence} />}
-          </div>
+            </span>
+            <span className="mt-1 block text-[11px] leading-snug text-[#756F67] line-clamp-3">{part.value || "—"}</span>
+          </button>
         ))}
       </aside>
     </div>

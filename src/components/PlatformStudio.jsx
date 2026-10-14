@@ -470,6 +470,26 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
 
   const currentDraft = activeView === "card_news" ? cardNews : drafts[activeView];
 
+  // 같은 화면 요소를 배치에 따라 다른 자리에 놓는다(Threads 는 오른쪽 사이드)
+  const reviewPanel = (
+    <PlatformReview key={"review:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} article={article} onChange={change=>activeView==='card_news'?updateCardNews(change):updateDraft(activeView,change)}/>
+  );
+  const deliveryPanel = (
+    <PlatformDelivery key={"delivery:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} cards={cardNews} article={article} onCards={updateCardNews}/>
+  );
+  const cardEditor = (
+    <PlatformCardEditor key={articleId(article)} draft={cardNews} article={article} onChange={updateCardNews} onAddPhoto={addCardPhoto} />
+  );
+  const draftEditor = (
+    <PlatformDraftEditor
+      platform={activeView}
+      draft={drafts[activeView]}
+      onChange={(next) => updateDraft(activeView, next)}
+      cards={cardNews?.cards || []}
+      article={article}
+    />
+  );
+
   return (
     <div className="w-full space-y-5 animate-float-in text-[#292929]" data-testid="format-converter">
       <div className="flex flex-col gap-3 border-b border-[#E7E2D9] pb-4 sm:flex-row sm:items-end sm:justify-end">
@@ -768,18 +788,18 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
             </div>
           </div>
 
-          <PlatformReview key={"review:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} article={article} onChange={change=>activeView==='card_news'?updateCardNews(change):updateDraft(activeView,change)}/>
-          <PlatformDelivery key={"delivery:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} cards={cardNews} article={article} onCards={updateCardNews}/>
-          {activeView === "card_news" ? (
-            <PlatformCardEditor key={articleId(article)} draft={cardNews} article={article} onChange={updateCardNews} onAddPhoto={addCardPhoto} />
+          {activeView === "threads" ? (
+            // Threads: 편집 화면은 가운데, 검수·내보내기 패널은 오른쪽 사이드(기능은 그대로, 배치만 바꾼다)
+            <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]" data-testid="threads-layout">
+              <div className="flex min-w-0 justify-center">{draftEditor}</div>
+              <aside className="min-w-0 space-y-3 xl:sticky xl:top-4" data-testid="threads-side">{reviewPanel}{deliveryPanel}</aside>
+            </div>
           ) : (
-            <PlatformDraftEditor
-              platform={activeView}
-              draft={drafts[activeView]}
-              onChange={(next) => updateDraft(activeView, next)}
-              cards={cardNews?.cards || []}
-              article={article}
-            />
+            <>
+              {reviewPanel}
+              {deliveryPanel}
+              {activeView === "card_news" ? cardEditor : draftEditor}
+            </>
           )}
         </main>
       </div>

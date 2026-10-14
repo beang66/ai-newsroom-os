@@ -105,7 +105,7 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
     })),
   ];
   return (
-    <div className="rounded-[28px] bg-[#EFECE6] p-4 md:p-8" data-testid="threads-editor">
+    <div className="w-full min-w-0 max-w-[660px] rounded-[28px] bg-[#EFECE6] p-4 md:p-8" data-testid="threads-editor">
       <div className="mx-auto w-full max-w-[560px] overflow-hidden rounded-[24px] bg-white shadow-[0_12px_40px_rgba(0,0,0,0.12)]">
         <div className="flex items-center justify-between border-b border-[#EFECE6] px-5 py-3.5 text-[15px]">
           <span className="text-[#101010]">취소</span>

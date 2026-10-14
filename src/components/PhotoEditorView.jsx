@@ -9,14 +9,12 @@ export default function PhotoEditorView({
   currentArticleTitle,
   status
 }) {
-  if (!photo) return null;
-
   // 1. 비율 옵션: 원본, 16:9, 4:3, 1:1, 3:2
   const [selectedRatio, setSelectedRatio] = useState(
-    photo.ratio?.includes("16:9") ? "16:9" :
-      photo.ratio?.includes("4:3") ? "4:3" :
-        photo.ratio?.includes("1:1") ? "1:1" :
-          photo.ratio?.includes("3:2") ? "3:2" : "원본"
+    photo?.ratio?.includes("16:9") ? "16:9" :
+      photo?.ratio?.includes("4:3") ? "4:3" :
+        photo?.ratio?.includes("1:1") ? "1:1" :
+          photo?.ratio?.includes("3:2") ? "3:2" : "원본"
   );
 
   // 2. 모자이크 도구 모드: 'none' | 'mosaic' | 'eraser'
@@ -26,14 +24,17 @@ export default function PhotoEditorView({
   const [edgeSharpness, setEdgeSharpness] = useState(20); // 경계 선명도
 
   // 3. 사진 설명 및 출처
-  const [caption, setCaption] = useState(photo.caption || "안녕하세요.");
-  const [source, setSource] = useState(photo.source || "Igor Omilaev / Unsplash");
+  const [caption, setCaption] = useState(photo?.caption || "안녕하세요.");
+  const [source, setSource] = useState(photo?.source || "Igor Omilaev / Unsplash");
 
   // 4. 모자이크 캔버스 참조 및 드로잉 상태
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const historyRef = useRef([]);
+
+  // Hook 은 모두 위에서 호출한다(조건부 호출 금지). 편집할 사진이 없으면 아래에서 그린다.
+  if (!photo) return null;
 
   // 이미지 비율 CSS 계산
   const getAspectRatioClass = () => {

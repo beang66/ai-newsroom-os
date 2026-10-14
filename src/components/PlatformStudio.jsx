@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
-  Copy,
-  FileText,
+  Copy,
   Hash,
   Image as ImageIcon,
   Loader2,
@@ -36,6 +35,121 @@ const VIEW_LABELS = {
   threads: "Threads",
   card_news: "카드뉴스",
 };
+
+function DraftActionTabBar({ onSave, onLoad, onMyDocs }) {
+  const [activeTab, setActiveTab] = useState("save");
+  const [bubbleStyle, setBubbleStyle] = useState({ left: 0, width: 0, isReady: false });
+  const containerRef = useRef(null);
+  const buttonRefs = useRef({});
+
+  const updateBubblePosition = useCallback(() => {
+    const currentBtn = buttonRefs.current[activeTab];
+    const container = containerRef.current;
+    if (currentBtn && container) {
+      const containerRect = container.getBoundingClientRect();
+      const btnRect = currentBtn.getBoundingClientRect();
+      setBubbleStyle({
+        left: btnRect.left - containerRect.left,
+        width: btnRect.width,
+        isReady: true,
+      });
+    }
+  }, [activeTab]);
+
+  useLayoutEffect(() => {
+    updateBubblePosition();
+  }, [updateBubblePosition]);
+
+  useEffect(() => {
+    updateBubblePosition();
+    const timer = setTimeout(updateBubblePosition, 50);
+    window.addEventListener("resize", updateBubblePosition);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", updateBubblePosition);
+    };
+  }, [updateBubblePosition]);
+
+  const handleSelect = (tabKey) => {
+    setActiveTab(tabKey);
+    if (tabKey === "save") onSave?.();
+    else if (tabKey === "load") onLoad?.();
+    else if (tabKey === "myDocs") onMyDocs?.();
+  };
+
+  return (
+    <div className="border-b border-slate-200/80 pb-2.5">
+      <div
+        ref={containerRef}
+        className="relative flex items-center justify-between pt-1 pb-0.5 px-0.5 select-none whitespace-nowrap"
+      >
+        {/* 부드러운 물방울 형태의 투명감 있는 이동 인디케이터 (기사작성 사진 서랍 디자인 동일) */}
+        {bubbleStyle.isReady && (
+          <span
+            className="absolute h-7 rounded-full pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] z-0"
+            style={{
+              left: `${bubbleStyle.left}px`,
+              width: `${bubbleStyle.width}px`,
+              backgroundColor: "rgba(15, 23, 42, 0.08)",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
+              border: "1px solid rgba(15, 23, 42, 0.08)",
+              boxShadow: "0 2px 10px rgba(0, 0, 0, 0.04), inset 0 1px 1.5px rgba(255, 255, 255, 0.8)",
+            }}
+          />
+        )}
+
+        {/* 1) 초안 저장 */}
+        <button
+          ref={(el) => (buttonRefs.current["save"] = el)}
+          type="button"
+          onClick={() => handleSelect("save")}
+          className={`relative z-10 px-2.5 py-1 text-[11px] tracking-tight transition-colors duration-200 cursor-pointer whitespace-nowrap rounded-full ${
+            activeTab === "save"
+              ? "text-slate-950 font-bold"
+              : "text-slate-500 hover:text-slate-800 font-medium"
+          }`}
+        >
+          초안 저장
+        </button>
+
+        {/* 구분선 ㅣ */}
+        <span className="text-slate-300 select-none text-[11px] font-light z-0">ㅣ</span>
+
+        {/* 2) 초안 불러오기 */}
+        <button
+          ref={(el) => (buttonRefs.current["load"] = el)}
+          type="button"
+          onClick={() => handleSelect("load")}
+          className={`relative z-10 px-2.5 py-1 text-[11px] tracking-tight transition-colors duration-200 cursor-pointer whitespace-nowrap rounded-full ${
+            activeTab === "load"
+              ? "text-slate-950 font-bold"
+              : "text-slate-500 hover:text-slate-800 font-medium"
+          }`}
+        >
+          초안 불러오기
+        </button>
+
+        {/* 구분선 ㅣ */}
+        <span className="text-slate-300 select-none text-[11px] font-light z-0">ㅣ</span>
+
+        {/* 3) 내 문서에서 초안 불러오기 */}
+        <button
+          ref={(el) => (buttonRefs.current["myDocs"] = el)}
+          type="button"
+          onClick={() => handleSelect("myDocs")}
+          className={`relative z-10 px-2 py-1 text-[11px] tracking-tight transition-colors duration-200 cursor-pointer whitespace-nowrap rounded-full ${
+            activeTab === "myDocs"
+              ? "text-slate-950 font-bold"
+              : "text-slate-500 hover:text-slate-800 font-medium"
+          }`}
+        >
+          내 문서에서 초안 불러오기
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function Evidence({ quotes, valid }) {
   const list = Array.isArray(quotes) ? quotes.filter(Boolean) : [];
@@ -494,15 +608,15 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                   : <><FolderOpen className="h-3.5 w-3.5" />저장된 기사 불러오기</>}</button>
               </div>
               {previewLoading||sourceLoading ? <p role="status" className="mt-2 text-xs text-[#8E8982]">기사 불러오는 중…</p> : <div data-testid="loaded-article" className="mt-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                <p data-testid="loaded-title" className="text-left break-keep text-[15px] font-black leading-6 text-[#101010]">{preview?.article.title || "기사 미선택"}</p>
-                <p data-testid="loaded-subtitle" title="부제는 기사 화면의 표시 정보입니다. 생성 입력의 부제 전달은 미연결입니다." className="mt-1 text-left break-keep text-xs leading-5 text-[#756F67]">{subtitleLabel({subtitle:preview?.subtitle})}</p>
+                <p data-testid="loaded-title" className="text-left break-keep text-[13.5px] font-bold leading-snug text-[#18181B]">{preview?.article.title || "기사 미선택"}</p>
+                <p data-testid="loaded-subtitle" title="부제는 기사 화면의 표시 정보입니다. 생성 입력의 부제 전달은 미연결입니다." className="mt-1 text-left break-keep text-[11.5px] font-normal leading-normal text-[#57514A]">{subtitleLabel({subtitle:preview?.subtitle})}</p>
                 {!preview?.article.content?.trim() && <p role="status" className="mt-2 text-[11px] text-[#B0AAA2]">{preview?.article.title ? "기사 본문 없음 · 기사 편집 화면에서 확인해 주세요." : "DB 기사를 선택해 주세요."}</p>}
                 {/^https?:\/\//iu.test(preview?.article.url || "") && <a href={preview.article.url} target="_blank" rel="noreferrer" className="mt-1 block text-[11px] text-[#3B82C4] underline">원문 출처 링크</a>}
                 <span className="mt-1 block text-[10px] text-[#B0AAA2]">본문 {(preview?.article.content || '').length.toLocaleString()}자</span>
               </div>}
               {previewError&&<p role="alert" className="mt-2 text-xs text-red-700">기사 조회 실패: {previewError}</p>}
               <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-                {onEditArticle && <button type="button" onClick={onEditArticle} className="inline-flex items-center gap-1.5 font-bold text-[#3B82C4] hover:underline"><BookOpen className="h-4 w-4" />기사 편집<ArrowRight className="h-3.5 w-3.5" /></button>}
+                {onEditArticle && <button type="button" onClick={onEditArticle} className="inline-flex items-center gap-1.5 font-bold text-xs text-[#18181B] hover:opacity-80 transition cursor-pointer"><BookOpen className="h-4 w-4 text-[#38BDF8]" />기사 전문 보기<ArrowRight className="h-3.5 w-3.5 text-[#38BDF8]" /></button>}
                 {onOpenArticles && <button type="button" onClick={onOpenArticles} className="text-[11px] text-[#8E8982] hover:underline">저장 기사 목록</button>}
               </div>
             </div>
@@ -609,7 +723,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
           const hasAnySelected = availablePlatforms.length > 0 || includeCardNews || cardNews;
 
           return (
-            <main className={`min-w-0 ${activeView === "threads" || activeView === "instagram" ? "space-y-4" : "rounded-3xl border border-[#DDD6CB] bg-white/90 p-4 shadow-sm md:p-6"}`}>
+            <main className={`min-w-0 ${activeView === "threads" || activeView === "instagram" || activeView === "card_news" ? "space-y-4" : "rounded-3xl border border-[#DDD6CB] bg-white/90 p-4 shadow-sm md:p-6"}`}>
               {hasAnySelected ? (
                 <>
                   {/* 편집 화면 상단 바: 좌측에 플랫폼 탭(현재 플랫폼은 탭이 눌린 모양으로 표시), 우측에 카드뉴스 불러오기 형태 토글 */}
@@ -716,11 +830,15 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                     <div className="w-full flex min-w-0 justify-center" data-testid="threads-layout">
                       {draftEditor}
                     </div>
+                  ) : activeView === "card_news" ? (
+                    <div className="w-full flex min-w-0 justify-center" data-testid="card-news-layout">
+                      {cardEditor}
+                    </div>
                   ) : (
                     <>
                       {reviewPanel}
                       {deliveryPanel}
-                      {activeView === "card_news" ? cardEditor : draftEditor}
+                      {draftEditor}
                     </>
                   )}
                   </>
@@ -742,6 +860,28 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
 
         {/* 오른쪽 사이드 박스: 텍스트 입력 영역 (키워드 및 추가 요구사항) */}
         <aside className="space-y-4">
+          {/* 상단: 초안 관리 탭 바 (선 위에 배치) */}
+          <DraftActionTabBar
+            onSave={() => {
+              persist(drafts, cardNews, { requirements });
+              setMessage("현재 초안이 저장되었습니다.");
+            }}
+            onLoad={() => {
+              // "초안 저장"(persist)이 기사에 넣어 둔 원고·카드뉴스를 다시 읽는다
+              const saved = visibleDrafts(article.platformDrafts);
+              if (!Object.keys(saved).length && !article.cardNews) {
+                setMessage("저장된 초안이 없습니다.");
+                return;
+              }
+              setDrafts(saved);
+              setCardNews(article.cardNews || null);
+              setMessage("저장된 초안을 불러왔습니다.");
+            }}
+            onMyDocs={() => {
+              setPickerOpen(true);
+            }}
+          />
+
           <section className="rounded-3xl border border-[#DDD6CB] bg-white/90 p-5 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-1.5 text-xs font-black">

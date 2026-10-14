@@ -3,7 +3,7 @@
 //  - 데이터와 수정 규칙은 기존 Instagram 편집과 같다: opening · paragraphs[] · closing · hashtags 를 고치면
 //    validation_status 가 needs_recheck 로 바뀌어 원문 근거 재검수를 요구한다(changed). 여기서는 겉모습과 배치만 바꾼다.
 import { useLayoutEffect, useRef, useState } from "react";
-import { Bookmark, Heart, Image as ImageIcon, MessageCircle, MoreHorizontal, Send, User } from "lucide-react";
+import { Bookmark, Heart, Image as ImageIcon, MessageCircle, MoreHorizontal, Send } from "lucide-react";
 import { CardThumb } from "./ThreadsEditor.jsx";
 
 const LIMIT = 2200; // Instagram 캡션 글자 수 제한
@@ -11,8 +11,24 @@ const ACCOUNT = "AI NEWSROOM";
 
 function Avatar({ size = 32 }) {
   return (
-    <div style={{ width: size, height: size }} className="flex shrink-0 items-center justify-center rounded-full bg-[#EFECE6]">
-      <User style={{ width: size * 0.55, height: size * 0.55 }} className="text-[#8E8982]" />
+    <div
+      style={{ width: size, height: size }}
+      className="flex shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] shadow-xs"
+      title="Instagram"
+    >
+      <svg
+        style={{ width: size * 0.58, height: size * 0.58 }}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="white"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+      </svg>
     </div>
   );
 }

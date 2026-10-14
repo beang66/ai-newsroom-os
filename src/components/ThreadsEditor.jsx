@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FileText, Image as ImageIcon, MapPin, MoreHorizontal, Music, SlidersHorizontal, Smile, User, X } from "lucide-react";
+import { FileText, Image as ImageIcon, MapPin, MoreHorizontal, Music, SlidersHorizontal, Smile, X } from "lucide-react";
 import { photoDataUrl } from "../api/platform.js";
 import { selectedCardPhoto } from "../lib/platformState.js";
 import * as CardModel from "../../platform-generator/lib/card-model.js";
@@ -13,9 +13,17 @@ function Avatar({ size = 36 }) {
   return (
     <div
       style={{ width: size, height: size }}
-      className="flex shrink-0 items-center justify-center rounded-full bg-[#EFECE6] text-[#756F67]"
+      className="flex shrink-0 items-center justify-center rounded-full bg-black text-white shadow-xs"
+      title="Threads"
     >
-      <User style={{ width: size * 0.55, height: size * 0.55 }} className="text-[#8E8982]" />
+      <svg
+        style={{ width: size * 0.58, height: size * 0.58 }}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <path d="M12.186 24C5.456 24 0 18.544 0 11.814 0 5.084 5.456 0 12.186 0c6.643 0 11.968 5.247 12.012 11.814v.373c0 3.003-1.666 4.887-4.148 4.887-1.42 0-2.616-.764-3.136-1.921-.762 1.258-2.022 1.921-3.649 1.921-2.923 0-5.071-2.31-5.071-5.26 0-3.045 2.193-5.355 5.26-5.355 1.764 0 3.19.789 3.864 2.115v-1.89h2.383v6.07c0 1.637.893 2.502 2.298 2.502 1.353 0 2.21-.968 2.21-2.482v-.373C21.768 6.398 17.433 2.2 12.186 2.2 6.678 2.2 2.2 6.678 2.2 12.186c0 5.508 4.478 9.986 9.986 9.986 3.152 0 5.923-1.455 7.747-3.866l1.764 1.341C19.467 22.39 16.035 24 12.186 24zm-.724-10.46c-1.637 0-2.872 1.235-2.872 2.872 0 1.637 1.235 2.872 2.872 2.872 1.637 0 2.872-1.235 2.872-2.872 0-1.637-1.235-2.872-2.872-2.872z" />
+      </svg>
     </div>
   );
 }
@@ -67,7 +75,7 @@ export function CardThumb({ card, index, total, article }) {
   );
 }
 
-function Post({ id, label, value, onChange, media, onFocus }) {
+function ThreadTextPart({ id, label, value, onChange, onFocus, placeholder }) {
   const ref = useRef(null);
   // 글 길이에 맞춰 입력칸 높이를 늘린다(스크롤 없이 게시물처럼 보이게)
   useLayoutEffect(() => {
@@ -76,46 +84,18 @@ function Post({ id, label, value, onChange, media, onFocus }) {
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
   }, [value]);
-  const length = (value || "").length;
   return (
-    <div className="flex gap-3" data-testid="threads-post">
-      <div className="flex w-9 shrink-0 flex-col items-center">
-        <Avatar />
-        <div className="my-1.5 w-[2px] flex-1 rounded-full bg-[#E5E5E5]" />
-      </div>
-      <div className="min-w-0 flex-1 pb-2">
-        <div className="flex items-center gap-1.5 text-[14px]">
-          <span className="font-bold text-[#101010]">{ACCOUNT}</span>
-          <span className="text-[#999]">›</span>
-          <span className="text-[13px] text-[#999]">커뮤니티 또는 주제</span>
-        </div>
-        <textarea
-          id={id}
-          onFocus={onFocus}
-          ref={ref}
-          value={value || ""}
-          rows={2}
-          placeholder="새로운 소식을 공유해보세요."
-          aria-label={`${label} 편집`}
-          onChange={(event) => onChange(event.target.value)}
-          className="mt-1 block w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-[15px] leading-[1.5] text-[#101010] outline-none placeholder:text-[#999]"
-        />
-        {media}
-        <div className="mt-3 flex items-center gap-4 text-[#999]" aria-hidden="true">
-          <div className="flex items-center gap-1 text-[13px] text-[#8E8982]">
-            <ImageIcon className="h-[18px] w-[18px]" />
-            <span>추가</span>
-          </div>
-          <Smile className="h-[18px] w-[18px] text-[#8E8982]" />
-          <FileText className="h-[18px] w-[18px] text-[#8E8982]" />
-          <MapPin className="h-[18px] w-[18px] text-[#8E8982]" />
-          <Music className="h-[18px] w-[18px] text-[#8E8982]" />
-          <span className={`ml-auto text-[11px] font-mono ${length > LIMIT ? "font-bold text-red-600" : "text-[#999]"}`}>
-            {length}/{LIMIT}
-          </span>
-        </div>
-      </div>
-    </div>
+    <textarea
+      id={id}
+      ref={ref}
+      value={value || ""}
+      rows={1}
+      placeholder={placeholder}
+      aria-label={`${label} 편집`}
+      onFocus={onFocus}
+      onChange={(event) => onChange(event.target.value)}
+      className="block w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-[15px] leading-[1.5] text-[#101010] outline-none placeholder:text-[#999]"
+    />
   );
 }
 
@@ -137,6 +117,9 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
     el?.focus();
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
+  // 타래는 게시물마다 따로 올라가므로 500자 제한은 가장 긴 게시물 기준이다
+  const longest = Math.max(0, ...posts.map((post) => (post.value || "").length));
+
   return (
     <div className="flex w-full min-w-0 flex-col items-center gap-4 lg:flex-row lg:items-start lg:justify-center">
     <div className="w-full min-w-0 max-w-[620px]" data-testid="threads-editor">
@@ -161,17 +144,40 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
           </div>
         </div>
 
-        {/* 본문 스레드 영역 */}
+        {/* 본문 단일 게시물 영역 */}
         <div className="px-5 pt-4">
-          {posts.map((post, index) => (
-            <Post
-              key={post.key}
-              label={post.label}
-              value={post.value}
-              onChange={post.set}
-              id={postId(post.key)}
-              onFocus={() => setActivePost(post.key)}
-              media={index === 0 && showCards ? (
+          <div className="flex gap-3" data-testid="threads-post">
+            {/* 왼쪽: 아바타와 하단 스레드에 추가로 이어지는 연결선 */}
+            <div className="flex w-9 shrink-0 flex-col items-center">
+              <Avatar />
+              <div className="my-1.5 w-[2px] flex-1 rounded-full bg-[#E5E5E5]" />
+            </div>
+
+            {/* 오른쪽: 계정명 + 상단 텍스트 + 하단 이미지 + 툴바 */}
+            <div className="min-w-0 flex-1 pb-2">
+              <div className="flex items-center gap-1.5 text-[14px]">
+                <span className="font-bold text-[#101010]">{ACCOUNT}</span>
+                <span className="text-[#999]">›</span>
+                <span className="text-[13px] text-[#999]">커뮤니티 또는 주제</span>
+              </div>
+
+              {/* 상단 텍스트 입력 영역 */}
+              <div className="mt-1 space-y-2">
+                {posts.map((post) => (
+                  <ThreadTextPart
+                    key={post.key}
+                    id={postId(post.key)}
+                    label={post.label}
+                    value={post.value}
+                    onChange={post.set}
+                    onFocus={() => setActivePost(post.key)}
+                    placeholder={post.key === "opening" ? "새로운 소식을 공유해보세요." : `${post.label}을 입력하세요...`}
+                  />
+                ))}
+              </div>
+
+              {/* 그 아래 이미지 영역 (카드뉴스 또는 카드뉴스 불러오기) */}
+              {showCards && (
                 <div className="mt-3" data-testid="threads-media">
                   {cards.length > 0 ? (
                     <div className="-mr-2 flex gap-3 overflow-x-auto pb-2 pt-1 scrollbar-thin">
@@ -192,9 +198,24 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
                     </div>
                   )}
                 </div>
-              ) : null}
-            />
-          ))}
+              )}
+
+              {/* 이미지 아래 툴바 */}
+              <div className="mt-3 flex items-center gap-4 text-[#999]" aria-hidden="true">
+                <div className="flex items-center gap-1 text-[13px] text-[#8E8982]">
+                  <ImageIcon className="h-[18px] w-[18px]" />
+                  <span>추가</span>
+                </div>
+                <Smile className="h-[18px] w-[18px] text-[#8E8982]" />
+                <FileText className="h-[18px] w-[18px] text-[#8E8982]" />
+                <MapPin className="h-[18px] w-[18px] text-[#8E8982]" />
+                <Music className="h-[18px] w-[18px] text-[#8E8982]" />
+                <span className={`ml-auto text-[11px] font-mono ${longest > LIMIT ? "font-bold text-red-600" : "text-[#999]"}`}>
+                  {longest}/{LIMIT}
+                </span>
+              </div>
+            </div>
+          </div>
 
           {/* 스레드에 추가 연결 줄 */}
           <div className="flex items-center gap-3 py-3">

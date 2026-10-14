@@ -16,7 +16,7 @@ import SettingsView from "./components/SettingsView";
 
 import { initialArticles } from "./data/mockData";
 import { createEmptyArticle } from "./data/article";
-import { destinations } from "./data/navigation";
+import { destinations, routeFromHash } from "./data/navigation";
 import { core } from "./api/core.js";
 import { listStoredArticles, loadArticleById, loadLatestArticle, saveArticle } from "./services/editorialStore";
 import PlatformStudio from "./components/PlatformStudio";
@@ -86,12 +86,17 @@ const getAmbientGradient = (activeTab, factCheckActive) => {
 const TAB_KEY = "ai-newsroom:lastTab";
 const readTab = () => { try { const tab = localStorage.getItem(TAB_KEY); return destinations.some((item) => item.id === tab) ? tab : "desk"; } catch { return "desk"; } };
 const writeTab = (tab) => { try { localStorage.setItem(TAB_KEY, tab); } catch { /* 저장 못 해도 그만 */ } };
+const readRoute = () => routeFromHash(globalThis.location?.hash, readTab());
 
 export default function App() {
-  const [activeTab, setActiveTabState] = useState(readTab);
+  const [activeTab, setActiveTabState] = useState(() => readRoute().page);
   const setActiveTab = useCallback((target) => {
+    if (routeFromHash(`#${target}`, "").page !== target) return;
     setActiveTabState(target);
-    if (destinations.some((item) => item.id === target)) writeTab(target);
+    writeTab(target);
+    if (globalThis.location?.hash !== `#${target}`) {
+      globalThis.history?.pushState({ newsroomRoute: target }, "", `#${target}`);
+    }
   }, []);
   const [article, setArticle] = useState(initialArticles[0]);
   const [storageStatus, setStorageStatus] = useState("최근 원고를 불러오는 중…");
@@ -373,7 +378,7 @@ export default function App() {
   const [isToolsCollapsed, setIsToolsCollapsed] = useState(false);
 
   // Authentication screen view state: null | 'login' | 'signup'
-  const [authView, setAuthView] = useState(null);
+  const [authView, setAuthView] = useState(() => readRoute().auth);
   const [reporterName, setReporterName] = useState("김동아 기자");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
@@ -385,6 +390,44 @@ export default function App() {
     setIsLoggedIn(Boolean(nextSession?.signedIn));
     if (nextSession?.signedIn && nextSession.email) setReporterName(nextSession.email);
   }, []);
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const route = readRoute();
+      setActiveTabState(route.page);
+      setAuthView(route.auth);
+      writeTab(route.page);
+    };
+    const initialRoute = readRoute();
+    const route = initialRoute.auth || initialRoute.page;
+    if (globalThis.location?.hash !== `#${route}`) {
+      globalThis.history?.replaceState({ newsroomRoute: route }, "", `#${route}`);
+    } else if (!globalThis.history?.state?.newsroomRoute) {
+      globalThis.history?.replaceState({ newsroomRoute: route }, "", globalThis.location.href);
+    }
+    globalThis.addEventListener?.("popstate", syncRoute);
+    globalThis.addEventListener?.("hashchange", syncRoute);
+    return () => {
+      globalThis.removeEventListener?.("popstate", syncRoute);
+      globalThis.removeEventListener?.("hashchange", syncRoute);
+    };
+  }, []);
+
+  const openAuth = useCallback((mode) => {
+    if (mode !== "login" && mode !== "signup") return;
+    setAuthView(mode);
+    if (globalThis.location?.hash !== `#${mode}`) {
+      globalThis.history?.pushState({ newsroomRoute: mode, newsroomPushed: true }, "", `#${mode}`);
+    }
+  }, []);
+  const closeAuth = () => {
+    const route = globalThis.location?.hash?.slice(1);
+    if (route === authView && globalThis.history?.state?.newsroomPushed) globalThis.history.back();
+    else {
+      setAuthView(null);
+      globalThis.history?.replaceState({ newsroomRoute: activeTab }, "", `#${activeTab}`);
+    }
+  };
 
   useEffect(() => {
     getSession().then(applySession).catch(() => {});
@@ -439,6 +482,9 @@ export default function App() {
   const handleLoginSuccess = (session) => {
     applySession(session);
     setAuthView(null);
+    if (globalThis.location?.hash === "#login" || globalThis.location?.hash === "#signup") {
+      globalThis.history?.replaceState({ newsroomRoute: activeTab }, "", `#${activeTab}`);
+    }
     closeGate(true);
   };
   const handleLogout = async () => {
@@ -524,7 +570,7 @@ export default function App() {
           reporterName={reporterName}
           isLoggedIn={isLoggedIn}
           setIsLoggedIn={setIsLoggedIn}
-          onOpenAuth={(mode) => setAuthView(mode)}
+          onOpenAuth={openAuth}
           onLogout={handleLogout}
           onSave={() => { void persistArticle(); }}
           onArchive={async () => {
@@ -540,7 +586,7 @@ export default function App() {
         <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-[calc(100vh-80px)] z-20">
           <LoginScreen
             initialMode={authView}
-            onClose={() => setAuthView(null)}
+            onClose={closeAuth}
             onLoginSuccess={handleLoginSuccess}
           />
         </div>
@@ -557,7 +603,7 @@ export default function App() {
           )}
 
           {/* Main Content Workspace (우측 여백 없이 전체 너비 자연스럽게 채움) */}
-          <div className="flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0">
+          <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0 ${activeTab === "map" ? "h-[calc(100vh-90px)] min-h-0" : ""}`}>
             {!isPhotoEditing && (
               <p className="px-3 pb-1 text-[11px] text-slate-500" role="status">{storageStatus}</p>
             )}
@@ -593,7 +639,7 @@ export default function App() {
                 <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} busy={false} />
               </main>
             ) : activeTab === "map" ? (
-              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
+              <main className="flex min-h-0 flex-1 min-w-0 flex-col transition-all z-20 pt-6 pb-0 px-5 md:px-10">
                 <PageHeader page="map" />
                 <DataMapView articleId={mapArticleId || article.articleId} />
               </main>
@@ -637,7 +683,7 @@ export default function App() {
 
       {/* 인증이 필요한 요청이 멈췄을 때: 작업 화면을 유지한 채 로그인 창만 겹쳐 연다 */}
       {gateOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 overflow-auto bg-slate-900/30 backdrop-blur-sm">
+        <div className="login-overlay fixed inset-0 z-[100] flex items-center justify-center p-6 overflow-auto bg-slate-900/30 backdrop-blur-sm">
           <LoginScreen initialMode="login" required={!session?.signedIn} onClose={() => closeGate(false)} onLoginSuccess={handleLoginSuccess} />
         </div>
       )}
@@ -653,4 +699,3 @@ export default function App() {
     </div>
   );
 }
-

@@ -69,7 +69,7 @@ export default function LoginScreen({ initialMode = "login", onClose, onLoginSuc
       </div>
 
       {/* 메인 로그인 / 회원가입 글래스모피즘 카드 */}
-      <div className="bg-white/85 backdrop-blur-2xl border border-white/90 rounded-[32px] p-7 md:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.06)] space-y-6">
+      <div className="bg-white backdrop-blur-2xl border border-white rounded-[32px] p-7 md:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.06)] space-y-6">
 
         {/* 헤더 */}
         <div className="text-center">

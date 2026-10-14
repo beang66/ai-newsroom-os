@@ -11,6 +11,10 @@
   --dm-radius-control: 12px;
   container: dm / inline-size;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   width: 100%;
   color: var(--text-primary);
   font-size: 13px;
@@ -53,7 +57,7 @@
 .dm-root .network-svg .mark-article { stroke: var(--bg-card); stroke-width: 2.4; }
 
 /* 도구 막대: 검색 · 보기 전환 · 가져오기 */
-.dm-root .map-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.dm-root .map-workspace { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 16px; }
 .dm-root .dm-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .dm-root .global-search {
   display: flex; align-items: center; gap: 8px; flex: 1 1 280px; min-width: 0; height: 44px; padding: 0 14px;
@@ -82,7 +86,7 @@
 .dm-root .filter-actions { display: inline-flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 
 /* 관계망 + 맥락 패널 */
-.dm-root .content-grid { display: grid; gap: 16px; align-items: stretch; }
+.dm-root .content-grid { display: grid; flex: 1; min-height: 0; gap: 16px; align-items: stretch; }
 .dm-root .content-grid.context-resizable { grid-template-columns: minmax(0, 1fr) 8px minmax(260px, var(--context-width, 320px)); column-gap: 12px; }
 .dm-root .content-grid.single { grid-template-columns: minmax(0, 1fr); }
 .dm-root .context-resizer, .dm-root .overview-resizer { align-self: center; width: 8px; height: 56px; border-radius: 999px; background: var(--border-soft); cursor: col-resize; }
@@ -92,7 +96,6 @@
   background: var(--bg-card); box-shadow: 0 8px 24px rgba(40, 35, 25, 0.04);
 }
 .dm-root .graph-panel { position: relative; display: flex; flex-direction: column; height: 600px; padding: 20px; }
-.dm-root.expanded .graph-panel { height: 760px; }
 .dm-root .graph-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 4px 4px 12px; }
 .dm-root .graph-heading h2 { font-size: 20px; line-height: 1.4; }
 .dm-root .graph-heading p { margin-top: 2px; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
@@ -232,6 +235,9 @@
 .dm-root .reader-pagination button { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; }
 
 /* 슬롯 폭 대응 */
+@container dm (min-width: 901px) {
+  .dm-root .graph-panel, .dm-root .context-panel { height: auto; min-height: 0; }
+}
 @container dm (max-width: 900px) {
   .dm-root .content-grid.context-resizable { grid-template-columns: minmax(0, 1fr); }
   .dm-root .context-resizer, .dm-root .overview-resizer { display: none; }

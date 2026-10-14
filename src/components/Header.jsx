@@ -71,10 +71,7 @@ export default function Header({
         <div className="flex items-center gap-2.5">
           <div className="bg-white/85 backdrop-blur-md border border-black/5 rounded-full px-4 py-2 flex items-center gap-2.5 shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
             {/* 로고 옆 첨부 이미지 기반 아이스블루-화이트 크리스탈 반짝임 원형 포인트 */}
-            <span className="relative flex items-center justify-center w-3 h-3">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-sky-200/50 animate-ping" style={{ animationDuration: '3.5s' }} />
-              <span className="relative inline-flex rounded-full w-2 h-2 bg-gradient-to-tr from-[#9bc4e4] via-[#cce3f5] to-[#ffffff] shadow-[0_0_6px_#ffffff,0_0_12px_rgba(155,196,228,0.9)]" />
-            </span>
+            <img src="./favicon.svg" alt="" aria-hidden="true" className="h-7 w-7 rounded-md [image-rendering:pixelated]" />
             <h1 
               className="text-base font-extrabold text-[#292929] tracking-tight"
               style={{ fontFamily: "'Plus Jakarta Sans', 'Pretendard', sans-serif" }}

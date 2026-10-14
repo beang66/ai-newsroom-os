@@ -4,6 +4,7 @@ import {
   Copy,
   FileText,
   Hash,
+  Image as ImageIcon,
   Loader2,
   RefreshCw,
   Sparkles,
@@ -13,7 +14,7 @@ import { freezeArticle, generatePlatform, suggestPlatformKeywords, getStudioArti
 import PlatformReview from "./PlatformReview.jsx";
 import PlatformCardEditor from "./PlatformCardEditor.jsx";
 import PlatformDelivery from "./PlatformDelivery.jsx";
-import ThreadsEditor from "./ThreadsEditor.jsx";
+import ThreadsEditor, { CardThumb } from "./ThreadsEditor.jsx";
 import PlatformArticlePicker from './PlatformArticlePicker.jsx';
 import {appliedSource,applyCurrentSource,sourceReady,beginSourceTransition,claimSourceTransition,cancelSourceTransition} from '../lib/platformSource.js';
 import {articleId, fingerprint, invalidateDraft, sourceText, subtitleLabel, supportedPlatforms, visibleDrafts} from "../lib/platformState.js";
@@ -79,7 +80,7 @@ function draftToText(platform, draft) {
   return "";
 }
 
-function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
+function PlatformDraftEditor({ platform, draft, onChange, cards, article, showCards = true }) {
   if (!draft) {
     return (
       <div className="rounded-3xl border border-dashed border-[#D7D0C6] bg-white/70 p-10 text-center">
@@ -105,6 +106,23 @@ function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
   if (platform === "instagram") {
     return (
       <div className="space-y-4">
+        {/* 인스타그램 카드뉴스 불러오기 형태 */}
+        {showCards && (
+          cards.length > 0 ? (
+            <div className="rounded-2xl border border-[#DDD6CB] bg-[#FAF8F5] p-3">
+              <div className="-mr-2 flex gap-3 overflow-x-auto pb-1 scrollbar-thin">
+                {cards.map((card, cardIndex) => (
+                  <CardThumb key={card.card_id || cardIndex} card={card} index={cardIndex} total={cards.length} article={article} />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-xl border border-dashed border-[#DDD6CB] bg-[#FAF8F5] px-3 py-2 text-[11px] text-[#8E8982]">
+              <ImageIcon className="h-4 w-4 shrink-0" /> 카드뉴스를 생성하면 인스타그램 피드 이미지로 여기에 붙습니다.
+            </div>
+          )
+        )}
+
         <TextArea
           label="도입"
           value={draft.opening}
@@ -141,7 +159,7 @@ function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
   }
 
   if (platform === "threads") {
-    return <ThreadsEditor draft={draft} changed={changed} Evidence={Evidence} cards={cards} article={article} />;
+    return <ThreadsEditor draft={draft} changed={changed} Evidence={Evidence} cards={cards} article={article} showCards={showCards} />;
   }
 
   return null;
@@ -164,6 +182,10 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   const [cardNews, setCardNews] = useState(initialCardNews);
   const [activeView, setActiveView] = useState(
     Object.keys(visibleDrafts(article.platformDrafts))[0] || (initialCardNews ? "card_news" : "instagram"),
+  );
+  // 왼쪽에서 플랫폼을 고르면 메인 박스 상단에 선택칸(인스타그램·스레드·카드뉴스)이 생기고, 거기서 고른 항목의 편집 화면이 열린다
+  const [viewPicked, setViewPicked] = useState(
+    Object.keys(visibleDrafts(article.platformDrafts)).length > 0 || Boolean(initialCardNews),
   );
   const [keywordLoading, setKeywordLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -297,6 +319,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
       const next = current.includes(id)
         ? current.filter((item) => item !== id)
         : [...current, id];
+      if (!current.length && next.length) setViewPicked(false); // 처음 고르면 위 선택칸에서 편집할 항목을 다시 고르게 한다
       if (!next.includes(activeView) && activeView !== "card_news") {
         setActiveView(next[0] || (includeCardNews ? "card_news" : "instagram"));
       }
@@ -432,6 +455,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
     if (!mounted.current) return;
     if (success.length) {
       setActiveView(success[0]);
+      setViewPicked(true);
     }
     setMessage(
       success.length
@@ -480,6 +504,11 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   const cardEditor = (
     <PlatformCardEditor key={articleId(article)} draft={cardNews} article={article} onChange={updateCardNews} onAddPhoto={addCardPhoto} />
   );
+  const [cardNewsMode, setCardNewsMode] = useState({
+    instagram: true,
+    threads: true,
+  });
+
   const draftEditor = (
     <PlatformDraftEditor
       platform={activeView}
@@ -487,6 +516,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
       onChange={(next) => updateDraft(activeView, next)}
       cards={cardNews?.cards || []}
       article={article}
+      showCards={cardNewsMode[activeView] ?? true}
     />
   );
 
@@ -596,120 +626,160 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                   </span>
                 </span>
               </label>
+
+              {/* 플랫폼 선택 화면 하단으로 이동한 '선택 항목 생성' 버튼 */}
+              <button
+                type="button"
+                data-testid="generate-active"
+                onClick={() => runGeneration()}
+                disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim() || (selectedPlatforms.length === 0 && !includeCardNews)}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#292929] px-4 py-3 text-xs font-black text-white shadow-sm transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {generating ? "선택 항목 생성 중" : "선택 항목 생성"}
+              </button>
             </div>
           </section>
         </aside>
 
-        <main className={`min-w-0 ${activeView === "threads" ? "space-y-4" : "rounded-3xl border border-[#DDD6CB] bg-white/90 p-4 shadow-sm md:p-6"}`}>
-          {/* 편집 화면 상단 바: 좌측에 현재 선택된 플랫폼 이름 및 탭, 우측에 선택 항목 생성 버튼 */}
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#EFECE6] pb-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-base font-black text-[#101010]" data-testid="active-platform-name">
-                {VIEW_LABELS[activeView] || activeView}
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {PLATFORM_LIST.filter((platform) =>
-                  selectedPlatforms.includes(platform.id) || drafts[platform.id]
-                ).map((platform) => (
-                  <button
-                    key={platform.id}
-                    type="button"
-                    onClick={() => setActiveView(platform.id)}
-                    className={`rounded-full px-3.5 py-1.5 text-xs font-extrabold transition ${
-                      activeView === platform.id
-                        ? "bg-[#292929] text-white"
-                        : "bg-[#EFECE6] text-[#57514A]"
-                    }`}
-                  >
-                    {platform.label}
-                    {drafts[platform.id] && <span className="ml-1.5 opacity-60">●</span>}
-                  </button>
-                ))}
-                {(includeCardNews || cardNews) && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveView("card_news")}
-                    className={`rounded-full px-3.5 py-1.5 text-xs font-extrabold transition ${
-                      activeView === "card_news"
-                        ? "bg-[#292929] text-white"
-                        : "bg-[#EFECE6] text-[#57514A]"
-                    }`}
-                  >
-                    카드뉴스
-                    {cardNews && <span className="ml-1.5 opacity-60">●</span>}
-                  </button>
-                )}
-              </div>
-            </div>
+        {(() => {
+          const availablePlatforms = PLATFORM_LIST.filter((platform) =>
+            selectedPlatforms.includes(platform.id) || drafts[platform.id]
+          );
+          const hasAnySelected = availablePlatforms.length > 0 || includeCardNews || cardNews;
 
-            {/* 편집 화면 상단으로 이동한 선택 항목 생성 버튼 */}
-            <button
-              type="button"
-              onClick={() => runGeneration()}
-              disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
-              className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#292929] px-4 py-2 text-xs font-extrabold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-              {generating ? "선택 항목 생성 중" : "선택 항목 생성"}
-            </button>
-          </div>
+          return (
+            <main className={`min-w-0 ${activeView === "threads" ? "space-y-4" : "rounded-3xl border border-[#DDD6CB] bg-white/90 p-4 shadow-sm md:p-6"}`}>
+              {hasAnySelected ? (
+                <>
+                  {/* 편집 화면 상단 바: 좌측에 플랫폼 탭(현재 플랫폼은 탭이 눌린 모양으로 표시), 우측에 카드뉴스 불러오기 형태 토글 */}
+                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#EFECE6] pb-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        {availablePlatforms.map((platform) => (
+                          <button
+                            key={platform.id}
+                            type="button"
+                            onClick={() => { setActiveView(platform.id); setViewPicked(true); }}
+                            className={`rounded-full px-3.5 py-1.5 text-xs font-extrabold transition ${
+                              viewPicked && activeView === platform.id
+                                ? "bg-[#292929] text-white"
+                                : "bg-[#EFECE6] text-[#57514A]"
+                            }`}
+                          >
+                            {platform.label}
+                            {drafts[platform.id] && <span className="ml-1.5 opacity-60">●</span>}
+                          </button>
+                        ))}
+                        {(includeCardNews || cardNews) && (
+                          <button
+                            type="button"
+                            onClick={() => { setActiveView("card_news"); setViewPicked(true); }}
+                            className={`rounded-full px-3.5 py-1.5 text-xs font-extrabold transition ${
+                              viewPicked && activeView === "card_news"
+                                ? "bg-[#292929] text-white"
+                                : "bg-[#EFECE6] text-[#57514A]"
+                            }`}
+                          >
+                            카드뉴스
+                            {cardNews && <span className="ml-1.5 opacity-60">●</span>}
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
-          <div className="mb-5 flex items-start justify-between gap-3">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#8E8982]">
-                GENERATED DRAFT
-              </span>
-              <h3 className="mt-0.5 text-lg font-black">
-                {VIEW_LABELS[activeView] || "플랫폼 원고"} 편집
-              </h3>
-              <p className="mt-1 text-[11px] leading-5 text-[#8E8982]">
-                {currentDraft?.validation_status === "needs_recheck"
-                  ? "생성 뒤 수정된 내용입니다. 원문 근거 재검수가 필요합니다."
-                  : currentDraft
-                  ? "실제 생성 엔진 결과입니다. 발행 전 사람이 최종 검토해야 합니다."
-                  : "아직 생성 결과가 없습니다."}
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              data-testid="generate-active"
-              onClick={() => runGeneration([activeView])}
-              disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
-              title="이 항목만 생성합니다. 이미 있는 결과와 수정 내용은 새 결과로 바뀝니다."
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#292929] px-3 py-2 text-[11px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              {activeView === "card_news"
-                ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
-                : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
-            </button>
-            {activeView !== "card_news" && drafts[activeView] && (
-              <button
-                type="button"
-                onClick={() => copyDraft(activeView)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[#DDD6CB] bg-white px-3 py-2 text-[11px] font-bold"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                {copied === activeView ? "복사됨" : "전체 복사"}
-              </button>
-            )}
-            </div>
-          </div>
+                    {/* 인스타 / 스레드일 때: 카드뉴스를 불러오는 형태와 아닌 형태 전환 버튼 */}
+                    {viewPicked && (activeView === "instagram" || activeView === "threads") && (
+                      <div className="flex items-center gap-1 rounded-full border border-[#DDD6CB] bg-[#FAF8F5] p-1 text-[11px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setCardNewsMode((prev) => ({ ...prev, [activeView]: true }))}
+                          className={`rounded-full px-2.5 py-1 transition ${cardNewsMode[activeView] ? "bg-[#292929] text-white shadow-sm" : "text-[#756F67] hover:text-[#101010]"}`}
+                        >
+                          카드뉴스 불러오기
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCardNewsMode((prev) => ({ ...prev, [activeView]: false }))}
+                          className={`rounded-full px-2.5 py-1 transition ${!cardNewsMode[activeView] ? "bg-[#292929] text-white shadow-sm" : "text-[#756F67] hover:text-[#101010]"}`}
+                        >
+                          텍스트 전용
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
-          {activeView === "threads" ? (
-            // Threads: 중간 화면에는 스레드 화면 편집 배치
-            <div className="w-full flex min-w-0 justify-center" data-testid="threads-layout">
-              {draftEditor}
-            </div>
-          ) : (
-            <>
-              {reviewPanel}
-              {deliveryPanel}
-              {activeView === "card_news" ? cardEditor : draftEditor}
-            </>
-          )}
-        </main>
+                  {!viewPicked ? (
+                    <div className="rounded-2xl border border-dashed border-[#DDD6CB] bg-[#FAF8F5] px-6 py-10 text-center" data-testid="pick-platform-hint">
+                      <p className="text-sm font-bold text-[#292929]">편집할 항목을 선택하세요</p>
+                      <p className="mt-1 text-xs text-[#8E8982]">위의 선택칸에서 인스타그램·스레드·카드뉴스 중 하나를 누르면 그 편집 화면이 열립니다.</p>
+                    </div>
+                  ) : (
+                  <>
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs leading-5 text-[#8E8982]">
+                        {currentDraft?.validation_status === "needs_recheck"
+                          ? "생성 뒤 수정된 내용입니다. 원문 근거 재검수가 필요합니다."
+                          : currentDraft
+                          ? "실제 생성 엔진 결과입니다. 발행 전 사람이 최종 검토해야 합니다."
+                          : "아직 생성 결과가 없습니다."}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => runGeneration([activeView])}
+                        disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
+                        title="이 항목만 생성합니다. 이미 있는 결과와 수정 내용은 새 결과로 바뀝니다."
+                        className="inline-flex items-center gap-1.5 rounded-full bg-[#292929] px-3 py-2 text-[11px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        {activeView === "card_news"
+                          ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
+                          : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
+                      </button>
+                      {activeView !== "card_news" && drafts[activeView] && (
+                        <button
+                          type="button"
+                          onClick={() => copyDraft(activeView)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-[#DDD6CB] bg-white px-3 py-2 text-[11px] font-bold"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          {copied === activeView ? "복사됨" : "전체 복사"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {activeView === "threads" ? (
+                    // Threads: 중간 화면에는 스레드 화면 편집 배치
+                    <div className="w-full flex min-w-0 justify-center" data-testid="threads-layout">
+                      {draftEditor}
+                    </div>
+                  ) : (
+                    <>
+                      {reviewPanel}
+                      {deliveryPanel}
+                      {activeView === "card_news" ? cardEditor : draftEditor}
+                    </>
+                  )}
+                  </>
+                  )}
+                </>
+              ) : (
+                /* 플랫폼이 아직 선택되지 않았을 때 안내 화면 */
+                <div className="rounded-3xl border border-dashed border-[#DDD6CB] bg-[#FAF8F5] p-12 text-center">
+                  <Sparkles className="mx-auto mb-3 h-8 w-8 text-[#8E8982]" />
+                  <h4 className="text-sm font-bold text-[#292929]">선택된 배포 플랫폼이 없습니다</h4>
+                  <p className="mt-1 text-xs text-[#8E8982]">
+                    왼쪽의 &apos;배포 플랫폼&apos;에서 인스타그램, 스레드 등을 선택하면 편집 화면과 상단 전환 버튼이 생성됩니다.
+                  </p>
+                </div>
+              )}
+            </main>
+          );
+        })()}
 
         {/* 오른쪽 사이드 박스: 텍스트 입력 영역 (키워드 및 추가 요구사항) */}
         <aside className="space-y-4">

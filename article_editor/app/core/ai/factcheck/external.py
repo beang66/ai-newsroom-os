@@ -7,7 +7,9 @@ providers(local=.env 키 / remote=우리 백엔드). 결과의 wrong_text·evide
 from ..client import structured_call
 from ...errors import RequestError
 
-MAX_ITEMS, MAX_EVIDENCE, MAX_CHARS = 20, 3, 2000
+# MAX_EVIDENCE=5: 로컬 판정기가 보는 상위 5개(service.JUDGE_LIMIT)와 같다. 실제 기사 5건(51주장) 측정에서 정답 근거가 후보 안에 든 비율이
+# 3개 80.4% → 5개 92.2%(입력 토큰 +56%), 7개는 5개와 같았다(2026-10-13)
+MAX_ITEMS, MAX_EVIDENCE, MAX_CHARS = 20, 5, 2000
 
 INSTRUCTIONS = (
     "당신은 신문사 팩트체커입니다. 각 항목의 기사 문장이 함께 주어진 근거 자료와 맞는지 판정하세요.\n"

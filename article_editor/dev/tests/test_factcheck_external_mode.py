@@ -60,6 +60,22 @@ class ExternalModeTests(unittest.TestCase):
         self.assertEqual((conflict['conflict_spans'][0]['claim_text'], conflict['conflict_spans'][0]['evidence_text']), ('30억원', '20억원'))
         self.assertEqual(done['n2'][1]['status'], 'EVIDENCE_GAP')
 
+    def test_external_sends_top_five_evidence_only(self):
+        chunks = [{'text': f'근거 문단 {i}', 'material_title': '자료A', 'material_id': 'a'} for i in range(8)]
+        nodes = [{'id': 'n1', 'type': 'TEXT', 'text': '매출은 30억원이다.'}]
+        reply = {'results': [{'id': 'n1', 'verdict': 'NOT_ENOUGH_INFO', 'reason': '확인 불가', 'wrong_text': '', 'evidence_text': ''}]}
+        with mock.patch.object(service, '_retrieve_qwen_candidates', return_value=chunks),                 mock.patch.object(service, '_direct_span_match', return_value=None),                 mock.patch.object(external, 'judge', return_value=reply) as judge:
+            service._external_pass(nodes, chunks, [], {})
+        self.assertEqual(len(judge.call_args[0][0]['items'][0]['evidence']), 5, '문장마다 근거 상위 5개만 보낸다')
+
+    def test_external_prompt_has_five_evidence_blocks(self):
+        item = {'id': 'n1', 'claim': '매출은 30억원이다.', 'evidence': [f'근거 {i}' for i in range(8)]}
+        with mock.patch.object(external, 'structured_call', return_value={'results': []}) as call:
+            external.judge({'items': [item]})
+        prompt = call.call_args[0][3]
+        self.assertIn('[근거 5]', prompt)
+        self.assertNotIn('[근거 6]', prompt)
+
     def test_review_workspace_end_to_end_without_local_judge(self):
         materials = [{'id': 'a', 'title': '자료A', 'content': '2025년 매출은 20억원이다. 대표는 박씨다.'}]
         nodes = [{'id': 'n1', 'type': 'TEXT', 'text': '2025년 매출은 30억원이다.'}]

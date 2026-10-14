@@ -494,8 +494,8 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                   : <><FolderOpen className="h-3.5 w-3.5" />저장된 기사 불러오기</>}</button>
               </div>
               {previewLoading||sourceLoading ? <p role="status" className="mt-2 text-xs text-[#8E8982]">기사 불러오는 중…</p> : <div data-testid="loaded-article" className="mt-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                <p data-testid="loaded-title" className="text-[15px] font-black leading-6 text-[#101010]">{preview?.article.title || "기사 미선택"}</p>
-                <p data-testid="loaded-subtitle" title="부제는 기사 화면의 표시 정보입니다. 생성 입력의 부제 전달은 미연결입니다." className="mt-1 text-xs leading-5 text-[#756F67]">{subtitleLabel({subtitle:preview?.subtitle})}</p>
+                <p data-testid="loaded-title" className="text-left break-keep text-[15px] font-black leading-6 text-[#101010]">{preview?.article.title || "기사 미선택"}</p>
+                <p data-testid="loaded-subtitle" title="부제는 기사 화면의 표시 정보입니다. 생성 입력의 부제 전달은 미연결입니다." className="mt-1 text-left break-keep text-xs leading-5 text-[#756F67]">{subtitleLabel({subtitle:preview?.subtitle})}</p>
                 {!preview?.article.content?.trim() && <p role="status" className="mt-2 text-[11px] text-[#B0AAA2]">{preview?.article.title ? "기사 본문 없음 · 기사 편집 화면에서 확인해 주세요." : "DB 기사를 선택해 주세요."}</p>}
                 {/^https?:\/\//iu.test(preview?.article.url || "") && <a href={preview.article.url} target="_blank" rel="noreferrer" className="mt-1 block text-[11px] text-[#3B82C4] underline">원문 출처 링크</a>}
                 <span className="mt-1 block text-[10px] text-[#B0AAA2]">본문 {(preview?.article.content || '').length.toLocaleString()}자</span>

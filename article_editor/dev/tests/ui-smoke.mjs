@@ -290,6 +290,11 @@ try {
     return reply(route, modelState);
   });
 
+  if (process.env.UI_SMOKE_FOCUS === 'card-news') {
+    const { runCardNewsSmoke } = await import('./card-news-ui-smoke.mjs');
+    await runCardNewsSmoke({ page, BASE, go, waitWorkspaceReady, snapshot });
+    assert.deepEqual(problems, [], '카드뉴스 브라우저 오류');
+  } else {
   let latestAttempts = 0;
   const latestRoute = /\/api\/articles\/latest(?:\?.*)?$/;
   await page.route(latestRoute, (route) => {
@@ -1192,6 +1197,7 @@ try {
   await snapshot('db-article-empty-source');
   assert.deepEqual(problems, [], "브라우저 오류:\n" + problems.join("\n"));
   console.log("PASS ui-smoke: 로그인·로그아웃·개발 자동 로그인·모델 설치/취소/오류/폴링·코어 연결·제목/부제 추천·임시 저장·수동 저장·사진 검색·사진 편집·팩트체크 서랍·자료 검색·실제 platform-generator 경계·보관함·녹취 전사·모바일 폭");
+  }
 } catch (error) {
   if (page) await page.screenshot({ path: fileURLToPath(new URL("temp/ui-smoke-failure.png", ROOT)) }).catch(() => {});
   console.error("FAIL ui-smoke:", error.stack || error.message);

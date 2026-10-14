@@ -182,9 +182,13 @@ try {
   assert.match(download.suggestedFilename(), /\.jpg$/);
   await page.getByTestId("image-apply").click();
   await page.getByTestId("image-editor").waitFor({ state: "detached" });
+  // "본문에 넣기": 작성 화면으로 돌아와 본문 끝에 편집한 사진이 들어가고, 쓰던 본문은 그대로 남는다
+  const editor = page.locator('[contenteditable="true"]').first();
+  await editor.locator("figure[data-photo-id] img").first().waitFor();
+  assert.match(await editor.innerText(), /반도체 수출이 크게 늘었다/);
   await page.getByRole("button", { name: "동아일보DB" }).click();
   for (const label of ["전체", "최신순", "오래된순"]) await page.getByRole("button", { name: label, exact: true }).waitFor();
-  step("사진 첨부: 자동 추천 → 키워드 클릭 시 검색, 사진 편집(표시 범위·모자이크·편집본 파일·본문에 넣기), 동아일보 DB 정렬");
+  step("사진 첨부: 자동 추천 → 키워드 클릭 시 검색, 사진 편집(표시 범위·모자이크·편집본 파일·본문에 넣기 → 본문에 사진 삽입), 동아일보 DB 정렬");
 
   // 6. 보관함: 저장한 기사가 보이고 삭제
   await nav("기사 보관함");

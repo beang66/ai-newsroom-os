@@ -193,6 +193,7 @@ export default function ArticleWriter({
   // 이미지 편집 모달 상태
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
   const [editingPhoto, setEditingPhoto] = useState(null);
+  const [pendingPhoto, setPendingPhoto] = useState(null); // 사진 편집 화면의 "본문에 넣기" — 작성 화면이 다시 열리면 본문에 반영한다
 
   // 4. CMS 발행 이관 상태
   const [isCmsExporting, setIsCmsExporting] = useState(false);
@@ -441,6 +442,32 @@ export default function ArticleWriter({
     setTimeout(() => setToastMessage(""), 3500);
   };
 
+  // 사진 편집 화면에서 "본문에 넣기"를 누른 뒤 작성 화면이 다시 열리면: 본문에 이미 있는 사진이면 편집본으로 바꾸고, 없으면 새로 넣는다
+  useEffect(() => {
+    if (!pendingPhoto || isImageEditorOpen || isPhotoEditing || !bodyInputRef.current) return;
+    const photo = pendingPhoto;
+    setPendingPhoto(null);
+    // 편집 화면이 열려 있는 동안 에디터가 없었으므로 다시 열린 에디터는 비어 있다 — 기사 본문을 먼저 되돌린 뒤에 사진을 넣는다
+    if (bodyInputRef.current.innerHTML !== (article.content || "")) bodyInputRef.current.innerHTML = article.content || "";
+    // 새로 넣는 사진은 본문이 끝나는 지점에 놓는다(이전 캐럿 위치는 에디터가 다시 만들어지며 사라졌다)
+    if (!bodyInputRef.current.querySelector(`[data-photo-id="${photo.id}"]`)) {
+      const range = document.createRange();
+      range.selectNodeContents(bodyInputRef.current);
+      range.collapse(false);
+      lastCaretRangeRef.current = range;
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+    if (bodyInputRef.current.querySelector(`[data-photo-id="${photo.id}"]`)) handleSaveEditedPhoto(photo);
+    else {
+      handleInsertPhotoToContent(photo);
+      setToastMessage(`"${photo.caption || "사진"}" 사진이 본문에 들어갔습니다.`);
+      setTimeout(() => setToastMessage(""), 2500);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPhoto, isImageEditorOpen, isPhotoEditing]);
+
   // 외부에서 article.content 변경 시 contentEditable 동기화 (초안 생성 등)
   useEffect(() => {
     if (bodyInputRef.current && bodyInputRef.current.innerHTML !== (article.content || "")) {
@@ -478,7 +505,7 @@ export default function ArticleWriter({
         }
       });
     }
-  }, [article.content, activeSidePanel]);
+  }, [article.content, activeSidePanel, isImageEditorOpen, isPhotoEditing]);
 
   // 텍스트 드래그 선택 서식 툴바 감지 (contentEditable Selection 감지)
   const handleSelection = () => {
@@ -1251,7 +1278,9 @@ export default function ArticleWriter({
         onTrackDownload={trackPhotoDownload}
         onError={(message) => { setToastMessage(message); setTimeout(() => setToastMessage(""), 3500); }}
         onApplyToArticle={(updatedPhoto) => {
-          handleSaveEditedPhoto(updatedPhoto);
+          // 작성 화면의 에디터는 편집 화면이 열려 있는 동안 없으므로, 닫은 뒤(아래 효과)에 본문에 넣는다
+          setPhotos((prev) => (prev.some((p) => p.id === updatedPhoto.id) ? prev.map((p) => (p.id === updatedPhoto.id ? updatedPhoto : p)) : [updatedPhoto, ...prev]));
+          setPendingPhoto(updatedPhoto);
           setIsImageEditorOpen(false);
           if (setIsPhotoEditing) setIsPhotoEditing(false);
         }}

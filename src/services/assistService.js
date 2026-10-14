@@ -37,12 +37,19 @@ export async function suggestSubtitles(html, currentHeadline = "") {
   return unique([asLines(result.subtitle).join("\n"), ...candidates]);
 }
 
-/** 기사에 어울리는 스톡 사진 검색어(영어 3개). */
+/** 기사에 어울리는 스톡 사진 검색어(영어, 최대 6개).
+ *  Core 는 한 번에 3개만 돌려주므로, 본문 전체와 본문 앞·뒤 절반에서 따로 받아 합쳐 5~6개를 보여 준다(짧은 글은 전체만 → 3개).
+ *  본문 전체에서 받은 검색어가 앞에 오고, 일부 요청이 실패해도 받은 것은 보여 준다. */
 export async function photoKeywords(html) {
   const body = plainText(html);
   if (!body) throw new Error("본문을 먼저 작성해 주세요.");
-  const result = await assist({ kind: "photo_keywords", body });
-  const keywords = unique(result.keywords || []);
-  if (keywords.length === 0) throw new Error("추천할 검색어를 찾지 못했습니다.");
+  const half = Math.floor(body.length / 2);
+  const parts = body.length >= 400 ? [body, body.slice(0, half), body.slice(half)] : [body];
+  const results = await Promise.allSettled(parts.map((part) => assist({ kind: "photo_keywords", body: part })));
+  const keywords = unique(results.flatMap((r) => (r.status === "fulfilled" ? r.value.keywords || [] : []))).slice(0, 6);
+  if (keywords.length === 0) {
+    const failed = results.find((r) => r.status === "rejected");
+    throw failed ? failed.reason : new Error("추천할 검색어를 찾지 못했습니다.");
+  }
   return keywords;
 }

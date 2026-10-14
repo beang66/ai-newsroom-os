@@ -56,6 +56,7 @@ CF_BASE = (os.environ.get('CF_BASE_URL') or 'https://api.cloudflare.com/client/v
 CF_EMBEDDING_MODEL = '@cf/qwen/qwen3-embedding-0.6b'  # 모델은 서버가 고정한다 — 앱이 다른 모델을 고르지 못하게
 RATE_LIMIT = int(os.environ.get('RATE_LIMIT_PER_MIN', '120'))
 TIMEOUT = 210
+MAX_BODY = 40_000_000  # 가장 큰 경로(전사·이미지) 한도. 나머지 경로는 아래에서 더 작게 자른다
 
 _LOCK = threading.Lock()
 _HITS: dict[str, list[float]] = {}
@@ -143,6 +144,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _body(self):
         size = int(self.headers.get('Content-Length', '0'))
+        if size > MAX_BODY:
+            return None  # 로그인 확인 전이라 읽지 않는다(큰 본문으로 메모리를 채우지 못하게). 응답은 Connection: close
         return self.rfile.read(size) if size > 0 else b''
 
     def _user_id(self):
@@ -202,6 +205,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         # 본문을 **먼저** 읽는다 — 401/404 로 조기 반환할 때 남은 본문이 다음 요청을 오염시키지 않게.
         body = self._body()
+        if body is None:
+            return self._json(413, {'error': '요청이 너무 큽니다.'})
         path = urllib.parse.urlsplit(self.path).path
         if path == '/cms/publish':
             if self._guard() is None:

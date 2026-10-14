@@ -3,6 +3,7 @@
 import { core } from "./core.js";
 import { claimDetails } from "./claim-details.js";
 import { captionText, photoOfLine, textWithoutPhotos } from "../lib/photoMarks.js";
+import { escapeHtml } from "../lib/studioArticle.js";
 
 // 로그인·설치 화면도 같은 코어 계약을 사용한다. 자격 증명은 요청 동안만 전달한다.
 export const signIn = (email, password, remember = false) => core.signIn(email, password, { remember });
@@ -370,8 +371,6 @@ async function fromMediaRef(value, loaded) {
     return ""; // 사진을 못 읽으면 비워 둔다(원고 안의 참조는 그대로 남는다)
   }
 }
-
-const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 /** 원고(content) → 발행·변환용 HTML. 문단은 빈 줄, 줄바꿈은 <br>, 사진 자리 줄은 v30 과 같은 <figure data-photo-id> */
 export function bodyHtmlOf(content, photos) {

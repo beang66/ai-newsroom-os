@@ -96,7 +96,8 @@ export async function requestInterviewAnalysis(transcript, options = {}) {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ transcript }),
+      // 분석 서버는 text(없으면 구간 text)만 쓴다. 단어별 시간까지 보내면 긴 인터뷰가 서버 JSON 한도(100KB)를 넘는다.
+      body: JSON.stringify({ transcript: { text: transcript.text || "", segments: (transcript.segments || []).map((s) => ({ text: s.text || "" })) } }),
       signal: options.signal
     });
   } catch (error) {

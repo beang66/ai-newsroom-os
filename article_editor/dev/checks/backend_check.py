@@ -187,7 +187,7 @@ def main(argv: list[str]) -> int:
         print('백엔드 계약(/ai/*) : 준비됨 - 앱이 원격 AI·사진 기능을 쓸 수 있습니다.')
     else:
         print('백엔드 계약(/ai/*) : 아직 없음 - 백엔드 전면수정 전까지 원격 AI·사진은 동작하지 않습니다.')
-        print('                     계약서: docs/BACKEND_CONTRACT.md · 임시 브리지: backend/express/ai-proxy.ts')
+        print('                     계약서: docs/BACKEND_CONTRACT.md · 구현: backend/server.py')
         if strict:
             failed.append('백엔드 계약(/ai/*) 미구현')
     print(f'--- 통과 {len(results) - len([1 for ok, _ in results if not ok])}/{len(results)} · 실패 {len(failed)} ---')

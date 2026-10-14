@@ -232,6 +232,19 @@ class ProxyTests(unittest.TestCase):
             except TimeoutError:
                 self.fail('서버가 연결을 닫지 않았습니다(남은 본문이 다음 요청을 오염시킬 수 있음)')
 
+    def test_oversized_post_is_refused_before_reading_the_body(self):
+        """로그인 전에는 큰 본문을 읽지 않는다 — 헤더만 보내도 바로 413 이어야 한다(메모리 고갈 방지)."""
+        import socket
+
+        with socket.create_connection(('127.0.0.1', self.proxy.server_port), timeout=5) as sock:
+            sock.sendall(
+                b'POST /ai/responses HTTP/1.1\r\n'
+                b'Host: 127.0.0.1\r\n'
+                b'Content-Type: application/json\r\n'
+                b'Content-Length: 500000000\r\n\r\n'
+            )
+            self.assertIn(b'413', sock.recv(4096).split(b'\r\n')[0])
+
     def test_unknown_method_is_json_404(self):
         request = urllib.request.Request(
             self.base + '/ai/responses', data=b'{}', method='PUT', headers={'Content-Type': 'application/json'}

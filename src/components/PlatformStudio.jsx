@@ -293,48 +293,20 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   },[article]);
 
   const togglePlatform = (id) => {
-    setSelectedPlatforms((current) => {
-      const next = current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id];
-      if (!next.includes(activeView) && activeView !== "card_news") {
-        setActiveView(next[0] || (includeCardNews ? "card_news" : "instagram"));
-      }
-      if (setArticle) {
-        setArticle((previous) => ({
-          ...previous,
-          platformGeneration: {
-            ...(previous.platformGeneration || {}),
-            selectedPlatforms: next,
-            includeCardNews,
-            selectedKeywords,
-            requirements,
-          },
-        }));
-      }
-      return next;
-    });
+    const next=selectedPlatforms.includes(id)?selectedPlatforms.filter((item)=>item!==id):[...selectedPlatforms,id];
+    setSelectedPlatforms(next);
+    if(!next.includes(activeView)&&activeView!=="card_news")setActiveView(next[0]||(includeCardNews?"card_news":"instagram"));
+    if(setArticle)setArticle((previous)=>({...previous,platformGeneration:{
+      ...(previous.platformGeneration||{}),selectedPlatforms:next,includeCardNews,selectedKeywords,requirements,
+    }}));
   };
 
   const toggleKeyword = (keyword) => {
-    setSelectedKeywords((current) => {
-      const next = current.includes(keyword)
-        ? current.filter((item) => item !== keyword)
-        : [...current, keyword];
-      if (setArticle) {
-        setArticle((previous) => ({
-          ...previous,
-          platformGeneration: {
-            ...(previous.platformGeneration || {}),
-            selectedPlatforms,
-            includeCardNews,
-            selectedKeywords: next,
-            requirements,
-          },
-        }));
-      }
-      return next;
-    });
+    const next=selectedKeywords.includes(keyword)?selectedKeywords.filter((item)=>item!==keyword):[...selectedKeywords,keyword];
+    setSelectedKeywords(next);
+    if(setArticle)setArticle((previous)=>({...previous,platformGeneration:{
+      ...(previous.platformGeneration||{}),selectedPlatforms,includeCardNews,selectedKeywords:next,requirements,
+    }}));
   };
 
   // 변환을 시작할 때 지금 글을 저장해 고정본으로 만든다. 한 생성 작업의 모든 결과는 같은 고정본을 쓴다.

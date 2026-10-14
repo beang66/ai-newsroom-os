@@ -69,31 +69,30 @@ test('배분표의 인용 근거가 본문과 불일치하면 한 번 다시 생
  assert(Array.isArray(retryRequest.source_excerpt_catalog));
  assert.equal(draft.generation_review.status,'passed');
 });
-test('카드 근거 불일치 교정에는 실패 위치와 원문에 없는 인용을 전달',async()=>{
+test('카드 초안의 가짜 인용은 검증된 배분표 근거로 연결하고 추가 생성 호출을 하지 않음',async()=>{
  process.env.PLATFORM_LOCAL_STORAGE="1";
- let drafts=0,correction;
+ let drafts=0;
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
   let result;
   if(request.text.format.name.endsWith('_validation'))result={issues:[]};
   else if(request.text.format.name==='card_news_information_plan')result=planFixture();
   else{
    drafts++;
-   if(drafts===2)correction=JSON.parse(request.input);
    result=fixture();
    result.cards.forEach((card,index)=>{
     card.content.farewell='';
     card.covered_point_ids=index===1?['P1']:[];
    });
    if(drafts===1)result.cards[1].source_evidence=['본문에 없는 근거 문장입니다.'];
+   result.core_text.source_evidence=['본문에 없는 근거 문장입니다.'];
   }
   return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(result)}]}]};
  }};}
  const {generateCardNews}=loadWithAI('card-news-generator.js',FakeAI);
  const draft=await generateCardNews({article,selected_keywords:[],requirements:''});
- assert.equal(drafts,2);
- assert.equal(correction.review.requirement.issues[0].location,'cards[1].source_evidence');
- assert.equal(correction.review.requirement.issues[0].problematic_text,'본문에 없는 근거 문장입니다.');
- assert.match(correction.review.requirement.issues[0].suggestion,/article.title 또는 article.content/);
+ assert.equal(drafts,1);
+ assert.deepEqual(Array.from(draft.core_text.source_evidence),[article.content]);
+ assert.deepEqual(Array.from(draft.cards[1].source_evidence),[article.content]);
  assert.equal(draft.generation_review.status,'passed');
 });
 test('고정 카드 생성은 객체 순서와 무관하게 배분표의 번호·역할·ID를 보존',()=>{
@@ -102,6 +101,8 @@ test('고정 카드 생성은 객체 순서와 무관하게 배분표의 번호�
  assert.deepEqual(schema.properties.cards.required,['page_1','page_2','page_3']);
  assert.deepEqual(schema.properties.cards.properties.page_2.properties.role.enum,['body']);
  assert(!Object.hasOwn(schema.properties.cards.properties.page_2.properties,'covered_point_ids'));
+ assert(!Object.hasOwn(schema.properties.cards.properties.page_2.properties,'source_evidence'));
+ assert(!Object.hasOwn(schema.properties.core_text.properties,'source_evidence'));
  const pages={};for(const index of [2,0,1])pages[`page_${index+1}`]=source.cards[index];
  const generated=readPlannedDraft({...source,cards:pages},plan);
  assert.deepEqual(generated.cards.map(card=>card.role),['cover','body','closing']);

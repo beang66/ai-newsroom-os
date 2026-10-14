@@ -765,7 +765,14 @@ try {
   // 카드뉴스 완성 이미지(임시 UI): 카드뉴스 생성 → "카드 이미지 만들기" → 코어 render → MediaAsset → 미리보기
   await converter.getByText("카드뉴스도 생성").click();
   await converter.getByRole("button", { name: "카드뉴스", exact: true }).click();
+  // 두 배포 플랫폼을 해제해 카드뉴스만 선택해도 상위 App 렌더를 건드리거나 화면이 사라지지 않아야 한다.
+  await converter.getByRole("button", { name: "Instagram 피드 원고" }).click();
+  await converter.getByRole("button", { name: "Threads 짧은 요약" }).click();
+  await converter.getByTestId("generate-active").getByText("카드뉴스만 생성").waitFor();
   await converter.getByTestId("generate-active").click();
+  await converter.getByText("1/1개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();
+  await converter.getByRole("button", { name: "Instagram 피드 원고" }).click();
+  await converter.getByRole("button", { name: "Threads 짧은 요약" }).click();
   await converter.getByTestId("card-image-make").click();
   const cardImage = converter.getByTestId("card-image-preview");
   await cardImage.waitFor();

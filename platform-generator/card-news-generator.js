@@ -213,20 +213,30 @@ function createPlannedDraftSchema(plan){
   const pages={};
   for(let page=1;page<=plan.card_count;page++){
     const role=page===1?'cover':page===plan.card_count?'closing':'body';
-    const {covered_point_ids,...fields}=cardNewsSchema.properties.cards.items.properties;
+    const fields={...cardNewsSchema.properties.cards.items.properties};
+    delete fields.covered_point_ids;
+    delete fields.source_evidence;
     pages[`page_${page}`]=objectSchema({...fields,role:{type:'string',enum:[role]}});
   }
   return objectSchema({...cardNewsSchema.properties,
-    recommended_card_count:{type:'integer',enum:[plan.card_count]},cards:objectSchema(pages)});
+    recommended_card_count:{type:'integer',enum:[plan.card_count]},
+    core_text:objectSchema({headline:stringSchema,summary:stringSchema}),cards:objectSchema(pages)});
 }
 function readPlannedDraft(draft,plan){
   // 배열 구조는 기존 생성 응답·테스트와 호환합니다. 새 AI 요청은 번호가 고정된 객체를 사용합니다.
-  if(Array.isArray(draft.cards))return draft;
-  if(!draft.cards||typeof draft.cards!=='object')throw new Error('배분표에 따른 카드 생성 결과가 없습니다.');
-  return {...draft,cards:Array.from({length:plan.card_count},(_,index)=>{
+  if(!draft?.cards||typeof draft.cards!=='object')throw new Error('배분표에 따른 카드 생성 결과가 없습니다.');
+  const cards=Array.isArray(draft.cards)?draft.cards:Array.from({length:plan.card_count},(_,index)=>{
     const page=index+1,card=draft.cards[`page_${page}`];
     if(!card||typeof card!=='object')throw new Error(`${page}번째 카드 생성 결과가 없습니다.`);
     return {...card,covered_point_ids:page>1&&page<plan.card_count?plan.points.filter(point=>point.body_page===page).map(point=>point.id):[]};
+  });
+  // 원문 존재를 검증한 배분표의 근거만 사용한다. 본문 카드에는 해당 번호의 정보 근거를 연결한다.
+  // 텍스트의 의미·누락·왜곡 여부는 아래 검수에서 계속 판정한다.
+  const allEvidence=[...new Set(plan.points.flatMap(point=>point.source_evidence))];
+  return {...draft,core_text:{...draft.core_text,source_evidence:allEvidence},cards:cards.map((card,index)=>{
+    const page=index+1,assigned=plan.points.filter(point=>point.body_page===page);
+    const evidence=assigned.length?[...new Set(assigned.flatMap(point=>point.source_evidence))]:allEvidence;
+    return {...card,source_evidence:evidence};
   })};
 }
 
@@ -348,7 +358,7 @@ async function generateCardNews(input) {
     return {output_key:`page_${page}`,page,role:page===1?'cover':page===informationPlan.card_count?'closing':'body',
       required_points:informationPlan.points.filter(point=>point.body_page===page)};
   });
-  const assignmentRules='cards는 page_1부터 마지막 번호까지 고정된 객체입니다. card_assignments의 해당 번호와 역할을 그대로 사용하고 각 본문의 required_points를 실제 answer와 detail에서 충분히 설명하세요. 정보 ID는 서버가 연결하므로 생성하지 않습니다. 표지와 마지막 장의 required_points가 비어 있어도 표지는 주제를 제시하고 마지막 장은 이미 본문에서 완결한 전체 핵심을 종합해야 합니다. 마지막 장으로 주요 정보의 최초 설명을 미루지 마세요.';
+  const assignmentRules='cards는 page_1부터 마지막 번호까지 고정된 객체입니다. card_assignments의 해당 번호와 역할을 그대로 사용하고 각 본문의 required_points를 실제 answer와 detail에서 충분히 설명하세요. 정보 ID와 source_evidence는 서버가 검증된 배분표에서 연결하므로 생성하지 않습니다. 표지와 마지막 장의 required_points가 비어 있어도 표지는 주제를 제시하고 마지막 장은 이미 본문에서 완결한 전체 핵심을 종합해야 합니다. 마지막 장으로 주요 정보의 최초 설명을 미루지 마세요.';
   const response = await client.responses.create({
     model: OpenAI.model?.trim() || "gpt-5",
     store: false,

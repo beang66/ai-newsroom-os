@@ -328,6 +328,34 @@ test('재요청이 가짜 인용과 마지막 카드 배정을 반복하면 초�
   assert.equal(planCalls,2);assert.equal(draftCalls,0);
 });
 
+test('Core 카드뉴스 생성 경로는 초안의 가짜 근거 대신 검증된 배분표 근거를 연결',async t=>{
+  const child=spawn(process.execPath,[path.join(root,'core-adapter.js')],{cwd:root,env:{...process.env,PLATFORM_AI_BRIDGE:'core'},stdio:['pipe','pipe','pipe']});
+  t.after(()=>{if(child.exitCode===null)child.kill();});
+  const lines=createInterface({input:child.stdout});let result,planCalls=0,draftCalls=0;
+  const done=new Promise((resolve,reject)=>{
+    child.on('error',reject);child.on('close',code=>code===0?resolve():reject(Error('Core 카드뉴스 생성 실패')));
+    lines.on('line',line=>{
+      const message=JSON.parse(line);
+      if(message.type==='ai'){
+        const name=message.request.text.format.name;
+        let value;
+        if(name==='card_news_information_plan'){planCalls++;value=plan();}
+        else if(name==='card_news_draft'){
+          draftCalls++;value=cards();value.core_text.source_evidence=['원문에 없는 인용'];
+          value.cards.forEach(card=>{card.source_evidence=['원문에 없는 인용'];});
+          assert(!Object.hasOwn(message.request.text.format.schema.properties.core_text.properties,'source_evidence'));
+        }else value={issues:[]};
+        child.stdin.write(JSON.stringify({type:'ai_result',id:message.id,ok:true,response:response(value)})+'\n');
+      }else result=message;
+    });
+  });
+  child.stdin.write(JSON.stringify({action:'generate',platform:'card_news',payload:{article,selected_keywords:[]}})+'\n');
+  await done;
+  assert.equal(planCalls,1);assert.equal(draftCalls,1);assert.equal(result.ok,true);
+  assert.deepEqual(result.result.draft.core_text.source_evidence,[article.content]);
+  assert.equal(result.result.draft.generation_review.status,'passed');
+});
+
 test('실제 Core stdin/stdout 경로도 Threads 표시 보완의 추가 AI 요청을 처리',async t=>{
   const child=spawn(process.execPath,[path.join(root,'core-adapter.js')],{cwd:root,env:{...process.env,PLATFORM_AI_BRIDGE:'core'},stdio:['pipe','pipe','pipe']});
   t.after(()=>{if(child.exitCode===null)child.kill();});

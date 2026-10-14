@@ -147,6 +147,7 @@ export default function ArticleWriter({
   useEffect(() => {
     if (factCheckRequest) {
       setActiveSidePanel("factcheck");
+      setShowFactMarks(true);
     }
   }, [factCheckRequest]);
 
@@ -377,10 +378,12 @@ export default function ArticleWriter({
   // 팩트체크 결과 표시: 본문 DOM 은 건드리지 않고 글자 구간에만 색을 입힌다(src/lib/factHighlights.js).
   // 결과가 바뀌거나 본문이 바뀌면 다시 칠하고, 오래된 표시는 남기지 않는다.
   const located = useRef([]);
+  const [showFactMarks, setShowFactMarks] = useState(true); // 서랍을 닫으면 본문 표시·상태 문구를 숨긴다(결과 계산은 main 그대로)
   useEffect(() => {
     const root = bodyInputRef.current;
-    if (!root) {
+    if (!root || !showFactMarks) {
       located.current = [];
+      clearPaint();
       return undefined;
     }
     const frame = requestAnimationFrame(() => {
@@ -390,7 +393,7 @@ export default function ArticleWriter({
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [factCheck.results, factCheck.focus, article.content, review, currentIssue?.id, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [factCheck.results, factCheck.focus, article.content, review, currentIssue?.id, viewMode, showFactMarks]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => clearPaint(), []);
 
   // 에디터 마우스 움직임 감지: 칠해진 문제 문장 위에 마우스가 있으면 사유 팝업을 띄운다
@@ -1576,7 +1579,7 @@ export default function ArticleWriter({
                   <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-2">
                     <span>본문 작성 영역 (자유 작성 및 서식 적용)</span>
                     <div className="flex items-center gap-3">
-                      {(factCheck.busy || factCheck.results.length > 0) && (
+                      {showFactMarks && (factCheck.busy || factCheck.results.length > 0) && (
                         <span data-testid="factcheck-status" className={`text-[11px] font-bold ${factIssueCount ? "text-rose-600" : "text-emerald-600"}`}>
                           {factCheck.busy ? "팩트체크 중…" : factIssueCount ? `확인 필요 ${factIssueCount}문장` : "팩트체크 통과"}
                         </span>
@@ -1980,6 +1983,7 @@ export default function ArticleWriter({
                 setHoveredIssue(null);
                 setReview(false); // 닫으면 순서형 검사도 끝낸다(카드와 진한 밑줄이 남지 않게)
                 setReviewIdx(0);
+                setShowFactMarks(false); // 본문 표시와 헤더 상태 문구도 함께 숨긴다
               }}
               article={article}
               setArticle={setArticle}
@@ -2104,6 +2108,7 @@ export default function ArticleWriter({
                       setReview(false);
                     } else {
                       setActiveSidePanel("factcheck");
+                      setShowFactMarks(true);
                       setShowCheckModal(true);
                       setReview(true);
                       setReviewIdx(0);
@@ -2258,6 +2263,7 @@ export default function ArticleWriter({
           onStartCheck={() => {
             setShowCheckModal(false);
             setActiveSidePanel("factcheck");
+            setShowFactMarks(true);
             startFullCheck();
           }}
         />

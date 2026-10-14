@@ -1475,17 +1475,18 @@ export default function ArticleWriter({
 
                   {/* 첨부 이미지 스타일의 통 부제목 영역 (좌측 굵은 검정 바 & 통 부제목 텍스트 블록) */}
                   <div className="border-l-[3.5px] border-slate-950 pl-3.5 py-0.5 space-y-1.5 my-2">
-                    {subtitles.map((sub, idx) => (
-                      <div key={sub.id || idx}>
-                        <input
-                          type="text"
-                          value={sub.text}
-                          onChange={(e) => handleSubtitleChange(idx, e.target.value)}
-                          placeholder={`부제목 ${idx + 1}`}
-                          className="w-full text-base md:text-lg font-bold text-slate-950 tracking-tight leading-snug bg-transparent outline-none border-none p-0 focus:ring-0 placeholder:text-slate-300"
-                        />
-                      </div>
-                    ))}
+                    {/* 부제는 줄바꿈으로 2~4줄을 쓰는 하나의 텍스트칸이다 */}
+                    <textarea
+                      data-testid="subtitle-input"
+                      value={article.subtitle || ""}
+                      rows={Math.min(6, Math.max(2, (article.subtitle || "").split("\n").length))}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setArticle((prev) => ({ ...prev, subtitle: value }));
+                      }}
+                      placeholder="부제목을 입력하세요 (줄바꿈으로 2~4줄)"
+                      className="w-full resize-none text-base md:text-lg font-bold text-slate-950 tracking-tight leading-snug bg-transparent outline-none border-none p-0 placeholder:text-slate-300"
+                    />
                   </div>
 
                   {/* 부제목 하단 글래스모피즘 세로형 AI 추천 패널 (단일 큰 박스) */}

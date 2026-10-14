@@ -14,7 +14,8 @@ import { freezeArticle, generatePlatform, suggestPlatformKeywords, getStudioArti
 import PlatformReview from "./PlatformReview.jsx";
 import PlatformCardEditor from "./PlatformCardEditor.jsx";
 import PlatformDelivery from "./PlatformDelivery.jsx";
-import ThreadsEditor, { CardThumb } from "./ThreadsEditor.jsx";
+import ThreadsEditor from "./ThreadsEditor.jsx";
+import InstagramEditor from "./InstagramEditor.jsx";
 import PlatformArticlePicker from './PlatformArticlePicker.jsx';
 import {appliedSource,applyCurrentSource,sourceReady,beginSourceTransition,claimSourceTransition,cancelSourceTransition} from '../lib/platformSource.js';
 import {articleId, fingerprint, invalidateDraft, sourceText, subtitleLabel, supportedPlatforms, visibleDrafts} from "../lib/platformState.js";
@@ -104,58 +105,7 @@ function PlatformDraftEditor({ platform, draft, onChange, cards, article, showCa
   };
 
   if (platform === "instagram") {
-    return (
-      <div className="space-y-4">
-        {/* 인스타그램 카드뉴스 불러오기 형태 */}
-        {showCards && (
-          cards.length > 0 ? (
-            <div className="rounded-2xl border border-[#DDD6CB] bg-[#FAF8F5] p-3">
-              <div className="-mr-2 flex gap-3 overflow-x-auto pb-1 scrollbar-thin">
-                {cards.map((card, cardIndex) => (
-                  <CardThumb key={card.card_id || cardIndex} card={card} index={cardIndex} total={cards.length} article={article} />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 rounded-xl border border-dashed border-[#DDD6CB] bg-[#FAF8F5] px-3 py-2 text-[11px] text-[#8E8982]">
-              <ImageIcon className="h-4 w-4 shrink-0" /> 카드뉴스를 생성하면 인스타그램 피드 이미지로 여기에 붙습니다.
-            </div>
-          )
-        )}
-
-        <TextArea
-          label="도입"
-          value={draft.opening}
-          onChange={(value) => changed((next) => { next.opening = value; })}
-          rows={3}
-          evidence={draft.block_evidence?.opening}
-        />
-        {(draft.paragraphs || []).map((paragraph, index) => (
-          <TextArea
-            key={index}
-            label={`본문 ${index + 1}`}
-            value={paragraph}
-            onChange={(value) => changed((next) => { next.paragraphs[index] = value; })}
-            evidence={draft.block_evidence?.paragraphs?.[index]}
-          />
-        ))}
-        <TextArea
-          label="마무리"
-          value={draft.closing}
-          onChange={(value) => changed((next) => { next.closing = value; })}
-          rows={3}
-          evidence={draft.block_evidence?.closing}
-        />
-        <TextArea
-          label="해시태그 · 3~5개"
-          value={(draft.hashtags || []).join(" ")}
-          onChange={(value) => changed((next) => {
-            next.hashtags = value.trim() ? value.trim().split(/\s+/u) : [];
-          })}
-          rows={2}
-        />
-      </div>
-    );
+    return <InstagramEditor draft={draft} changed={changed} Evidence={Evidence} cards={cards} article={article} showCards={showCards} />;
   }
 
   if (platform === "threads") {
@@ -649,7 +599,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
           const hasAnySelected = availablePlatforms.length > 0 || includeCardNews || cardNews;
 
           return (
-            <main className={`min-w-0 ${activeView === "threads" ? "space-y-4" : "rounded-3xl border border-[#DDD6CB] bg-white/90 p-4 shadow-sm md:p-6"}`}>
+            <main className={`min-w-0 ${activeView === "threads" || activeView === "instagram" ? "space-y-4" : "rounded-3xl border border-[#DDD6CB] bg-white/90 p-4 shadow-sm md:p-6"}`}>
               {hasAnySelected ? (
                 <>
                   {/* 편집 화면 상단 바: 좌측에 플랫폼 탭(현재 플랫폼은 탭이 눌린 모양으로 표시), 우측에 카드뉴스 불러오기 형태 토글 */}
@@ -752,8 +702,8 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                     </div>
                   </div>
 
-                  {activeView === "threads" ? (
-                    // Threads: 중간 화면에는 스레드 화면 편집 배치
+                  {activeView === "threads" || activeView === "instagram" ? (
+                    // Threads·Instagram: 중간 화면에는 게시물 작성 화면 편집 배치
                     <div className="w-full flex min-w-0 justify-center" data-testid="threads-layout">
                       {draftEditor}
                     </div>
@@ -870,7 +820,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
           </section>
 
           {/* 스레드 화면: 플랫폼 원고 검수 및 이미지 내보내기·SNS 작성창 준비 박스를 오른쪽 핵심 키워드 하단에 배치 */}
-          {activeView === "threads" && (
+          {(activeView === "threads" || activeView === "instagram") && (
             <div className="space-y-4" data-testid="threads-side">
               {reviewPanel}
               {deliveryPanel}

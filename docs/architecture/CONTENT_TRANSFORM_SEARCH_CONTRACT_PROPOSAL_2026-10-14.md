@@ -1,5 +1,7 @@
 # 콘텐츠 변환 고정본 근거 보조: 연결 계약 제안
 
+> **현재 코드 기준 적용 순서:** [개정 실행 계획](CONTENT_TRANSFORM_SEARCH_EXECUTION_PLAN_CURRENT_2026-10-14.md)을 먼저 본다. 본문의 `locateSnapshotQuotes` 등은 아직 팀 Core의 합의된 API가 아니다. 현재 B0는 플랫폼 영역에서 원문 위치를 UTF-16 좌표로 계산해 `evidence_context`로 두 검수에 전달한다. Core 고정본 색인·의미 검색(B1), 제안된 `evidence_assist` 전달 계약은 구현되지 않았다.
+
 작성일: 2026-10-14 (Asia/Seoul)  
 상태: **미구현·미합의 계약 초안**
 

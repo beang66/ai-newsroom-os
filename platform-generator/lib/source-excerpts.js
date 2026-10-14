@@ -11,13 +11,14 @@ function sourceExcerpts(content) {
 // AI가 고른 내부 배열 번호를 실제 원문 구절로 바꾼다. 저장/반환 형식은 기존 문자열 배열이다.
 function resolvePlanEvidence(plan, excerpts) {
   if (!plan || !Array.isArray(plan.points)) return plan;
-  return { ...plan, points: plan.points.map(point => {
+  return { ...plan, points: plan.points.map((point, pointIndex) => {
     if (!point || !Array.isArray(point.source_evidence)) return point;
     return { ...point, source_evidence: point.source_evidence.map(reference => {
       // 이전 응답의 문자열은 기존 인용 검사에 그대로 맡긴다. 잘못된 인용을 유사 문장으로 덮지 않는다.
       if (typeof reference === 'string') return reference;
       if (!Number.isInteger(reference) || reference < 0 || reference >= excerpts.length) {
-        throw Object.assign(new Error('주요 정보의 원문 구절 선택 번호가 올바르지 않습니다.'), { code: 'INVALID_INFORMATION_PLAN' });
+        throw Object.assign(new Error('주요 정보의 원문 구절 선택 번호가 올바르지 않습니다.'),
+          { code: 'INVALID_INFORMATION_PLAN', fieldCode: 'EVIDENCE_REFERENCE_INVALID', pointIndex });
       }
       return excerpts[reference];
     }) };

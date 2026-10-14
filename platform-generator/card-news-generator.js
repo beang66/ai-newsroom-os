@@ -36,7 +36,7 @@ const evidenceSchema = { type: "array", items: stringSchema };
 // 원고 작성 전에 주요 정보를 본문 카드에 배분합니다. 마지막 카드는 배분된 내용만 종합합니다.
 const informationPlanSchema=objectSchema({
   card_count:{type:'integer',minimum:3,maximum:10},main_topic:stringSchema,
-  points:{type:'array',minItems:1,items:objectSchema({id:stringSchema,summary:stringSchema,body_page:{type:'integer',minimum:2,maximum:9},source_evidence:evidenceSchema})},
+  points:{type:'array',minItems:1,items:objectSchema({id:stringSchema,summary:stringSchema,body_page:{type:'integer',minimum:2,maximum:9},source_evidence:{type:'array',minItems:1,items:stringSchema}})},
   closing_summary:stringSchema,
 });
 
@@ -91,21 +91,80 @@ function readResponse(response){
   try{return JSON.parse(content.filter(i=>i.type==='output_text').map(i=>i.text).join(''));}
   catch{throw new Error('카드뉴스 응답을 JSON으로 읽지 못했습니다.');}
 }
-function invalidInformationPlan(message){
-  return Object.assign(new Error(message),{code:'INVALID_INFORMATION_PLAN'});
+// 배분표 실패 코드는 원문·AI 응답을 로그에 남기지 않고 재요청을 정확히 안내하기 위한 값이다.
+const PLAN_ISSUE_TEXT=Object.freeze({
+  PLAN_SHAPE:'배분표 객체가 없습니다.',
+  CARD_COUNT_RANGE:'카드 수는 3~10의 정수여야 합니다.',
+  MAIN_TOPIC_EMPTY:'주제가 비어 있습니다.',
+  CLOSING_SUMMARY_EMPTY:'마지막 카드의 종합 내용이 비어 있습니다.',
+  POINTS_EMPTY:'본문에 배분할 주요 정보가 없습니다.',
+  POINT_SHAPE:'주요 정보 항목은 객체여야 합니다.',
+  POINT_ID_EMPTY:'정보 ID는 빈 문자열일 수 없습니다.',
+  POINT_ID_DUPLICATE:'정보 ID가 중복됩니다. 각 정보에 서로 다른 ID를 부여해야 합니다.',
+  POINT_SUMMARY_EMPTY:'정보 요약은 비어 있을 수 없습니다.',
+  BODY_PAGE_NOT_INTEGER:'본문 카드 번호는 정수여야 합니다.',
+  BODY_PAGE_NOT_BODY:'본문 카드 번호는 표지와 마지막 카드를 제외한 번호여야 합니다.',
+  EVIDENCE_FORMAT:'근거는 비어 있지 않은 문자열 배열이어야 합니다.',
+  EVIDENCE_EMPTY:'근거 배열에 원문 구절이 하나 이상 있어야 합니다.',
+  EVIDENCE_NOT_IN_ARTICLE:'근거가 기사 본문과 일치하지 않습니다. 본문에서 그대로 인용해야 합니다.',
+  EVIDENCE_REFERENCE_INVALID:'원문 구절 선택 번호가 선택표 범위 밖이거나 정수가 아닙니다.',
+});
+const EVIDENCE_ISSUES=new Set(['EVIDENCE_FORMAT','EVIDENCE_EMPTY','EVIDENCE_NOT_IN_ARTICLE','EVIDENCE_REFERENCE_INVALID']);
+function planIssue(code,pointIndex=null){return {code,point_index:pointIndex};}
+function planIssueMessage(issue,plan){
+  const prefix=issue.point_index===null?'':`${issue.point_index}번째 정보: `;
+  const range=issue.code==='BODY_PAGE_NOT_BODY'&&Number.isInteger(plan?.card_count)&&plan.card_count>=3&&plan.card_count<=10
+    ? ` (허용: 2~${plan.card_count-1}번째 카드)` : '';
+  return `${prefix}[${issue.code}] ${PLAN_ISSUE_TEXT[issue.code]}${range}`;
+}
+function planIssueSummary(issues,plan){
+  const shown=issues.slice(0,5).map(issue=>planIssueMessage(issue,plan)).join(' ');
+  return shown+(issues.length>5?` 그 외 ${issues.length-5}건.`:'');
+}
+function invalidInformationPlan(issues,plan){
+  return Object.assign(new Error(planIssueSummary(issues,plan)),{
+    code:'INVALID_INFORMATION_PLAN',issues,
+  });
+}
+// 앞뒤 공백만 제거한다. 정보의 의미, 페이지 배정, 근거 문자열은 만들거나 바꾸지 않는다.
+function normalizeInformationPlanFormat(plan){
+  if(!plan||typeof plan!=='object'||Array.isArray(plan))return plan;
+  return {...plan,
+    main_topic:typeof plan.main_topic==='string'?plan.main_topic.trim():plan.main_topic,
+    closing_summary:typeof plan.closing_summary==='string'?plan.closing_summary.trim():plan.closing_summary,
+    points:Array.isArray(plan.points)?plan.points.map(point=>point&&typeof point==='object'&&!Array.isArray(point)
+      ?{...point,id:typeof point.id==='string'?point.id.trim():point.id,
+        summary:typeof point.summary==='string'?point.summary.trim():point.summary}:point):plan.points,
+  };
 }
 function checkInformationPlan(plan,article){
-  if(!plan||!Number.isInteger(plan.card_count)||plan.card_count<3||plan.card_count>10||!hasText(plan.main_topic)||!hasText(plan.closing_summary)||!Array.isArray(plan.points)||!plan.points.length)throw invalidInformationPlan('기사 주요 정보 배분표의 필수 항목이나 카드 수가 올바르지 않습니다.');
+  const issues=[];
+  if(!plan||typeof plan!=='object'||Array.isArray(plan))throw invalidInformationPlan([planIssue('PLAN_SHAPE')],plan);
+  if(!Number.isInteger(plan.card_count)||plan.card_count<3||plan.card_count>10)issues.push(planIssue('CARD_COUNT_RANGE'));
+  if(!hasText(plan.main_topic))issues.push(planIssue('MAIN_TOPIC_EMPTY'));
+  if(!hasText(plan.closing_summary))issues.push(planIssue('CLOSING_SUMMARY_EMPTY'));
+  if(!Array.isArray(plan.points)||!plan.points.length)issues.push(planIssue('POINTS_EMPTY'));
   const ids=new Set();
-  for(const point of plan.points){
-    if(!hasText(point.id)||ids.has(point.id)||!hasText(point.summary)||!Number.isInteger(point.body_page)||point.body_page<2||point.body_page>=plan.card_count||!hasEvidence(point.source_evidence)){
-      throw invalidInformationPlan('주요 정보의 ID, 요약, 본문 카드 번호 또는 근거 형식이 올바르지 않습니다.');
+  for(const [index,point] of (Array.isArray(plan.points)?plan.points:[]).entries()){
+    const position=index+1;
+    if(!point||typeof point!=='object'||Array.isArray(point)){
+      issues.push(planIssue('POINT_SHAPE',position));continue;
     }
-    if(point.source_evidence.some(q=>!normalize(article.content).includes(normalize(q)))){
-      throw invalidInformationPlan(`주요 정보 ${point.id}의 근거가 기사 본문과 일치하지 않습니다. 제목이나 요약이 아니라 본문에서 그대로 인용해야 합니다.`);
+    const id=typeof point.id==='string'?point.id.trim():'';
+    if(!id)issues.push(planIssue('POINT_ID_EMPTY',position));
+    else if(ids.has(id))issues.push(planIssue('POINT_ID_DUPLICATE',position));
+    else ids.add(id);
+    if(!hasText(point.summary))issues.push(planIssue('POINT_SUMMARY_EMPTY',position));
+    if(!Number.isInteger(point.body_page))issues.push(planIssue('BODY_PAGE_NOT_INTEGER',position));
+    else if(point.body_page<2||point.body_page>=plan.card_count)issues.push(planIssue('BODY_PAGE_NOT_BODY',position));
+    if(!Array.isArray(point.source_evidence))issues.push(planIssue('EVIDENCE_FORMAT',position));
+    else if(!point.source_evidence.length)issues.push(planIssue('EVIDENCE_EMPTY',position));
+    else if(!point.source_evidence.every(hasText))issues.push(planIssue('EVIDENCE_FORMAT',position));
+    else if(point.source_evidence.some(q=>!normalize(article.content).includes(normalize(q)))){
+      issues.push(planIssue('EVIDENCE_NOT_IN_ARTICLE',position));
     }
-    ids.add(point.id);
   }
+  if(issues.length)throw invalidInformationPlan(issues,plan);
 }
 function checkInformationCoverage(plan,draft){
   if(draft.cards.length!==plan.card_count)throw new Error('정보 배분표와 카드 수가 다릅니다.');
@@ -203,31 +262,49 @@ async function generateCardNews(input) {
   // Instagram 작성 규칙과 생성 함수를 사용하지 않습니다.
   const commonRules = getPlatformRules("card_news").common_rules;
   const client = new OpenAI({ apiKey, timeout: 180000, maxRetries: 0 });
-  const planInstructions=`${commonRules}\n${CARD_NEWS_RULES}\n원고를 쓰기 전에 기사 주요 정보와 필수 맥락을 추출하고 본문 카드에 배분하세요. 각 정보는 고유 id와 실제 기사 본문 source_evidence, 처음 충분히 설명할 body_page를 가집니다. source_evidence는 입력 article.content에서 연속된 문장 또는 구절을 글자 그대로 복사하세요. 제목, 요약, 바꿔 쓴 표현, 기사 본문에 없는 문구는 근거로 쓰지 마세요. 표지 1장과 마지막 1장을 제외한 본문 안에서 주요 정보가 완결되어야 합니다. 사용자 장수 요청을 지킵니다. closing_summary는 표지 주제와 주요 내용을 종합하고 새로운 정보는 없습니다.`;
+  const planInstructions=`${commonRules}\n${CARD_NEWS_RULES}\n원고를 쓰기 전에 기사 주요 정보와 필수 맥락을 추출하고 본문 카드에 배분하세요. 각 정보는 고유 id와 실제 기사 본문 source_evidence, 처음 충분히 설명할 body_page를 가집니다. 정보 ID는 빈값이나 중복이 없어야 하고 요약은 비어 있지 않아야 합니다. body_page는 표지 1장과 마지막 1장을 제외한 본문 카드 번호 2~card_count-1의 정수입니다. 주요 정보는 본문 안에서 완결되어야 합니다. 사용자 장수 요청을 지킵니다. closing_summary는 표지 주제와 주요 내용을 종합하고 새로운 정보는 없습니다.`;
+  const directEvidenceRule='source_evidence는 입력 article.content에서 연속된 문장 또는 구절을 글자 그대로 복사한 문자열 배열입니다. 제목, 요약, 바꿔 쓴 표현, 기사 본문에 없는 문구는 근거로 쓰지 마세요.';
+  const referencedEvidenceRule='source_evidence는 source_excerpt_catalog에서 실제 원문 구절의 0부터 시작하는 번호를 하나 이상 선택하는 정수 배열입니다. 인용문을 직접 작성하지 마세요. 서버가 번호를 원문 구절로 연결합니다.';
   let informationPlan;
   let previousPlan;
   let previousPlanError;
-  const excerptCatalog=sourceExcerpts(input.article.content);
+  let excerptCatalog;
   for(let attempt=0;attempt<2;attempt++){
+    const useReferences=attempt>0&&previousPlanError.issues.some(issue=>EVIDENCE_ISSUES.has(issue.code));
+    const retryErrors=attempt>0?planIssueSummary(previousPlanError.issues,previousPlan):'';
+    if(useReferences)excerptCatalog=sourceExcerpts(input.article.content);
     const response=await client.responses.create({
       model:OpenAI.model?.trim()||'gpt-5',store:false,max_output_tokens:6000,
-      instructions:attempt===0?planInstructions:`${planInstructions}\n직전 배분표에 검증 오류가 있었습니다. 오류 내용과 이전 결과는 참고 자료입니다. 이번 source_evidence는 문자열이 아니라 source_excerpt_catalog 배열에서 관련 실제 원문 구절의 0부터 시작하는 번호를 하나 이상 선택하는 정수 배열입니다. 인용문을 직접 작성하거나 이전 잘못된 인용을 복사하지 마세요. 서버가 선택 번호를 원문의 정확한 구절로 연결합니다. 요약과 배정은 해당 근거로 뒷받침해야 합니다.\n검증 오류: ${previousPlanError.message}`,
+      instructions:attempt===0?`${planInstructions}\n${directEvidenceRule}`:`${planInstructions}\n직전 배분표가 다음 항목에서 실패했습니다. 각 항목을 실제 기사에 맞춰 다시 작성하세요. 페이지 배분과 정보의 의미를 임의로 합치거나 생략하지 마세요.\n${useReferences?referencedEvidenceRule:directEvidenceRule}\n검증 오류: ${retryErrors}`,
       input:JSON.stringify({
         article:input.article,
         selected_keywords:input.selected_keywords,
         requirements:input.requirements??'',
-        ...(attempt===0?{}:{previous_information_plan:previousPlan,validation_error:previousPlanError.message,source_excerpt_catalog:excerptCatalog}),
+        ...(attempt===0?{}:{previous_information_plan:previousPlan,validation_error:retryErrors,
+          validation_issue_codes:previousPlanError.issues.map(issue=>({code:issue.code,point_index:issue.point_index})),
+          ...(useReferences?{source_excerpt_catalog:excerptCatalog}:{})}),
       }),
-      text:{format:{type:'json_schema',name:'card_news_information_plan',strict:true,schema:attempt===0?informationPlanSchema:referencedPlanSchema(excerptCatalog)}},
+      text:{format:{type:'json_schema',name:'card_news_information_plan',strict:true,
+        schema:useReferences?referencedPlanSchema(excerptCatalog):informationPlanSchema}},
     });
-    informationPlan=readResponse(response);
+    informationPlan=normalizeInformationPlanFormat(readResponse(response));
     try{
-      if(attempt>0)informationPlan=resolvePlanEvidence(informationPlan,excerptCatalog);
+      if(useReferences)informationPlan=resolvePlanEvidence(informationPlan,excerptCatalog);
       checkInformationPlan(informationPlan,input.article);
       break;
     }catch(error){
+      if(error.code==='INVALID_INFORMATION_PLAN'&&!Array.isArray(error.issues)){
+        error=invalidInformationPlan([planIssue(error.fieldCode||'EVIDENCE_REFERENCE_INVALID',
+          Number.isInteger(error.pointIndex)?error.pointIndex+1:null)],informationPlan);
+      }
       if(error.code!=='INVALID_INFORMATION_PLAN'||attempt===1){
-        if(error.code==='INVALID_INFORMATION_PLAN')throw new Error(`카드뉴스 주요 정보 배분표를 확인하지 못했습니다. ${error.message} 원문을 확인한 뒤 다시 시도해주세요.`);
+        if(error.code==='INVALID_INFORMATION_PLAN'){
+          const first=planIssueSummary(previousPlanError.issues,previousPlan);
+          throw Object.assign(new Error(`카드뉴스 주요 정보 배분표를 만들지 못했습니다. 첫 응답: ${first} 재요청: ${error.message} 다시 생성해 주세요.`),{
+            code:'INVALID_INFORMATION_PLAN',firstIssueCodes:previousPlanError.issues.map(issue=>issue.code),
+            retryIssueCodes:error.issues.map(issue=>issue.code),
+          });
+        }
         throw error;
       }
       previousPlan=informationPlan;

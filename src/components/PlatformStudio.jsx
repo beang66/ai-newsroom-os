@@ -8,6 +8,7 @@ import {
   Loader2,
   RefreshCw,
   Sparkles,
+  Type,
 } from "lucide-react";
 import { freezeArticle, generatePlatform, suggestPlatformKeywords, getStudioArticle } from "../api/platform";
 
@@ -603,7 +604,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
               {hasAnySelected ? (
                 <>
                   {/* 편집 화면 상단 바: 좌측에 플랫폼 탭(현재 플랫폼은 탭이 눌린 모양으로 표시), 우측에 카드뉴스 불러오기 형태 토글 */}
-                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-[#EFECE6] pb-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[#EFECE6] pb-3">
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="flex flex-wrap gap-1.5">
                         {availablePlatforms.map((platform) => (
@@ -638,23 +639,58 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                       </div>
                     </div>
 
-                    {/* 인스타 / 스레드일 때: 카드뉴스를 불러오는 형태와 아닌 형태 전환 버튼 */}
-                    {viewPicked && (activeView === "instagram" || activeView === "threads") && (
-                      <div className="flex items-center gap-1 rounded-full border border-[#DDD6CB] bg-[#FAF8F5] p-1 text-[11px] font-bold">
+                    {/* 오른쪽: 카드뉴스 불러오기/텍스트 전용 전환 · 이 항목 생성 · 전체 복사(아이콘 버튼, 이름은 마우스를 올리면 보인다) */}
+                    {viewPicked && (
+                      <div className="flex items-center gap-2">
+                        {(activeView === "instagram" || activeView === "threads") && (
+                          <div className="flex items-center gap-0.5 rounded-full border border-[#DDD6CB] bg-[#FAF8F5] p-0.5">
+                            <button
+                              type="button"
+                              title="카드뉴스 불러오기"
+                              aria-label="카드뉴스 불러오기"
+                              aria-pressed={!!cardNewsMode[activeView]}
+                              onClick={() => setCardNewsMode((prev) => ({ ...prev, [activeView]: true }))}
+                              className={`flex h-8 w-8 items-center justify-center rounded-full transition ${cardNewsMode[activeView] ? "bg-[#292929] text-white shadow-sm" : "text-[#756F67] hover:text-[#101010]"}`}
+                            >
+                              <ImageIcon className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title="텍스트 전용"
+                              aria-label="텍스트 전용"
+                              aria-pressed={!cardNewsMode[activeView]}
+                              onClick={() => setCardNewsMode((prev) => ({ ...prev, [activeView]: false }))}
+                              className={`flex h-8 w-8 items-center justify-center rounded-full transition ${!cardNewsMode[activeView] ? "bg-[#292929] text-white shadow-sm" : "text-[#756F67] hover:text-[#101010]"}`}
+                            >
+                              <Type className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setCardNewsMode((prev) => ({ ...prev, [activeView]: true }))}
-                          className={`rounded-full px-2.5 py-1 transition ${cardNewsMode[activeView] ? "bg-[#292929] text-white shadow-sm" : "text-[#756F67] hover:text-[#101010]"}`}
+                          onClick={() => runGeneration([activeView])}
+                          disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
+                          title={activeView === "card_news"
+                              ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
+                              : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
+                          aria-label={activeView === "card_news"
+                              ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
+                              : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-[#292929] text-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          카드뉴스 불러오기
+                          {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setCardNewsMode((prev) => ({ ...prev, [activeView]: false }))}
-                          className={`rounded-full px-2.5 py-1 transition ${!cardNewsMode[activeView] ? "bg-[#292929] text-white shadow-sm" : "text-[#756F67] hover:text-[#101010]"}`}
-                        >
-                          텍스트 전용
-                        </button>
+                        {activeView !== "card_news" && drafts[activeView] && (
+                          <button
+                            type="button"
+                            onClick={() => copyDraft(activeView)}
+                            title={copied === activeView ? "복사됨" : "전체 복사"}
+                            aria-label={copied === activeView ? "복사됨" : "전체 복사"}
+                            className="flex h-9 w-9 items-center justify-center rounded-full border border-[#DDD6CB] bg-white text-[#292929]"
+                          >
+                            {copied === activeView ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -666,42 +702,6 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                     </div>
                   ) : (
                   <>
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs leading-5 text-[#8E8982]">
-                        {currentDraft?.validation_status === "needs_recheck"
-                          ? "생성 뒤 수정된 내용입니다. 원문 근거 재검수가 필요합니다."
-                          : currentDraft
-                          ? "실제 생성 엔진 결과입니다. 발행 전 사람이 최종 검토해야 합니다."
-                          : "아직 생성 결과가 없습니다."}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => runGeneration([activeView])}
-                        disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
-                        title="이 항목만 생성합니다. 이미 있는 결과와 수정 내용은 새 결과로 바뀝니다."
-                        className="inline-flex items-center gap-1.5 rounded-full bg-[#292929] px-3 py-2 text-[11px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        {activeView === "card_news"
-                          ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
-                          : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
-                      </button>
-                      {activeView !== "card_news" && drafts[activeView] && (
-                        <button
-                          type="button"
-                          onClick={() => copyDraft(activeView)}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-[#DDD6CB] bg-white px-3 py-2 text-[11px] font-bold"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                          {copied === activeView ? "복사됨" : "전체 복사"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
                   {activeView === "threads" || activeView === "instagram" ? (
                     // Threads·Instagram: 중간 화면에는 게시물 작성 화면 편집 배치
                     <div className="w-full flex min-w-0 justify-center" data-testid="threads-layout">

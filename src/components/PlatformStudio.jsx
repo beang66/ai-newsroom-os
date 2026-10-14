@@ -599,6 +599,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
               </button>
             </div>
           </section>
+          {viewPicked && (activeView === "threads" || activeView === "instagram") && deliveryPanel}
         </aside>
 
         {(() => {
@@ -827,11 +828,10 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
             </div>
           </section>
 
-          {/* 스레드 화면: 플랫폼 원고 검수 및 이미지 내보내기·SNS 작성창 준비 박스를 오른쪽 핵심 키워드 하단에 배치 */}
+          {/* 스레드·인스타그램 화면: 플랫폼 원고 검수 박스를 오른쪽 핵심 키워드 하단에 배치(로컬 앱 연결 박스는 왼쪽 메뉴 아래) */}
           {(activeView === "threads" || activeView === "instagram") && (
             <div className="space-y-4" data-testid="threads-side">
               {reviewPanel}
-              {deliveryPanel}
             </div>
           )}
 

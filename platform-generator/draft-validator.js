@@ -17,6 +17,8 @@ const path = require("path");
 const OpenAI = require("./ai-provider");
 const {EMOJIS,hasEmoji,usesDefaultStyle}=require("./instagram-writing-contract");
 const { getPlatformRules } = require("./platform-rules");
+const { quoteContexts } = require('./lib/quote-context');
+const { serialize } = require('./lib/review-binding');
 // ============================================================
 // 1. 환경 변수 불러오기
 // ============================================================
@@ -459,6 +461,7 @@ async function validateDraft(input, options={}) {
   }
   const rules = getPlatformRules(input.platform);
   const draft = extractDraft(input.platform, input.draft);
+  const evidenceContext = quoteContexts(input.article, draft);
   const apiKey = (options.apiKey||OpenAI.apiKey)?.trim();
   if (!apiKey) {
     throw new Error(".env의 OPENAI_API_KEY를 확인해주세요.");
@@ -502,6 +505,8 @@ async function validateDraft(input, options={}) {
 \- 수정 제안에도 원문에 없는 사실, 수치, 사례를 추가하지 않습니다.
 \- 같은 문제를 여러 분류로 중복하여 나열하지 않습니다.
 \- already_detected에 있는 문제는 반복해서 반환하지 않습니다.
+- evidence_context는 기존 인용의 본문 위치와 앞뒤 문맥 안내입니다. 전체 원문 검토를 대신하지 않습니다.
+- matched 인용도 주체·기간·조건·주장 의미를 별도로 확인합니다. unmatched 또는 context_complete=false만으로 주장을 거짓으로 판정하지 않습니다.
 [생성에 적용한 공통 기준]
 ${rules.common_rules}
 [생성에 적용한 플랫폼 기준]
@@ -529,6 +534,7 @@ ${instructions}
             {card_id:card.card_id,page:card.page,role:card.role,closing_type:'service',excluded_from_article_fact_check:true}:{...card,content:{...card.content,farewell:''}}),
         }:draft,
         already_detected: alreadyDetected,
+        evidence_context: evidenceContext,
       }),
       text: {
         format: {
@@ -746,6 +752,7 @@ ${instructions}
   );
   return {
     platform: input.platform,
+    review_context: validationContext(input),
     checked_at: new Date().toISOString(),
     status: issueCount === 0 ? "passed" : "needs_revision",
     issue_count: issueCount,
@@ -760,5 +767,16 @@ ${instructions}
 // ============================================================
 module.exports = {
   validateDraft,
+  validationContext,
   extractDraft, checkBasicRules, createQuoteChecker,
 };
+
+// 같은 코드·규칙으로 실제 검수한 입력과 반환된 결과를 비교한다.
+function validationContext(input) {
+  input = require('./lib/article-contract').generationPayload(input);
+  const serialized = serialize({ platform: input.platform, article: input.article,
+    selected_keywords: input.selected_keywords || [], requirements: input.requirements || '',
+    rules: getPlatformRules(input.platform), draft: extractDraft(input.platform, input.draft),
+    context_version: 'quote-context-v1' });
+  return require('node:crypto').createHash('sha256').update(serialized, 'utf8').digest('hex');
+}

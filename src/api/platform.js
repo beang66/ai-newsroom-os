@@ -3,6 +3,8 @@
 import { core } from "./core.js";
 import { saveDraft, bodyHtmlOf, loadStoredArticle } from "./editorial.js";
 import { articleId, renderKey, selectedCardPhoto, sourceText } from "../lib/platformState.js";
+import { attachCurrentReview } from '../lib/platformState.js';
+import '../../platform-generator/lib/review-binding.js';
 
 // Core 본문 텍스트를 그대로 전달한다. 화면의 부제·사진·캡션을 생성 원문에 합치지 않는다.
 const cleanArticle = (article = {}) => ({
@@ -73,8 +75,11 @@ export async function generatePlatform(platform, article, selectedKeywords, requ
   const result = await core.generatePlatform(platform, payload, snapshotId);
   const draft = result?.draft || null;
   // 화면 편집 최신성 서명은 로컬 보호용이다. Core 공통 ID나 고정본 계약을 대신하지 않는다.
-  return draft ? { ...draft, ...(result?.snapshotId ? {snapshot_id:result.snapshotId} : {}), generation_input:payload,
-    ...(sourceArticle ? {generation_source:sourceText(sourceArticle)} : {}) } : null;
+  if (!draft) return null;
+  const generated = { ...draft, ...(result?.snapshotId ? {snapshot_id:result.snapshotId} : {}), generation_input:payload,
+    ...(sourceArticle ? {generation_source:sourceText(sourceArticle)} : {}) };
+  return sourceArticle && await globalThis.ContentReviewBinding.reviewMatches({ ...payload, platform }, draft)
+    ? attachCurrentReview(platform, generated, sourceArticle, draft.generation_review) : generated;
 }
 
 export async function validatePlatformDraft(platform, draft) {

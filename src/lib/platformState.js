@@ -1,4 +1,4 @@
-const excluded = new Set(["validation_status", "evidence_status", "validation_review", "rendered_image", "generation_review", "evidence_valid", "block_evidence_valid"]);
+const excluded = new Set(["validation_status", "evidence_status", "validation_review", "rendered_image", "generation_review", "generation_review_binding", "evidence_valid", "block_evidence_valid"]);
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
   ? Object.fromEntries(Object.keys(value).sort().filter(key => !excluded.has(key)).map(key => [key, canonical(value[key])])) : value;
 export const fingerprint = value => JSON.stringify(canonical(value));
@@ -20,6 +20,19 @@ export function reviewStatus(draft) {
   return record && record.key === fingerprint(draft) ? record.result.status : draft?.validation_status === "needs_recheck" ? "needs_recheck" : "not_checked";
 }
 export const invalidateDraft = draft => ({...draft, validation_status:"needs_recheck", evidence_status:"needs_recheck"});
+// 저장본을 복구한 뒤에는 이전 런타임의 재사용 표시를 신뢰하지 않는다.
+const reviewSession = {};
+export const reviewContextKey = (platform, draft, article) => JSON.stringify([
+  platform, fingerprint(draft), sourceText(article), fingerprint(article?.photos || [])]);
+export function attachCurrentReview(platform, draft, article, result) {
+  return {...draft, validation_status:result.status, validation_review:{key:fingerprint(draft), result,
+    context:reviewContextKey(platform,draft,article), session:reviewSession}};
+}
+export function reusableReview(platform, draft, article) {
+  const record=draft?.validation_review;
+  return draft?.validation_status !== 'needs_recheck' && record?.session === reviewSession
+    && record.context === reviewContextKey(platform,draft,article) ? record.result : null;
+}
 export const selectedCardPhoto = (card, article) => card?.photoId ? (article?.photos || []).find(photo => photo.id === card.photoId) || null : card?.image || null;
 // 편집 최신성 비교용 서명. 자산의 기사·고정본 소유권은 Core가 별도로 확인한다.
 // 사진 바이트를 중복 저장하지 않도록 길이와 128비트 체크섬을 보관한다.

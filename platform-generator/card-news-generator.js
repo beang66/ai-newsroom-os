@@ -299,7 +299,7 @@ async function generateCardNews(input) {
 
   // 원고 문장과 배분표를 함께 의미 검수하고, 새 생성본만 최대 두 번 교정합니다.
   // 사용자가 편집하거나 불러온 기존 초안을 자동으로 다시 쓰지 않습니다.
-  const {validateDraft}=require('./draft-validator');
+  const {validateDraft,validationContext}=require('./draft-validator');
   let generationReview;
   for(let attempt=0;attempt<=2;attempt++){
     let structuralError;
@@ -327,7 +327,7 @@ async function generateCardNews(input) {
   }
 
   // 7. 플랫폼과 독립적인 편집용 결과 반환
-  return {
+  const generated = {
     article_id: input.article.article_id,
     platform: "card_news",
     draft_version: 2,
@@ -347,6 +347,13 @@ async function generateCardNews(input) {
     })),
     validation_status: "not_checked",
   };
+  // 표현·필드가 바뀐 결과나 구조 검사만 한 결과를 최종 의미 검수로 승격하지 않는다.
+  if (generationReview?.review_context === validationContext({...input, platform:'card_news', draft:generated})) {
+    generated.generation_review_binding = require('./lib/review-binding').bindReview(
+      {...input, platform:'card_news'}, generated,
+      value => require('node:crypto').createHash('sha256').update(value, 'utf8').digest('hex'));
+  }
+  return generated;
 }
 
 module.exports = { generateCardNews, checkStructure, cardNewsSchema, checkInformationPlan, checkInformationCoverage, createPlannedDraftSchema, readPlannedDraft };

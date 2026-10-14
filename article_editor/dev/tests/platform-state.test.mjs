@@ -1,7 +1,50 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {assertSameSource,currentRender,fingerprint,invalidateDraft,renderKey,reviewStatus,subtitleLabel,sourceText,supportedPlatforms,visibleDrafts} from '../../../src/lib/platformState.js';
 import {sourceReady,appliedSource,applyCurrentSource,beginSourceTransition,claimSourceTransition,cancelSourceTransition} from '../../../src/lib/platformSource.js';
+import {attachCurrentReview,reusableReview} from '../../../src/lib/platformState.js';
+
+test('새 검수는 같은 런타임·원고·조건에서만 재사용하고 저장 복원·사진·원문 변경 시 다시 검사',()=>{
+ const source={articleId:'fixture',title:'제목',content:'본문',photos:[]};
+ const original={article_id:'fixture',opening:'도입',generation_input:{article:{title:'제목',content:'본문'},requirements:''}};
+ const result={status:'needs_revision',fact:{issues:[{reason:'조건 누락'}]},requirement:{issues:[]}};
+ const reviewed=attachCurrentReview('instagram',original,source,result);
+ assert.equal(reusableReview('instagram',reviewed,source),result);
+ assert.equal(reusableReview('threads',reviewed,source),null);
+ assert.equal(reusableReview('instagram',{...reviewed,opening:'새 도입'},source),null);
+ assert.equal(reusableReview('instagram',reviewed,{...source,content:'새 본문'}),null);
+ assert.equal(reusableReview('instagram',reviewed,{...source,photos:[{caption:'새 사진'}]}),null);
+ assert.equal(reusableReview('instagram',JSON.parse(JSON.stringify(reviewed)),source),null);
+ assert.equal(reusableReview('instagram',invalidateDraft(reviewed),source),null);
+ assert.equal(reusableReview('instagram',{...reviewed,generation_input:{...reviewed.generation_input,requirements:'반말'}},source),null);
+});
+
+test('실제 생성 API 어댑터는 결합이 확인된 새 카드 검수를 연결하고 다른 입력의 결과는 재사용하지 않음',async()=>{
+ const previous=globalThis.window;
+ const frozen={article_id:'fixture',title:'제목',content:'본문'};
+ const source={articleId:'fixture',title:'제목',content:'본문',photos:[]};
+ const review={platform:'card_news',status:'passed',fact:{issues:[]},requirement:{issues:[]}};
+ const result={platform:'card_news',article_id:'fixture',cards:[],generation_review:review};
+ // 플랫폼 모듈의 공유 연결 유틸리티는 Node와 브라우저에서 동일한 SHA-256을 사용한다.
+ await import('../../../platform-generator/lib/review-binding.js');
+ result.generation_review_binding=globalThis.ContentReviewBinding.bindReview(
+   {platform:'card_news',article:frozen,selected_keywords:[],requirements:''},result,
+   value=>createHash('sha256').update(value,'utf8').digest('hex'));
+ const calls=[];
+ ipcHandlers={core:async path=>{calls.push(path);return {status:200,body:{draft:result,snapshotId:'snapshot'}};}};
+ globalThis.window={pywebview:{api:ipcFixture}};
+ try{
+  const {generatePlatform}=await import('../../../src/api/platform.js');
+  const generated=await generatePlatform('card_news',frozen,[],'','snapshot',source);
+  assert.equal(reusableReview('card_news',generated,source)?.status,'passed');
+  assert.equal(reviewStatus(generated),'passed');
+  assert.equal(calls.filter(path=>path==='/api/platform/validate').length,0);
+  const changed=await generatePlatform('card_news',frozen,[],'조건 변경','snapshot',source);
+  assert.equal(reusableReview('card_news',changed,source),null);
+  assert.equal(reviewStatus(changed),'not_checked');
+ }finally{if(previous===undefined)delete globalThis.window;else globalThis.window=previous;}
+});
 // core singleton이 잡은 IPC 브리지는 유지하고 시험별 응답만 교체한다. 시험 사이 브리지 캐시 오염을 방지한다.
 let ipcHandlers;
 const ipcFixture={core:(...args)=>ipcHandlers.core(...args),coreBytes:(...args)=>ipcHandlers.coreBytes(...args)};

@@ -12,7 +12,8 @@ import SourceSearch from "./SourceSearch";
 import ArticleCheckModal from "./ArticleCheckModal";
 import VersionHistoryModal from "./VersionHistoryModal";
 import DongaPreview from "./DongaPreview.jsx";
-import { SECTIONS, subsOf } from "../data/sections.js";
+import { SECTIONS } from "../data/sections.js";
+import { trackPhotoDownload } from "../api/editorial";
 import "./articleWriterFont.css";
 import {
   Sparkles,
@@ -1247,6 +1248,8 @@ export default function ArticleWriter({
           setIsImageEditorOpen(false);
           if (setIsPhotoEditing) setIsPhotoEditing(false);
         }}
+        onTrackDownload={trackPhotoDownload}
+        onError={(message) => { setToastMessage(message); setTimeout(() => setToastMessage(""), 3500); }}
         onApplyToArticle={(updatedPhoto) => {
           handleSaveEditedPhoto(updatedPhoto);
           setIsImageEditorOpen(false);
@@ -1336,18 +1339,6 @@ export default function ArticleWriter({
                         </div>
                       )}
                     </div>
-                    {article.category && subsOf(article.category).length > 0 && (
-                      <select
-                        aria-label="세부 분류"
-                        data-testid="article-subcategory"
-                        value={article.subcategory || ""}
-                        onChange={(e) => setArticle((prev) => ({ ...prev, subcategory: e.target.value }))}
-                        className="ml-2 px-2.5 py-1 rounded-full bg-white/80 text-slate-800 text-xs font-bold border-0 outline-none cursor-pointer"
-                      >
-                        <option value="">세부 분류(선택)</option>
-                        {subsOf(article.category).map((sub) => <option key={sub} value={sub}>{sub}</option>)}
-                      </select>
-                    )}
                     </div>
 
                     {/* 저장 이력 및 자동 저장 상태 버튼 (data-testid="save-status") */}

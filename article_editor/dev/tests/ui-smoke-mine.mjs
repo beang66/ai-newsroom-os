@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
+import zlib from "node:zlib";
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
@@ -20,7 +21,26 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.resolve(HERE, "../../app");
 const PORT = process.env.UI_SMOKE_PORT || "8798";
 const BASE = `http://127.0.0.1:${PORT}`;
-const PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+// 사진 편집 단계에서 캔버스로 그릴 수 있는 작은 PNG(200x150 회색)를 직접 만든다
+function makePng(width, height) {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(zlib.crc32(body) >>> 0, body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8; header[9] = 2; // 8비트 RGB
+  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3, 150)]);
+  const raw = Buffer.concat(Array.from({ length: height }, () => row));
+  const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+  return `data:image/png;base64,${png.toString("base64")}`;
+}
+const PIXEL = makePng(200, 150);
 
 // ── 임시 데이터 폴더로 코어 실행 ─────────────────────────────────────────────
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ui-smoke-mine-"));
@@ -85,6 +105,7 @@ try {
     unsplashQueries.push(new URL(route.request().url()).searchParams.get("q"));
     return json(route, { photos: [{ id: "a1", urls: { regular: PIXEL, small: PIXEL }, alt_description: "chip", user: { name: "Kim" } }] });
   });
+  await page.route("**/api/unsplash/photo/*/track", (route) => json(route, { ok: true })); // Unsplash 다운로드 집계
   await page.route("**/api/stt/transcripts", (route) => json(route, { success: true, transcripts: [
     { id: "t1", filename: "smoke.m4a", engine: "NAVER_CLOVA_SPEECH", createdAt: "2026-10-13T04:16:31.168Z", segmentCount: 3, durationSec: 14, preview: "AI 기자가 나온다는" },
   ] }));
@@ -117,23 +138,23 @@ try {
   await page.locator('[contenteditable="true"]').first().fill(`반도체 수출이 크게 늘었다. ${"본문 문장입니다. ".repeat(12)}`);
   await page.locator('button[title="기사 카테고리 선택"]').click();
   await page.getByRole("button", { name: "사회", exact: true }).click();
-  await page.getByTestId("article-subcategory").selectOption("교육");
+  assert.equal(await page.getByTestId("article-subcategory").count(), 0, "세부 분류 선택칸은 없다");
   const saveText = page.locator("p[role=status]");
   await page.waitForFunction(() => /임시 저장됨|저장됨/.test(document.querySelector("p[role=status]")?.textContent || ""), null, { timeout: 15_000 });
   await page.keyboard.press("Control+s");
   await page.waitForFunction(() => /저장됨 · \d+번째 이력/.test(document.body.innerText), null, { timeout: 15_000 });
   assert.match(await saveText.textContent(), /저장됨/);
-  step("분류·세부 분류 선택, 자동 저장, Ctrl+S 수동 저장(이력 번호)");
+  step("분류 선택(세부 분류칸 없음), 자동 저장, Ctrl+S 수동 저장(이력 번호)");
 
   // 4. 기사 미리보기(main 의 DongaPreview)
   await page.getByRole("button", { name: /독자 화면 미리보기/ }).click();
   await page.getByTestId("donga-preview").waitFor();
   const frame = page.frameLocator('iframe[title="동아일보 기사 미리보기"]');
   await frame.locator("h1.title").filter({ hasText: "스모크 테스트 기사" }).waitFor();
-  assert.match(await frame.locator(".category").textContent(), /사회 > 교육/);
+  assert.match(await frame.locator(".category").textContent(), /사회/);
   await page.getByRole("button", { name: /기사작성으로 돌아가기/ }).click();
   await title.waitFor();
-  step("미리보기: 제목·분류(사회 > 교육) 표시, 돌아가기");
+  step("미리보기: 제목·분류(사회) 표시, 돌아가기");
 
   // 5. 사진 첨부: 열면 검색어 자동 추천, Unsplash 는 검색·키워드를 눌러야 표시
   await page.getByRole("button", { name: /사진 첨부/ }).click();
@@ -144,9 +165,26 @@ try {
   await page.getByTestId("photo-keyword-chips").getByRole("button").first().click();
   await page.waitForFunction(() => /검색 결과 \(1\)/.test(document.body.innerText));
   assert.equal(unsplashQueries.length, 1);
+  await page.locator("img[src^='data:image/png']").first().click();
+  await page.getByRole("button", { name: "편집하기", exact: true }).click();
+  await page.getByTestId("image-editor").waitFor();
+  const canvas = page.getByTestId("crop-canvas");
+  await canvas.waitFor();
+  await page.getByRole("button", { name: "1:1", exact: true }).click();
+  await page.getByRole("button", { name: "모자이크", exact: true }).first().click();
+  const box = await canvas.boundingBox();
+  await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.4);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5, { steps: 6 });
+  await page.mouse.up();
+  assert.equal(await page.getByRole("button", { name: "되돌리기" }).isDisabled(), false, "모자이크를 칠하면 되돌리기가 켜진다");
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "편집본 다운로드" }).click()]);
+  assert.match(download.suggestedFilename(), /\.jpg$/);
+  await page.getByTestId("image-apply").click();
+  await page.getByTestId("image-editor").waitFor({ state: "detached" });
   await page.getByRole("button", { name: "동아일보DB" }).click();
   for (const label of ["전체", "최신순", "오래된순"]) await page.getByRole("button", { name: label, exact: true }).waitFor();
-  step("사진 첨부: 자동 추천 → 키워드 클릭 시 검색, 동아일보 DB 정렬(전체·최신순·오래된순)");
+  step("사진 첨부: 자동 추천 → 키워드 클릭 시 검색, 사진 편집(표시 범위·모자이크·편집본 파일·본문에 넣기), 동아일보 DB 정렬");
 
   // 6. 보관함: 저장한 기사가 보이고 삭제
   await nav("기사 보관함");

@@ -2,6 +2,8 @@
 
 > **현재 코드 기준 적용 순서:** [개정 실행 계획](CONTENT_TRANSFORM_SEARCH_EXECUTION_PLAN_CURRENT_2026-10-14.md)을 먼저 본다. 본문의 `locateSnapshotQuotes` 등은 아직 팀 Core의 합의된 API가 아니다. 현재 B0는 플랫폼 영역에서 원문 위치를 UTF-16 좌표로 계산해 `evidence_context`로 두 검수에 전달한다. Core 고정본 색인·의미 검색(B1), 제안된 `evidence_assist` 전달 계약은 구현되지 않았다.
 
+> **모의 연결 전 확인할 최소 항목:** 클라이언트가 보내는 실제 고정본/기사 ID와 기대 해시, Core가 인증된 사용자·워크스페이스에서 확인하는 소유 범위, `body_text`의 `source_field`와 start 포함/end 제외 원문 좌표·단위·정규화 버전, 고정본/범위/좌표 불일치 시 상태를 Core 담당자와 병행 확인한다. 클라이언트 제공 사용자 ID를 소유권 증명으로 사용하지 않는다. 이 항목이 합의되기 전 모의 응답 형태는 교체 가능한 fixture이며 최종 API가 아니다.
+
 작성일: 2026-10-14 (Asia/Seoul)  
 상태: **미구현·미합의 계약 초안**
 

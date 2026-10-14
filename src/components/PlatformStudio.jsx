@@ -9,6 +9,8 @@ import {
   RefreshCw,
   Sparkles,
   Type,
+  BookOpen,
+  ArrowRight,
 } from "lucide-react";
 import { freezeArticle, generatePlatform, suggestPlatformKeywords, getStudioArticle } from "../api/platform";
 
@@ -25,6 +27,8 @@ const PLATFORM_LIST = [
   { id: "instagram", label: "Instagram", badge: "피드 원고" },
   { id: "threads", label: "Threads", badge: "짧은 요약" },
 ];
+
+const PLATFORM_KO = { instagram: "인스타그램", threads: "스레드" };
 
 const VIEW_LABELS = {
   instagram: "Instagram",
@@ -478,76 +482,45 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
         {/* 왼쪽: 불러온 기사 박스 */}
         <aside className="space-y-4">
-          <section className="rounded-3xl border border-[#DDD6CB] bg-white/90 p-5 shadow-sm">
-            <div className="flex items-start gap-3 border-b border-[#EFECE6] pb-4">
-              <FileText className="mt-0.5 h-4 w-4 text-[#8E8982]" />
-              <div className="min-w-0">
-                <h3 className="text-xs font-black">불러온 기사</h3>
-                <button type="button" data-testid="choose-studio-article" disabled={applying||sourceLoading} onClick={()=>setPickerOpen(true)} className="mt-3 rounded-xl border px-3 py-2 text-xs font-bold">저장 기사에서 선택</button>
-                {previewLoading||sourceLoading ? <p role="status">기사 불러오는 중…</p> : <div data-testid="loaded-article" className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                  <span className="mt-3 block text-[10px] font-bold">기사 제목</span>
-                  <p data-testid="loaded-title" className="mt-0.5 text-sm font-black leading-6">{preview?.article.title || "기사 미선택"}</p>
-                  <span className="mt-3 block text-[10px] font-bold">부제목</span>
-                  <p data-testid="loaded-subtitle" className="mt-0.5 text-xs leading-6">{subtitleLabel({subtitle:preview?.subtitle})}</p>
-                  <p className="mt-2 text-[10px] leading-5 text-[#8E8982]">부제는 기사 화면의 표시 정보입니다. 생성 입력의 부제 전달은 미연결입니다.</p>
-                  {!preview?.article.content?.trim() && <p role="status" className="mt-2 text-xs">{preview?.article.title ? "기사 본문 없음 · 기사 편집 화면에서 확인해 주세요." : "DB 기사를 선택해 주세요."}</p>}
-                  {/^https?:\/\//iu.test(preview?.article.url || "") && <a href={preview.article.url} target="_blank" rel="noreferrer" className="mt-2 block text-xs underline">원문 출처 링크</a>}
-                  <span className="mt-2 block text-[10px] text-[#8E8982]">본문 {(preview?.article.content || '').length.toLocaleString()}자</span>
-                </div>}
-                {previewError&&<p role="alert" className="mt-2 text-xs text-red-700">기사 조회 실패: {previewError}</p>}
-                <button type="button" data-testid="apply-studio-article" disabled={applying||previewLoading||sourceLoading||!preview?.article.articleId||!preview.article.content?.trim()} onClick={applyPreview} className="mt-3 rounded-xl bg-[#292929] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{applying?'기사 적용 중…':'이 기사로 콘텐츠 제작'}</button>
-                {applyError&&<p role="alert" className="mt-2 text-xs text-red-700">적용 실패: {applyError}</p>}
-                <p role="status" data-testid="applied-source" className="mt-3 whitespace-pre-wrap break-words text-xs leading-6">
-                  {ready?`적용 완료 · ${applied.title}`:applied?'원문이 변경됐습니다. 재적용이 필요합니다.':'생성 원문 미적용 · 기사를 확인한 뒤 이 기사로 콘텐츠 제작을 눌러 주세요.'}
-                  {preview&&ready&&articleId(preview.article)!==applied.id&&<><br/>미리보기 기사와 적용 기사가 다릅니다. 생성은 적용 기사로 진행합니다.</>}
-                </p>
-                {sourceError && <p role="alert" className="mt-2 text-xs text-red-700">{sourceError}</p>}
-                <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                  {onEditArticle && <button onClick={onEditArticle} className="underline">기사 편집</button>}
-                  {onOpenArticles && <button onClick={onOpenArticles} className="underline">저장 기사 목록</button>}
-                </div>
-                {requestSource && <div role="status" data-testid="request-source" className="mt-3 whitespace-pre-wrap break-words text-xs leading-6">
-                  처리 기준 기사: {requestSource.title}<br />{requestSource.snapshotId ? "Core 고정본의 제목·본문으로 처리 중" : "저장·고정본 확인 중"}
-                </div>}
+          {/* 왼쪽 메뉴(디자인만): 한 장의 흰 카드 안에 불러온 기사 · 플랫폼 선택 및 제작 · 배포 플랫폼을 얇은 선으로 나눈다 */}
+          <section className="rounded-[28px] bg-white p-5 shadow-[0_8px_28px_rgba(0,0,0,0.06)]" data-testid="studio-side">
+            {/* 1. 불러온 기사 */}
+            <div className="border-b border-[#F0EFEA] pb-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-[11px] font-bold text-[#8E8982]"><FileText className="h-3.5 w-3.5" />불러온 기사</span>
+                <button type="button" data-testid="choose-studio-article" disabled={applying||sourceLoading} onClick={()=>setPickerOpen(true)} className="rounded-full border border-[#E7E2D9] px-2.5 py-1 text-[11px] font-bold text-[#57514A] hover:bg-[#FAF8F5] disabled:opacity-50">저장 기사에서 선택</button>
+              </div>
+              {previewLoading||sourceLoading ? <p role="status" className="mt-2 text-xs text-[#8E8982]">기사 불러오는 중…</p> : <div data-testid="loaded-article" className="mt-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                <p data-testid="loaded-title" className="text-[15px] font-black leading-6 text-[#101010]">{preview?.article.title || "기사 미선택"}</p>
+                <p data-testid="loaded-subtitle" title="부제는 기사 화면의 표시 정보입니다. 생성 입력의 부제 전달은 미연결입니다." className="mt-1 text-xs leading-5 text-[#756F67]">{subtitleLabel({subtitle:preview?.subtitle})}</p>
+                {!preview?.article.content?.trim() && <p role="status" className="mt-2 text-[11px] text-[#B0AAA2]">{preview?.article.title ? "기사 본문 없음 · 기사 편집 화면에서 확인해 주세요." : "DB 기사를 선택해 주세요."}</p>}
+                {/^https?:\/\//iu.test(preview?.article.url || "") && <a href={preview.article.url} target="_blank" rel="noreferrer" className="mt-1 block text-[11px] text-[#3B82C4] underline">원문 출처 링크</a>}
+                <span className="mt-1 block text-[10px] text-[#B0AAA2]">본문 {(preview?.article.content || '').length.toLocaleString()}자</span>
+              </div>}
+              {previewError&&<p role="alert" className="mt-2 text-xs text-red-700">기사 조회 실패: {previewError}</p>}
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                {onEditArticle && <button type="button" onClick={onEditArticle} className="inline-flex items-center gap-1.5 font-bold text-[#3B82C4] hover:underline"><BookOpen className="h-4 w-4" />기사 편집<ArrowRight className="h-3.5 w-3.5" /></button>}
+                {onOpenArticles && <button type="button" onClick={onOpenArticles} className="text-[11px] text-[#8E8982] hover:underline">저장 기사 목록</button>}
               </div>
             </div>
 
-            <div className="pt-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-xs font-black">배포 플랫폼</h3>
-                <span className="text-[10px] text-[#8E8982]">다중 선택</span>
+            {/* 2. 플랫폼 선택 및 제작 */}
+            <div className="border-b border-[#F0EFEA] py-4">
+              <h3 className="text-xs font-black text-[#101010]">플랫폼 선택 및 제작</h3>
+              <div className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-[#E7E2D9] px-3.5 py-3">
+                <span className="text-xs font-bold text-[#292929]">생성 원문</span>
+                <button type="button" data-testid="apply-studio-article" disabled={applying||previewLoading||sourceLoading||!preview?.article.articleId||!preview.article.content?.trim()} onClick={applyPreview} className="shrink-0 rounded-full bg-[#292929] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-40">{applying?'기사 적용 중…':'이 기사로 콘텐츠 제작'}</button>
               </div>
-              <div className="space-y-2">
-                {PLATFORM_LIST.map((platform) => {
-                  const selected = selectedPlatforms.includes(platform.id);
-                  return (
-                    <button
-                      key={platform.id}
-                      type="button"
-                      onClick={() => togglePlatform(platform.id)}
-                      className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2.5 text-left transition ${
-                        selected
-                          ? "border-[#292929] bg-[#292929] text-white"
-                          : "border-[#DDD6CB] bg-[#FAF8F5] text-[#292929]"
-                      }`}
-                    >
-                      <div>
-                        <div className="text-xs font-extrabold">{platform.label}</div>
-                        <div className={`text-[10px] ${selected ? "text-white/60" : "text-[#8E8982]"}`}>
-                          {platform.badge}
-                        </div>
-                      </div>
-                      <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${
-                        selected ? "border-white bg-white text-[#292929]" : "border-[#CFC7BC] bg-white"
-                      }`}>
-                        {selected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-2xl border border-[#DDD6CB] bg-[#FAF8F5] p-3">
+              {applyError&&<p role="alert" className="mt-2 text-xs text-red-700">적용 실패: {applyError}</p>}
+              <p role="status" data-testid="applied-source" className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-5 text-[#8E8982]">
+                  {ready?`적용 완료 · ${applied.title}`:applied?'원문이 변경됐습니다. 재적용이 필요합니다.':'생성 원문 미적용 · 기사를 확인한 뒤 이 기사로 콘텐츠 제작을 눌러 주세요.'}
+                  {preview&&ready&&articleId(preview.article)!==applied.id&&<><br/>미리보기 기사와 적용 기사가 다릅니다. 생성은 적용 기사로 진행합니다.</>}
+                </p>
+              {sourceError && <p role="alert" className="mt-2 text-xs text-red-700">{sourceError}</p>}
+              {requestSource && <div role="status" data-testid="request-source" className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-5 text-[#8E8982]">
+                  처리 기준 기사: {requestSource.title}<br />{requestSource.snapshotId ? "Core 고정본의 제목·본문으로 처리 중" : "저장·고정본 확인 중"}
+                </div>}
+              <label title="배포 플랫폼이 아닌 별도 제작 결과물" className={`mt-2 flex cursor-pointer items-center justify-between gap-2 rounded-2xl border px-3.5 py-3 transition ${includeCardNews ? "border-[#7DB9E8] bg-[#F3F9FE]" : "border-[#E7E2D9] hover:bg-[#FAF8F5]"}`}>
                 <input
                   type="checkbox"
                   checked={includeCardNews}
@@ -568,17 +541,49 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                       }));
                     }
                   }}
-                  className="mt-0.5"
+                  className="sr-only"
                 />
-                <span>
-                  <strong className="block text-xs">카드뉴스도 생성</strong>
-                  <span className="text-[10px] leading-4 text-[#8E8982]">
-                    배포 플랫폼이 아닌 별도 제작 결과물
-                  </span>
-                </span>
+                <span className="text-xs font-bold text-[#292929]">카드뉴스도 생성</span>
+                <span className={`rounded-full px-3 py-1.5 text-[11px] font-bold ${includeCardNews ? "bg-[#292929] text-white" : "border border-[#DDD6CB] text-[#57514A]"}`}>{includeCardNews ? "포함" : "제작하기"}</span>
               </label>
+            </div>
 
-              {/* 플랫폼 선택 화면 하단으로 이동한 '선택 항목 생성' 버튼 */}
+            {/* 3. 배포 플랫폼 */}
+            <div className="pt-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-xs font-black text-[#101010]">배포 플랫폼</h3>
+                <span className="text-[10px] text-[#8E8982]">SNS 연동</span>
+              </div>
+              <div className="space-y-2">
+                {PLATFORM_LIST.map((platform) => {
+                  const selected = selectedPlatforms.includes(platform.id);
+                  const editing = viewPicked && activeView === platform.id;
+                  return (
+                    <button
+                      key={platform.id}
+                      type="button"
+                      onClick={() => togglePlatform(platform.id)}
+                      aria-pressed={selected}
+                      className={`flex w-full items-center gap-2.5 rounded-2xl border bg-white px-3 py-2.5 text-left transition ${
+                        editing ? "border-[#7DB9E8] ring-1 ring-[#7DB9E8]/40" : "border-[#E7E2D9] hover:bg-[#FAF8F5]"
+                      }`}
+                    >
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${
+                        selected ? "border-[#4A9BD6] bg-[#4A9BD6] text-white" : "border-[#CFC7BC] bg-white"
+                      }`}>
+                        {selected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+                      </span>
+                      <span className="min-w-0 flex-1 text-xs font-extrabold text-[#292929]">
+                        {PLATFORM_KO[platform.id] || platform.label} <span className="font-normal text-[#B0AAA2]">({platform.label})</span>
+                      </span>
+                      {editing
+                        ? <span className="rounded-full bg-[#E3F0FA] px-2 py-0.5 text-[10px] font-bold text-[#2F6E9E]">편집 화면</span>
+                        : <span className="text-[10px] text-[#8E8982]">{platform.badge}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+
               <button
                 type="button"
                 data-testid="generate-active"

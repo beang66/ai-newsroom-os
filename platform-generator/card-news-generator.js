@@ -41,11 +41,16 @@ const informationPlanSchema=objectSchema({
 });
 
 // 인용 실패를 보완할 때는 재작성 문자열 대신 실제 본문 선택표의 번호를 받는다.
-function referencedPlanSchema(excerpts){
-  return objectSchema({...informationPlanSchema.properties,points:{type:'array',minItems:1,
-    items:objectSchema({...informationPlanSchema.properties.points.items.properties,
-      source_evidence:{type:'array',minItems:1,items:{type:'integer',minimum:0,maximum:excerpts.length-1}},
-    })}});
+function retryPlanSchema(excerpts,cardCount){
+  const pointProperties={...informationPlanSchema.properties.points.items.properties};
+  if(excerpts)pointProperties.source_evidence={type:'array',minItems:1,
+    items:{type:'integer',minimum:0,maximum:excerpts.length-1}};
+  if(Number.isInteger(cardCount)&&cardCount>=3&&cardCount<=10){
+    pointProperties.body_page={type:'integer',enum:Array.from({length:cardCount-2},(_,index)=>index+2)};
+  }
+  return objectSchema({...informationPlanSchema.properties,
+    ...(Number.isInteger(cardCount)&&cardCount>=3&&cardCount<=10?{card_count:{type:'integer',enum:[cardCount]}}:{}),
+    points:{type:'array',minItems:1,items:objectSchema(pointProperties)}});
 }
 
 const cardNewsSchema = objectSchema({
@@ -136,6 +141,29 @@ function normalizeInformationPlanFormat(plan){
       ?{...point,id:typeof point.id==='string'?point.id.trim():point.id,
         summary:typeof point.summary==='string'?point.summary.trim():point.summary}:point):plan.points,
   };
+}
+// 실패한 값을 재요청 입력에서 제거해 모델이 잘못된 인용·페이지를 그대로 복사하지 않도록 한다.
+function retryPlanContext(plan,issues){
+  if(!plan||typeof plan!=='object'||Array.isArray(plan))return {};
+  const failed=new Map();
+  for(const issue of issues){
+    if(issue.point_index===null)continue;
+    const codes=failed.get(issue.point_index)||new Set();codes.add(issue.code);failed.set(issue.point_index,codes);
+  }
+  const context={...plan};
+  if(issues.some(issue=>issue.code==='CARD_COUNT_RANGE'))delete context.card_count;
+  if(issues.some(issue=>issue.code==='MAIN_TOPIC_EMPTY'))delete context.main_topic;
+  if(issues.some(issue=>issue.code==='CLOSING_SUMMARY_EMPTY'))delete context.closing_summary;
+  if(Array.isArray(plan.points))context.points=plan.points.map((point,index)=>{
+    if(!point||typeof point!=='object'||Array.isArray(point))return {};
+    const copy={...point},codes=failed.get(index+1)||new Set();
+    if([...codes].some(code=>EVIDENCE_ISSUES.has(code)))delete copy.source_evidence;
+    if(codes.has('BODY_PAGE_NOT_BODY')||codes.has('BODY_PAGE_NOT_INTEGER'))delete copy.body_page;
+    if(codes.has('POINT_ID_EMPTY')||codes.has('POINT_ID_DUPLICATE'))delete copy.id;
+    if(codes.has('POINT_SUMMARY_EMPTY'))delete copy.summary;
+    return copy;
+  });
+  return context;
 }
 function checkInformationPlan(plan,article){
   const issues=[];
@@ -272,20 +300,23 @@ async function generateCardNews(input) {
   for(let attempt=0;attempt<2;attempt++){
     const useReferences=attempt>0&&previousPlanError.issues.some(issue=>EVIDENCE_ISSUES.has(issue.code));
     const retryErrors=attempt>0?planIssueSummary(previousPlanError.issues,previousPlan):'';
+    const fixedCardCount=attempt>0&&Number.isInteger(previousPlan?.card_count)&&previousPlan.card_count>=3&&previousPlan.card_count<=10
+      ?previousPlan.card_count:null;
+    const pageRule=fixedCardCount?`직전 선택한 ${fixedCardCount}장 구성을 유지하세요. body_page는 ${Array.from({length:fixedCardCount-2},(_,index)=>index+2).join(', ')} 중 하나만 선택하세요. ${fixedCardCount}번은 마지막 카드이므로 주요 정보의 최초 설명을 배정하지 마세요.`:'';
     if(useReferences)excerptCatalog=sourceExcerpts(input.article.content);
     const response=await client.responses.create({
       model:OpenAI.model?.trim()||'gpt-5',store:false,max_output_tokens:6000,
-      instructions:attempt===0?`${planInstructions}\n${directEvidenceRule}`:`${planInstructions}\n직전 배분표가 다음 항목에서 실패했습니다. 각 항목을 실제 기사에 맞춰 다시 작성하세요. 페이지 배분과 정보의 의미를 임의로 합치거나 생략하지 마세요.\n${useReferences?referencedEvidenceRule:directEvidenceRule}\n검증 오류: ${retryErrors}`,
+      instructions:attempt===0?`${planInstructions}\n${directEvidenceRule}`:`${planInstructions}\n직전 배분표가 다음 항목에서 실패했습니다. 실패한 값은 이전 배분표에서 제거했으므로 다시 선택하세요. 페이지 배분과 정보의 의미를 임의로 합치거나 생략하지 마세요.\n${pageRule}\n${useReferences?referencedEvidenceRule:directEvidenceRule}\n검증 오류: ${retryErrors}`,
       input:JSON.stringify({
         article:input.article,
         selected_keywords:input.selected_keywords,
         requirements:input.requirements??'',
-        ...(attempt===0?{}:{previous_information_plan:previousPlan,validation_error:retryErrors,
+        ...(attempt===0?{}:{previous_information_plan:retryPlanContext(previousPlan,previousPlanError.issues),validation_error:retryErrors,
           validation_issue_codes:previousPlanError.issues.map(issue=>({code:issue.code,point_index:issue.point_index})),
           ...(useReferences?{source_excerpt_catalog:excerptCatalog}:{})}),
       }),
       text:{format:{type:'json_schema',name:'card_news_information_plan',strict:true,
-        schema:useReferences?referencedPlanSchema(excerptCatalog):informationPlanSchema}},
+        schema:attempt===0?informationPlanSchema:retryPlanSchema(useReferences?excerptCatalog:null,fixedCardCount)}},
     });
     informationPlan=normalizeInformationPlanFormat(readResponse(response));
     try{

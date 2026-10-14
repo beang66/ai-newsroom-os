@@ -53,6 +53,7 @@ test('배분표의 인용 근거가 본문과 불일치하면 한 번 다시 생
    }else{
     retryRequest=JSON.parse(request.input);
     result=planFixture();
+    result.points[0].source_evidence=[0];
    }
   }else{
    result=fixture();
@@ -64,7 +65,8 @@ test('배분표의 인용 근거가 본문과 불일치하면 한 번 다시 생
  const draft=await generateCardNews({article,selected_keywords:[],requirements:''});
  assert.equal(planCalls,2);
  assert.match(retryRequest.validation_error,/근거가 기사 본문과 일치하지 않습니다/);
- assert.deepEqual(retryRequest.previous_information_plan.points[0].source_evidence,['서울시 도서관 주말 운영 확대']);
+ assert.equal(Object.hasOwn(retryRequest.previous_information_plan.points[0],'source_evidence'),false);
+ assert(Array.isArray(retryRequest.source_excerpt_catalog));
  assert.equal(draft.generation_review.status,'passed');
 });
 test('카드 근거 불일치 교정에는 실패 위치와 원문에 없는 인용을 전달',async()=>{

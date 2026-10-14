@@ -268,6 +268,66 @@ test('원문에 없는 근거와 잘못된 재요청 선택 번호를 별도 코
   assert.equal(planCalls,2);
 });
 
+test('4장 배분표의 가짜 근거와 마지막 카드 배정은 실패값을 제외하고 유효한 번호로 재요청',async()=>{
+  const first={...plan(),card_count:4,points:[
+    {id:'p1',summary:'주말 운영 계획',body_page:2,source_evidence:['원문에 없는 계획']},
+    {id:'p2',summary:'운영 시간',body_page:2,source_evidence:[article.content.split('\n')[0]]},
+    {id:'p3',summary:'인력 배치',body_page:3,source_evidence:['원문에 없는 인력 설명']},
+    {id:'p4',summary:'시행 조건',body_page:4,source_evidence:[article.content.split('\n')[1]]},
+  ]};
+  let planCalls=0,draftCalls=0;
+  const generator=load('card-news-generator.js',async request=>{
+    const name=request.text.format.name;
+    if(name.endsWith('_validation'))return response({issues:[]});
+    if(name==='card_news_information_plan'){
+      planCalls++;
+      if(planCalls===1)return response(first);
+      const input=JSON.parse(request.input),schema=request.text.format.schema;
+      assert.deepEqual(input.validation_issue_codes,[
+        {code:'EVIDENCE_NOT_IN_ARTICLE',point_index:1},
+        {code:'EVIDENCE_NOT_IN_ARTICLE',point_index:3},
+        {code:'BODY_PAGE_NOT_BODY',point_index:4},
+      ]);
+      assert.equal(Object.hasOwn(input.previous_information_plan.points[0],'source_evidence'),false);
+      assert.equal(Object.hasOwn(input.previous_information_plan.points[2],'source_evidence'),false);
+      assert.equal(Object.hasOwn(input.previous_information_plan.points[3],'body_page'),false);
+      assert.deepEqual(Array.from(schema.properties.card_count.enum),[4]);
+      assert.deepEqual(Array.from(schema.properties.points.items.properties.body_page.enum),[2,3]);
+      assert.equal(schema.properties.points.items.properties.source_evidence.items.type,'integer');
+      assert.match(request.instructions,/body_page는 2, 3 중 하나/);
+      assert(!JSON.stringify(input.previous_information_plan).includes('원문에 없는'));
+      return response({...first,points:first.points.map((point,index)=>({...point,
+        body_page:index<2?2:3,source_evidence:[index<2?0:1]}))});
+    }
+    draftCalls++;
+    const draft=cards();draft.recommended_card_count=4;
+    draft.cards.splice(2,0,{...draft.cards[1],covered_point_ids:['p3','p4']});
+    draft.cards[1].covered_point_ids=['p1','p2'];
+    return response(draft);
+  });
+  const result=await generator.generateCardNews({article,selected_keywords:[]});
+  assert.equal(planCalls,2);assert.equal(draftCalls,1);
+  assert.equal(result.generation_review.status,'passed');
+  assert(result.information_plan.points.every(point=>point.source_evidence.every(quote=>article.content.includes(quote))));
+});
+
+test('재요청이 가짜 인용과 마지막 카드 배정을 반복하면 초안 생성 없이 두 오류를 유지',async()=>{
+  const first={...plan(),card_count:4};
+  first.points[0].source_evidence=['원문에 없는 근거'];
+  first.points[0].body_page=4;
+  let planCalls=0,draftCalls=0;
+  const generator=load('card-news-generator.js',async request=>{
+    if(request.text.format.name==='card_news_information_plan'){planCalls++;return response(first);}
+    draftCalls++;return response(cards());
+  });
+  await assert.rejects(generator.generateCardNews({article,selected_keywords:[]}),error=>{
+    assert.deepEqual(Array.from(error.firstIssueCodes),['BODY_PAGE_NOT_BODY','EVIDENCE_NOT_IN_ARTICLE']);
+    assert.deepEqual(Array.from(error.retryIssueCodes),['BODY_PAGE_NOT_BODY','EVIDENCE_NOT_IN_ARTICLE']);
+    return true;
+  });
+  assert.equal(planCalls,2);assert.equal(draftCalls,0);
+});
+
 test('실제 Core stdin/stdout 경로도 Threads 표시 보완의 추가 AI 요청을 처리',async t=>{
   const child=spawn(process.execPath,[path.join(root,'core-adapter.js')],{cwd:root,env:{...process.env,PLATFORM_AI_BRIDGE:'core'},stdio:['pipe','pipe','pipe']});
   t.after(()=>{if(child.exitCode===null)child.kill();});

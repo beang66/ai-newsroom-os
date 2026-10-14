@@ -9,7 +9,7 @@ import { textWithoutPhotos } from "../lib/photoMarks.js";
 import PhotoSideDrawer from "./PhotoSideDrawer";
 import PhotoEditorView from "./PhotoEditorView";
 import SourceSearch from "./SourceSearch";
-import ArticleCheckModal from "./ArticleCheckModal";
+import ArticleCheckModal, { FACT_CATEGORY_EVENT } from "./ArticleCheckModal";
 import VersionHistoryModal from "./VersionHistoryModal";
 import DongaPreview from "./DongaPreview.jsx";
 import { SECTIONS } from "../data/sections.js";
@@ -164,6 +164,23 @@ export default function ArticleWriter({
   const currentIssue = factCheckIssues[reviewAt];
   const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요", EXTERNAL_REQUIRED: "검토 필요" };
   const factIssueCount = factCheckIssues.length;
+
+  // 분류별 모아보기(UI): 검증률의 분류 버튼(팩트 일치·자료와 불일치·근거 부족·검토 필요)을 누르면 본문 텍스트 위 박스에 그 분류의 문장을 보여 준다
+  const FACT_GROUP_TITLE = { SUPPORTED: "팩트 일치", CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요" };
+  const FACT_GROUP_TONE = {
+    SUPPORTED: "border-emerald-200 bg-emerald-50/70 text-emerald-800",
+    CONFLICT: "border-rose-200 bg-rose-50/70 text-rose-800",
+    EVIDENCE_GAP: "border-amber-200 bg-amber-50/70 text-amber-900",
+    REVIEW: "border-violet-200 bg-violet-50/70 text-violet-800",
+  };
+  const factGroupOf = (verdict) => (["SUPPORTED", "CONFLICT", "EVIDENCE_GAP"].includes(verdict) ? verdict : "REVIEW");
+  const [categoryFilter, setCategoryFilter] = useState(null);
+  const collectedItems = categoryFilter ? factCheck.results.filter((item) => factGroupOf(item.verdict) === categoryFilter) : [];
+  useEffect(() => {
+    const onCategory = (event) => setCategoryFilter((current) => (current === event.detail ? null : event.detail));
+    window.addEventListener(FACT_CATEGORY_EVENT, onCategory);
+    return () => window.removeEventListener(FACT_CATEGORY_EVENT, onCategory);
+  }, []);
   const factCheckSummary = useMemo(() => (factCheck.results.length
     ? { total: factCheck.results.length, counts: factCheck.results.reduce((acc, item) => ({ ...acc, [item.verdict]: (acc[item.verdict] || 0) + 1 }), {}) }
     : null), [factCheck.results]);
@@ -1608,6 +1625,33 @@ export default function ArticleWriter({
                   </div>
                 )}
 
+                {/* 분류별 모아보기 박스: 검증률의 분류 버튼을 누르면 본문 텍스트 위에 나온다 */}
+                {showFactMarks && categoryFilter && (
+                  <div data-testid="factcheck-collect" className={`mb-3 rounded-xl border px-4 py-3 text-sm ${FACT_GROUP_TONE[categoryFilter]}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-black">{FACT_GROUP_TITLE[categoryFilter]} {collectedItems.length}문장만 모아보기</span>
+                      <button type="button" data-testid="factcheck-collect-clear" onClick={() => setCategoryFilter(null)} className="rounded-lg bg-white/80 px-2.5 py-1 text-xs font-bold text-slate-700 border border-slate-200 cursor-pointer">닫기</button>
+                    </div>
+                    {collectedItems.length === 0 ? (
+                      <p className="mt-2 text-xs text-slate-600">해당하는 문장이 없습니다.</p>
+                    ) : (
+                      <ol className="mt-2 space-y-2">
+                        {collectedItems.map((item, index) => (
+                          <li key={item.id || index} className="space-y-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[11px] font-black">{FACT_GROUP_TITLE[categoryFilter]}{item.matchRate != null ? ` (${item.matchRate}%)` : ""}</span>
+                              {item.sourceDoc && <span className="text-[11px] font-bold text-slate-400">출처: {item.sourceDoc}</span>}
+                            </div>
+                            <p className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 text-xs font-bold leading-snug text-slate-800">&quot;{item.claimText}&quot;</p>
+                            {item.quote && <p className="rounded-lg border border-blue-100 bg-blue-50/60 px-2.5 py-2 text-xs italic leading-relaxed text-slate-800">&quot;{item.quote}&quot;</p>}
+                            {item.comment && <p className="text-[11px] font-medium leading-relaxed text-slate-600"><strong>검증 의견:</strong> {item.comment}</p>}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                )}
+
                 {/* 본문 텍스트 에디터 */}
                 <div
                   className="relative pt-1"
@@ -2029,6 +2073,7 @@ export default function ArticleWriter({
                 setReview(false); // 닫으면 순서형 검사도 끝낸다(카드와 진한 밑줄이 남지 않게)
                 setReviewIdx(0);
                 setShowFactMarks(false); // 본문 표시와 헤더 상태 문구도 함께 숨긴다
+                setCategoryFilter(null);
               }}
               article={article}
               setArticle={setArticle}

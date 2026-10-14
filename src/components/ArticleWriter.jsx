@@ -112,7 +112,7 @@ export default function ArticleWriter({
     const onMouseMove = (moveEvent) => {
       if (!isResizingFactCheck.current || !mainLayoutRef.current) return;
       const rect = mainLayoutRef.current.getBoundingClientRect();
-      const availableWidth = rect.width - 110;
+      const availableWidth = rect.width - 250;
       if (availableWidth <= 0) return;
       const relativeX = moveEvent.clientX - rect.left;
       const newRatio = (relativeX / availableWidth) * 100;
@@ -1359,14 +1359,14 @@ export default function ArticleWriter({
       >
         {/* 1. 중앙/좌측 메인 작업 영역: [에디터] / [나란히 보기] */}
         <div
-          style={activeSidePanel === "factcheck" ? { width: `calc((${factCheckSplitRatio} * (100% - 110px)) / 100)`, maxWidth: "none", flex: "none" } : undefined}
+          style={activeSidePanel === "factcheck" ? { width: `calc((${factCheckSplitRatio} * (100% - 250px)) / 100)`, maxWidth: "none", flex: "none" } : undefined}
           className={`min-w-0 space-y-5 transition-all duration-300 ease-out ${!isSidePanelOpen
-            ? "w-full max-w-4xl"
+            ? "w-full max-w-[880px]"
             : activeSidePanel === "factcheck"
               ? "min-w-[280px]"
-              : `flex-1 min-w-[460px] ${!isSidebarCollapsed
-                ? "max-w-2xl xl:max-w-3xl"
-                : "max-w-3xl xl:max-w-4xl"
+              : `flex-1 min-w-[380px] ${!isSidebarCollapsed
+                ? "max-w-xl xl:max-w-2xl"
+                : "max-w-2xl xl:max-w-3xl"
               }`
             }`}
         >
@@ -2018,24 +2018,25 @@ export default function ArticleWriter({
           </div>
         )}
 
-        {/* 기사 작성 화면과 팩트체크 박스 사이 크기 조절 | 핸들 */}
+        {/* 기사 작성 화면과 팩트체크 박스 사이 크기 조절 | 핸들 (메인 화면 중앙에 작은 사이즈로 배치) */}
         {viewMode !== "preview" && activeSidePanel === "factcheck" && (
           <div
-            onMouseDown={handleSplitMouseDown}
-            className="flex-shrink-0 self-stretch flex items-center justify-center w-5 cursor-col-resize group select-none z-30 sticky top-6"
+            className="flex-shrink-0 relative z-30 select-none flex items-center justify-center w-4 self-stretch"
             title="좌우 크기 조절 (드래그)"
           >
-            <div className="w-1 h-full bg-slate-200/70 group-hover:bg-blue-400 group-active:bg-blue-600 rounded-full transition-colors relative flex items-center justify-center">
-              <span className="w-5 h-8 rounded-md bg-white border border-slate-300/90 shadow-xs flex items-center justify-center text-xs font-mono font-bold text-slate-500 group-hover:text-blue-600 group-hover:border-blue-400 transition-all select-none">
-                |
-              </span>
-            </div>
+            <button
+              type="button"
+              onMouseDown={handleSplitMouseDown}
+              className="sticky top-1/2 -translate-y-1/2 flex items-center justify-center w-4 h-10 rounded-full bg-white border border-slate-300 shadow-sm hover:border-blue-500 hover:shadow-md cursor-col-resize transition-all group active:scale-95 text-[11px] font-mono font-bold text-slate-500 hover:text-blue-600"
+            >
+              |
+            </button>
           </div>
         )}
 
         {viewMode !== "preview" && activeSidePanel === "factcheck" && (
           <div
-            style={{ width: `calc((${100 - factCheckSplitRatio} * (100% - 110px)) / 100)`, flex: "none" }}
+            style={{ width: `calc((${100 - factCheckSplitRatio} * (100% - 250px)) / 100)`, flex: "none" }}
             className="min-w-[280px] flex-shrink-0 z-20 sticky top-6 self-start"
             onClick={handleDrawerCardClick}
           >
@@ -2061,14 +2062,14 @@ export default function ArticleWriter({
 
         {/* 기사 작성 화면 메인 박스 오른쪽 상단 바로 옆에 위치한 일관된 캡슐형 Hover 확장 사이드바 (미리보기 화면에서는 숨김) */}
         {viewMode !== "preview" && (
-          <aside className="sticky top-6 flex-shrink-0 z-30 select-none pr-24">
+          <aside className="sticky top-6 flex-shrink-0 z-30 select-none pr-36">
             <div className="flex flex-col items-start gap-2">
               {/* 1. 사진 첨부 */}
               <div className="relative w-10 h-10 group">
                 <button
                   type="button"
                   onClick={() => setActiveSidePanel(activeSidePanel === "photo" ? null : "photo")}
-                  className={`absolute right-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center flex-row-reverse transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${activeSidePanel === "photo"
+                  className={`absolute left-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${activeSidePanel === "photo"
                     ? "bg-slate-100/90 border-slate-800 text-slate-950 font-black shadow-xs"
                     : "bg-white/95 border-slate-200/90 text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
                     }`}
@@ -2085,7 +2086,7 @@ export default function ArticleWriter({
                 <button
                   type="button"
                   onClick={handleTogglePreview}
-                  className={`absolute right-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center flex-row-reverse transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${viewMode === "preview"
+                  className={`absolute left-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${viewMode === "preview"
                     ? "bg-slate-100/90 border-slate-800 text-slate-950 font-black shadow-xs"
                     : "bg-white/95 border-slate-200/90 text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
                     }`}
@@ -2102,7 +2103,7 @@ export default function ArticleWriter({
                 <button
                   type="button"
                   onClick={handleCopyArticle}
-                  className="absolute right-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center flex-row-reverse transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border border-slate-200/90 bg-white/95 backdrop-blur-md text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
+                  className="absolute left-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border border-slate-200/90 bg-white/95 backdrop-blur-md text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
                 >
                   <Copy className="w-4.5 h-4.5 flex-shrink-0 text-slate-700" />
                   <span className="text-xs font-bold whitespace-nowrap pl-2 pr-2.5 opacity-0 max-w-0 group-hover:max-w-[160px] group-hover:opacity-100 transition-all duration-200 overflow-hidden select-none">
@@ -2116,7 +2117,7 @@ export default function ArticleWriter({
                 <button
                   type="button"
                   onClick={handlePrintArticle}
-                  className="absolute right-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center flex-row-reverse transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border border-slate-200/90 bg-white/95 backdrop-blur-md text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
+                  className="absolute left-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border border-slate-200/90 bg-white/95 backdrop-blur-md text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
                 >
                   <Printer className="w-4.5 h-4.5 flex-shrink-0 text-slate-700" />
                   <span className="text-xs font-bold whitespace-nowrap pl-2 pr-2.5 opacity-0 max-w-0 group-hover:max-w-[160px] group-hover:opacity-100 transition-all duration-200 overflow-hidden select-none">
@@ -2132,7 +2133,7 @@ export default function ArticleWriter({
                   data-testid="cms-publish"
                   onClick={handleCmsExport}
                   disabled={isCmsExporting}
-                  className="absolute right-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center flex-row-reverse transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 disabled:opacity-60 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border border-slate-200/90 bg-white/95 backdrop-blur-md text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
+                  className="absolute left-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 disabled:opacity-60 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border border-slate-200/90 bg-white/95 backdrop-blur-md text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
                 >
                   <Send className="w-4.5 h-4.5 flex-shrink-0 text-slate-700" />
                   <span className="text-xs font-bold whitespace-nowrap pl-2 pr-2.5 opacity-0 max-w-0 group-hover:max-w-[200px] group-hover:opacity-100 transition-all duration-200 overflow-hidden select-none">
@@ -2151,7 +2152,7 @@ export default function ArticleWriter({
                 <button
                   type="button"
                   onClick={() => setActiveSidePanel(activeSidePanel === "search" ? null : "search")}
-                  className={`absolute right-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center flex-row-reverse transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${activeSidePanel === "search"
+                  className={`absolute left-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${activeSidePanel === "search"
                     ? "bg-slate-100/90 border-slate-800 text-slate-950 font-black shadow-xs"
                     : "bg-white/95 border-slate-200/90 text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
                     }`}
@@ -2181,7 +2182,7 @@ export default function ArticleWriter({
                       if (onRunFactCheck) onRunFactCheck();
                     }
                   }}
-                  className={`absolute right-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center flex-row-reverse transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${(factCheckRequest > 0) || activeSidePanel === "factcheck"
+                  className={`absolute left-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${(factCheckRequest > 0) || activeSidePanel === "factcheck"
                     ? "bg-slate-100/90 border-slate-800 text-slate-950 font-black shadow-xs"
                     : "bg-white/95 border-slate-200/90 text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
                     }`}
@@ -2198,7 +2199,7 @@ export default function ArticleWriter({
                 <button
                   type="button"
                   onClick={() => setViewMode("editor")}
-                  className={`absolute right-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center flex-row-reverse transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${viewMode === "editor"
+                  className={`absolute left-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${viewMode === "editor"
                     ? "bg-slate-100/90 border-slate-800 text-slate-950 font-black shadow-xs"
                     : "bg-white/95 border-slate-200/90 text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
                     }`}

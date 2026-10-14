@@ -69,11 +69,11 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
   };
 
   return (
-    <aside className="newsroom-sidebar sticky top-4 self-start z-40 select-none flex flex-col items-center flex-shrink-0 w-[72px] md:w-[76px] transition-all duration-300 ease-out">
+    <aside className="newsroom-sidebar sticky top-4 self-start z-30 select-none flex flex-col items-center flex-shrink-0 transition-all duration-300 ease-out">
       <div
-        className={`flex flex-col transition-all duration-300 ease-out ${isExpanded
-          ? "absolute left-0 top-0 w-[285px] md:w-[300px] p-5"
-          : "relative w-[72px] md:w-[76px] py-5 px-3 items-center"
+        className={`relative flex flex-col transition-all duration-300 ease-out ${isExpanded
+          ? "w-[285px] md:w-[300px] p-5"
+          : "w-[72px] md:w-[76px] py-5 px-3 items-center"
           }`}
         style={{
           minHeight: "calc(100vh - 90px)",

@@ -26,6 +26,17 @@
 
 계약과 구현의 호출 이름·경로 대응은 `CONTRACT_VS_IMPLEMENTATION_v0.8.md`, 저장 현황은 `CORE_REALITY_AUDIT_2026-10-07.md` §0 에 있다.
 
+## 이슈 현황 (2026-10-15 갱신)
+
+main `253da6a` 기준으로 GitHub 이슈 상태를 맞췄다. 완료 처리한 이슈에는 근거(PR·파일)를 코멘트로 남겼다.
+
+| 상태 | 이슈 |
+|---|---|
+| 완료 | #5 기사 저장·Revision/Snapshot·복구 · #14 Contract v0.8 · #15 IPC 경계·HTTP 통합 경로 · #17 MediaAsset 연결 (M0 마일스톤 종료) |
+| 중복 정리 | #24 → #25로 통합 |
+| 진행 중 | #7 RAG(EvidenceLink 남음) · #9 Structure(main 구현 미확인) · #10 검증 정규화 · #16 Segment ID · #18 PlatformOutput 계약 · #19 Data Map 매핑 · #20 실제 기사 1건 E2E · #25 IPC EXE Vertical Slice |
+| M4 안정화·릴리스 | #21 Contract v1.0 · #22 P0/P1 안정화 · #23 최종 산출물 · #53 목록 키보드 탐색 · #54 원고 열기 API · #55 웹뷰 CSP |
+
 ## 한눈에 보는 결론
 
 1. 팀원별 기능이 서로 다른 방식으로 만들어져 있습니다. 화면은 React/Vite, 핵심 기능은 Python, 사진 저장은 Supabase, 플랫폼 변환은 Node등으로 나뉘어 있습니다.

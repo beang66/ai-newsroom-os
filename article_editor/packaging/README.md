@@ -5,6 +5,7 @@ one spec: `build_ipc.bat` (default, the window calls the core through the pywebv
 bridge with no port) and `build_http.bat` (writes `transport.txt` next to the EXE so
 the window uses the local HTTP core). See `../docs/IPC_MIGRATION.md`.
 Teammates do not need Python or Node.js.
+
 ## Build
 
 Run from `article_editor/` on Windows x64. Use the same Python interpreter for
@@ -35,7 +36,7 @@ owned by the frontend workstream; the EXE build does not modify the root `src/` 
 For a separate frontend build, run `npm --prefix .. ci` and
 `npm --prefix .. run build` before packaging.
 
-Default output with the direct PyInstaller command below (the `build_*.bat` variants write to `dist/ipc/AINewsroom/` or `dist/http/AINewsroom/`; distribute the entire folder):
+Default output with the direct PyInstaller command above (the `build_*.bat` variants write to `dist/ipc/AINewsroom/` or `dist/http/AINewsroom/`; distribute the entire folder):
 
 ```text
 dist/AINewsroom/

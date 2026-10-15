@@ -3,10 +3,6 @@
 앱(데스크톱 코어)은 **운영키를 갖지 않는다**(`ARCHITECTURE.md` 하드 규칙).
 이 서비스가 키를 보관하고 대신 호출하며, 앱이 보낸 **사용자 JWT**를 Supabase로 검증한다.
 
-> **이미 Express(Render) 서비스를 쓰고 있다면 새로 만들 필요가 없다** — `express/README.md`의
-> 드롭인 라우터(`express/ai-proxy.ts`)를 `server.ts`에 3줄로 붙이면 끝난다. 아래는 별도 서비스로
-> 분리하고 싶을 때의 구성이다.
-
 ```
 앱(코어) ──Bearer <사용자 JWT>──▶ 이 서비스(Render) ──운영키──▶ OpenAI / Unsplash
                                       └─ Supabase /auth/v1/user 로 JWT 검증
@@ -38,6 +34,8 @@
 | `CMS_PUBLISH_URL` | CMS 송고 | 실제 CMS의 HTTPS 수신 API |
 | `CMS_BEARER_TOKEN` | CMS 인증 | 수신 API가 요구하는 서버 전용 Bearer 토큰 |
 | `BACKUP_MASTER_KEY` | 기사 서버 백업 | 32자 이상 무작위 문자열(예: `python -c "import secrets;print(secrets.token_hex(32))"`). 사용자별 백업 키가 이 값에서 파생된다 — **한 번 정하면 바꾸거나 잃어버리지 말 것**(바뀌면 이미 올라간 백업을 풀 수 없다). 안전한 곳에 따로 보관 |
+| `CLOVA_SPEECH_SECRET_KEY` / `CLOVA_SPEECH_INVOKE_URL` | 녹취 전사 | NAVER CLOVA Speech 의 시크릿 키와 Invoke URL(https). **앱(PC)에는 두지 않는다** — 이 서버가 받은 녹음을 CLOVA 로 대신 보낸다. 값을 넣으면 서비스가 자동으로 다시 시작되니 업무 시간 밖에 입력한다 |
+| `CLOVA_RATE_PER_MIN` / `CLOVA_MAX_CONCURRENT` | | 녹취 전사는 호출마다 요금이 나가서 따로 제한한다: 사용자별 분당 횟수(기본 5), 동시에 변환하는 녹음 수(기본 2 — 무료 플랜 메모리 512MB 보호) |
 | `OPENAI_BASE_URL` / `UNSPLASH_BASE_URL` | | 시험용 대체 주소(기본은 실제 서비스) |
 
 또는 `render.yaml`(Blueprint)로 한 번에 만들 수 있다 — 비밀값은 `sync: false`라 대시보드에서 채운다.
@@ -57,6 +55,7 @@ AI_BACKEND_URL=https://<render 서비스 주소>
 | GET | `/ai/health` | (자체 응답) 준비 상태 |
 | POST | `/ai/responses` | `{OPENAI_BASE}/responses` |
 | POST | `/ai/images/generations` | `{OPENAI_BASE}/images/generations` |
+| POST | `/ai/audio/clova?filename=` | 녹음 원본 바이트(`Content-Type: audio/*`, 40MB 이하) → CLOVA Speech 장문 인식·화자 분리. 옵션(한국어·동기·화자 분리)은 서버가 고정하고 앱이 보낸 옵션은 받지 않는다. 사용자별 횟수·동시 처리 수 제한(429). 길이(분) 한도는 앱(코어)이 센다 |
 | POST | `/ai/embeddings` | Cloudflare Workers AI `@cf/qwen/qwen3-embedding-0.6b` (모델은 서버 고정; 본문 그대로 중계) |
 | POST | `/ai/audio/transcriptions` | `{OPENAI_BASE}/audio/transcriptions` (multipart 그대로) |
 | POST | `/cms/publish` | `CMS_PUBLISH_URL` (기사 JSON, 성공 응답을 그대로 반환) |

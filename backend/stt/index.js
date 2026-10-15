@@ -347,10 +347,11 @@ app.get('/api/stt/transcripts/:id', async (req, res) => {
 
 // 6. 서버 시작
 function startServer(port = PORT) {
-  return app.listen(port, () => {
+  // 이 PC 안에서만 받는다(녹취·CLOVA 사용량을 같은 네트워크에 노출하지 않음). 화면은 vite 중계로 127.0.0.1 을 쓴다.
+  return app.listen(port, '127.0.0.1', () => {
     console.log(`=================================================`);
     console.log(`CLOVA Speech STT 백엔드 서버가 실행되었습니다.`);
-    console.log(`포트: ${port} (http://localhost:${port})`);
+    console.log(`포트: ${port} (http://127.0.0.1:${port})`);
     console.log(`환경변수 상태:`);
     console.log(`- CLOVA SECRET_KEY: ${process.env.CLOVA_SPEECH_SECRET_KEY ? '설정됨' : '미설정 (확인 필요)'}`);
     console.log(`- CLOVA INVOKE_URL: ${process.env.CLOVA_SPEECH_INVOKE_URL ? process.env.CLOVA_SPEECH_INVOKE_URL : '미설정 (확인 필요)'}`);

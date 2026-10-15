@@ -18,6 +18,7 @@ from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parent
 SEEN: list[tuple] = []
+CLOVA_SEEN: list[dict] = []
 
 
 class Stub(BaseHTTPRequestHandler):
@@ -46,6 +47,9 @@ class Stub(BaseHTTPRequestHandler):
         size = int(self.headers.get('Content-Length', '0'))
         raw = self.rfile.read(size) if size else b'{}'
         SEEN.append(('POST', self.path, self.headers.get('Authorization')))
+        if self.path.endswith('/clova/recognizer/upload'):  # CLOVA Speech — 받은 키 헤더와 본문을 기록하고 변환 결과를 돌려준다
+            CLOVA_SEEN.append({'key': self.headers.get('X-CLOVASPEECH-API-KEY'), 'type': self.headers.get('Content-Type'), 'raw': raw})
+            return self._send({'text': '스텁 전사', 'segments': [{'start': 0, 'end': 1000, 'text': '스텁 전사'}], 'duration': 1000})
         if self.path.endswith('/audio/transcriptions'):  # multipart — 본문이 그대로 왔는지만 돌려준다
             return self._send({'contentType': self.headers.get('Content-Type'), 'raw': raw.decode('latin-1')})
         self._send({'path': self.path, 'echo': json.loads(raw or b'{}')})
@@ -75,6 +79,9 @@ def load_proxy(upstream_base: str):
             'CMS_PUBLISH_URL': upstream_base + '/cms-target',
             'CMS_BEARER_TOKEN': 'cms-secret',
             'BACKUP_MASTER_KEY': 'test-master-key-0123456789abcdef0123456789',
+            'CLOVA_SPEECH_SECRET_KEY': 'clova-secret-key',
+            'CLOVA_SPEECH_INVOKE_URL': upstream_base + '/clova',
+            'CLOVA_RATE_PER_MIN': '1000',
         }
     )
     spec = importlib.util.spec_from_file_location('backend_server', BACKEND / 'server.py')
@@ -231,6 +238,95 @@ class ProxyTests(unittest.TestCase):
                     pass  # 응답 본문을 다 읽으면 EOF(b'')로 끝나야 한다
             except TimeoutError:
                 self.fail('서버가 연결을 닫지 않았습니다(남은 본문이 다음 요청을 오염시킬 수 있음)')
+
+    def test_oversized_post_is_refused_before_reading_the_body(self):
+        """로그인 전에는 큰 본문을 읽지 않는다 — 헤더만 보내도 바로 413 이어야 한다(메모리 고갈 방지)."""
+        import socket
+
+        with socket.create_connection(('127.0.0.1', self.proxy.server_port), timeout=5) as sock:
+            sock.sendall(
+                b'POST /ai/responses HTTP/1.1\r\n'
+                b'Host: 127.0.0.1\r\n'
+                b'Content-Type: application/json\r\n'
+                b'Content-Length: 500000000\r\n\r\n'
+            )
+            self.assertIn(b'413', sock.recv(4096).split(b'\r\n')[0])
+
+    # ---- 녹취 전사(CLOVA) 중계: 키는 서버에만 있고, 옵션은 서버가 고정하며, 요금·메모리를 지키려고 제한한다 ----
+    def clova(self, audio=b'FAKE-AUDIO-BYTES', token='good-token', mime='audio/mp4', name='인터뷰 1.m4a'):
+        import urllib.parse
+        headers = {'Content-Type': mime}
+        if token:
+            headers['Authorization'] = 'Bearer ' + token
+        request = urllib.request.Request(self.base + '/ai/audio/clova?filename=' + urllib.parse.quote(name), data=audio, headers=headers)
+        try:
+            with urllib.request.urlopen(request) as response:
+                return response.status, json.load(response)
+        except urllib.error.HTTPError as error:
+            return error.code, json.load(error)
+
+    def test_clova_needs_login(self):
+        self.assertEqual(self.clova(token=None)[0], 401)
+
+    def test_clova_forwards_audio_with_server_key_and_fixed_options(self):
+        before = len(CLOVA_SEEN)
+        status, payload = self.clova(name='인터뷰 "1".m4a')
+        self.assertEqual((status, payload['text']), (200, '스텁 전사'))
+        sent = CLOVA_SEEN[before]
+        self.assertEqual(sent['key'], 'clova-secret-key')                      # 키는 서버가 붙인다
+        self.assertTrue(sent['type'].startswith('multipart/form-data'))
+        self.assertIn(b'FAKE-AUDIO-BYTES', sent['raw'])                         # 음성 원본이 그대로 간다
+        self.assertIn(b'"completion": "sync"', sent['raw'])                    # 옵션은 서버가 정한다
+        self.assertIn(b'"diarization": {"enable": true}', sent['raw'])
+        self.assertNotIn(b'callback', sent['raw'])
+        self.assertIn('filename="인터뷰 _1_.m4a"'.encode(), sent['raw'])        # 파일 이름의 따옴표는 바뀐다(헤더 주입 방지)
+
+    def test_clova_rejects_non_audio_and_oversized_and_unconfigured(self):
+        self.assertEqual(self.clova(mime='application/json')[0], 415)
+        self.assertEqual(self.clova(audio=b'')[0], 413)
+        saved = os.environ.pop('CLOVA_SPEECH_SECRET_KEY')
+        try:
+            self.assertEqual(self.clova()[0], 503)
+            self.assertFalse(self.call('/ai/health')[1]['clova'])
+        finally:
+            os.environ['CLOVA_SPEECH_SECRET_KEY'] = saved
+        self.assertTrue(self.call('/ai/health')[1]['clova'])
+        saved_url = os.environ['CLOVA_SPEECH_INVOKE_URL']
+        os.environ['CLOVA_SPEECH_INVOKE_URL'] = 'http://evil.example/clova'   # 내부 시험 주소가 아닌 http 는 쓰지 않는다
+        try:
+            self.assertEqual(self.clova()[0], 503)
+        finally:
+            os.environ['CLOVA_SPEECH_INVOKE_URL'] = saved_url
+
+    def test_clova_over_40mb_is_refused_before_reading_the_body(self):
+        import socket
+        with socket.create_connection(('127.0.0.1', self.proxy.server_port), timeout=5) as sock:
+            sock.sendall(b'POST /ai/audio/clova HTTP/1.1\r\nHost: x\r\nContent-Type: audio/mp4\r\nContent-Length: 41000000\r\n\r\n')
+            self.assertIn(b'413', sock.recv(4096).split(b'\r\n')[0])
+
+    def test_clova_has_its_own_stricter_rate_limit(self):
+        module = self.proxy_module
+        module._CLOVA_HITS.clear()
+        saved = module.CLOVA_RATE_PER_MIN
+        module.CLOVA_RATE_PER_MIN = 1
+        try:
+            self.assertEqual(self.clova()[0], 200)
+            self.assertEqual(self.clova()[0], 429)                              # 두 번째는 거절
+            self.assertEqual(self.call('/ai/embeddings', {'text': ['a']}, token='good-token')[0], 200)  # 다른 기능은 영향 없음
+        finally:
+            module.CLOVA_RATE_PER_MIN = saved
+            module._CLOVA_HITS.clear()
+
+    def test_clova_limits_concurrent_conversions(self):
+        module = self.proxy_module
+        saved = module._CLOVA_SLOTS
+        module._CLOVA_SLOTS = threading.BoundedSemaphore(1)
+        module._CLOVA_SLOTS.acquire()                                           # 변환 중인 녹음이 이미 하나 있는 상태
+        try:
+            self.assertEqual(self.clova()[0], 429)
+            self.assertEqual(self.call('/ai/embeddings', {'text': ['a']}, token='good-token')[0], 200)  # 다른 기능은 영향 없음
+        finally:
+            module._CLOVA_SLOTS = saved
 
     def test_unknown_method_is_json_404(self):
         request = urllib.request.Request(

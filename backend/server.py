@@ -19,12 +19,16 @@
     CF_BASE_URL           기본 https://api.cloudflare.com/client/v4 (시험용 대체 가능)
     CMS_PUBLISH_URL       실제 CMS 수신 API(HTTPS)
     CMS_BEARER_TOKEN      CMS 서버 인증 토큰
+    CLOVA_SPEECH_SECRET_KEY / CLOVA_SPEECH_INVOKE_URL   녹취 전사(NAVER CLOVA Speech) — 키는 이 서버에만 둔다(PC 에 두지 않는다)
+    CLOVA_RATE_PER_MIN    기본 5 — 전사는 호출마다 요금이 나가므로 사용자별로 따로, 더 엄격하게 제한한다
+    CLOVA_MAX_CONCURRENT  기본 2 — 동시에 변환하는 녹음 수(무료 플랜 메모리 512MB 보호)
     BACKUP_MASTER_KEY     기사 서버 백업의 마스터 키(32자 이상 무작위, 절대 바꾸거나 잃어버리지 말 것 — 바뀌면 기존 백업을 풀 수 없다)
 
 앱 계약
     GET  /ai/health
     POST /ai/responses | /ai/images/generations      (본문·응답을 그대로 중계)
     POST /ai/audio/transcriptions                    (녹음 전사, multipart 본문 그대로 중계)
+    POST /ai/audio/clova?filename=...                (녹음 원본 바이트 → CLOVA Speech 장문 인식·화자 분리. 옵션은 서버가 고정, 40MB 이하)
     POST /ai/embeddings                              (Cloudflare Workers AI qwen3-embedding-0.6b 로 본문 그대로 중계)
     POST /cms/publish                                (CMS_PUBLISH_URL 로 기사 송고)
     POST /ai/backup-key                              (로그인한 사용자의 기사 백업 키: 마스터 키에서 사용자별로 파생, 무저장)
@@ -39,6 +43,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -56,6 +61,14 @@ CF_BASE = (os.environ.get('CF_BASE_URL') or 'https://api.cloudflare.com/client/v
 CF_EMBEDDING_MODEL = '@cf/qwen/qwen3-embedding-0.6b'  # 모델은 서버가 고정한다 — 앱이 다른 모델을 고르지 못하게
 RATE_LIMIT = int(os.environ.get('RATE_LIMIT_PER_MIN', '120'))
 TIMEOUT = 210
+CLOVA_MAX_AUDIO = 40_000_000
+CLOVA_RATE_PER_MIN = int(os.environ.get('CLOVA_RATE_PER_MIN', '5'))
+_CLOVA_SLOTS = threading.BoundedSemaphore(max(1, int(os.environ.get('CLOVA_MAX_CONCURRENT', '2'))))
+_CLOVA_HITS: dict[str, list[float]] = {}
+# 앱이 보내는 옵션은 받지 않는다 — 결과를 다른 주소로 보내는 callback 같은 옵션을 끼워 넣지 못하게 서버가 고정한다
+CLOVA_PARAMS = {'language': 'ko-KR', 'completion': 'sync', 'wordAlignment': True, 'fullText': True,
+                'diarization': {'enable': True}, 'sed': {'enable': True}}
+MAX_BODY = 40_000_000  # 가장 큰 경로(전사·이미지) 한도. 나머지 경로는 아래에서 더 작게 자른다
 
 _LOCK = threading.Lock()
 _HITS: dict[str, list[float]] = {}
@@ -71,6 +84,26 @@ def rate_ok(user: str) -> bool:
         hits.append(now)
         _HITS[user] = hits
     return True
+
+
+def clova_rate_ok(user: str) -> bool:
+    now = time.time()
+    with _LOCK:
+        hits = [t for t in _CLOVA_HITS.get(user, []) if now - t < 60]
+        if len(hits) >= CLOVA_RATE_PER_MIN:
+            _CLOVA_HITS[user] = hits
+            return False
+        hits.append(now)
+        _CLOVA_HITS[user] = hits
+    return True
+
+
+def clova_multipart(filename: str, mime: str, audio: bytes) -> tuple[bytes, str]:
+    boundary = '----NewsroomClova' + os.urandom(8).hex()
+    head = (f'--{boundary}\r\nContent-Disposition: form-data; name="params"\r\nContent-Type: application/json\r\n\r\n'
+            f'{json.dumps(CLOVA_PARAMS)}\r\n--{boundary}\r\n'
+            f'Content-Disposition: form-data; name="media"; filename="{filename}"\r\nContent-Type: {mime}\r\n\r\n').encode()
+    return head + audio + f'\r\n--{boundary}--\r\n'.encode(), f'multipart/form-data; boundary={boundary}'
 
 
 _VERIFIED: dict[str, tuple[float, dict]] = {}
@@ -143,6 +176,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _body(self):
         size = int(self.headers.get('Content-Length', '0'))
+        if size > MAX_BODY:
+            return None  # 로그인 확인 전이라 읽지 않는다(큰 본문으로 메모리를 채우지 못하게). 응답은 Connection: close
         return self.rfile.read(size) if size > 0 else b''
 
     def _user_id(self):
@@ -175,6 +210,7 @@ class Handler(BaseHTTPRequestHandler):
                 'unsplash': bool(os.environ.get('UNSPLASH_ACCESS_KEY')),
                 'embeddings': bool(os.environ.get('CF_ACCOUNT_ID') and os.environ.get('CF_API_TOKEN')),
                 'backupKey': len(os.environ.get('BACKUP_MASTER_KEY', '')) >= 32,
+                'clova': bool(os.environ.get('CLOVA_SPEECH_SECRET_KEY') and os.environ.get('CLOVA_SPEECH_INVOKE_URL')),
             })
         if self._guard() is None:
             return
@@ -199,9 +235,40 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(status, raw, mime)
         self._json(404, {'error': '지원하지 않는 경로입니다.'})
 
+    def _clova(self, audio):
+        """녹음 원본 → CLOVA Speech. 키·옵션은 서버가 정하고, 사용자별 횟수와 동시 처리 수를 제한한다(요금·메모리 보호)."""
+        user = self._guard()
+        if user is None:
+            return
+        key = os.environ.get('CLOVA_SPEECH_SECRET_KEY', '').strip()
+        invoke = os.environ.get('CLOVA_SPEECH_INVOKE_URL', '').strip().rstrip('/')
+        host = urllib.parse.urlsplit(invoke)
+        if not key or not host.hostname or (host.scheme != 'https' and host.hostname not in ('127.0.0.1', 'localhost')):
+            return self._json(503, {'error': 'CLOVA 연동 키가 서버에 설정되지 않았습니다.'})
+        if not audio or len(audio) > CLOVA_MAX_AUDIO:
+            return self._json(413, {'error': '녹음 파일은 40MB 이하만 변환할 수 있어요.'})
+        mime = (self.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+        if not (mime.startswith(('audio/', 'video/')) or mime == 'application/octet-stream'):
+            return self._json(415, {'error': '녹음 파일 형식을 확인해 주세요.'})
+        if not clova_rate_ok(user):
+            return self._json(429, {'error': '음성 변환 요청이 너무 많아요. 잠시 후 다시 시도해 주세요.'})
+        if not _CLOVA_SLOTS.acquire(blocking=False):
+            return self._json(429, {'error': '다른 녹음을 변환하는 중이에요. 잠시 후 다시 시도해 주세요.'})
+        try:
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            name = re.sub(r'[^0-9A-Za-z가-힣._ -]', '_', (query.get('filename') or ['audio'])[0])[:120] or 'audio'
+            body, content_type = clova_multipart(name, mime, audio)
+            status, out_mime, raw = forward(invoke + '/recognizer/upload', body,
+                                            {'X-CLOVASPEECH-API-KEY': key, 'Content-Type': content_type}, method='POST')
+        finally:
+            _CLOVA_SLOTS.release()
+        return self._send(status, raw, out_mime)
+
     def do_POST(self):
         # 본문을 **먼저** 읽는다 — 401/404 로 조기 반환할 때 남은 본문이 다음 요청을 오염시키지 않게.
         body = self._body()
+        if body is None:
+            return self._json(413, {'error': '요청이 너무 큽니다.'})
         path = urllib.parse.urlsplit(self.path).path
         if path == '/cms/publish':
             if self._guard() is None:
@@ -218,6 +285,8 @@ class Handler(BaseHTTPRequestHandler):
                 headers['Authorization'] = 'Bearer ' + token
             status, mime, raw = forward(target, body, headers, method='POST')
             return self._send(status, raw, mime)
+        if path == '/ai/audio/clova':
+            return self._clova(body)
         if path == '/ai/backup-key':
             user = self._guard()
             if user is None:

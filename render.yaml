@@ -6,7 +6,7 @@ services:
     name: ainewsroom-proxy
     runtime: python
     plan: free
-    branch: feature/app-core
+    branch: main
     rootDir: backend
     # Render 는 빈 Build Command 를 허용하지 않는다(대시보드 "Cannot be blank").
     # requirements.txt 는 주석뿐이라 이 명령은 사실상 무해하다(의존성 0).
@@ -22,6 +22,15 @@ services:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: CF_ACCOUNT_ID
+        sync: false
+      - key: CF_API_TOKEN
+        sync: false
+      # 녹취 전사(NAVER CLOVA Speech). 키는 이 서버에만 둔다. 호출 횟수·동시 처리 수는 CLOVA_RATE_PER_MIN(기본 5)·CLOVA_MAX_CONCURRENT(기본 2)
+      - key: CLOVA_SPEECH_SECRET_KEY
+        sync: false
+      - key: CLOVA_SPEECH_INVOKE_URL
         sync: false
       - key: AUTH_REQUIRED
         value: "true"

@@ -159,7 +159,7 @@ python dev/checks/backend_check.py
 |---|---|
 | `backend/server.py` | `/ai/health`, `/ai/responses`, `/ai/images/generations`, `/unsplash/*` 중계 + Supabase JWT 검증 + 사용자별 분당 제한 + 무저장 로그 |
 | `backend/test_server.py` | 스텁 업스트림으로 계약 테스트 8개 (`python backend/test_server.py`) |
-| `backend/render.yaml` | Render Blueprint(환경변수 **이름만**; 값은 대시보드에서) |
+| `render.yaml`(저장소 루트) | Render Blueprint(환경변수 **이름만**; 값은 대시보드에서) |
 | `backend/README.md` | 배포·환경변수·로컬 시험 절차 |
 
 배포: Render → **New → Web Service → Root Directory `backend` → Start `python server.py`**,

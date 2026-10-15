@@ -75,6 +75,11 @@
 #23 Portfolio / Final Deliverables
 ```
 
+### Critical Path 진행 현황 — 2026-10-15
+- 완료: #14 Contract v0.8, #15 App Core 경계, #5 Article Revision/Snapshot, #17 Media
+- 남음: #7 RAG · #10 Verification · #16 STT · #9 Structure · #18 Platform · #19 Data Map → #20 Vertical Slice → #25 IPC·EXE 검증(#24 통합) → #21 Contract v1.0 → #22 → #23
+- #21~#23은 M4 · 안정화·릴리스 마일스톤으로 옮겼다.
+
 기능별 작업은 가능한 범위에서 병렬 진행하되, #20 이전까지 공통 데이터 계약에 연결되어야 합니다.
 
 ### Runtime 정정 — 2026-10-05

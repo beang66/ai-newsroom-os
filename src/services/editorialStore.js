@@ -1,6 +1,7 @@
 import { core } from "../api/core.js";
 import { bodyHtmlOf } from "../api/editorial";
 import { editorHtml, plainContent } from "../lib/studioArticle.js";
+import {restoredPlatformFields} from '../lib/platformLifecycle.js';
 
 // 코어 호출은 main 의 계약(src/api)을 통한다. 로그인이 필요하면(AUTH_REQUIRED) 전송 계층이
 // 로그인 창을 열고, 성공하면 같은 요청을 한 번만 다시 보낸다.
@@ -24,6 +25,8 @@ export function fromCoreDraft(draft, fallback) {
   return {
     ...fallback,
     ...draft,
+    // 누락된 플랫폼 필드에 이전 기사의 원고·카드·조건을 물려주지 않는다.
+    ...restoredPlatformFields(draft),
     id: articleId || fallback.id,
     articleId,
     content: editorHtml(typeof draft.content === "string" ? draft.content : (draft.bodyHtml || "")),

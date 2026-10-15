@@ -18,7 +18,7 @@ function load(file,answer){
 }
 function threads(presentation={mode:'use',emoji:'📰',reason:'일반 뉴스 안내'}){
   return {presentation,title:article.title,title_source_evidence:[article.content],
-    summary_blocks:[{text:article.content,source_evidence:[article.content]}],hashtags:['#도서관','#운영','#뉴스']};
+    summary_blocks:[{text:'도서관의 주말 운영 시간을 늘릴 계획이야.\n인력 배치를 마친 뒤 시행일을 확정해.',source_evidence:[article.content]}],hashtags:['#도서관','#운영','#뉴스']};
 }
 function plan(evidence=[article.content]){
   return {card_count:3,main_topic:article.title,closing_summary:'주말 운영 확대와 시행 조건',

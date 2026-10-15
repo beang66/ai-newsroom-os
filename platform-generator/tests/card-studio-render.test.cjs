@@ -15,13 +15,15 @@ test('generated cards and malformed cards render without blanking the card edito
     const article = {articleId:'fixture', title:'합성 기사', content:'합성 기사 원문입니다.', photos:[]};
     const card = {card_id:'C1', page:1, role:'cover', content_version:2,
       content:{keyword:'주제',headline:'합성 카드',answer:'답변',detail:'설명'},
-      source_evidence:['합성 기사 원문입니다.'], design:{layout:'standard'}};
+      source_evidence:['합성 기사 원문입니다.'], image:{editable:true,selected_image_url:''}, design:{layout:'standard'}};
     const draft = {article_id:'fixture', cards:[card]};
     const render = value => renderToString(React.createElement(Editor,{draft:value,article,onChange:()=>{},onAddPhoto:()=>{}}));
     const before = structuredClone(draft);
     const good = render(draft);
     assert.match(good, /합성 카드/);
+    assert.match(good, /핵심 문구/);
     assert.match(good, /카드 미리보기/);
+    assert.doesNotMatch(good, /사진 편집<\/button>|사진 출처:/,'빈 사진 메타데이터를 선택한 사진으로 표시하지 않음');
     assert.deepEqual(draft,before,'rendering must not discard card evidence or content');
     const invalid = render({...draft,cards:[null,card]});
     assert.match(invalid,/1(?:<!-- -->)?번 카드 데이터 형식을 확인할 수 없습니다/);

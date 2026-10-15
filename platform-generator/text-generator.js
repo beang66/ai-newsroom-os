@@ -17,6 +17,7 @@
 const path = require("path");
 const OpenAI = require("./ai-provider");
 const { getPlatformRules } = require("./platform-rules");
+const ThreadsTone=require('./lib/threads-tone');
 // ============================================================
 // 1. 환경 변수 불러오기
 // 기존 프로젝트의 .env 설정 방식을 유지합니다.
@@ -282,6 +283,36 @@ ${GENERATION_GUIDES[platform]}
     }));
     draft = { ...draft, presentation: normalizePresentation(repaired.presentation) };
     validateDraftStructure(platform, draft);
+  }
+  // 새 생성본의 문제 문단만 한 번 교정한다. 제목·태그·근거·다른 문단은 서버에서 보존한다.
+  const toneIssues=ThreadsTone.issues(draft.summary_blocks.map(block=>block.text),input.requirements);
+  if(toneIssues.length){
+    const repaired=readDraftResponse(await client.responses.create({
+      model:OpenAI.model?.trim()||'gpt-5',store:false,max_output_tokens:4000,
+      instructions:`기존 Threads 초안에서 지정한 문단의 종결 말투만 자연스러운 설명형 반말(해·했어·이야·예정이야)로 교정하세요. 새 초안을 작성하거나 내용을 요약·재구성하지 않습니다. -다체·해요체·습니다체를 사용하지 않습니다. 직접 인용 안의 어미는 예외로 원문 그대로 유지합니다. 사실·주체·수치·단위·조건·시점·불확실성은 유지합니다. 숫자를 한글로 바꾸거나 단위·표기·순서를 바꾸지 않습니다. 근거 문장은 고치지 않습니다. index는 입력의 0부터 시작하는 번호를 그대로 반환하며 1을 더하지 않습니다. 각 index당 text 하나만 반환합니다. 다른 문단·제목·해시태그는 반환하지 않습니다.`,
+      input:JSON.stringify({article:input.article,requirements:input.requirements||'',blocks:toneIssues.map(({index})=>({index,text:draft.summary_blocks[index].text,source_evidence:draft.summary_blocks[index].source_evidence}))}),
+      text:{format:{type:'json_schema',name:'threads_tone_repair',strict:true,schema:objectSchema({repairs:{type:'array',items:objectSchema({index:{type:'integer',enum:toneIssues.map(issue=>issue.index)},text:stringSchema})}})}},
+    }));
+    const fail=(reason,index)=>Object.assign(new Error(`Threads 본문 말투 교정을 완료하지 못했습니다. ${index===undefined?'':`${index+1}번 문단: `}${reason} 원문·직접 인용·수치를 유지한 반말로 다시 생성하거나 편집해 주세요.`),{code:'THREADS_TONE'});
+    if(!Array.isArray(repaired.repairs)||repaired.repairs.length!==toneIssues.length)throw fail('[REPAIR_COUNT] 요청한 문단 수와 교정 결과가 다릅니다.');
+    const numbers=text=>(String(text).match(/[+-]?\d+(?:[.,]\d+)*(?:\s*(?:%|퍼센트|조|억|만|천|원|명|개|곳|년|월|일|배|시간|분|초|건|달러|톤|kg|km))?/gu)||[]).map(value=>value.replace(/\s+/g,''));
+    const blocks=draft.summary_blocks.map(block=>({...block}));
+    const repairs=new Map();
+    for(const repair of repaired.repairs){
+      if(!repair||!toneIssues.some(issue=>issue.index===repair.index)||repairs.has(repair.index))throw fail('[REPAIR_INDEX] 문단 번호가 잘못되었거나 중복되었습니다.');
+      repairs.set(repair.index,repair);
+    }
+    for(const {index} of toneIssues){
+      const repair=repairs.get(index),original=blocks[index].text;
+      if(!hasText(repair.text))throw fail('[REPAIR_EMPTY] 교정 문장이 비어 있습니다.',index);
+      if(JSON.stringify(numbers(original))!==JSON.stringify(numbers(repair.text)))throw fail('[NUMBER_CHANGED] 교정 과정에서 수치·단위 표기가 바뀌었습니다.',index);
+      if(JSON.stringify(ThreadsTone.quotes(original))!==JSON.stringify(ThreadsTone.quotes(repair.text)))throw fail('[QUOTE_CHANGED] 교정 과정에서 직접 인용이 바뀌었습니다.',index);
+      blocks[index].text=repair.text;
+    }
+    const remaining=ThreadsTone.issues(blocks.map(block=>block.text),input.requirements);
+    if(remaining.length)throw fail('[TONE_REMAINS] 교정 후에도 기사체·존댓말 종결이 남았습니다.',remaining[0].index);
+    draft={...draft,summary_blocks:blocks};
+    validateDraftStructure(platform,draft);
   }
   const checkEvidence = createEvidenceChecker(input.article);
   // ==========================================================

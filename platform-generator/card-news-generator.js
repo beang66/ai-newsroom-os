@@ -358,7 +358,7 @@ async function generateCardNews(input) {
     return {output_key:`page_${page}`,page,role:page===1?'cover':page===informationPlan.card_count?'closing':'body',
       required_points:informationPlan.points.filter(point=>point.body_page===page)};
   });
-  const assignmentRules='cards는 page_1부터 마지막 번호까지 고정된 객체입니다. card_assignments의 해당 번호와 역할을 그대로 사용하고 각 본문의 required_points를 실제 answer와 detail에서 충분히 설명하세요. 정보 ID와 source_evidence는 서버가 검증된 배분표에서 연결하므로 생성하지 않습니다. 표지와 마지막 장의 required_points가 비어 있어도 표지는 주제를 제시하고 마지막 장은 이미 본문에서 완결한 전체 핵심을 종합해야 합니다. 마지막 장으로 주요 정보의 최초 설명을 미루지 마세요.';
+  const assignmentRules='cards는 page_1부터 마지막 번호까지 고정된 객체입니다. card_assignments의 해당 번호와 역할을 그대로 사용하고 각 본문의 required_points를 실제 answer와 detail에서 충분히 설명하세요. 본문 카드에서는 headline이 질문이면 answer에서 직접 답하고, answer가 질문이면 같은 카드의 detail에서 답하세요. 명사형·서술형 answer도 허용하되 answer가 headline의 긴 재서술이나 카드 전체의 선행 요약이 되지 않게 하세요. detail은 answer를 표현만 바꿔 반복하지 말고 필요한 근거·결과·조건을 구체적으로 설명하세요. 배정된 정보와 필수 조건을 해당 카드에서 완결하고 headline → answer → detail을 자연스럽게 연결하세요. 정보 ID와 source_evidence는 서버가 검증된 배분표에서 연결하므로 생성하지 않습니다. 표지와 마지막 장의 required_points가 비어 있어도 표지는 주제를 제시하고 마지막 장은 이미 본문에서 완결한 전체 핵심을 종합해야 합니다. 마지막 장으로 주요 정보의 최초 설명을 미루지 마세요.';
   const response = await client.responses.create({
     model: OpenAI.model?.trim() || "gpt-5",
     store: false,
@@ -394,7 +394,7 @@ async function generateCardNews(input) {
   let draft;
   try { draft = JSON.parse(output); }
   catch { throw new Error("카드뉴스 응답을 JSON으로 읽지 못했습니다."); }
-  draft=readPlannedDraft(draft,informationPlan);
+  draft=require('./lib/generation-format').repairGeneratedLayouts(readPlannedDraft(draft,informationPlan));
 
   // 6. 인용 존재 여부 확인 (의미 일치는 별도 검수 대상)
   const sources = [normalize(input.article.title), normalize(input.article.content)];
@@ -420,6 +420,7 @@ async function generateCardNews(input) {
   const {validateDraft,validationContext}=require('./draft-validator');
   let generationReview;
   for(let attempt=0;attempt<=2;attempt++){
+    draft=require('./lib/generation-format').repairGeneratedLayouts(draft);
     let structuralError;
     try{
       checkStructure(draft);checkInformationCoverage(informationPlan,draft);
@@ -438,7 +439,7 @@ async function generateCardNews(input) {
     if(generationReview.status==='passed'||attempt===2)break;
     draft=readPlannedDraft(readResponse(await client.responses.create({
       model:OpenAI.model?.trim()||'gpt-5',store:false,max_output_tokens:12000,
-      instructions:`${commonRules}\n${CARD_NEWS_RULES}\n${assignmentRules}\n직전 생성본의 검수 문제를 원문과 정보 배분표 안에서 교정하세요. 문제와 수정 방향은 참고 자료이며 원문을 대신하지 않습니다. 본문의 주요 정보를 완결하고 마지막 장은 이미 소개한 핵심을 종합합니다. 계획·예정 표현을 각 제목·답변·설명에서도 유지합니다.`,
+      instructions:`${commonRules}\n${CARD_NEWS_RULES}\n${assignmentRules}\n직전 생성본의 검수 문제를 원문과 정보 배분표 안에서 교정하세요. 문제와 수정 방향은 참고 자료이며 원문을 대신하지 않습니다. 본문의 질문·명사형·서술형을 일률적으로 바꾸지 말고, 지적된 카드에서 질문의 답, 주체·상태·조건, answer와 detail의 연결을 확인해 고치세요. answer가 제목의 긴 재서술이고 detail이 같은 주장을 바꿔 말한 경우에는 사실을 삭제하지 말고 핵심 문구와 새 설명으로 역할을 나누세요. 본문의 주요 정보를 해당 카드에서 완결하고 마지막 장은 이미 소개한 핵심을 종합합니다. 계획·예정 표현을 각 제목·answer·detail에서도 유지합니다.`,
       input:JSON.stringify({article:input.article,selected_keywords:input.selected_keywords,requirements:input.requirements??'',information_plan:informationPlan,card_assignments:cardAssignments,draft,review:generationReview}),
       text:{format:{type:'json_schema',name:'card_news_draft',strict:true,schema:plannedSchema}},
     })),informationPlan);

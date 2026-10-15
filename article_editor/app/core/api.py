@@ -179,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             size=int(self.headers.get('Content-Length','0'))
             # shortcut: 백업을 JSON/base64로 받으므로 220MB로 제한, 저장소가 150MB에 가까워지면 스트리밍 업로드로 교체
-            if not 0<size<=(220_000_000 if self.path=='/api/vault/restore' else 80_000_000 if self.path in ('/api/articles/save','/api/articles/publish') else 40_000_000 if self.path in ('/api/interview/transcribe','/api/stt','/api/materials/extract') else 30_000_000):raise RequestError('요청 크기가 너무 큽니다.',413)
+            if not 0<size<=(220_000_000 if self.path=='/api/vault/restore' else 80_000_000 if self.path in ('/api/articles/save','/api/articles/publish') else 56_000_000 if self.path in ('/api/interview/transcribe','/api/stt') else 40_000_000 if self.path=='/api/materials/extract' else 30_000_000):raise RequestError('요청 크기가 너무 큽니다.',413)
             data=json.loads(self.rfile.read(size))
             if not isinstance(data,dict):raise RequestError('잘못된 요청입니다.')
             if self.path=='/api/session':return self.send(200,CORE.session.sign_in(data))

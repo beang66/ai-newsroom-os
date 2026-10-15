@@ -22,7 +22,7 @@ from .errors import RequestError
 SAVE_LOCK = threading.Lock()
 MAX_REVISIONS = 200  # ponytail: 자동저장 이력은 원고마다 최근 200개만 둔다. 더 필요하면 간격 저장(예: 1분)이나 압축으로
 OPEN_DIR = APP_DATA / 'open'  # 외부 프로그램으로 열 때만 만드는 임시 복호화본(cleanup_open)
-MAX_TRANSCRIPT_AUDIO = 25_000_000
+MAX_TRANSCRIPT_AUDIO = 40_000_000
 
 
 def _now():
@@ -48,7 +48,7 @@ def save_transcript(payload, result):
     except ValueError:
         raise RequestError('녹음 파일을 읽지 못했어요.') from None
     if not audio or len(audio) > MAX_TRANSCRIPT_AUDIO:
-        raise RequestError('녹음 파일은 25MB 이하만 보관할 수 있어요.', 413)
+        raise RequestError('녹음 파일은 40MB 이하만 보관할 수 있어요.', 413)
     for item in dialogues:
         if not isinstance(item, dict) or not isinstance(item.get('text'), str) or len(item['text']) > 20_000:
             raise RequestError('녹취 발언 형식을 확인해 주세요.')
@@ -427,7 +427,9 @@ def get_article(article_id, version='saved', photo_refs=False):
             if not row:
                 raise _not_found('기사를 찾지 못했습니다.')
             body, at = row
-        return {'draft': _full_draft(db, body, at, unpack_photos=not photo_refs), 'version': version,
+        latest_rev = db.execute('SELECT max(revision_no) FROM article_revisions WHERE article_id = ?', (article_id,)).fetchone()[0] or 0
+        return {'draft': _full_draft(db, body, at, latest_rev, unpack_photos=not photo_refs), 'version': version,
+                'revisionNo': latest_rev,
                 # 연 판이 마지막 수동 저장본과 다르면(발행 뒤 저장한 수정본이 따로 있는 경우) 화면이 '저장하지 않은 변경'으로 알린다
                 'revisionKind': 'manual' if manual and manual[2] == body else 'auto',
                 'lastManual': _manual_summary(manual), 'published': published_info(db, article_id),

@@ -158,9 +158,10 @@ export function createCoreApi(transport) {
     /** 의미 단위 청킹: source = frontend | opendart */
     semanticParse: (text, source = "frontend", signal) =>
       transport.json(ROUTES.semanticParse, { text, source }, signal),
-    /** 인터뷰 녹음 전사(Whisper) → { dialogues:[{id,speaker,speakerName,timestamp,text}], text, duration } */
-    transcribe: (filename, mimeType, data, signal) =>
-      transport.json(ROUTES.transcribe, { filename, mimeType, data }, signal),
+    /** 인터뷰 녹음 전사 → { dialogues:[{id,speaker,speakerName,timestamp,text}], text, duration }
+     *  engine: "clova" 면 CLOVA 만 쓴다(안 되면 Whisper 로 넘어가지 않고 오류). 없으면 코어가 고른다(CLOVA 설정이 있으면 CLOVA, 없으면 Whisper) */
+    transcribe: (filename, mimeType, data, signal, engine, durationSec) =>
+      transport.json(ROUTES.transcribe, { filename, mimeType, data, ...(engine ? { engine } : {}), ...(durationSec > 0 ? { durationSec } : {}) }, signal),
     listTranscripts: (signal) => transport.json(ROUTES.transcripts, null, signal),
     getTranscript: (id, signal) => transport.json(ROUTES.transcript(id), null, signal),
     transcriptAudio: (id, signal) => transport.bytes(ROUTES.transcriptAudio(id), signal),

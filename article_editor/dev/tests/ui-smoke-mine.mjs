@@ -71,11 +71,12 @@ async function waitForCore() {
   throw new Error(`코어가 시작되지 않았습니다.\n${coreLog.slice(-800)}`);
 }
 
-// ── 가짜 STT 서버 응답(저장된 전사: 같은 화자 연속 발언 → 한 단락) ──────────────────────
-const STT_SEGMENTS = [
-  { start: 0, end: 6000, text: "AI 기자가 나온다는 얘기 들어보셨죠.", speaker: { label: "1", name: "A" } },
-  { start: 6500, end: 9000, text: "네, 들어봤습니다.", speaker: { label: "2", name: "B" } },
-  { start: 9500, end: 14000, text: "근데 취재는 사람이 해야 합니다.", speaker: { label: "2", name: "B" } },
+// ── 가짜 코어 녹취 응답(저장된 전사: 같은 화자 연속 발언 → 한 단락) ──────────────────────
+const TRANSCRIPT_ID = "a".repeat(32);
+const STT_DIALOGUES = [
+  { id: "seg-1", speaker: "1", speakerName: "화자 1", timestamp: 0, text: "AI 기자가 나온다는 얘기 들어보셨죠." },
+  { id: "seg-2", speaker: "2", speakerName: "화자 2", timestamp: 6, text: "네, 들어봤습니다." },
+  { id: "seg-3", speaker: "2", speakerName: "화자 2", timestamp: 9, text: "근데 취재는 사람이 해야 합니다." },
 ];
 
 let browser;
@@ -106,10 +107,11 @@ try {
     return json(route, { photos: [{ id: "a1", urls: { regular: PIXEL, small: PIXEL }, alt_description: "chip", user: { name: "Kim" } }] });
   });
   await page.route("**/api/unsplash/photo/*/track", (route) => json(route, { ok: true })); // Unsplash 다운로드 집계
-  await page.route("**/api/stt/transcripts", (route) => json(route, { success: true, transcripts: [
-    { id: "t1", filename: "smoke.m4a", engine: "NAVER_CLOVA_SPEECH", createdAt: "2026-10-13T04:16:31.168Z", segmentCount: 3, durationSec: 14, preview: "AI 기자가 나온다는" },
+  await page.route("**/api/transcripts", (route) => json(route, { transcripts: [
+    { id: TRANSCRIPT_ID, filename: "smoke.m4a", mimeType: "audio/mp4", duration: 14, createdAt: "2026-10-13T04:16:31.168Z", bytes: 4, segments: 3 },
   ] }));
-  await page.route("**/api/stt/transcripts/t1", (route) => json(route, { success: true, id: "t1", transcript: { id: "tr_1", language: "ko-KR", text: "", confidence: 0.9, segments: STT_SEGMENTS, metadata: { sourceEngine: "NAVER_CLOVA_SPEECH", sourceFilename: "smoke.m4a" } } }));
+  await page.route(`**/api/transcripts/${TRANSCRIPT_ID}`, (route) => json(route, { id: TRANSCRIPT_ID, filename: "smoke.m4a", mimeType: "audio/mp4", dialogues: STT_DIALOGUES, duration: 14, createdAt: "2026-10-13T04:16:31.168Z" }));
+  await page.route(`**/api/transcripts/${TRANSCRIPT_ID}/audio`, (route) => route.fulfill({ status: 200, contentType: "audio/mp4", body: Buffer.from([0, 0, 0, 0]) }));
 
   const step = (name) => console.log(`  ✓ ${name}`);
   const nav = async (title) => page.locator(`button[title="${title}"]`).first().click();

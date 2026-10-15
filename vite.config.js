@@ -38,9 +38,6 @@ export default defineConfig({
     port: 5173,
     host: '127.0.0.1',
     proxy: {
-      // STT 는 코어가 아니라 독립 Express 서버(4000, CLOVA)로 보낸다. `/api` 보다 먼저 선언해야 우선 매칭된다.
-      '/api/stt': { target: 'http://127.0.0.1:4000', changeOrigin: true, timeout: 130000, proxyTimeout: 130000 },
-      '/api/analyze-interview': { target: 'http://127.0.0.1:4000', changeOrigin: true, timeout: 130000, proxyTimeout: 130000 },
       // 개발(`npm run dev`) 중에는 로컬 코어(창 모드 서버)로 /api 를 넘긴다.
       '/api': {
         target: 'http://127.0.0.1:8765',

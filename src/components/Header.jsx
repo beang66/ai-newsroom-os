@@ -231,6 +231,7 @@ export default function Header({
                   </button>
                   <button
                     type="button"
+                    data-testid="logout-button"
                     onClick={() => {
                       setShowUserDropdown(false);
                       if (onLogout) onLogout();

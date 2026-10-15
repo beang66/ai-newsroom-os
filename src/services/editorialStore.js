@@ -1,6 +1,7 @@
 import { core } from "../api/core.js";
 import { bodyHtmlOf } from "../api/editorial";
 import { editorHtml, plainContent } from "../lib/studioArticle.js";
+import { createEmptyArticle } from "../data/article";
 
 // 코어 호출은 main 의 계약(src/api)을 통한다. 로그인이 필요하면(AUTH_REQUIRED) 전송 계층이
 // 로그인 창을 열고, 성공하면 같은 요청을 한 번만 다시 보낸다.
@@ -35,10 +36,16 @@ export function fromCoreDraft(draft, fallback) {
 }
 
 export async function loadLatestArticle(fallback) {
-  const { draft } = await core.latestArticle();
+  const response = await core.latestArticle();
+  const draft = response?.draft;
   const article = fromCoreDraft(draft, fallback);
   if (!draft?.articleId) return article;
-  // latest 응답에는 리비전 번호가 없어, 목록에서 찾아 충돌 감지(expectedRevisionNo)에 쓴다.
+  const targetRev = Number.isInteger(response?.revisionNo)
+    ? response.revisionNo
+    : (Number.isInteger(draft?.revisionNo) ? draft.revisionNo : (Number.isInteger(article.revisionNo) ? article.revisionNo : null));
+  if (targetRev !== null) {
+    return { ...article, revisionNo: targetRev };
+  }
   const stored = await listStoredArticles().catch(() => []);
   const match = stored.find((item) => item.id === draft.articleId);
   return match ? { ...article, revisionNo: match.revision_no } : article;
@@ -54,9 +61,16 @@ export function saveArticle(article, expectedRevisionNo, { kind } = {}) {
 }
 
 /** 저장된 기사 하나를 내 기사 형식으로 연다(기사 전환용). */
-export async function loadArticleById(id, fallback) {
-  const { draft } = await core.getArticle(id);
-  const article = fromCoreDraft(draft, fallback);
+export async function loadArticleById(id, fallback = createEmptyArticle()) {
+  const response = await core.getArticle(id);
+  const draft = response?.draft;
+  const article = fromCoreDraft(draft, fallback || createEmptyArticle());
+  const targetRev = Number.isInteger(response?.revisionNo)
+    ? response.revisionNo
+    : (Number.isInteger(draft?.revisionNo) ? draft.revisionNo : null);
+  if (targetRev !== null) {
+    return { ...article, revisionNo: targetRev };
+  }
   const stored = await listStoredArticles().catch(() => []);
   const match = stored.find((item) => item.id === (article.articleId || id));
   return match ? { ...article, revisionNo: match.revision_no } : article;

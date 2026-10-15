@@ -104,9 +104,25 @@ const readDataUrl = (file) => new Promise((resolve, reject) => {
 });
 
 /** 인터뷰 녹음 파일 전사 — 파일을 data URL 로 읽어 코어로 보낸다(25MB 이하) */
+// 녹음 길이(초) — 브라우저가 파일 머리 정보에서 읽는다. 못 읽으면 null(코어는 월 합계만 본다)
+const audioSeconds = (file) => new Promise((resolve) => {
+  const url = URL.createObjectURL(file);
+  const audio = new Audio();
+  const finish = (value) => { clearTimeout(timer); URL.revokeObjectURL(url); resolve(value); };
+  const timer = setTimeout(() => finish(null), 5000);
+  audio.preload = "metadata";
+  audio.onloadedmetadata = () => finish(Number.isFinite(audio.duration) ? audio.duration : null);
+  audio.onerror = () => finish(null);
+  audio.src = url;
+});
 export async function transcribeAudio(file) {
-  return core.transcribe(file.name, file.type || "application/octet-stream", await readDataUrl(file));
+  // 화자 구분이 되는 CLOVA 만 쓴다. 안 되면 Whisper 로 조용히 넘어가지 않고 오류를 보여 준다.
+  // 녹음 길이를 함께 보내 코어가 요금(분 단위) 한도를 먼저 확인하게 한다.
+  const [data, seconds] = await Promise.all([readDataUrl(file), audioSeconds(file)]);
+  return core.transcribe(file.name, file.type || "application/octet-stream", data, undefined, "clova", seconds);
 }
+/** AI 인터뷰 분석(요약·핵심·키워드) — 코어 assist 를 거쳐 Render 중계 서버로 간다(PC 에 AI 키 불필요) */
+export const analyzeInterview = (body, signal) => core.assist({ kind: "interview_analysis", body }, signal);
 export const listTranscripts = (signal) => core.listTranscripts(signal);
 export async function loadTranscript(id, signal) {
   const [transcript, audio] = await Promise.all([core.getTranscript(id, signal), core.transcriptAudio(id, signal)]);

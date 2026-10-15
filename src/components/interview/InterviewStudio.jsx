@@ -179,7 +179,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
       });
   };
 
-  // 저장된 전사 목록(독립 STT 서버의 JSON 저장소)
+  // 저장된 전사 목록(코어 암호화 저장소)
   const toggleStoredMenu = async () => {
     const open = !storedMenu.open;
     setStoredMenu((prev) => ({ ...prev, open }));
@@ -198,7 +198,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
     setSttStatus("저장된 전사를 여는 중…");
     try {
       const result = await loadStoredTranscript(item.id);
-      setAudioUrl(null);
+      setAudioUrl(result.audioUrl);
       setStoredSource(item);
       setFileName(item.filename || "저장된 전사");
       setFileSize(0);
@@ -419,7 +419,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
   const isSTTCompleted = hasSource && dialogues.length > 0;
 
   return (
-    <div className="w-full max-w-[1720px] mx-auto pb-16 font-sans text-slate-800">
+    <div className="w-full max-w-[1720px] mx-auto pb-16 font-sans text-slate-800" data-testid="interview-studio">
       {/* 실제 HTML5 오디오 요소 */}
       {audioUrl && (
         <audio
@@ -470,7 +470,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
                         {new Date(item.createdAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500 truncate">{item.preview || "(내용 없음)"}</p>
                     <p className="text-[10px] text-slate-400">발언 {item.segmentCount}개 · {formatDuration(item.durationSec)}</p>
                   </button>
                 ))}

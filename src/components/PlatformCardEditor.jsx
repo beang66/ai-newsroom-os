@@ -135,9 +135,6 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto}) 
 
   const normalized=CardModel.normalize({
     ...active,
-    show_keyword: true,
-    keyword: active.content?.keyword || active.keyword || "콘텐츠 제작",
-    headline: active.content?.headline || active.headline || "제목 없음",
     image:photo&&previewPhoto?.photo===photo?{...photo,url:previewPhoto.url,photographer:photo.photographer||photo.source,profile:photo.profile||photo.sourceUrl}:undefined,
     page:index+1,
     total_pages:cards.length
@@ -145,117 +142,12 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto}) 
   const template=CardTemplate;
 
   // 인라인 편집 가능한 메인 카드 HTML (첨부 이미지 디자인 매칭)
+  // 미리보기는 JPG 렌더(card-renderer)와 같은 템플릿 CSS·fitCard 를 쓴다. 덧붙이는 것은 편집 중 표시(포커스 테두리)뿐
   const customCss = `
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: #18181B;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 1080px;
-      height: 1350px;
-      overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
-    }
-    .news-card {
-      background: #18181B !important;
-      width: 1080px !important;
-      height: 1350px !important;
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: center !important;
-      justify-content: center !important;
-      padding: 0 !important;
-      position: relative !important;
-      border: 0 !important;
-    }
-    .news-card .card-top,
-    .news-card .card-footer,
-    .news-card .credit,
-    .news-card .shade {
-      display: none !important;
-    }
-    .news-card .photo {
-      position: absolute !important;
-      inset: 0 !important;
-      width: 1080px !important;
-      height: 1350px !important;
-      object-fit: cover !important;
-      opacity: 0.25 !important;
-      z-index: 0 !important;
-    }
-    .news-card .words {
-      position: relative !important;
-      left: auto !important;
-      right: auto !important;
-      top: auto !important;
-      bottom: auto !important;
-      width: 480px !important;
-      max-height: none !important;
-      height: auto !important;
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: flex-start !important;
-      margin: 0 auto !important;
-      z-index: 10 !important;
-    }
-    .news-card .keyword {
-      position: static !important;
-      color: #9CA3AF !important;
-      font-size: 30px !important;
-      font-weight: 500 !important;
-      line-height: 1.4 !important;
-      margin-bottom: 40px !important;
-      padding: 0 !important;
-      width: auto !important;
-      transform: none !important;
-      letter-spacing: -0.5px !important;
-      white-space: pre-wrap !important;
-      cursor: text !important;
-    }
-    .news-card .keyword:before {
-      display: none !important;
-    }
-    .news-card .headline {
-      position: static !important;
-      color: #FFFFFF !important;
-      font-size: 64px !important;
-      font-weight: 800 !important;
-      line-height: 1.35 !important;
-      margin-bottom: 42px !important;
-      padding: 32px 36px !important;
-      border: 3.5px dashed #F59E0B !important;
-      border-radius: 28px !important;
-      width: 420px !important;
-      max-width: 420px !important;
-      word-break: break-all !important;
-      white-space: pre-wrap !important;
-      transform: none !important;
-      cursor: text !important;
-      outline: none !important;
-      box-sizing: border-box !important;
-    }
-    .news-card .body {
-      position: static !important;
-      color: #E4E4E7 !important;
-      font-size: 32px !important;
-      font-weight: 400 !important;
-      line-height: 1.6 !important;
-      width: 420px !important;
-      max-width: 420px !important;
-      word-break: break-all !important;
-      white-space: pre-wrap !important;
-      transform: none !important;
-      cursor: text !important;
-      outline: none !important;
-      box-sizing: border-box !important;
-    }
-    .news-card [contenteditable=true]:focus {
-      outline: none !important;
-    }
+    .news-card [contenteditable=true]:focus { outline: 3px dashed #F59E0B !important; outline-offset: 8px !important; border-radius: 12px; }
   `;
   const inlineScript = `
+    (${template.fitCard.toString()})();
     document.querySelectorAll('[contenteditable=true]').forEach(function(el){
       var before = el.innerText.trim();
       el.addEventListener('focus', function(){ before = el.innerText.trim(); });
@@ -319,7 +211,7 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto}) 
       {/* 하단 썸네일 스트립: 이미지와 동일하게 1(선택), 2, 3 뱃지 및 + 버튼 */}
       <div className="flex w-full max-w-[620px] items-center justify-center gap-3.5 overflow-x-auto py-2 px-4 scrollbar-thin">
         {cards.map((c, i) => {
-          const isSelected = i === activeIndex;
+          const isSelected = c === active;
           const cardKeyword = c.content?.keyword || c.keyword || "콘텐츠 제작";
           const cardHeadline = c.content?.headline || c.headline || "제목 없음";
           const cardBody = c.content?.body || c.body || c.content?.detail || c.detail || "";
@@ -489,6 +381,7 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto}) 
                   </button>
                 )}
               </div>
+              {photo && <p className="mt-2 text-[11px] text-[#8E8982]">사진 출처: {photo.source || photo.photographer || photo.provider || "출처 미입력"} {photo.sourceUrl && <a className="underline" href={photo.sourceUrl} target="_blank" rel="noreferrer">원본 출처</a>}</p>}
             </div>
 
             {/* 정보 배치 및 텍스트 수정 */}

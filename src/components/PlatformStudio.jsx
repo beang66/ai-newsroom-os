@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
-  Copy,
+  Copy,
   Hash,
   Image as ImageIcon,
   Loader2,
@@ -13,6 +13,15 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { freezeArticle, generatePlatform, suggestPlatformKeywords, getStudioArticle } from "../api/platform";
+import { plainContent } from "../lib/studioArticle.js";
+
+// 우리 에디터는 content 에 HTML 을 저장하고, 편집실은 태그를 벗긴 글(toStudioArticle)로 원문을 비교한다.
+// 조회한 기사도 같은 형태로 맞춰야 "원문이 변경됐습니다" 오류가 나지 않는다.
+// TODO(병합 시 정민 님 platform.js 와 맞출 것): 같은 정규화를 api/platform.js 의 getStudioArticle 한 곳에 두는 방안
+const loadStudioArticle = async (id, signal) => {
+  const result = await getStudioArticle(id, signal);
+  return { ...result, article: { ...result.article, content: plainContent(result.article.content) } };
+};
 
 import PlatformReview from "./PlatformReview.jsx";
 import PlatformCardEditor from "./PlatformCardEditor.jsx";
@@ -287,7 +296,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
     lookup.current.controller?.abort();const controller=new AbortController(),ticket=++lookup.current.epoch;
     lookup.current.controller=controller;setPreview(null);previewLive.current=null;setPreviewLoading(true);setPreviewError('');setApplyError('');
     try{
-      const result=await getStudioArticle(id,controller.signal);
+      const result=await loadStudioArticle(id,controller.signal);
       if(!controller.signal.aborted&&ticket===lookup.current.epoch){previewLive.current=result;setPreview(result);}
     }catch(error){if(!controller.signal.aborted&&ticket===lookup.current.epoch)setPreviewError(error.message);}
     finally{if(!controller.signal.aborted&&ticket===lookup.current.epoch)setPreviewLoading(false);}
@@ -304,7 +313,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
         if(!mounted.current||controller.signal.aborted)throw Error('편집실을 떠나 원문 적용을 취소했습니다.');
         if(savedId!==selected.article.articleId)throw Error('저장 대상이 선택한 기사와 다릅니다. 적용하지 않았습니다.');
       }
-      const checked=await getStudioArticle(selected.article.articleId,controller.signal);
+      const checked=await loadStudioArticle(selected.article.articleId,controller.signal);
       if(!mounted.current||controller.signal.aborted)throw Error('편집실을 떠나 원문 적용을 취소했습니다.');
       if(previewLive.current!==selected)throw Error('선택 기사가 변경됐습니다. 현재 미리보기를 다시 적용해 주세요.');
       const current=structuredClone(live.current.article);
@@ -713,7 +722,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
               </button>
             </div>
           </section>
-          {viewPicked && (activeView === "threads" || activeView === "instagram") && deliveryPanel}
+          {viewPicked && (activeView === "threads" || activeView === "instagram" || activeView === "card_news") && deliveryPanel}
         </aside>
 
         {(() => {
@@ -969,7 +978,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
           </section>
 
           {/* 스레드·인스타그램 화면: 플랫폼 원고 검수 박스를 오른쪽 핵심 키워드 하단에 배치(로컬 앱 연결 박스는 왼쪽 메뉴 아래) */}
-          {(activeView === "threads" || activeView === "instagram") && (
+          {(activeView === "threads" || activeView === "instagram" || activeView === "card_news") && (
             <div className="space-y-4" data-testid="threads-side">
               {reviewPanel}
             </div>

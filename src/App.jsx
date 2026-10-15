@@ -12,9 +12,9 @@ import "./workspace.css";
 import "./deskGlass.css";
 import "./pageTitle.css";
 import LoginScreen from "./components/LoginScreen";
+import AutoLoginToggle from "./components/AutoLoginToggle";
 import SettingsView from "./components/SettingsView";
 
-import { initialArticles } from "./data/mockData";
 import { createEmptyArticle } from "./data/article";
 import { destinations, routeFromHash } from "./data/navigation";
 import { core } from "./api/core.js";
@@ -98,7 +98,7 @@ export default function App() {
       globalThis.history?.pushState({ newsroomRoute: target }, "", `#${target}`);
     }
   }, []);
-  const [article, setArticle] = useState(initialArticles[0]);
+  const [article, setArticle] = useState(createEmptyArticle); // 저장된 원고가 없으면 빈 원고(예시 기사의 제목·부제가 저장되지 않게)
   const [storageStatus, setStorageStatus] = useState("최근 원고를 불러오는 중…");
   const revisionNo = useRef(null);
   const loaded = useRef(false);
@@ -124,11 +124,12 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    loadLatestArticle(initialArticles[0])
+    loadLatestArticle(createEmptyArticle())
       .then((stored) => {
         if (!active) return;
         syncedSnapshot.current = snapshotOf(stored); // 불러온 원고는 고치기 전까지 다시 저장하지 않는다
         savedIdRef.current = stored.articleId || null;
+        articleRef.current = stored;
         setArticle(stored);
         revisionNo.current = Number.isInteger(stored.revisionNo) ? stored.revisionNo : null;
         loaded.current = true;
@@ -153,6 +154,7 @@ export default function App() {
   const flushRef = useRef(null);
   const flush = useCallback((force = false) => {
     if (autoRunning.current) return autoRunning.current;
+    let followUp = false; // 저장하는 동안 바뀐 원고는 이 저장이 끝난 뒤 한 번 더 저장한다(그 사이 예약된 저장은 위에서 돌아가 버린다)
     const run = (async () => {
       const target = articleRef.current;
       const snapshot = snapshotOf(target);
@@ -170,9 +172,11 @@ export default function App() {
         revisionNo.current = saved.revisionNo;
         savedIdRef.current = saved.articleId;
         syncedSnapshot.current = snapshot;
+        articleRef.current = { ...articleRef.current, id: saved.articleId, articleId: saved.articleId, revisionNo: saved.revisionNo };
         setArticle((current) => ({ ...current, id: saved.articleId, articleId: saved.articleId, revisionNo: saved.revisionNo }));
         const caughtUp = snapshotOf(articleRef.current) === snapshot;
         setUnsynced(!caughtUp);
+        followUp = !caughtUp;
         if (caughtUp) void clearBackup(); // Core 에 최신 원고까지 들어갔다 → 이 PC 백업은 필요 없다
         setStorageStatus("임시 저장됨");
       } catch (error) {
@@ -180,7 +184,10 @@ export default function App() {
         // 입력이 멈춘 뒤에도 Core 가 돌아오면 이어서 저장되도록 다시 시도한다.
         retryTimer.current = setTimeout(() => void flushRef.current?.(), 8000);
       }
-    })().finally(() => { autoRunning.current = null; });
+    })().finally(() => {
+      autoRunning.current = null;
+      if (followUp) void flushRef.current?.();
+    });
     autoRunning.current = run;
     return run;
   }, []);
@@ -277,12 +284,41 @@ export default function App() {
   }, [flush]);
 
   // 다른 저장 기사로 전환: 현재 원고를 저장한 뒤 그 기사를 불러온다.
+  // 다른 기사로 넘어가기 전에 지금 원고를 저장한다. 저장이 실패하면 넘어가지 않는다(flush 는 실패를 상태 문구로만 알린다).
+  const saveBeforeSwitch = useCallback(async () => {
+    await autoRunning.current;
+    await flush();
+    await autoRunning.current;
+    if (loaded.current && snapshotOf(articleRef.current) !== syncedSnapshot.current) {
+      throw new Error("현재 원고를 저장하지 못했습니다. 현재 원고는 유지됩니다.");
+    }
+  }, [flush]);
+
+  // 오늘의 데스크 "+ 새 기사": 지금 원고를 저장한 뒤 빈 원고로 시작한다.
+  const startNewArticle = useCallback(async () => {
+    setSwitchError("");
+    try {
+      await saveBeforeSwitch();
+    } catch (error) {
+      setSwitchError(`새 기사로 바꾸지 못했습니다. ${error.message}`);
+      return;
+    }
+    const empty = createEmptyArticle();
+    syncedSnapshot.current = snapshotOf(empty);
+    savedIdRef.current = null;
+    revisionNo.current = null;
+    await clearBackup();
+    setArticle(empty);
+    setStorageStatus("새 원고 — 저장하면 암호화 저장소에 보관됩니다");
+    setActiveTab("writer");
+  }, [saveBeforeSwitch]);
+
   const changeArticle = useCallback(async (id, nextTab) => {
     setSwitching(true);
     setSwitchError("");
     try {
-      await flush();
-      const next = await loadArticleById(id, articleRef.current);
+      await saveBeforeSwitch();
+      const next = await loadArticleById(id, createEmptyArticle());
       syncedSnapshot.current = snapshotOf(next);
       savedIdRef.current = next.articleId || null;
       revisionNo.current = Number.isInteger(next.revisionNo) ? next.revisionNo : null;
@@ -290,13 +326,13 @@ export default function App() {
       setStorageStatus("저장된 기사를 불러왔습니다.");
       if (nextTab) setActiveTab(nextTab);
     } catch (error) {
-      setSwitchError(`기사를 전환하지 못했습니다. ${error?.message || error}`);
-      throw error;
+      setSwitchError(`기사 조회 실패: ${error?.message || error}`);
+      throw error; // 기사 적용(콘텐츠 변환)이 실패를 알아야 멈추지 않는다. 보관함 호출은 아래에서 잡는다
     } finally {
       setSwitching(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flush]);
+  }, [saveBeforeSwitch]);
 
   // 보관함(main): 저장된 기사 목록을 읽어 와 지금 편집 중인 기사는 화면의 값으로 보인다.
   const [storedArticles, setStoredArticles] = useState([]);
@@ -430,7 +466,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    getSession().then(applySession).catch(() => {});
+    getSession().then((current) => {
+      applySession(current);
+      if (!current?.signedIn) setGateOpen(true); // 로그인 전에는 닫을 수 없는 로그인 창부터(계정마다 자기 자료만 본다)
+    }).catch(() => {});
   }, [applySession]);
 
   // 변환·배포는 저장된 기사(ID)를 기준으로 고정본을 만든다. 아직 저장된 적 없는 기사는 이 탭에 들어올 때 한 번 저장한다.
@@ -490,8 +529,8 @@ export default function App() {
   const handleLogout = async () => {
     await flush(); // 로그아웃하기 전에 저장되지 않은 변경을 임시 저장한다
     try { await signOut(); } catch { /* 이미 만료됐어도 화면 상태는 로그아웃으로 */ }
-    setIsLoggedIn(false);
-    setReporterName("김동아 기자");
+    // 앞 사용자의 원고가 화면에 남지 않게 새로고침한다 → 로그인 전에는 닫을 수 없는 로그인 창이 뜬다(main #43 규칙)
+    globalThis.location?.reload();
   };
 
   const handleRunFactCheck = () => {
@@ -605,7 +644,13 @@ export default function App() {
           {/* Main Content Workspace (우측 여백 없이 전체 너비 자연스럽게 채움) */}
           <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0 ${activeTab === "map" ? "h-[calc(100vh-90px)] min-h-0" : ""}`}>
             {!isPhotoEditing && (
-              <p className="px-3 pb-1 text-[11px] text-slate-500" role="status">{storageStatus}</p>
+              <div className="flex items-center gap-2 px-3 pb-1">
+                <p className="text-[11px] text-slate-500" role="status">
+                  {switching ? "현재 원고를 저장하고 작업을 전환합니다…" : storageStatus}
+                </p>
+                {/* 개발 실행 + 공용 테스트 계정이 있을 때만 보인다. 끄면 로그아웃되어 로그인 창이 뜬다 */}
+                <AutoLoginToggle session={session} onSession={(next) => { applySession(next); if (!next?.signedIn) setGateOpen(true); }} />
+              </div>
             )}
             {!isLoaded && loadError ? (
               <div role="alert" className="py-24 text-center text-sm text-red-700">
@@ -621,6 +666,7 @@ export default function App() {
                 factCheckRequest={factCheckRequest}
                 onPublish={handlePublish}
                 onModels={() => setActiveTab("settings")}
+                flush={flushForStudio}
                 isToolsCollapsed={isToolsCollapsed}
                 setIsToolsCollapsed={setIsToolsCollapsed}
                 isSidebarCollapsed={isSidebarCollapsed}
@@ -636,7 +682,8 @@ export default function App() {
               </main>
             ) : activeTab === "desk" ? (
               <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
-                <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} busy={false} />
+                {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
+                <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} onNewArticle={startNewArticle} busy={false} />
               </main>
             ) : activeTab === "map" ? (
               <main className="flex min-h-0 flex-1 min-w-0 flex-col transition-all z-20 pt-6 pb-0 px-5 md:px-10">
@@ -648,7 +695,7 @@ export default function App() {
                 <PageHeader page="archive" />
                 {listError && <div role="alert" className="workspace-global-error">저장된 기사 목록을 불러오지 못했습니다. {listError}</div>}
                 {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
-                <ArchiveView article={article} articles={archiveArticles} onOpen={(id) => changeArticle(id, "writer")} onDelete={deleteArticle}
+                <ArchiveView article={article} articles={archiveArticles} onOpen={(id) => changeArticle(id, "writer").catch(() => {})} onDelete={deleteArticle}
                   onMap={(id) => { setActiveTab("map"); setMapArticleId(id === currentId ? null : id); }} busy={switching} />
               </main>
             ) : activeTab === "settings" ? (

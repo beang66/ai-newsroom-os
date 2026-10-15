@@ -13,6 +13,19 @@ function plainText(html) {
 
 const assist = (payload) => core.assist(payload);
 
+// Core 는 AI 요청을 동시에 3개까지만 받고 나머지는 429 로 돌려보낸다. 사진 창은 요청 3개를 한꺼번에 보내고,
+// 개발 모드(StrictMode)에서는 창이 두 번 그려져 6개가 되므로 429 면 잠깐 기다렸다 다시 보낸다.
+const assistWhenFree = async (payload) => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await assist(payload);
+    } catch (error) {
+      if (error?.status !== 429 || attempt >= 4) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+    }
+  }
+};
+
 /** 제목 후보(최대 3개). */
 export async function suggestHeadlines(html, currentHeadline = "") {
   const body = plainText(html);
@@ -45,7 +58,7 @@ export async function photoKeywords(html) {
   if (!body) throw new Error("본문을 먼저 작성해 주세요.");
   const half = Math.floor(body.length / 2);
   const parts = body.length >= 400 ? [body, body.slice(0, half), body.slice(half)] : [body];
-  const results = await Promise.allSettled(parts.map((part) => assist({ kind: "photo_keywords", body: part })));
+  const results = await Promise.allSettled(parts.map((part) => assistWhenFree({ kind: "photo_keywords", body: part })));
   const keywords = unique(results.flatMap((r) => (r.status === "fulfilled" ? r.value.keywords || [] : []))).slice(0, 6);
   if (keywords.length === 0) {
     const failed = results.find((r) => r.status === "rejected");

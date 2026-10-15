@@ -63,6 +63,7 @@ export default function ArticleWriter({
   factCheckRequest = 0,
   onPublish,
   onModels,
+  flush,
   isSidebarCollapsed = true,
   onConnectSource,
   isReaderPreview,
@@ -134,7 +135,7 @@ export default function ArticleWriter({
   // 팩트체크(main 흐름): 취재자료를 기사에 등록하면, 글이 멈출 때마다 문장별로 자동 검증한다.
   // main 엔진은 content 를 일반 텍스트로 보므로 어댑터를 거친다(내 에디터 HTML 은 그대로).
   const studioArticle = useMemo(() => toStudioArticle(article), [article]);
-  const factCheck = useFactCheck(studioArticle);
+  const factCheck = useFactCheck(studioArticle, flush);
   const FACT_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족" };
   // 본문 강조·호버 팝업이 쓰는 문제 문장 목록(일치한 문장은 제외)
   const factCheckIssues = useMemo(() => factCheck.results
@@ -1355,11 +1356,11 @@ export default function ArticleWriter({
       {/* 메인 좌우 레이아웃: 기존 위치에서 우측으로 부드럽게 펼쳐지는 사이드 박스 */}
       <div
         ref={mainLayoutRef}
-        className="w-full flex items-start justify-center min-w-0 gap-3.5 md:gap-4 transition-all duration-300 ease-out max-w-full"
+        className="w-full flex flex-col lg:flex-row items-start justify-center min-w-0 gap-3.5 md:gap-4 transition-all duration-300 ease-out max-w-full"
       >
         {/* 1. 중앙/좌측 메인 작업 영역: [에디터] / [나란히 보기] */}
         <div
-          style={activeSidePanel === "factcheck" ? { width: `calc((${factCheckSplitRatio} * (100% - 250px)) / 100)`, maxWidth: "none", flex: "none" } : undefined}
+          style={activeSidePanel === "factcheck" && typeof window !== "undefined" && window.innerWidth >= 1024 ? { width: `calc((${factCheckSplitRatio} * (100% - 250px)) / 100)`, maxWidth: "none", flex: "none" } : undefined}
           className={`min-w-0 space-y-5 transition-all duration-300 ease-out ${!isSidePanelOpen
             ? "w-full max-w-[880px]"
             : activeSidePanel === "factcheck"
@@ -1587,20 +1588,21 @@ export default function ArticleWriter({
                             setShowSubtitleAiMenu(false);
                           };
                           return (
-                            <div
+                            <button
+                              type="button"
                               key={candidateIndex}
                               onClick={applyBundle}
-                              className="p-2.5 rounded-xl hover:bg-slate-100/70 transition cursor-pointer group"
+                              className="block w-full text-left p-2.5 rounded-xl hover:bg-slate-100/70 transition cursor-pointer group"
                               title="클릭하여 적용"
                             >
-                              <div className="border-l-[3.5px] border-slate-950 pl-3.5 space-y-1.5">
+                              <span className="block border-l-[3.5px] border-slate-950 pl-3.5 space-y-1.5">
                                 {lines.map((text, idx) => (
-                                  <div key={idx} className="text-xs md:text-sm font-bold text-slate-900 leading-snug">
+                                  <span key={idx} className="block text-xs md:text-sm font-bold text-slate-900 leading-snug">
                                     {text}
-                                  </div>
+                                  </span>
                                 ))}
-                              </div>
-                            </div>
+                              </span>
+                            </button>
                           );
                         })}
                       </div>
@@ -2021,7 +2023,7 @@ export default function ArticleWriter({
         {/* 기사 작성 화면과 팩트체크 박스 사이 크기 조절 | 핸들 (메인 화면 중앙에 작은 사이즈로 배치) */}
         {viewMode !== "preview" && activeSidePanel === "factcheck" && (
           <div
-            className="flex-shrink-0 relative z-30 select-none flex items-center justify-center w-4 self-stretch"
+            className="hidden lg:flex flex-shrink-0 relative z-30 select-none items-center justify-center w-4 self-stretch"
             title="좌우 크기 조절 (드래그)"
           >
             <button
@@ -2036,8 +2038,8 @@ export default function ArticleWriter({
 
         {viewMode !== "preview" && activeSidePanel === "factcheck" && (
           <div
-            style={{ width: `calc((${100 - factCheckSplitRatio} * (100% - 250px)) / 100)`, flex: "none" }}
-            className="min-w-[280px] flex-shrink-0 z-20 sticky top-6 self-start"
+            style={typeof window !== "undefined" && window.innerWidth >= 1024 ? { width: `calc((${100 - factCheckSplitRatio} * (100% - 250px)) / 100)`, flex: "none" } : undefined}
+            className="w-full lg:w-auto min-w-0 lg:min-w-[280px] flex-shrink-0 z-20 sticky top-6 self-start max-w-full"
             onClick={handleDrawerCardClick}
           >
             <FactCheckDrawer

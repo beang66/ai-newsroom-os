@@ -1,162 +1,83 @@
 /**
  * @file sttService.js
- * @description 독립 STT 서버(`/api/stt`)와의 multipart 전사 통신 모듈 // api-boundary-allow: 개인 STT 서버(포트 4000, CLOVA) — Core 가 아님
+ * @description 녹음 전사·저장된 녹취·AI 인터뷰 분석 모두 코어를 거친다(CLOVA 연동, 암호화 저장소, Render 중계).
+ * 데스크톱 앱에서도 같은 경로로 동작하고, 녹음·발언은 코어 암호화 저장소에만 남는다.
  */
 import { createTranscriptModel } from "../models/transcriptModel";
+import { transcribeAudio, analyzeInterview, listTranscripts, loadTranscript } from "../api/editorial.js";
 
-function toDialogue(segment, index) {
-  const startMs = typeof segment.start_ms === "number"
-    ? segment.start_ms
-    : (typeof segment.start === "number" ? segment.start : 0);
-  const speakerName = segment.speaker || "화자 미식별";
+const MAX_AUDIO_BYTES = 40_000_000; // 코어 전사 한도(core/ai/transcribe.py MAX_AUDIO)와 같게 — 올리기 전에 알려 준다
 
-  return {
-    id: segment.id || segment.segmentId || `dialogue_${index + 1}`,
-    speaker: speakerName.includes("기자") ? "reporter" : "speaker",
-    speakerName,
-    // API의 시간값은 ms이며 UI 플레이어는 초 단위를 사용한다.
-    timestamp: startMs / 1000,
-    text: segment.text || ""
-  };
-}
+const durationOf = (transcript) => (transcript?.segments || []).reduce((max, segment) => {
+  const endMs = typeof segment.end_ms === "number" ? segment.end_ms : (typeof segment.end === "number" ? segment.end : 0);
+  return Math.max(max, endMs / 1000);
+}, 0);
 
 /**
- * 음성 파일을 독립 STT 서버에 multipart/form-data로 전송한다.
- * Content-Type을 직접 지정하지 않아 브라우저가 boundary를 생성하도록 한다.
- *
- * @param {File|Blob} file - 변환할 오디오 파일
- * @param {Object} [options={}] - { signal }
- * @returns {Promise<{ dialogues: Array, text: string, transcript: Object, duration: number }>}
+ * 음성 파일을 코어로 보내 전사한다(40MB 이하). 코어가 녹음과 결과를 암호화 저장소에 보관한다.
+ * @returns {Promise<{ dialogues: Array, text: string, transcript: Object, duration: number, engine: string }>}
  */
-export async function requestSTT(file, options = {}) {
+export async function requestSTT(file) {
   if (!file) {
     throw new Error("변환할 음성 파일이 없습니다.");
   }
-
-  const formData = new FormData();
-  formData.append("audio", file, file.name || "audio.wav");
-
-  let response;
-  try {
-    response = await fetch("/api/stt", { // api-boundary-allow: 개인 STT 서버(포트 4000, CLOVA) — Core 가 아님
-      method: "POST",
-      body: formData,
-      signal: options.signal
-    });
-  } catch (error) {
-    throw new Error("STT 서버(포트 4000)에 연결하지 못했습니다. 서버 실행 상태를 확인해 주세요.", {
-      cause: error
-    });
+  if (file.size > MAX_AUDIO_BYTES) {
+    throw new Error(`녹음 파일은 40MB 이하만 전사할 수 있어요(선택한 파일 ${(file.size / 1_000_000).toFixed(1)}MB). 나눠서 올려 주세요.`);
   }
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = typeof data.detail === "string" ? ` (${data.detail})` : "";
-    throw new Error(`${data.error || `HTTP ${response.status} 오류가 발생했습니다.`}${detail}`);
-  }
-
-  // 독립 서버는 { success, result: { transcript, text, segments } }를 반환한다.
-  const result = data.result || data;
+  const result = await transcribeAudio(file);
   const transcript = createTranscriptModel(result);
-  const dialogues = Array.isArray(result.dialogues) && result.dialogues.length > 0
-    ? result.dialogues
-    : (transcript?.segments || []).map(toDialogue);
-  const duration = (transcript?.segments || []).reduce((max, segment) => {
-    const endMs = typeof segment.end_ms === "number"
-      ? segment.end_ms
-      : (typeof segment.end === "number" ? segment.end : 0);
-    return Math.max(max, endMs / 1000);
-  }, 0);
-
   return {
-    dialogues,
+    dialogues: Array.isArray(result.dialogues) ? result.dialogues : [],
     text: result.text || transcript?.text || "",
-    duration,
+    duration: result.duration || durationOf(transcript),
     transcript,
-    engine: transcript?.metadata?.sourceEngine || "clova"
+    engine: result.engine || transcript?.metadata?.sourceEngine || "clova"
   };
 }
 
 /**
- * 전사된 Transcript를 기반으로 AI 핵심 요약 및 인사이트를 요청한다.
+ * 전사된 Transcript를 기반으로 AI 핵심 요약을 요청한다(코어 assist). 긴 녹취는 코어가 나눠 읽고 합치므로 여기서는 하나의 요약으로 받는다.
  *
- * @param {Object} transcript - 표준 Transcript 객체 ({ text, segments, confidence })
- * @param {Object} [options={}] - { signal }
+ * @param {Object} transcript - 표준 Transcript 객체 ({ text, segments })
  * @returns {Promise<{ summary: string, keyPoints: string[], keywords: string[] }>}
  */
 export async function requestInterviewAnalysis(transcript, options = {}) {
   if (!transcript) {
     throw new Error("분석할 Transcript 데이터가 없습니다.");
   }
-
-  let response;
-  try {
-    response = await fetch("/api/analyze-interview", { // api-boundary-allow: 개인 STT 서버(포트 4000, CLOVA) — Core 가 아님
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      // 분석 서버는 text(없으면 구간 text)만 쓴다. 단어별 시간까지 보내면 긴 인터뷰가 서버 JSON 한도(100KB)를 넘는다.
-      body: JSON.stringify({ transcript: { text: transcript.text || "", segments: (transcript.segments || []).map((s) => ({ text: s.text || "" })) } }),
-      signal: options.signal
-    });
-  } catch (error) {
-    throw new Error("AI 인터뷰 분석 서버에 연결하지 못했습니다.", { cause: error });
-  }
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = typeof data.detail === "string" ? ` (${data.detail})` : "";
-    throw new Error(`${data.error || `HTTP ${response.status} AI 분석 실패`}${detail}`);
-  }
-
-  return data.result || { summary: "", keyPoints: [], keywords: [] };
-}
-
-function readJsonError(data, status, fallback) {
-  const detail = typeof data.detail === "string" ? ` (${data.detail})` : "";
-  return new Error(`${data.error || `HTTP ${status} ${fallback}`}${detail}`);
+  const text = transcript.text || (transcript.segments || []).map((segment) => segment.text || "").join(" ");
+  return analyzeInterview(text, options.signal);
 }
 
 /**
- * 독립 STT 서버가 STT_OUTPUT_DIR에 저장한 전사 목록(최신순)을 가져온다.
- *
- * @returns {Promise<Array<{ id, filename, engine, createdAt, segmentCount, durationSec, preview }>>}
+ * 코어 암호화 저장소에 보관된 녹취 목록(최신순).
+ * @returns {Promise<Array<{ id, filename, createdAt, segmentCount, durationSec }>>}
  */
-export async function listStoredTranscripts(options = {}) {
-  let response;
-  try {
-    response = await fetch("/api/stt/transcripts", { signal: options.signal }); // api-boundary-allow: 개인 STT 서버(포트 4000, CLOVA) — Core 가 아님
-  } catch (error) {
-    throw new Error("STT 서버(포트 4000)에 연결하지 못했습니다. 서버 실행 상태를 확인해 주세요.", { cause: error });
-  }
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw readJsonError(data, response.status, "저장된 전사 목록 오류");
-  return Array.isArray(data.transcripts) ? data.transcripts : [];
+export async function listStoredTranscripts() {
+  const { transcripts = [] } = await listTranscripts();
+  return transcripts.map((item) => ({
+    id: item.id,
+    filename: item.filename,
+    createdAt: item.createdAt,
+    segmentCount: item.segments,
+    durationSec: item.duration || 0
+  }));
 }
 
 /**
- * 저장된 전사 하나를 다시 연다. requestSTT와 같은 모양으로 돌려주되 원본 오디오는 없다.
+ * 저장된 녹취 하나를 다시 연다. requestSTT와 같은 모양에 원본 녹음 주소(audioUrl)를 더해 돌려준다.
  */
-export async function loadStoredTranscript(id, options = {}) {
-  let response;
-  try {
-    response = await fetch(`/api/stt/transcripts/${encodeURIComponent(id)}`, { signal: options.signal }); // api-boundary-allow: 개인 STT 서버(포트 4000, CLOVA) — Core 가 아님
-  } catch (error) {
-    throw new Error("STT 서버(포트 4000)에 연결하지 못했습니다. 서버 실행 상태를 확인해 주세요.", { cause: error });
-  }
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw readJsonError(data, response.status, "저장된 전사 오류");
-
-  const transcript = createTranscriptModel({ transcript: data.transcript });
-  const segments = transcript?.segments || [];
-  const duration = segments.reduce((max, segment) => Math.max(max, (segment.end_ms || 0) / 1000), 0);
+export async function loadStoredTranscript(id) {
+  const result = await loadTranscript(id);
+  const dialogues = Array.isArray(result.dialogues) ? result.dialogues : [];
+  // 분석 서버는 글자만 쓴다 — 저장본에는 전사 원본이 없어 발언을 이어 붙인다
+  const transcript = { text: dialogues.map((item) => item.text).join("\n"), segments: [] };
   return {
-    dialogues: segments.map(toDialogue),
-    text: transcript?.text || "",
-    duration,
+    dialogues,
+    text: transcript.text,
+    duration: result.duration || 0,
     transcript,
-    engine: transcript?.metadata?.sourceEngine || "clova",
-    filename: transcript?.metadata?.sourceFilename || ""
+    filename: result.filename || "",
+    audioUrl: result.audioUrl || null
   };
 }

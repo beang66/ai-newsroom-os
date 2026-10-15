@@ -56,13 +56,15 @@ async function restoreExternal(state, content) {
  *  실행 중에 또 바뀌면 끝난 뒤 한 번 더 — 요청이 겹치지 않는다.
  *  이미 검증한 문장은 결과를 기억해 두고 **새로 쓰거나 고친 문장만** 코어에 보낸다. 취재자료가 바뀌면 기억을 비운다.
  *  → { results, busy, indexing, basis, error, run } (run(true) = 기억을 비우고 전체 다시 검증 — 서랍의 새로고침 버튼) */
-export function useFactCheck(article) {
+export function useFactCheck(article, flush) {
   const [results, setResults] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [indexing, setIndexing] = useState(false); // false | { percent: 0~1 }
   const [basis, setBasis] = useState(null); // 마지막 "전체 다시 검증"이 기준으로 삼은 저장 버전 { revisionNo, content }
   const latest = useRef(article);
+  const flushRef = useRef(flush); // 앱의 저장 큐 — 고정본용 저장이 앱의 이력 번호와 어긋나지 않게 같은 큐로 저장한다
+  flushRef.current = flush;
   latest.current = article;
   const state = useRef({ running: false, again: false, cacheKey: "", cache: new Map(), tried: new Set() });
   const mounted = useRef(true);
@@ -113,7 +115,7 @@ export function useFactCheck(article) {
       // 저장 ID 가 아직 없는 새 글은 건너뛴다(여기서 저장하면 자동 저장이 같은 글을 또 만든다).
       let frozen = null;
       if (fresh === true && latest.current.articleId) {
-        frozen = await freezeArticle(latest.current);
+        frozen = await freezeArticle(latest.current, flushRef.current ? { flush: flushRef.current } : undefined);
         if (!mounted.current) return;
         setBasis(frozen ? { revisionNo: frozen.revisionNo, content: latest.current.content } : null);
       }

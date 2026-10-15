@@ -8,7 +8,7 @@ const ISSUE_ICONS = { verify: AlertTriangle, evidence: AlertTriangle, link: Plus
 // 오늘 저장한 원고는 시각만, 그 전 원고는 날짜까지 보인다
 const savedAt = (value, today) => { const time = formatArticleTime(value); return time.startsWith(today) ? time.slice(11) : time; };
 
-export default function DeskView({ articles, onNavigate, busy }) {
+export default function DeskView({ articles, onNavigate, onNewArticle, busy }) {
   const [today] = useState(() => new Date());
   const queue = deadlineQueue(deskSchedule);
   const story = focusStory(deskSchedule);
@@ -31,6 +31,8 @@ export default function DeskView({ articles, onNavigate, busy }) {
         <h1 data-testid="page-heading" className="mt-2 text-[40px] md:text-[56px] font-black leading-[1.04] tracking-[-0.045em] text-[#111]">
           좋은 기사를 위한<br />오늘의 업무
         </h1>
+        {onNewArticle && <button type="button" onClick={onNewArticle} disabled={busy}
+          className="mt-4 rounded-full bg-[#111] px-4 py-2 text-[12px] font-bold text-white hover:bg-black disabled:opacity-50 cursor-pointer">+ 새 기사</button>}
       </div>
       <section className="workspace-metrics workspace-metrics--inline !my-0 w-full max-w-[620px] lg:w-auto lg:min-w-[520px]" aria-label="상태별 기사">{countByStage(deskSchedule).map(([label, count]) => <div key={label}><span>{label}</span><strong>{String(count).padStart(2, "0")}</strong></div>)}</section>
     </header>

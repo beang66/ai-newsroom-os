@@ -1,7 +1,10 @@
-# Windows EXE packaging (HTTP mode)
+# Windows EXE packaging
 
-The EXE runs the existing local HTTP core in a thread and opens the built React UI
-in a pywebview/WebView2 window. IPC is deferred. Teammates do not need Python or Node.js.
+The EXE opens the built React UI in a pywebview/WebView2 window. Two variants share
+one spec: `build_ipc.bat` (default, the window calls the core through the pywebview
+bridge with no port) and `build_http.bat` (writes `transport.txt` next to the EXE so
+the window uses the local HTTP core). See `../docs/IPC_MIGRATION.md`.
+Teammates do not need Python or Node.js.
 
 ## Build
 
@@ -33,7 +36,7 @@ owned by the frontend workstream; the EXE build does not modify the root `src/` 
 For a separate frontend build, run `npm --prefix .. ci` and
 `npm --prefix .. run build` before packaging.
 
-Default output (distribute the entire folder):
+Default output with the direct PyInstaller command above (the `build_*.bat` variants write to `dist/ipc/AINewsroom/` or `dist/http/AINewsroom/`; distribute the entire folder):
 
 ```text
 dist/AINewsroom/

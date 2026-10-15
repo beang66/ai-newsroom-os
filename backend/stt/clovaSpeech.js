@@ -93,7 +93,7 @@ async function recognizeSpeech(fileBuffer, originalName, mimeType) {
       response.data.segments.forEach((seg, idx) => {
         const spkStr = JSON.stringify(seg.speaker || null);
         const diaStr = JSON.stringify(seg.diarization || null);
-        console.log(`[세그먼트 ${idx + 1}] start: ${seg.start}ms | end: ${seg.end}ms | confidence: ${seg.confidence} | speaker: ${spkStr} | diarization: ${diaStr} | text: "${seg.text}"`);
+        console.log(`[세그먼트 ${idx + 1}] start: ${seg.start}ms | end: ${seg.end}ms | confidence: ${seg.confidence} | speaker: ${spkStr} | diarization: ${diaStr}`); // 발언 내용(text)은 로그에 남기지 않는다
       });
       console.log('=======================================================');
 

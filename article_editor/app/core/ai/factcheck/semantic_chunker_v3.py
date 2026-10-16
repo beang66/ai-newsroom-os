@@ -108,6 +108,34 @@ ABBREV = {"ltd", "bhd", "sdn", "inc", "co", "corp", "pte", "llc", "plc"}  # 회�
 
 QUOTE_TAIL = re.compile(r"\s*(?:이?라고|라며|이?라는|하며|며[\s,]|고[\s,])")
 
+# 마침표 없는 개조식 줄글(통계 PDF 등)의 문장 경계: 불릿 표지 앞, 그리고 "…증가함 ㅇ …" 처럼 명사형 종결(함·임·음·됨) 뒤.
+# 쉼표에서는 자르지 않는다. 다음 낱말이 조사·용언 어간이면(띄어쓰기 오류) 경계가 아니다.
+BULLET_MARK = re.compile(r"\s(?=[ㅇ○□◦◊▪➢※‣•❍◾]\s)")
+GAEJO_END = re.compile(r"(?<=[함임음됨])\s+(?=(?!(?:이|가|은|는|을|를|의|에|로|와|과|도|만|으로|에서|부터|까지|라|하|한|할|해|되|된|될|으며|며|고)(?:\s|$))[가-힣A-Z0-9“‘(\[<]|-\s)")
+
+
+def split_gaejosik(sentence):
+    cuts = sorted({m.end() for pat in (BULLET_MARK, GAEJO_END) for m in pat.finditer(sentence)})
+    cuts = [c for c in cuts if c >= 20 and len(sentence) - c >= 10]  # 너무 짧은 조각(번호·표지만 남는 경우)은 만들지 않는다
+    if not cuts:
+        return [sentence]
+    out, prev = [], 0
+    for c in cuts + [len(sentence)]:
+        out.append(clean(sentence[prev:c])); prev = c
+    # 짧은 제목·도입 조각("□ 기타 농산물")은 다음 문장에 붙인다
+    merged, carry = [], ""
+    for x in out:
+        x = (carry + " " + x).strip() if carry else x
+        if len(x) < 20:
+            carry = x
+        else:
+            merged.append(x); carry = ""
+    if carry:
+        merged.append(carry) if not merged else merged.__setitem__(-1, merged[-1] + " " + carry)
+    out = merged
+    return [x for x in out if x]
+
+
 def split_sentences(text):
     t = clean(text)
     if not t:
@@ -181,17 +209,27 @@ def split_sentences(text):
         tail = clean(t[start:])
         if tail:
             parts.append(tail)
-    return [x for x in parts if x]
+    return [y for x in parts if x for y in split_gaejosik(x)]
+
+# 개조식 문장 끝: 다음 불릿·번호 앞에서 끝나는 "…증가함 ㅇ …" / 그냥 "…감소 ㅇ …"
+BULLET_CUT = re.compile(r"[다음함임됨요]\s+(?=[ㅇ○□◦◊▪➢※‣•-]\s|\d{1,2}[.)]\s|[가-힣][.)]\s)")
+ENDING_CUT = re.compile(r"[다음함임됨]\s+(?=\S)")
 
 def split_oversize_sentence(sentence, hard_limit=HARD_LIMIT):
     if len(sentence) <= hard_limit:
         return [sentence]
-    # 너무 긴 한 문장은 쉼표/세미콜론 주변의 가장 가까운 안전 후보를 사용한다.
+    # 너무 긴 한 문장(마침표 없는 개조식 문단 등)은 문장 경계 → 쉼표/세미콜론 → 공백 순으로 가장 한도에 가까운 안전 후보에서 자른다.
     out, rest = [], sentence
     while len(rest) > hard_limit:
         lo, hi = max(120, hard_limit - 120), hard_limit
-        candidates = [m.end() for m in re.finditer(r"[,;:]\s*", rest[:hi]) if m.end() >= lo]
-        cut = candidates[-1] if candidates else hard_limit
+        window = rest[:hi]
+        for pat, floor in ((BULLET_CUT, 100), (ENDING_CUT, lo), (re.compile(r"[,;:]\s*"), lo), (re.compile(r"\s+"), lo)):
+            candidates = [m.end() for m in pat.finditer(window) if m.end() >= floor]
+            if candidates:
+                cut = candidates[-1]
+                break
+        else:
+            cut = hard_limit
         out.append(clean(rest[:cut]))
         rest = clean(rest[cut:])
     if rest:

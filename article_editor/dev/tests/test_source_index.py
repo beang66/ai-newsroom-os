@@ -117,6 +117,29 @@ class SourceIndexTests(unittest.TestCase):
             self.assertTrue(self.status()[3].startswith('future-chunker:'))
         self.assertEqual(self.chunk.call_count, 3)
 
+    def test_pdf_source_is_chunked_from_layout_and_falls_back_to_text(self):
+        if not source_index._layout_available():
+            self.skipTest('pdfplumber 미설치')
+        from test_documents import minimal_pdf
+        from core.ai.factcheck import pdf_layout
+        sid, _ = storage.save_source('stat.pdf', minimal_pdf('Budget is 10 billion won this year.'), 'pypdf text')
+        self.assertEqual(source_index.index_source(sid), 'ready')
+        self.chunk.assert_not_called()  # 추출 텍스트가 아니라 원본 PDF 의 글자 위치로 청킹
+        with vault.connect() as db:
+            rows = [(t, json.loads(m)) for t, m in db.execute('SELECT text, meta_json FROM source_chunks WHERE source_id = ? '
+                                                              'ORDER BY ordinal', (sid,))]
+        self.assertIn(('Budget is 10 billion won this year.', [1]), [(t, m.get('pages')) for t, m in rows])
+        self.assertIn(':pdf-layout-v1', self.status_of(sid)[3])
+        sid2, _ = storage.save_source('broken.pdf', b'%PDF-1.4 broken', 'Fallback body.')
+        with mock.patch.object(pdf_layout, 'pdf_pages', side_effect=ValueError('bad pdf')):
+            self.assertEqual(source_index.index_source(sid2), 'ready')
+        self.chunk.assert_called_once()  # 손상 PDF 는 추출 텍스트로 청킹
+
+    def status_of(self, sid):
+        with vault.connect() as db:
+            return db.execute('SELECT state, chunk_count, text_sha256, chunker_version FROM source_index '
+                              'WHERE source_id = ?', (sid,)).fetchone()
+
     def test_delete_removes_index_and_own_vectors_but_preserves_shared_ones(self):
         source_index.index_source(self.sid)
         other, _ = storage.save_source('other.txt', b'other', self.material['content'])

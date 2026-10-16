@@ -8,7 +8,7 @@ import threading
 from . import ids, jobs, storage, vault
 from .errors import RequestError
 
-CHUNKER_VERSION = 'semantic_chunker_v3+boundary-roberta-base-v3:material-v1'
+CHUNKER_VERSION = 'semantic_chunker_v3+boundary-roberta-base-v3:material-v1:gaejosik-v1'
 # ponytail: serialize indexing in this process; per-source locks if throughput requires it.
 _LOCK = threading.RLock()
 _MATERIAL_FIELDS = {'material_id', 'material_title', 'material_date', 'speaker'}
@@ -18,7 +18,31 @@ _LAST_CHUNKER_VERSION = None
 def chunker_version():
     from .ai.factcheck.paths import BOUNDARY_DIR
     # Rule-only chunks must be rebuilt after installing the optional boundary model.
-    return CHUNKER_VERSION + (':boundary' if (BOUNDARY_DIR / 'model.onnx').is_file() else ':rules')
+    return (CHUNKER_VERSION + (':boundary' if (BOUNDARY_DIR / 'model.onnx').is_file() else ':rules')
+            + (':pdf-layout-v1' if _layout_available() else ''))
+
+
+def _layout_available():
+    return importlib.util.find_spec('pdfplumber') is not None
+
+
+def _build_chunks(source_id, material):
+    """보관된 원본이 PDF 면 글자 위치로 표·그림·줄글을 나눠 청킹한다(pdf_layout). 안 되면 추출 텍스트로 청킹."""
+    from .ai.factcheck.material_chunks import build_material_chunks, material_chunks_from_body
+    if _layout_available():
+        raw, mime = storage.source_file(source_id)
+        if mime == 'application/pdf':
+            try:
+                from .ai.factcheck import chunker
+                from .ai.factcheck.pdf_chunker import pdf_units
+                from .ai.factcheck.pdf_layout import pdf_pages
+                body = pdf_units(pdf_pages(raw), chunker._boundary())
+            except Exception as exc:  # 손상·암호 PDF 등: 이미 추출된 텍스트로 청킹한다
+                print(f'[pdf-layout] fallback to text: {type(exc).__name__}: {exc}', flush=True)
+                body = None
+            if body:
+                return material_chunks_from_body(material, body)
+    return build_material_chunks(material)
 
 
 def text_sha256(text):
@@ -129,7 +153,6 @@ def _encode_and_persist(source_id, text, version, chunks, cache, on_progress=Non
 
 def index_source(source_id, on_progress=None):
     """Index once; missing models are a successful deferred (pending) outcome."""
-    from .ai.factcheck.material_chunks import build_material_chunks
     with _LOCK:
         version = chunker_version()
         with vault.connect() as db:
@@ -149,7 +172,7 @@ def index_source(source_id, on_progress=None):
             return 'pending'
         try:
             _prepare_chunker(version)
-            chunks = build_material_chunks({'id': source_id, 'title': title, 'content': text})
+            chunks = _build_chunks(source_id, {'id': source_id, 'title': title, 'content': text})
         except Exception:
             _mark(source_id, text, version, 'failed', 'CHUNKER_ERROR')
             return 'failed'
@@ -180,7 +203,7 @@ def material_chunks(material):
                 return material_chunks_from_body(material, body)
         try:
             _prepare_chunker(version)
-            chunks = build_material_chunks(material)
+            chunks = _build_chunks(source_id, material) if source and source[1] == text else build_material_chunks(material)
         except Exception:
             if source and source[1] == text:
                 _mark(source_id, text, version, 'failed', 'CHUNKER_ERROR')

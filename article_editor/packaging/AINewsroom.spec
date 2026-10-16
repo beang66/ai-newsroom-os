@@ -57,7 +57,8 @@ hiddenimports += [
     if path.name != '__init__.py'
 ]
 binaries = []
-for package in ('sqlcipher3', 'keyring', 'win32ctypes', 'onnxruntime', 'tokenizers', 'numpy'):
+# pdfminer: 한글 CID 글꼴용 cmap 데이터 파일이 있어야 PDF 글자가 읽힌다(pdfplumber 가 사용).
+for package in ('sqlcipher3', 'keyring', 'win32ctypes', 'onnxruntime', 'tokenizers', 'numpy', 'pdfminer'):
     package_datas, package_binaries, package_imports = collect_all(
         package,
         include_py_files=False,

@@ -5,4 +5,5 @@ onnxruntime>=1.20
 tokenizers>=0.21
 # 자료 파일 텍스트 추출(core/documents.py): PDF·옛 HWP. DOCX·HWPX 는 표준 라이브러리
 pypdf>=5.0
+pdfplumber>=0.11  # PDF 표·그림·줄글 분리 청킹(core/ai/factcheck/pdf_layout.py)
 olefile>=0.47

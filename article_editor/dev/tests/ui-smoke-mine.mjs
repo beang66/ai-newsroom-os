@@ -222,6 +222,26 @@ try {
   assert.match(copied, /\[화자 2\] 00:00:06\n네, 들어봤습니다\. 근데 취재는/);
   step("STT: 같은 화자 발언을 한 단락으로 묶고, 통글 전환과 화자·단락 복사");
 
+  // 7-2. 다시듣기: 왼쪽 위 재생 영역의 파형을 누르면 그 위치로 이동하고, 오른쪽 통합 텍스트를 눌러도 이동·재생하지 않는다
+  const wave = page.getByTestId("audio-waveform");
+  const waveBox = await wave.boundingBox();
+  const waveAt = (fraction) => ({ x: waveBox.x + 16 + (waveBox.width - 32) * fraction, y: waveBox.y + waveBox.height / 2 });
+  await page.mouse.click(waveAt(0.5).x, waveAt(0.5).y);
+  await page.getByText("00:00:07", { exact: true }).first().waitFor();            // 14초짜리 녹취의 가운데
+  assert.equal(await wave.getAttribute("aria-valuenow"), "7");
+  await page.mouse.click(waveAt(0.25).x, waveAt(0.25).y);
+  await page.getByText("00:00:03", { exact: true }).first().waitFor();            // 3.5초(화면은 내림해서 표시)
+  await page.mouse.click(waveAt(0.5).x, waveAt(0.5).y);
+  await page.getByText("00:00:07", { exact: true }).first().waitFor();
+  await page.locator("#unified_text_seg-1").click();                               // 오른쪽 글자(시작 0초)를 눌러도
+  await page.waitForTimeout(300);
+  assert.equal(await wave.getAttribute("aria-valuenow"), "7", "오른쪽 통합 텍스트를 눌러도 위치가 바뀌지 않는다");
+  assert.equal(await page.getByText("재생 중", { exact: true }).count(), 0, "오른쪽 통합 텍스트를 눌러도 재생이 시작되지 않는다");
+  await wave.focus();
+  await page.keyboard.press("ArrowLeft");                                           // 키보드로도 이동(5초)
+  await page.getByText("00:00:02", { exact: true }).first().waitFor();
+  step("다시듣기: 왼쪽 위 파형을 눌러 그 위치로 이동(키보드 포함), 오른쪽 통합 텍스트는 눌러도 재생·이동하지 않음");
+
   // 8. 화자 프로필: CLOVA 가 나눈 박스는 그대로 두고 이름만 바꾼다. 프로필 아이콘에서만 작은 메뉴가 열린다.
   const copyAll = async () => {
     await page.getByRole("button", { name: "전체 복사" }).click();

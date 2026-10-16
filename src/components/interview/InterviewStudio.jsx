@@ -348,6 +348,22 @@ export default function InterviewStudio({ onReturnToArticle }) {
     }
   };
 
+  // 파형을 누르거나 끌면 그 위치로 이동한다(재생 중이면 그대로 이어서 재생, 멈춰 있으면 위치만 옮긴다)
+  const seekToFraction = (fraction) => {
+    if (!(duration > 0)) return;
+    const target = Math.max(0, Math.min(1, fraction)) * duration;
+    setCurrentTime(target);
+    if (audioRef.current && audioUrl) {
+      audioRef.current.currentTime = target;
+    }
+  };
+  const seekFromPointer = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pad = 16; // 파형 좌우 여백(px-4)
+    const width = rect.width - pad * 2;
+    if (width > 0) seekToFraction((e.clientX - rect.left - pad) / width);
+  };
+
   const handleSpeedChange = (speed) => {
     setPlaybackSpeed(speed);
     if (audioRef.current) {
@@ -660,7 +676,29 @@ export default function InterviewStudio({ onReturnToArticle }) {
               </div>
 
               {/* 절제된 파형 미리보기 (Waveform bars) */}
-              <div className="w-full h-12 bg-slate-50 border border-slate-100 rounded-xl px-4 flex items-center justify-between gap-1 overflow-hidden">
+              <div
+                role="slider"
+                tabIndex={0}
+                aria-label="재생 위치"
+                aria-valuemin={0}
+                aria-valuemax={Math.round(duration) || 0}
+                aria-valuenow={Math.round(currentTime)}
+                data-testid="audio-waveform"
+                onPointerDown={(e) => {
+                  e.currentTarget.setPointerCapture?.(e.pointerId);
+                  seekFromPointer(e);
+                }}
+                onPointerMove={(e) => {
+                  if (e.buttons === 1) seekFromPointer(e);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                    e.preventDefault();
+                    handleSeekOffset(e.key === "ArrowLeft" ? -5 : 5);
+                  }
+                }}
+                className="w-full h-12 bg-slate-50 border border-slate-100 rounded-xl px-4 flex items-center justify-between gap-1 overflow-hidden cursor-pointer touch-none"
+              >
                 {WAVEFORM_BARS.map((heightPercent, idx) => {
                   const barProgress = idx / WAVEFORM_BARS.length;
                   const currentProgress = duration > 0 ? currentTime / duration : 0;
@@ -1146,7 +1184,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
                 {/* 통합 텍스트: 화자·단락 구분(같은 화자 발언을 한 단락으로) 또는 통글(이어진 한 덩어리 글) */}
                 <div className="max-h-[580px] overflow-y-auto pr-2 space-y-3.5 text-xs md:text-sm leading-relaxed select-text font-sans scrollbar-thin" data-testid="unified-text" data-mode={textMode}>
                   {(() => {
-                    // 발언 하나의 글자(검색어·요약 근거 강조 포함). 눌러서 그 시점으로 이동하는 동작은 그대로 둔다.
+                    // 발언 하나의 글자(검색어·요약 근거 강조 포함). 눌러서 이동·재생하지 않는다 — 다시듣기는 왼쪽 박스와 위쪽 파형에서 한다.
                     const segmentSpan = (item) => {
                       const isSelected = selectedDialogueId === item.id;
                       const isEvidence = evidenceMatchedIds.has(item.id);
@@ -1160,14 +1198,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
                         <span
                           key={`unified_text_${item.id}`}
                           id={`unified_text_${item.id}`}
-                          onClick={() => {
-                            setSelectedDialogueId(item.id);
-                            if (audioRef.current && audioUrl) {
-                              setCurrentTime(item.timestamp);
-                              audioRef.current.currentTime = item.timestamp;
-                            }
-                          }}
-                          className={`cursor-pointer transition-colors ${isSelected ? "text-slate-950 font-medium" : "text-slate-700 hover:text-slate-900"}`}
+                          className={`transition-colors ${isSelected ? "text-slate-950 font-medium" : "text-slate-700"}`}
                         >
                           {isMatchKeyword ? mark(searchKeyword) : isEvidence && evidenceQuery ? mark(evidenceQuery) : item.text}
                         </span>

@@ -22,7 +22,7 @@ from .errors import RequestError
 SAVE_LOCK = threading.Lock()
 MAX_REVISIONS = 200  # ponytail: 자동저장 이력은 원고마다 최근 200개만 둔다. 더 필요하면 간격 저장(예: 1분)이나 압축으로
 OPEN_DIR = APP_DATA / 'open'  # 외부 프로그램으로 열 때만 만드는 임시 복호화본(cleanup_open)
-MAX_TRANSCRIPT_AUDIO = 25_000_000
+MAX_TRANSCRIPT_AUDIO = 40_000_000
 
 
 def _now():
@@ -48,7 +48,7 @@ def save_transcript(payload, result):
     except ValueError:
         raise RequestError('녹음 파일을 읽지 못했어요.') from None
     if not audio or len(audio) > MAX_TRANSCRIPT_AUDIO:
-        raise RequestError('녹음 파일은 25MB 이하만 보관할 수 있어요.', 413)
+        raise RequestError('녹음 파일은 40MB 이하만 보관할 수 있어요.', 413)
     for item in dialogues:
         if not isinstance(item, dict) or not isinstance(item.get('text'), str) or len(item['text']) > 20_000:
             raise RequestError('녹취 발언 형식을 확인해 주세요.')
@@ -78,10 +78,64 @@ def get_transcript(identifier):
     with vault.connect() as db:
         row = db.execute('SELECT filename, mime_type, dialogues_json, duration, created_at FROM transcripts WHERE id = ?',
                          (identifier,)).fetchone()
+        edits = db.execute('SELECT value FROM app_meta WHERE key = ?', (SPEAKER_EDITS_PREFIX + identifier,)).fetchone() if row else None
     if not row:
         raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
     return {'id': identifier, 'filename': row[0], 'mimeType': row[1], 'dialogues': json.loads(row[2]),
-            'duration': row[3], 'createdAt': row[4]}
+            'duration': row[3], 'createdAt': row[4], 'speakerEdits': json.loads(edits[0]) if edits else {}}
+
+
+MARK_COLORS = {'yellow', 'orange', 'green', 'blue', 'pink'}  # 형광펜 색(화면 src/lib/speakerEdits.js 와 같게)
+SPEAKER_EDITS_PREFIX = 'speaker_edits:'  # app_meta 키 — 발언 원본(transcripts.dialogues_json)은 바꾸지 않고 사용자의 화자 수정만 따로 둔다
+
+
+def _clean_speaker_edits(edits):
+    """화면이 보낸 화자 수정(이름 바꾸기 names · 합치기 merge · 구간 지정 assign)을 검사해 정리한다."""
+    if not isinstance(edits, dict):
+        raise RequestError('화자 수정 형식을 확인해 주세요.')
+    clean = {}
+    for field, limit in (('names', 200), ('merge', 500), ('assign', 10_000)):
+        raw = edits.get(field, {})
+        if not isinstance(raw, dict) or len(raw) > limit:
+            raise RequestError('화자 수정 형식을 확인해 주세요.')
+        for key, value in raw.items():
+            if not isinstance(key, str) or not isinstance(value, str) or not key or not value or len(key) > 100 or len(value) > 100:
+                raise RequestError('화자 수정 형식을 확인해 주세요.')
+        clean[field] = dict(raw)
+    # 글 수정(texts: 박스 id → 고친 글)과 형광펜(marks: 박스 id → [{s, e, c}]) — 쓰이지 않으면 필드를 만들지 않는다
+    texts = edits.get('texts')
+    if texts is not None:
+        if not isinstance(texts, dict) or len(texts) > 2_000:
+            raise RequestError('화자 수정 형식을 확인해 주세요.')
+        for key, value in texts.items():
+            if not isinstance(key, str) or not key or len(key) > 100 or not isinstance(value, str) or not value.strip() or len(value) > 60_000:
+                raise RequestError('화자 수정 형식을 확인해 주세요.')
+        clean['texts'] = dict(texts)
+    marks = edits.get('marks')
+    if marks is not None:
+        if not isinstance(marks, dict) or len(marks) > 2_000:
+            raise RequestError('화자 수정 형식을 확인해 주세요.')
+        for key, items in marks.items():
+            if not isinstance(key, str) or not key or len(key) > 100 or not isinstance(items, list) or len(items) > 200:
+                raise RequestError('화자 수정 형식을 확인해 주세요.')
+            for mark in items:
+                ok = isinstance(mark, dict) and all(isinstance(mark.get(f), int) and not isinstance(mark.get(f), bool) for f in ('s', 'e'))
+                if not ok or not 0 <= mark['s'] < mark['e'] <= 60_000 or mark.get('c') not in MARK_COLORS:
+                    raise RequestError('화자 수정 형식을 확인해 주세요.')
+        clean['marks'] = {key: [{'s': m['s'], 'e': m['e'], 'c': m['c']} for m in items] for key, items in marks.items()}
+    return clean
+
+
+def save_speaker_edits(identifier, edits):
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    clean = _clean_speaker_edits(edits)
+    with vault.connect() as db:
+        if not db.execute('SELECT 1 FROM transcripts WHERE id = ?', (identifier,)).fetchone():
+            raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+        db.execute('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)',
+                   (SPEAKER_EDITS_PREFIX + identifier, json.dumps(clean, ensure_ascii=False)))
+    return {'id': identifier, 'speakerEdits': clean}
 
 
 def transcript_audio(identifier):
@@ -427,7 +481,9 @@ def get_article(article_id, version='saved', photo_refs=False):
             if not row:
                 raise _not_found('기사를 찾지 못했습니다.')
             body, at = row
-        return {'draft': _full_draft(db, body, at, unpack_photos=not photo_refs), 'version': version,
+        latest_rev = db.execute('SELECT max(revision_no) FROM article_revisions WHERE article_id = ?', (article_id,)).fetchone()[0] or 0
+        return {'draft': _full_draft(db, body, at, latest_rev, unpack_photos=not photo_refs), 'version': version,
+                'revisionNo': latest_rev,
                 # 연 판이 마지막 수동 저장본과 다르면(발행 뒤 저장한 수정본이 따로 있는 경우) 화면이 '저장하지 않은 변경'으로 알린다
                 'revisionKind': 'manual' if manual and manual[2] == body else 'auto',
                 'lastManual': _manual_summary(manual), 'published': published_info(db, article_id),

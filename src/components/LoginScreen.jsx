@@ -25,11 +25,14 @@ export default function LoginScreen({ initialMode = "login", onClose, onLoginSuc
       setError("비밀번호 확인이 일치하지 않아요.");
       return;
     }
+    const secret = password;
+    setPassword("");
+    setConfirmPassword("");
     setBusy(true);
     try {
       const session = signup
-        ? await signUp(email.trim(), password, remember)
-        : await signIn(email.trim(), password, remember);
+        ? await signUp(email.trim(), secret, remember)
+        : await signIn(email.trim(), secret, remember);
       if (signup && session.needsConfirmation) {
         // 이메일 확인이 켜져 있으면 확인 메일의 링크를 누른 뒤 로그인한다.
         setNotice("가입 확인 메일을 보냈어요. 메일의 링크를 누른 뒤 로그인해 주세요.");
@@ -42,14 +45,12 @@ export default function LoginScreen({ initialMode = "login", onClose, onLoginSuc
       // Supabase 가 영어로 돌려주는 흔한 오류만 한국어로 바꾼다.
       setError(err.message === "Invalid login credentials" ? "이메일 또는 비밀번호가 올바르지 않습니다." : err.message);
     } finally {
-      setPassword("");
-      setConfirmPassword("");
       setBusy(false);
     }
   };
 
   return (
-    <div className="w-full max-w-md mx-auto my-auto animate-in fade-in zoom-in-95 duration-200">
+    <div className="w-full max-w-md mx-auto my-auto animate-in fade-in zoom-in-95 duration-200" data-testid="login-dialog">
       {/* 상단 작업 화면 복귀 버튼 */}
       <div className="mb-4 flex items-center justify-between">
         {required ? <span /> : (
@@ -95,6 +96,7 @@ export default function LoginScreen({ initialMode = "login", onClose, onLoginSuc
           </button>
           <button
             type="button"
+            data-testid="login-mode-toggle"
             onClick={() => setMode("signup")}
             className={`py-2 rounded-xl transition-all cursor-pointer ${mode === "signup"
                 ? "bg-white text-[#292929] shadow-xs"
@@ -146,6 +148,8 @@ export default function LoginScreen({ initialMode = "login", onClose, onLoginSuc
             <div className="relative">
               <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
+                data-testid="login-email"
+                autoFocus
                 type="email"
                 required
                 autoComplete="username"
@@ -166,6 +170,7 @@ export default function LoginScreen({ initialMode = "login", onClose, onLoginSuc
                 required
                 autoComplete="current-password"
                 value={password}
+                data-testid="login-password"
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="비밀번호 입력"
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl text-xs md:text-sm font-medium text-slate-900 focus:bg-white focus:border-slate-800 outline-none transition"
@@ -183,6 +188,7 @@ export default function LoginScreen({ initialMode = "login", onClose, onLoginSuc
                   required
                   autoComplete="new-password"
                   value={confirmPassword}
+                  data-testid="signup-confirm"
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="비밀번호를 한 번 더 입력"
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl text-xs md:text-sm font-medium text-slate-900 focus:bg-white focus:border-slate-800 outline-none transition"
@@ -194,7 +200,7 @@ export default function LoginScreen({ initialMode = "login", onClose, onLoginSuc
           {mode === "login" && (
             <div className="flex items-center justify-between text-xs pt-1">
               <label className="flex items-center gap-1.5 text-slate-600 font-medium cursor-pointer">
-                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="rounded border-slate-300 accent-slate-900 cursor-pointer" />
+                <input type="checkbox" data-testid="login-remember" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="rounded border-slate-300 accent-slate-900 cursor-pointer" />
                 <span>로그인 상태 유지</span>
               </label>
               <button type="button" onClick={() => alert("사내 계정 관리 시스템으로 문의해 주세요.")} className="text-slate-400 hover:text-slate-700 font-medium cursor-pointer">
@@ -204,19 +210,20 @@ export default function LoginScreen({ initialMode = "login", onClose, onLoginSuc
           )}
 
           {notice && (
-            <p role="status" className="text-xs font-medium text-emerald-700 leading-snug">
+            <p role="status" data-testid="login-notice" className="text-xs font-medium text-emerald-700 leading-snug">
               {notice}
             </p>
           )}
 
           {error && (
-            <p role="alert" className="text-xs font-medium text-rose-600 leading-snug">
+            <p role="alert" data-testid="login-error" className="text-xs font-medium text-rose-600 leading-snug">
               {error}
             </p>
           )}
 
           <button
             type="submit"
+            data-testid="login-submit"
             disabled={busy}
             className="w-full mt-2 py-3.5 disabled:opacity-60 bg-[#292929] hover:bg-black text-white text-xs md:text-sm font-extrabold rounded-2xl shadow-sm transition-all duration-200 cursor-pointer active:scale-98"
           >

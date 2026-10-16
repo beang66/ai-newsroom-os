@@ -68,6 +68,22 @@ class ServerTests(ApiTestCase):
         status, raw, headers = self.request('/api/transcripts/' + identifier + '/audio')
         self.assertEqual((status, raw, headers['Content-Type']), (200, b'AUDIO', 'audio/mp4'))
 
+    def test_speaker_edits_route_saves_and_detail_returns_them(self):
+        import base64
+        use_temp_vault(self)
+        identifier = storage.save_transcript(
+            {'filename': 'interview.m4a', 'mimeType': 'audio/mp4', 'data': base64.b64encode(b'AUDIO').decode()},
+            {'dialogues': [{'id': 's1', 'speaker': '1', 'speakerName': '화자 1', 'text': '질문', 'timestamp': 0}], 'duration': 3},
+        )['transcriptId']
+        edits = {'names': {'1': '김 기자'}, 'merge': {}, 'assign': {}}
+        status, raw, _ = self.request('/api/transcripts/' + identifier + '/speakers', {'speakerEdits': edits})
+        self.assertEqual((status, json.loads(raw)['speakerEdits']), (200, edits))
+        detail = json.loads(self.request('/api/transcripts/' + identifier)[1])
+        self.assertEqual(detail['speakerEdits'], edits)
+        self.assertEqual(detail['dialogues'][0]['speakerName'], '화자 1')            # 원본 발언은 그대로
+        self.assertEqual(self.request('/api/transcripts/' + identifier + '/speakers', {'speakerEdits': 'x'})[0], 400)
+        self.assertEqual(self.request('/api/transcripts/' + 'f' * 32 + '/speakers', {'speakerEdits': edits})[0], 404)
+
     def test_cms_route_only_returns_success_from_platform_manager(self):
         with patch.object(api.CORE.platform, 'publish', return_value={'published': True, 'id': 'cms-1'}) as publish:
             status, raw, _ = self.request('/api/cms/publish', {'article': {'title': '기사', 'content': '본문'}})

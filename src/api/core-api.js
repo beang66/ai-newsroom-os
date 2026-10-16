@@ -57,6 +57,7 @@ export const ROUTES = Object.freeze({
   transcripts: "/api/transcripts",
   transcript: (id) => "/api/transcripts/" + encodeURIComponent(id),
   transcriptAudio: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/audio",
+  transcriptSpeakers: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/speakers",
   cmsPublish: "/api/cms/publish",
   vaultExport: "/api/vault/export",
   vaultRestore: "/api/vault/restore",
@@ -158,12 +159,15 @@ export function createCoreApi(transport) {
     /** 의미 단위 청킹: source = frontend | opendart */
     semanticParse: (text, source = "frontend", signal) =>
       transport.json(ROUTES.semanticParse, { text, source }, signal),
-    /** 인터뷰 녹음 전사(Whisper) → { dialogues:[{id,speaker,speakerName,timestamp,text}], text, duration } */
-    transcribe: (filename, mimeType, data, signal) =>
-      transport.json(ROUTES.transcribe, { filename, mimeType, data }, signal),
+    /** 인터뷰 녹음 전사 → { dialogues:[{id,speaker,speakerName,timestamp,text}], text, duration }
+     *  engine: "clova" 면 CLOVA 만 쓴다(안 되면 Whisper 로 넘어가지 않고 오류). 없으면 코어가 고른다(CLOVA 설정이 있으면 CLOVA, 없으면 Whisper) */
+    transcribe: (filename, mimeType, data, signal, engine, durationSec) =>
+      transport.json(ROUTES.transcribe, { filename, mimeType, data, ...(engine ? { engine } : {}), ...(durationSec > 0 ? { durationSec } : {}) }, signal),
     listTranscripts: (signal) => transport.json(ROUTES.transcripts, null, signal),
     getTranscript: (id, signal) => transport.json(ROUTES.transcript(id), null, signal),
     transcriptAudio: (id, signal) => transport.bytes(ROUTES.transcriptAudio(id), signal),
+    /** 화자 수정(이름 바꾸기·합치기·구간 지정)을 저장한다. 발언 원본은 바뀌지 않는다. */
+    saveTranscriptSpeakers: (id, speakerEdits, signal) => transport.json(ROUTES.transcriptSpeakers(id), { speakerEdits }, signal),
     publishCms: (article, signal) => transport.json(ROUTES.cmsPublish, { article }, signal),
     exportVault: (password, signal) => transport.json(ROUTES.vaultExport, { password }, signal),
     restoreVault: (password, data, signal) => transport.json(ROUTES.vaultRestore, { password, data }, signal),

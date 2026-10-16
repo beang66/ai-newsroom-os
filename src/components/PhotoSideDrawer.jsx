@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { photoKeywords } from "../services/assistService";
 import { searchDongaPhotos, dongaPhotoData } from "../api/editorial";
-import { searchUnsplash } from "../services/photoSearch";
+import { searchUnsplashWithQuery } from "../services/photoSearch";
 
 // 언스플래시 프리셋 고화질 보도사진 데이터
 const UNSPLASH_PHOTOS = [
@@ -209,6 +209,7 @@ export default function PhotoSideDrawer({
   // 검색 처리: Core(/api/unsplash/search)가 Unsplash에서 찾는다. 빈 검색어면 기본 목록으로 돌아간다.
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [searchedAs, setSearchedAs] = useState(null); // 한글 검색어를 영어로 바꿔 찾았을 때 안내
   const runSearch = async (rawQuery) => {
     const q = (rawQuery ?? searchQuery).trim();
     setSearchError("");
@@ -218,7 +219,8 @@ export default function PhotoSideDrawer({
     }
     setSearching(true);
     try {
-      const found = await searchUnsplash(q);
+      const { photos: found, searched } = await searchUnsplashWithQuery(q);
+      setSearchedAs(searched && searched !== q ? { query: q, searched } : null);
       if (found.length === 0) setSearchError(`'${q}'에 맞는 사진을 찾지 못했습니다.`);
       else setSearchResults(found);
     } catch (error) {
@@ -234,14 +236,6 @@ export default function PhotoSideDrawer({
 
   // 기사 본문을 읽고 사진 검색어를 추천한다(Core /api/assist, kind=photo_keywords).
   const [keywordState, setKeywordState] = useState({ status: "idle", data: [], error: "" });
-  const recommendKeywords = async () => {
-    setKeywordState({ status: "loading", data: [], error: "" });
-    try {
-      setKeywordState({ status: "done", data: await photoKeywords(articleContent), error: "" });
-    } catch (error) {
-      setKeywordState({ status: "error", data: [], error: error.message });
-    }
-  };
   // 사진 창이 열리면 기사 본문을 바탕으로 검색어를 자동 추천한다(main 과 같은 기준: 본문 80자 이상)
   useEffect(() => {
     const text = String(articleContent || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").trim();
@@ -479,19 +473,11 @@ export default function PhotoSideDrawer({
                   </button>
                 </form>
 
-                {/* 기사 본문 기반 검색어 추천 */}
+                {/* 기사 본문 기반 검색어 추천(5~6개) — 사진 창을 열면 자동으로 받고, 누르면 그 검색어로 찾는다 */}
                 <div className="space-y-2">
-                  <button
-                    type="button"
-                    data-testid="photo-keyword-recommend"
-                    onClick={recommendKeywords}
-                    disabled={keywordState.status === "loading"}
-                    className="w-full px-3 py-2 bg-white hover:bg-slate-50 disabled:opacity-60 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl transition cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
-                    title="기사 본문을 읽고 어울리는 사진 검색어를 추천합니다"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-slate-700" />
-                    {keywordState.status === "loading" ? "본문을 읽는 중…" : "기사에 맞는 검색어 추천"}
-                  </button>
+                  {keywordState.status === "loading" && (
+                    <p role="status" className="text-[11px] text-slate-500 px-0.5">본문을 읽고 검색어를 추천하는 중입니다…</p>
+                  )}
                   {keywordState.status === "error" && (
                     <p role="alert" className="text-[11px] text-rose-600 px-0.5">{keywordState.error}</p>
                   )}
@@ -511,6 +497,10 @@ export default function PhotoSideDrawer({
                     </div>
                   )}
                 </div>
+
+                {searchedAs && (
+                  <p data-testid="photo-searched" className="text-[11px] text-slate-500 px-0.5">‘{searchedAs.query}’ → ‘{searchedAs.searched}’(으)로 찾았습니다.</p>
+                )}
 
                 {/* 시각적 배지 & 메타 정보 */}
                 <div className="flex items-center justify-between text-[11px] text-slate-500 px-0.5">

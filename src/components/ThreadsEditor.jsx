@@ -8,8 +8,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AlignLeft, BadgeCheck, Hash, Image as ImageIcon, MoreHorizontal, Mic, Smile } from "lucide-react";
 import { photoDataUrl } from "../api/platform.js";
 import { selectedCardPhoto } from "../lib/platformState.js";
-import * as CardModel from "../../platform-generator/lib/card-model.js";
-import * as CardTemplate from "../../platform-generator/lib/card-template.js";
+import {CardModel,CardTemplate} from "../lib/cardRuntime.js";
+import * as toneModule from '../../platform-generator/lib/threads-tone.js';
+
+const ThreadsTone=toneModule.issues?toneModule:toneModule.default?.issues?toneModule.default:globalThis.ThreadsTone;
 
 const LIMIT = 500; // Threads 게시물 글자 수 제한
 const ACCOUNT = "ai_newsroom";
@@ -95,6 +97,7 @@ function Post({ label, value, onChange, media, evidenceNode }) {
 /** draft: 생성 결과, changed(mutate): 수정 규칙(재검수 표시 포함), Evidence: 원문 근거 접기, cards: 카드뉴스 카드들, article: 카드 사진 조회용 */
 export default function ThreadsEditor({ draft, changed, Evidence, cards = [], article }) {
   const paragraphs = draft.paragraphs || [];
+  const toneIssues=ThreadsTone.issues(paragraphs,draft.generation_input?.requirements??draft.requirements??'');
   const posts = [
     { key: "opening", label: "제목", value: draft.opening, evidence: draft.block_evidence?.opening, valid: draft.block_evidence_valid?.opening,
       set: (value) => changed((next) => { next.opening = value; }) },
@@ -106,6 +109,7 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
   ];
   return (
     <div className="rounded-[28px] bg-[#EFECE6] p-4 md:p-8" data-testid="threads-editor">
+      {toneIssues.length>0&&<p role="alert" data-testid="threads-tone-warning" className="mb-3 rounded-xl border border-amber-300 bg-white p-3 text-xs text-amber-800">본문 {toneIssues.map(issue=>issue.index+1).join(', ')}에 기본 반말과 다른 종결이 있습니다. 저장된 원고는 자동 변경하지 않습니다. 직접 편집하거나 ‘Threads 다시 생성’을 눌러 주세요. 새 생성에서는 말투를 확인하고 필요한 문단만 교정합니다.</p>}
       <div className="mx-auto w-full max-w-[560px] overflow-hidden rounded-[24px] bg-white shadow-[0_12px_40px_rgba(0,0,0,0.12)]">
         <div className="flex items-center justify-between border-b border-[#EFECE6] px-5 py-3.5 text-[15px]">
           <span className="text-[#101010]">취소</span>

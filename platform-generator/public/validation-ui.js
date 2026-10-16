@@ -217,7 +217,7 @@
       .replace(/intro/g, "도입")
       .replace(/heading/g, "소제목")
       .replace(/body/g, "본문")
-      .replace(/answer/g, "핵심 답변")
+      .replace(/answer/g, "핵심 문구")
       .replace(/detail/g, "상세 설명")
       .replace(/closing/g, "마무리")
       .replace(/conclusion/g, "결론")

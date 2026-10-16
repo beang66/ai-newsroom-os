@@ -13,7 +13,7 @@ from ..storage import (create_snapshot as _create_snapshot, get_revision as _get
                        get_transcript as _get_transcript, list_transcripts as _list_transcripts,
                        latest_article as _latest_article, get_article as _get_article, publish_article as _publish_article, media_file as _media_file, list_revisions as _list_revisions, list_snapshots as _list_snapshots,
                        open_source as _open_source, restore_revision as _restore_revision, prune_legacy_revisions as _prune_legacy_revisions, save_article as _save_article, delete_article as _delete_article,
-                       source_file as _source_file, transcript_audio as _transcript_audio)
+                       source_file as _source_file, transcript_audio as _transcript_audio, save_speaker_edits as _save_speaker_edits)
 from .. import vault
 
 
@@ -151,6 +151,9 @@ class StorageManager:
 
     def transcript_audio(self, transcript_id):
         return _transcript_audio(transcript_id)
+
+    def save_speaker_edits(self, transcript_id, edits):
+        return _save_speaker_edits(transcript_id, edits)
 
     def export_backup(self, data):
         import base64

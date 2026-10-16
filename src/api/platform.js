@@ -3,6 +3,9 @@
 import { core } from "./core.js";
 import { saveDraft, bodyHtmlOf, loadStoredArticle } from "./editorial.js";
 import { articleId, renderKey, selectedCardPhoto, sourceText } from "../lib/platformState.js";
+import { attachCurrentReview } from '../lib/platformState.js';
+import {toStudioArticle} from '../lib/studioArticle.js';
+import '../../platform-generator/lib/review-binding.js';
 
 // Core 본문 텍스트를 그대로 전달한다. 화면의 부제·사진·캡션을 생성 원문에 합치지 않는다.
 const cleanArticle = (article = {}) => ({
@@ -30,7 +33,7 @@ export async function getStudioArticle(id, signal) {
     ||loaded.subtitle!==(raw.subtitle||'')||loaded.url!==(raw.url||'')
     ||(typeof raw.content==='string'&&loaded.content!==raw.content))
     throw Error("조회 중 기사가 변경됐습니다. 다시 선택해 주세요.");
-  return {article:loaded, subtitle:raw.subtitle};
+  return {article:toStudioArticle(loaded), subtitle:raw.subtitle};
 }
 
 /** 지금 글을 저장하고 고정본(그 시점의 글을 얼린 사본)으로 만든다. 키워드·원고·카드 이미지를 이 고정본 기준으로 만들면
@@ -73,15 +76,18 @@ export async function generatePlatform(platform, article, selectedKeywords, requ
   const result = await core.generatePlatform(platform, payload, snapshotId);
   const draft = result?.draft || null;
   // 화면 편집 최신성 서명은 로컬 보호용이다. Core 공통 ID나 고정본 계약을 대신하지 않는다.
-  return draft ? { ...draft, ...(result?.snapshotId ? {snapshot_id:result.snapshotId} : {}), generation_input:payload,
-    ...(sourceArticle ? {generation_source:sourceText(sourceArticle)} : {}) } : null;
+  if (!draft) return null;
+  const generated = { ...draft, ...(result?.snapshotId ? {snapshot_id:result.snapshotId} : {}), generation_input:payload,
+    ...(sourceArticle ? {generation_source:sourceText(sourceArticle)} : {}) };
+  return sourceArticle && await globalThis.ContentReviewBinding.reviewMatches({ ...payload, platform }, draft)
+    ? attachCurrentReview(platform, generated, sourceArticle, draft.generation_review) : generated;
 }
 
 export async function validatePlatformDraft(platform, draft) {
   if (!["instagram", "threads", "card_news"].includes(platform)) throw Error("지원하지 않는 검수 플랫폼입니다.");
   const input = draft?.generation_input;
   if (!input?.article) throw Error("검수 기준 원문이 없습니다. 현재 기사로 다시 생성해 주세요.");
-  const {validation_review:_review,rendered_image:_render,generation_input:_input,...reviewDraft}=draft;
+  const {validation_review:_review,rendered_image:_render,generation_input:_input,generation_run:_run,...reviewDraft}=draft;
   if(reviewDraft.cards)reviewDraft.cards=reviewDraft.cards.map(({rendered_image:_render,validation_review:_review,image,...card})=>({...card,...(image?{image:{photographer:image.photographer}}:{})}));
   const result = await core.validatePlatform({ ...input, article:cleanArticle(input.article), platform, draft:reviewDraft }, draft.snapshot_id);
   if (!result?.success || result.validation?.platform !== platform) throw Error("검수 결과를 확인하지 못했습니다.");

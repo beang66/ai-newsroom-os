@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import AppDialog from "./AppDialog";
 import { beginRestore, endRestore } from "../restoreState";
+import { clearBackup } from "../lib/draftBackup.js";
 import { getTransfer, uploadTransfer, downloadTransfer, deleteTransfer, getTransferFile, makeTransferFile, deleteTransferFile } from "../api/editorial";
 import { generateTransferCode, normalizeTransferCode, restoreTransferFile } from "../lib/vaultTransfer";
 
@@ -92,6 +93,7 @@ export default function TransferWizard({ onClose, onBeforeRestore }) {
     setPending(true); setError("");
     try {
       await onBeforeRestore?.();
+      await clearBackup();
       beginRestore();
       await (source === "server" ? downloadTransfer(normalized) : restoreTransferFile(normalized, file));
       window.location.reload();

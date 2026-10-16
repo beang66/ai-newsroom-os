@@ -34,6 +34,16 @@ class ManualSaveTests(unittest.TestCase):
         self.assertEqual(rows(aid), [(1, 'auto')])
         self.assertEqual(storage.list_revisions(aid)['revisions'], [])  # 저장 이력에는 안 보임
 
+    def test_reopened_article_reports_newest_revision_so_next_save_does_not_conflict(self):
+        """보관함에서 다시 열 때(get_article) 연 판은 마지막 수동 저장본이지만, 저장 충돌 검사에 쓰는 revisionNo 는 가장 최신 이력 번호여야 한다."""
+        aid = save('manual', content='1차 저장')['articleId']
+        newest = save('auto', aid, content='1차 뒤 고침')['revisionNo']
+        opened = storage.get_article(aid)
+        self.assertEqual(opened['draft']['content'], '1차 저장')   # 본문은 마지막 수동 저장본
+        self.assertEqual(opened['revisionNo'], newest)             # 번호는 최신 이력
+        self.assertEqual(opened['draft']['revisionNo'], newest)
+        storage.save_article({'draft': dict(opened['draft'], content='이어서 씀'), 'expectedRevisionNo': opened['revisionNo'], 'kind': 'manual'})  # 충돌 없이 저장된다
+
     def test_manual_save_becomes_history_and_archive(self):
         aid = save('auto', content='쓰는 중', title='임시 제목')['articleId']
         save('manual', aid, content='1차 저장', title='제목 1')

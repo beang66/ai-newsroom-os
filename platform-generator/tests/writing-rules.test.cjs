@@ -1,10 +1,40 @@
 // 생성 계약: 외부 AI 호출 없이 출력 항목과 사용자 요구사항 전달을 확인합니다.
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.resolve(__dirname,'..');
+function instagramFixture(answer){
+ class FakeAI{static apiKey='fixture';static model='fixture';responses={create:answer};}
+ const mod={exports:{}};vm.runInNewContext(fs.readFileSync(path.join(root,'instagram-generator.js'),'utf8'),{module:mod,__dirname:root,process,console,require:name=>name==='./ai-provider'?FakeAI:name==='dotenv'?{config(){}}:name.startsWith('./')?require(path.join(root,name)):require(name)});return mod.exports.generateInstagram;
+}
+const formatted=value=>({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]});
+function instagramOutput(article,tags){const block={text:article.content,source_evidence:[article.content]};return {emoji:'📰',opening:{...block,text:article.title},paragraphs:[block],closing:{...block,text:'계획을 확인했습니다.”'},hashtags:tags};}
+test('닫는 따옴표는 문장 판정에서만 제외하며 태그 구분자·중복 정리는 추가 호출 없음',async()=>{
+ const article={article_id:'fixture',title:'운영 계획',content:'다음 달 운영을 늘릴 계획입니다.'};let calls=0;
+ const output=instagramOutput(article,['#운영, #계획','#뉴스','#뉴스']);
+ const draft=await instagramFixture(async()=>{calls++;return formatted(output);})({article,selected_keywords:[],requirements:''});
+ assert.equal(calls,1);assert.equal(draft.closing,output.closing.text);assert.deepEqual(Array.from(draft.hashtags),['#운영','#계획','#뉴스']);assert.equal(draft.evidence_valid,true);
+});
+test('태그 부족은 해시태그 필드만 한 번 보완하며 본문·근거 유지',async()=>{
+ const article={article_id:'fixture',title:'운영 계획',content:'다음 달 운영을 늘릴 계획입니다.'},requests=[];
+ const output=instagramOutput(article,['#뉴스']);
+ const draft=await instagramFixture(async request=>{requests.push(request);if(requests.length===1)return formatted(output);assert.equal(request.text.format.name,'instagram_hashtag_repair');return formatted({hashtags:['#운영','#계획','#뉴스']});})({article,selected_keywords:[],requirements:''});
+ assert.equal(requests.length,2);assert.equal(draft.paragraphs[0],output.paragraphs[0].text);assert.equal(draft.closing,output.closing.text);assert.deepEqual(Array.from(draft.source_evidence),[article.content]);
+});
+test('태그 교정 실패 또는 태그·문체 동시 오류도 총 두 번을 넘겨 호출하지 않음',async()=>{
+ const article={article_id:'fixture',title:'운영 계획',content:'다음 달 운영을 늘릴 계획입니다.'};
+ for(const simultaneous of [false,true]){let calls=0;const output=instagramOutput(article,['#뉴스']);if(simultaneous)output.closing.text='운영 계획';
+  const generate=instagramFixture(async()=>{calls++;return formatted(calls===1?output:{hashtags:simultaneous?['#운영','#계획','#뉴스']:['#뉴스']});});
+  await assert.rejects(generate({article,selected_keywords:[],requirements:''}),simultaneous?/closing/:/해시태그/);assert.equal(calls,2);
+ }
+});
+test('잘못된 태그 교정 JSON은 AI 응답 내용을 오류 문구에 노출하지 않음',async()=>{
+ const article={article_id:'fixture',title:'운영 계획',content:'다음 달 운영을 늘릴 계획입니다.'};let calls=0;
+ const generate=instagramFixture(async()=>++calls===1?formatted(instagramOutput(article,['#뉴스'])):{status:'completed',output:[{type:'message',content:[{type:'output_text',text:'SECRET_SYNTHETIC_RESPONSE'}]}]});
+ await assert.rejects(generate({article,selected_keywords:[],requirements:''}),error=>/해시태그 교정 응답 형식/.test(error.message)&&!error.message.includes('SECRET'));assert.equal(calls,2);
+});
 test('Threads 해시태그와 질문의 근거를 보존하며 새 지침을 전달',async()=>{
  const article={article_id:'fixture',title:'두 그룹 데뷔',content:'이수만이 두 그룹을 동시에 선보입니다.'};
  const tags=['#이수만','#데뷔','#케이팝'];let request;
- class FakeAI {static apiKey='fixture';static model='fixture';responses={create:async r=>{request=r;return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({presentation:{mode:'use',emoji:'📰',reason:'뉴스'},title:'이수만의 두 그룹 동시 데뷔',title_source_evidence:[article.content],summary_blocks:[{text:'각자의 매력을 어떻게 보여줄까요?',source_evidence:[article.content]}],hashtags:tags})}]}]}}};}
+ class FakeAI {static apiKey='fixture';static model='fixture';responses={create:async r=>{request=r;return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({presentation:{mode:'use',emoji:'📰',reason:'뉴스'},title:'이수만의 두 그룹 동시 데뷔',title_source_evidence:[article.content],summary_blocks:[{text:'각자의 매력을 어떻게 보여줄까?',source_evidence:[article.content]}],hashtags:tags})}]}]}}};}
  const module={exports:{}};
  vm.runInNewContext(fs.readFileSync(path.join(root,'text-generator.js'),'utf8'),{module,__dirname:root,process,console,require:name=>name==='./ai-provider'?FakeAI:name==='dotenv'?{config(){}}:name.startsWith('./')?require(path.join(root,name)):require(name)});
  const draft=await module.exports.generateTextPlatform('threads',{article,selected_keywords:[],requirements:'반말로 작성'});

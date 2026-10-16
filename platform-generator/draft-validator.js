@@ -16,7 +16,10 @@
 const path = require("path");
 const OpenAI = require("./ai-provider");
 const {EMOJIS,hasEmoji,usesDefaultStyle}=require("./instagram-writing-contract");
+const ThreadsTone=require('./lib/threads-tone');
 const { getPlatformRules } = require("./platform-rules");
+const { quoteContexts } = require('./lib/quote-context');
+const { serialize } = require('./lib/review-binding');
 // ============================================================
 // 1. 환경 변수 불러오기
 // ============================================================
@@ -343,11 +346,12 @@ function checkBasicRules(platform, draft, rules, quoteExists, requirements="") {
         "카드 제목",
       );
       if(expectedRole==='body'&&card.content_version===2){
-        checkRequiredText(card.content.answer,`${prefix}.content.answer`,'핵심 답변');
+        checkRequiredText(card.content.answer,`${prefix}.content.answer`,'핵심 문구');
         checkRequiredText(card.content.detail,`${prefix}.content.detail`,'상세 설명');
+        if(/[?？]\s*$/u.test(card.content.headline)&&/[?？]\s*$/u.test(card.content.answer))requirement.push({location:`${prefix}.content.answer`,category:'structure_violation',problematic_text:card.content.answer,reason:'질문형 제목에 직접 답하지 않고 answer에 질문을 연달아 두었습니다.',source_evidence:[],suggestion:'제목의 질문에 이 카드의 answer에서 원문에 근거해 직접 답하고 detail에서 근거와 조건을 설명해주세요.'});
         // 조사·구두점 차이만 있는 긴 답변을 상세 설명에 그대로 다시 쓰는 경우를 검사합니다.
         const compact=v=>v.replace(/[^\p{L}\p{N}]/gu,''),answer=compact(card.content.answer),detail=compact(card.content.detail);
-        if(answer.length>=20&&detail.includes(answer))requirement.push({location:`${prefix}.content.detail`,category:'structure_violation',problematic_text:card.content.detail,reason:'핵심 답변의 긴 문장이 상세 설명에서 그대로 반복됩니다.',source_evidence:[],suggestion:'핵심 답변은 짧게 쓰고, 상세 설명에는 답변에서 생략한 대상·시점·조건 등 원문의 필수 맥락을 배분해주세요.'});
+        if(answer.length>=20&&detail.includes(answer))requirement.push({location:`${prefix}.content.detail`,category:'structure_violation',problematic_text:card.content.detail,reason:'answer의 긴 문구가 상세 설명에서 그대로 반복됩니다.',source_evidence:[],suggestion:'answer를 반복하지 말고 상세 설명에서 원문에 근거한 답·대상·시점·조건 등 필요한 맥락을 설명해주세요.'});
       }else if(expectedRole!=='cover')checkRequiredText(CardModel.details(card),`${prefix}.content.${card.content_version===2?'detail':'body'}`,'카드 본문');
       checkEvidence(card.source_evidence, `${prefix}.source_evidence`);
       // 직접 인용의 존재 확인은 제목만으로 통과시키지 않습니다. 주체·맥락은 AI가 별도로 검수합니다.
@@ -384,6 +388,7 @@ function checkBasicRules(platform, draft, rules, quoteExists, requirements="") {
   }
   if (platform === "threads") {
     checkRequiredText(draft.opening, "opening", "기사 제목");
+    for(const issue of ThreadsTone.issues(draft.paragraphs,requirements))requirement.push({location:`paragraphs[${issue.index}]`,category:'structure_violation',problematic_text:draft.paragraphs[issue.index],reason:'기본 반말 규칙과 다른 기사체·존댓말 종결이 있습니다.',source_evidence:[],suggestion:'직접 인용과 원문의 사실·수치·조건을 유지하고 해·했어·이야 형태의 자연스러운 반말로 고쳐 주세요.'});
     if (!draft.paragraphs.length) {
       checkRequiredText("", "paragraphs", "핵심 요약 문장");
     }
@@ -459,6 +464,15 @@ async function validateDraft(input, options={}) {
   }
   const rules = getPlatformRules(input.platform);
   const draft = extractDraft(input.platform, input.draft);
+  // Only the isolated mock runner passes this option. Product routes never do.
+  const experiment = options.experiment;
+  if (experiment && !['A', 'B0', 'B1'].includes(experiment.arm)) {
+    throw new Error('알 수 없는 모의 비교 실험군입니다.');
+  }
+  const evidenceContext = experiment?.arm === 'A' ? undefined : quoteContexts(input.article, draft);
+  if (experiment?.arm === 'B1' && !Array.isArray(experiment.mockCandidates)) {
+    throw new Error('B1 모의 후보 목록이 필요합니다.');
+  }
   const apiKey = (options.apiKey||OpenAI.apiKey)?.trim();
   if (!apiKey) {
     throw new Error(".env의 OPENAI_API_KEY를 확인해주세요.");
@@ -502,6 +516,8 @@ async function validateDraft(input, options={}) {
 \- 수정 제안에도 원문에 없는 사실, 수치, 사례를 추가하지 않습니다.
 \- 같은 문제를 여러 분류로 중복하여 나열하지 않습니다.
 \- already_detected에 있는 문제는 반복해서 반환하지 않습니다.
+${experiment?.arm === 'A' ? '' : '- evidence_context는 기존 인용의 본문 위치와 앞뒤 문맥 안내입니다. 전체 원문 검토를 대신하지 않습니다.\n- matched 인용도 주체·기간·조건·주장 의미를 별도로 확인합니다. unmatched 또는 context_complete=false만으로 주장을 거짓으로 판정하지 않습니다.'}
+${experiment?.arm === 'B1' ? '- mock_search_candidates는 연결 확인용으로 준비된 원문 조각입니다. 검색 정확도나 사실 판정 결과가 아니며 전체 원문 검토를 대신하지 않습니다.' : ''}
 [생성에 적용한 공통 기준]
 ${rules.common_rules}
 [생성에 적용한 플랫폼 기준]
@@ -529,6 +545,8 @@ ${instructions}
             {card_id:card.card_id,page:card.page,role:card.role,closing_type:'service',excluded_from_article_fact_check:true}:{...card,content:{...card.content,farewell:''}}),
         }:draft,
         already_detected: alreadyDetected,
+        ...(evidenceContext === undefined ? {} : { evidence_context: evidenceContext }),
+        ...(experiment?.arm === 'B1' ? { mock_search_candidates: experiment.mockCandidates } : {}),
       }),
       text: {
         format: {
@@ -640,9 +658,9 @@ ${instructions}
 - 연결 표현이 실제 대비·인과관계와 일치하는지 확인하며 문체 취향만으로 오류를 만들지 않습니다.
 - 사용자가 요청한 다른 문체를 플랫폼 기본 문체와 다르다는 이유로 지적하지 않습니다.
 [한국어 문장 품질]
-- 조사·어미 호응이 틀리거나, 서술어가 빠졌거나, 명사 나열·과도한 축약 때문에 첫 독해에서 뜻을 파악하기 어려운 문장은 structure_violation으로 지적합니다.
+- 조사·어미 호응이 틀리거나, 서술형 문장의 서술어가 빠졌거나, 명사 나열·과도한 축약 때문에 첫 독해에서 뜻을 파악하기 어려운 표현은 structure_violation으로 지적합니다. 카드뉴스 본문 answer의 자연스럽고 정확한 질문형·명사형은 서술어가 없다는 이유만으로 지적하지 않습니다.
 - 기사 문장을 어미만 바꾼 듯 부자연스러운 표현, 서로 다른 말투의 혼용, 문맥에 맞지 않는 전언형 표현도 명확한 오류일 때 지적합니다.
-- 각 카드의 headline·answer·detail이 자연스럽게 읽히는지 확인합니다. answer가 headline을 되풀이하거나 detail이 답변을 다시 말하는 경우도 지적합니다.
+- 각 카드의 headline·answer·detail이 자연스럽게 이어지는지 확인합니다. answer가 headline을 되풀이하거나 detail이 answer를 다시 말하는 경우도 지적합니다.
 - 어색한 문장을 발견하면 같은 원문 사실·조건을 유지하면서 자연스러운 한국어로 고치는 방향을 suggestion에 구체적으로 제시합니다.
 - 단순한 어휘 취향, 정상적인 문체 변형, 권장 문장 길이 차이는 오류로 만들지 않습니다.
 [키워드와 요구사항]
@@ -658,7 +676,12 @@ ${instructions}
 - 본문에서 설명한 주요 내용을 마지막 장에서 간결하게 재언급하는 것은 허용합니다. 이를 신규 정보나 불필요한 중복으로 잘못 지적하지 않습니다. 제목·답변·설명에 같은 뜻을 반복해 채우는 것은 구분합니다.
 - ‘사연을 전했습니다’ 같은 추상적 표현이 핵심 사실을 대신하면 실제 핵심 내용을 쓰도록 지적합니다.
 \- 표지 보충 설명은 선택 사항입니다. 표지 body·answer·detail이 비어도 누락 오류가 아닙니다.
-\- 새 본문은 headline·answer·detail을 구분하고 질문 제목은 answer에서 직접 답합니다. 기존 content_version=1 초안은 keyword/headline/body만 있는 기존 구조를 허용하며 새 필드를 강제하지 않습니다.
+\- 새 본문은 headline·answer·detail을 구분합니다. headline이 질문이면 answer에서 직접 답하고 detail에서 근거·조건을 설명합니다. 답하지 않은 질문을 answer에 연달아 두면 structure_violation입니다.
+- headline이 질문이 아닌 본문 카드에서는 answer가 질문형·명사형·서술형 중 정확하고 자연스러운 형태일 수 있습니다. 순서나 형식의 다양성을 강제하지 않습니다. 질문형 answer는 원문에 분명한 답이 있을 때만 허용하고 같은 카드의 detail에서 직접 답해야 합니다. 답 없는 질문이나 근거 없는 전제는 지적합니다.
+- 명사형 answer는 의미가 분명하고 원문의 계획·주장·확인 중인 상태를 확정 사실로 바꾸지 않아야 합니다. 발언 주체·필수 조건이 answer 또는 이어지는 detail에서 분명해야 하지만, answer 자체의 확정·단정 표현을 detail이 뒤늦게 정정해도 통과시키지 않습니다. 서술형도 허용합니다. 문장 끝 형태만을 이유로 오류 처리하지 않습니다.
+- detail은 answer의 답 또는 필요한 배경·수치·대상·기간·조건을 설명하며 같은 뜻을 반복하지 않습니다. 비교·목록·단계형은 첫 항목부터 자연스럽게 연결되는지 확인합니다. 배정된 주요 정보의 답이나 필수 조건을 다음 카드·마지막 카드로 미루면 해당 본문 위치의 important_omission 또는 structure_violation으로 지적합니다.
+- answer가 headline을 긴 문장으로 다시 쓰거나 배경·결과·조건을 모두 앞질러 담아 핵심 문구의 역할을 잃었는지 확인합니다. detail이 answer의 주장을 다른 단어로 되풀이하고 필요한 새 설명을 거의 더하지 않으면 두 필드의 역할을 나누도록 structure_violation으로 지적합니다. 단어가 겹친다는 이유나 서술형·긴 문장이라는 이유만으로 지적하지 않으며, 주체·상태·필수 조건을 줄이라고 요구하지 않습니다.
+\- 기존 content_version=1 초안은 keyword/headline/body만 있는 기존 구조를 허용하며 새 필드를 강제하지 않습니다.
 \- 인용의 실제 원문 존재 확인과 주장 의미 검수는 구분합니다. 원문 근거가 있어도 과장·인과·조건·발언 주체를 검수합니다.
 - 마지막 카드는 전체 핵심을 짧게 정리하고 원문의 결과·현재 상태·중요한 조건으로 표지의 주제·질문을 회수합니다. 본문을 그대로 반복하거나 새 사실·전망·평가를 추가하지 않습니다.
 - 제목을 포함한 각 문장이 조건·예정 상태를 유지하는지 확인합니다. ‘인력 배치를 마친 뒤 시행일 확정’이라는 조건을 ‘인력 배치 진행’·‘배치 완료’로 바꾸면 현재 상태를 새로 단정한 것입니다. 실제 착수·진행·완료를 원문이 명시했는지 따로 확인합니다.
@@ -746,6 +769,7 @@ ${instructions}
   );
   return {
     platform: input.platform,
+    review_context: validationContext(input),
     checked_at: new Date().toISOString(),
     status: issueCount === 0 ? "passed" : "needs_revision",
     issue_count: issueCount,
@@ -760,5 +784,16 @@ ${instructions}
 // ============================================================
 module.exports = {
   validateDraft,
+  validationContext,
   extractDraft, checkBasicRules, createQuoteChecker,
 };
+
+// 같은 코드·규칙으로 실제 검수한 입력과 반환된 결과를 비교한다.
+function validationContext(input) {
+  input = require('./lib/article-contract').generationPayload(input);
+  const serialized = serialize({ platform: input.platform, article: input.article,
+    selected_keywords: input.selected_keywords || [], requirements: input.requirements || '',
+    rules: getPlatformRules(input.platform), draft: extractDraft(input.platform, input.draft),
+    context_version: 'quote-context-v1' });
+  return require('node:crypto').createHash('sha256').update(serialized, 'utf8').digest('hex');
+}

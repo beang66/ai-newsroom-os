@@ -10,10 +10,11 @@ import re
 import uuid
 
 from ..errors import RequestError
-from . import clova_speech
+from . import clova_budget, clova_speech
 from . import providers
 
-MAX_AUDIO = 25_000_000  # 전사 API 파일 한도 (25MB)
+MAX_AUDIO = 40_000_000  # 전사 파일 한도 (40MB)
+MAX_WHISPER_AUDIO = 25_000_000  # OpenAI Whisper 의 자체 한도
 _CLOSING = re.compile(r'(?:습니다|합니다|입니다|됩니다|않습니다|있습니다|했지요|했고요|했나요|인가요|나요|시죠|었나요|시나요'
                       r'|어요|아요|해요|게요|세요|네요|군요|지요|이죠)[.?!~…]*$')
 _ASKS = re.compile(r'습니까|인가요|나요|시죠|었나요|시나요|말씀해|부탁드립니다')
@@ -98,7 +99,7 @@ def transcribe(payload):
     except ValueError:
         raise RequestError('녹음 파일을 읽지 못했어요.') from None
     if len(audio) > MAX_AUDIO:
-        raise RequestError('녹음 파일은 25MB 이하만 전사할 수 있어요. 나눠서 올려 주세요.', 413)
+        raise RequestError('녹음 파일은 40MB 이하만 전사할 수 있어요. 나눠서 올려 주세요.', 413)
 
     filename = str(payload.get('filename') or 'audio.wav')
     mime_type = 'audio/wav'
@@ -111,14 +112,20 @@ def transcribe(payload):
 
     # 1. CLOVA Speech 엔진 우선 호출 (설정되어 있거나 명시적으로 요청된 경우)
     if engine_pref == 'clova' or (clova_speech.is_clova_configured() and engine_pref != 'whisper'):
+        hint = payload.get('durationSec')  # 화면이 재어 보낸 녹음 길이(초) — 요금이 나가기 전에 한도를 확인한다(실패하면 Whisper 로 넘어가지 않는다)
+        clova_budget.check(hint)
         try:
-            return clova_speech.recognize_speech(audio, filename=filename, mime_type=mime_type)
+            result = clova_speech.recognize_speech(audio, filename=filename, mime_type=mime_type)
+            clova_budget.record(result.get('duration') or hint)
+            return result
         except Exception:
             # 명시적 clova 지정이 아니면 Whisper 로 폴백 시도
             if engine_pref == 'clova':
                 raise
 
     # 2. Whisper 엔진 폴백 (기존 경로: providers -> audio/transcriptions)
+    if len(audio) > MAX_WHISPER_AUDIO:
+        raise RequestError('Whisper 는 25MB 이하만 전사할 수 있어요. 나눠서 올려 주세요.', 413)
     body, content_type = _multipart(
         {'model': 'whisper-1', 'language': 'ko', 'response_format': 'verbose_json'},
         filename, audio

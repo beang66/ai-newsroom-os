@@ -4,6 +4,7 @@ import { destinations } from "../../../src/data/navigation.js";
 import { formatArticleTime } from "../../../src/data/article.js";
 import { readFile } from "node:fs/promises";
 import { createCoreApi } from "../../../src/api/core-api.js";
+import { escapeHtml } from "../../../src/lib/studioArticle.js";
 
 test("six prototype destinations keep desk, map and archive separate", () => {
   assert.deepEqual(destinations.map((item) => item.id), ["desk", "writer", "interview", "convert", "map", "archive"]);
@@ -77,4 +78,9 @@ test("archive shows desk schedule samples read-only inside the 원고/송고 spl
   assert.ok(items.every((item) => item.sample && item.id.startsWith("desk:") && !item.revision_no), "예시는 저장본이 아니어서 삭제·수정 대상이 아니다");
   assert.equal(items.filter((item) => item.state === "published").length, 13, "출고 완료는 송고로 분류");
   assert.ok(items.filter((item) => item.state !== "published").every((item) => item.stage !== "출고 완료"));
+});
+
+test("photo captions from outside sources cannot inject HTML into the article body", () => {
+  assert.equal(escapeHtml('<img src=x onerror="alert(1)">&'), "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;");
+  assert.equal(escapeHtml(undefined), "");
 });

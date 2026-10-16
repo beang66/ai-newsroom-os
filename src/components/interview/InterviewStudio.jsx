@@ -76,8 +76,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
   // 4. 복사 피드백 및 드래그 상태
   const [copiedId, setCopiedId] = useState(null);
   const [isAllCopied, setIsAllCopied] = useState(false);
-  // 통합 텍스트 형태: "speaker" 화자·단락 구분 | "plain" 통글
-  const [textMode, setTextMode] = useState("speaker");
   const [isDragging, setIsDragging] = useState(false);
 
   // 5. AI 요약 상태
@@ -281,7 +279,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // 통 텍스트 전체 복사
   const handleCopyAllText = () => {
-    const fullText = textMode === "plain" ? plainText(dialogues) : speakerBoxText();
+    const fullText = plainText(dialogues);
     navigator.clipboard.writeText(fullText);
     setIsAllCopied(true);
     setTimeout(() => setIsAllCopied(false), 2000);
@@ -307,12 +305,12 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // TXT 파일 다운로드
   const handleDownloadTxt = () => {
-    const content = textMode === "plain" ? plainText(dialogues) : speakerBoxText();
+    const content = plainText(dialogues);
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${fileName ? fileName.replace(/\.[^/.]+$/, "") : "interview"}_${textMode === "plain" ? "plain" : "speakers"}_transcript.txt`;
+    link.download = `${fileName ? fileName.replace(/\.[^/.]+$/, "") : "interview"}_plain_transcript.txt`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -431,9 +429,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // CLOVA 가 나눈 화자 박스(원래 화자가 같은 연속 발언). 이름을 고치거나 같은 이름으로 바꿔도 박스는 그대로이고 이름만 바뀐다.
   const paragraphs = useMemo(() => groupByOriginalSpeaker(filteredDialogues, baseDialogues), [filteredDialogues, baseDialogues]);
-  // 복사·다운로드용 "[화자] 시각" 글(검색과 상관없이 전체 박스)
-  const speakerBoxText = () => groupByOriginalSpeaker(dialogues, baseDialogues)
-    .map((box) => `[${box.speakerName}] ${formatDuration(box.timestamp)}\n${box.text}`).join("\n\n");
 
   // 화자 수정: 화면에 바로 반영하고, 저장된 녹취면 코어 암호화 저장소에도 보낸다(발언 원본은 그대로 둔다)
   const commitSpeakerEdits = (next) => {
@@ -482,17 +477,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
     });
     return matched;
   }, [dialogues, evidenceQuery]);
-
-  // 화자 태그별 차분한 색상 매핑 (접근성 높은 단색/파스텔톤)
-  const getSpeakerBadgeStyle = (speakerName) => {
-    if (speakerName.includes("1") || speakerName.includes("기자") || speakerName.includes("A")) {
-      return "bg-slate-100 text-slate-800 border-slate-300";
-    }
-    if (speakerName.includes("2") || speakerName.includes("취재") || speakerName.includes("B")) {
-      return "bg-blue-50 text-blue-800 border-blue-200";
-    }
-    return "bg-zinc-100 text-zinc-800 border-zinc-200";
-  };
 
   // STT 처리 완료 여부 (하단 큰 결과 박스 표시 조건)
   const hasSource = Boolean(audioUrl || storedSource);
@@ -1128,22 +1112,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
                     <h3 className="text-sm font-bold text-slate-900">
                       통합 텍스트
                     </h3>
-                    <div className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5" role="group" aria-label="통합 텍스트 형태">
-                      {[["speaker", "화자·단락 구분"], ["plain", "통글"]].map(([mode, label]) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          aria-pressed={textMode === mode}
-                          data-testid={`text-mode-${mode}`}
-                          onClick={() => setTextMode(mode)}
-                          className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer ${
-                            textMode === mode ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
                   </div>
 
                   <div className="flex items-center gap-1.5">
@@ -1181,8 +1149,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
                   </div>
                 </div>
 
-                {/* 통합 텍스트: 화자·단락 구분(같은 화자 발언을 한 단락으로) 또는 통글(이어진 한 덩어리 글) */}
-                <div className="max-h-[580px] overflow-y-auto pr-2 space-y-3.5 text-xs md:text-sm leading-relaxed select-text font-sans scrollbar-thin" data-testid="unified-text" data-mode={textMode}>
+                {/* 통합 텍스트: 통글(이어진 한 덩어리 글) 하나로 고정 */}
+                <div className="max-h-[580px] overflow-y-auto pr-2 space-y-3.5 text-xs md:text-sm leading-relaxed select-text font-sans scrollbar-thin" data-testid="unified-text">
                   {(() => {
                     // 발언 하나의 글자(검색어·요약 근거 강조 포함). 눌러서 이동·재생하지 않는다 — 다시듣기는 왼쪽 박스와 위쪽 파형에서 한다.
                     const segmentSpan = (item) => {
@@ -1205,18 +1173,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
                       );
                     };
                     const spaced = (items) => items.flatMap((item, index) => (index ? [" ", segmentSpan(item)] : [segmentSpan(item)]));
-                    if (textMode === "plain") {
-                      return <p className="leading-relaxed">{spaced(filteredDialogues)}</p>;
-                    }
-                    return paragraphs.map((paragraph) => (
-                      <div key={`unified_paragraph_${paragraph.id}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${getSpeakerBadgeStyle(paragraph.speakerName)}`}>{paragraph.speakerName}</span>
-                          <span className="font-mono text-[11px] text-slate-400">{formatDuration(paragraph.timestamp)}</span>
-                        </div>
-                        <p className="leading-relaxed">{spaced(paragraph.items)}</p>
-                      </div>
-                    ));
+                    return <p className="leading-relaxed">{spaced(filteredDialogues)}</p>;
                   })()}
                 </div>
               </div>

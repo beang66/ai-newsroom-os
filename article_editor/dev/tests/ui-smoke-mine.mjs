@@ -205,22 +205,22 @@ try {
   await page.waitForFunction(() => !document.body.innerText.includes("스모크 테스트 기사"), null, { timeout: 15_000 });
   step("보관함: 저장한 기사 표시, 삭제(×)");
 
-  // 7. 인터뷰 STT: 저장된 전사 → 화자·단락 구분 / 통글 / 복사
+  // 7. 인터뷰 STT: 저장된 전사 → 왼쪽은 화자 박스, 오른쪽 통합 텍스트는 통글 하나, 복사
   await nav("인터뷰 & 오디오");
   await page.getByText("저장된 전사 불러오기").click();
   await page.getByText("smoke.m4a").first().click();
   await page.getByTestId("unified-text").waitFor();
   const unified = page.getByTestId("unified-text");
   await page.waitForFunction(() => /\(2개 단락\)/.test(document.body.innerText));
-  await page.getByTestId("text-mode-plain").click();
-  assert.equal(await unified.locator("p").count(), 1, "통글은 한 덩어리");
-  await page.getByTestId("text-mode-speaker").click();
+  assert.equal(await page.getByTestId("text-mode-plain").count() + await page.getByTestId("text-mode-speaker").count(), 0, "통합 텍스트는 형태를 고르는 버튼이 없다");
+  assert.equal(await unified.locator("p").count(), 1, "통합 텍스트는 통글 한 덩어리");
+  assert.equal(await unified.getAttribute("data-mode"), null);
+  assert.match(await page.getByTestId("speaker-name-seg-1").innerText(), /화자 1/, "왼쪽은 화자별 박스");
+  assert.match(await page.getByTestId("speaker-name-seg-2").innerText(), /화자 2/);
   await page.getByRole("button", { name: "전체 복사" }).click();
-  // Windows 클립보드는 줄바꿈을 CRLF 로 돌려준다
-  const copied = (await page.evaluate(() => navigator.clipboard.readText())).split("\r\n").join("\n");
-  assert.match(copied, /\[화자 1\] 00:00:00\nAI 기자가/);
-  assert.match(copied, /\[화자 2\] 00:00:06\n네, 들어봤습니다\. 근데 취재는/);
-  step("STT: 같은 화자 발언을 한 단락으로 묶고, 통글 전환과 화자·단락 복사");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  assert.match(copied, /^AI 기자가 나온다는 얘기 들어보셨죠\. 네, 들어봤습니다\. 근데 취재는 사람이 해야 합니다\.$/, "복사도 통글(화자 표시 없음)");
+  step("STT: 왼쪽은 화자별 박스, 오른쪽 통합 텍스트는 통글 하나로 고정(복사도 통글)");
 
   // 7-2. 다시듣기: 왼쪽 위 재생 영역의 파형을 누르면 그 위치로 이동하고, 오른쪽 통합 텍스트를 눌러도 이동·재생하지 않는다
   const wave = page.getByTestId("audio-waveform");
@@ -243,10 +243,7 @@ try {
   step("다시듣기: 왼쪽 위 파형을 눌러 그 위치로 이동(키보드 포함), 오른쪽 통합 텍스트는 눌러도 재생·이동하지 않음");
 
   // 8. 화자 프로필: CLOVA 가 나눈 박스는 그대로 두고 이름만 바꾼다. 프로필 아이콘에서만 작은 메뉴가 열린다.
-  const copyAll = async () => {
-    await page.getByRole("button", { name: "전체 복사" }).click();
-    return (await page.evaluate(() => navigator.clipboard.readText())).split("\r\n").join("\n");
-  };
+  const boxNames = async () => [await page.getByTestId("speaker-name-seg-1").innerText(), await page.getByTestId("speaker-name-seg-2").innerText()];
   const shot = (name) => process.env.UI_SMOKE_SHOTS ? page.screenshot({ path: path.join(process.env.UI_SMOKE_SHOTS, `${name}.png`), fullPage: true }) : null; // 화면 모양 확인용(선택)
   const savedState = () => page.getByTestId("speaker-save-state").filter({ hasText: "수정 내용 저장됨" }).waitFor();
   const boxesText = (n) => page.waitForFunction((count) => new RegExp(`\\(${count}개 단락\\)`).test(document.body.innerText), n);
@@ -263,7 +260,7 @@ try {
   await savedState();
   assert.equal(speakerPosts.at(-1).names["1"], "김 기자");
   assert.equal(await page.getByTestId("speaker-editor").count(), 0, "적용하면 메뉴가 닫힌다");
-  assert.match(await copyAll(), /\[김 기자\] 00:00:00\nAI 기자가/);
+  assert.deepEqual(await boxNames(), ["김 기자", "화자 2"]);
   step("화자 프로필: 아이콘을 눌러 이름을 적으면 그 화자의 이름이 바뀌고 저장된다");
 
   await page.getByTestId("speaker-badge-seg-2").click();
@@ -272,7 +269,7 @@ try {
   await savedState();
   assert.deepEqual(speakerPosts.at(-1).merge, { 2: "1" });
   await boxesText(2);                                                          // 같은 이름이 되어도 CLOVA 박스는 합쳐지지 않는다
-  assert.match(await copyAll(), /^\[김 기자\] 00:00:00\nAI 기자가 [^\n]*\n\n\[김 기자\] 00:00:06\n네, 들어봤습니다/s);
+  assert.deepEqual(await boxNames(), ["김 기자", "김 기자"]);
   step("화자 프로필: 같은 이름을 써도 박스는 그대로이고 이름만 같아진다");
 
   // 이름을 고치고 합쳐도 목록에 고친 이름과 CLOVA 가 처음 붙인 이름이 함께 남는다
@@ -287,7 +284,7 @@ try {
   await page.getByTestId("speaker-reset").click();
   await boxesText(2);
   assert.deepEqual(speakerPosts.at(-1), { names: {}, merge: {}, assign: {} });
-  assert.match(await copyAll(), /\[화자 1\] 00:00:00/);
+  assert.deepEqual(await boxNames(), ["화자 1", "화자 2"]);
   step("화자 프로필: 원본으로");
 
   await page.getByTestId("speaker-badge-seg-2").click();
@@ -297,7 +294,7 @@ try {
   await savedState();
   assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "1", "seg-3": "1" });
   await boxesText(2);
-  assert.match(await copyAll(), /\[화자 1\] 00:00:00\nAI 기자가 [^\n]*\n\n\[화자 1\] 00:00:06\n네, 들어봤습니다/s);
+  assert.deepEqual(await boxNames(), ["화자 1", "화자 1"]);
   await page.getByTestId("speaker-reset").click();
   await boxesText(2);
   step("화자 프로필: 메뉴 목록에서 눌러 고르면 그 박스가 그 화자의 말로 바뀐다");
@@ -328,7 +325,7 @@ try {
   assert.match(await page.getByTestId("speaker-picked-count").innerText(), /2개 선택됨/);
   await page.getByTestId("speaker-edit-done").click();
   assert.equal(await page.getByTestId("speaker-edit-bar").count(), 0);
-  assert.match(await copyAll(), /^\[발표자\] 00:00:00\nAI 기자가 [^\n]*\n\n\[발표자\] 00:00:06\n네, 들어봤습니다/s);
+  assert.deepEqual(await boxNames(), ["발표자", "발표자"]);
   step("화자 프로필: 화자 수정하기 → 재생 멈춤, 박스를 여러 개 골라 한 번에 이름 적용(박스는 그대로)");
 
   await page.getByText("저장된 전사 불러오기").click();

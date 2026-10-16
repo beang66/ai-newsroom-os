@@ -18,7 +18,8 @@ const umdAsEsm = () => ({
     const global = match && UMD_GLOBALS[match[1]];
     if (!global) return null;
     // 모듈 끝의 `const api={a,b,c}` 에서 공개 이름을 읽는다(이름 있는 import 도 되게)
-    const names = (/const api=\{([^}]*)\}/.exec(code)?.[1] || '').split(',').map((name) => name.trim()).filter(Boolean);
+    // `이름` 또는 `이름:값`(예: css:css+trailingCss) 형태 모두에서 이름만 읽고, 올바른 이름만 내보낸다
+    const names = (/const api=\{([^}]*)\}/.exec(code)?.[1] || '').split(',').map((entry) => entry.split(':')[0].trim()).filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
     const named = names.length ? `\nexport const { ${names.join(', ')} } = __umd;` : '';
     return { code: `${code}\nconst __umd = globalThis.${global};\nexport default __umd;${named}\n`, map: null };
   },

@@ -12,7 +12,8 @@ function checkWriting(draft,requirements='') {
   if(blocks.some(b=>hasEmoji(b?.text||'')))issues.push('이모지는 emoji 필드만 사용하고 원고 텍스트에는 넣지 마세요.');
   if(usesDefaultStyle(requirements)){
     if(/(?:니다|니까|까요|나요|세요)[.!?…]*$/u.test((draft.opening?.text||'').trim())||/[?？]$/u.test((draft.opening?.text||'').trim()))issues.push('opening은 명사형 도입이어야 합니다.');
-    if(!/(?:니다|니까|까요|나요|세요|십시오)[.!?…]*$/u.test((draft.closing?.text||'').trim()))issues.push('closing은 명사구가 아닌 서술어가 있는 완전한 습니다체 문장이어야 합니다.');
+    const ending=(draft.closing?.text||'').trim().replace(/[”’"'」』]+$/u,'').trim();
+    if(!/(?:니다|니까|까요|나요|세요|십시오)[.!?…]*$/u.test(ending))issues.push('closing은 명사구가 아닌 서술어가 있는 완전한 습니다체 문장이어야 합니다.');
   }
   return issues;
 }

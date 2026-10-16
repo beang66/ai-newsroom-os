@@ -21,7 +21,7 @@ async function clickNamed(scope,labels){
 }
 function createThreadsService({chromium,profileDir,clock=Date.now}={}){
  profileDir ||= path.join(process.env.LOCALAPPDATA||path.join(os.homedir(),'.local','share'),'AI-Newsroom','threads-browser');
- let context,page,busy=false,pending=null,browserSession;
+ let context,page,busy=false,pending=null,browserSession,releasing=Promise.resolve();
  async function exclusive(action){if(busy)throw new Error('이전 Threads 작업이 진행 중입니다.');busy=true;try{return await action();}finally{busy=false;}}
  async function account(){
   if(!context||!page||page.isClosed())return {connected:false,reason:'browser_closed'};
@@ -52,22 +52,28 @@ function createThreadsService({chromium,profileDir,clock=Date.now}={}){
  }
  return {
   connect:(input={})=>exclusive(async()=>{
-   if(pending&&['ready','posting','posted','post_requested','post_uncertain'].includes(pending.status))throw new Error('기존 작성·게시 결과를 확인한 뒤 전용 창을 닫고 다시 연결해주세요.');
    if(!context){
+    await releasing;
     browserSession=await require('./sns-browser').launchSnsBrowser(chromium||require('playwright').chromium,profileDir,input.browser||process.env.NEWSROOM_THREADS_BROWSER||'auto');
     context=browserSession.context;
-    context.on('close',()=>{context=null;page=null;pending=null;browserSession?.release().catch(()=>{});});
+    const openedContext=context,session=browserSession;
+    context.on('close',()=>{if(context===openedContext){context=null;page=null;pending=null;browserSession=null;}releasing=session.release().catch(()=>{});});
    }else if(input.browser&&input.browser!=='auto'&&input.browser!==browserSession.browser){throw new Error('브라우저를 바꾸려면 기존 전용 창을 먼저 닫아 주세요.');
    }
-   if(!page||page.isClosed())page=await context.newPage();await page.bringToFront();
-   await page.goto(THREADS_URL,{waitUntil:'domcontentloaded',timeout:45000});
-   return {success:true,message:'Threads 공식 창에서 직접 로그인한 뒤 연결 확인을 눌러주세요.'};
+   if(!page||page.isClosed()){
+    page=await context.newPage();const openedPage=page;
+    page.on('close',()=>{if(page===openedPage){page=null;pending=null;}});
+   }
+   await page.bringToFront();
+   if(page.url()==='about:blank')await page.goto(THREADS_URL,{waitUntil:'domcontentloaded',timeout:45000});
+   return {success:true,message:'Threads 공식 창에서 직접 로그인해 주세요. 로그인 상태를 자동 확인하며 기존 작성창은 유지합니다.'};
   }),
-  status:async()=>{const a=await account();return {success:true,connected:a.connected,username:a.username||null,reason:a.reason||null,browser:browserSession?.browser||null,busy,pending:pending?{id:pending.id,status:pending.status,image_count:pending.imageCount,message:pending.message}:null};},
+  status:async()=>{let a;try{a=await account();}catch(error){if(!context||!page||page.isClosed())a={connected:false,reason:'browser_closed'};else throw error;}return {success:true,connected:a.connected,username:a.username||null,reason:a.reason||null,browser:browserSession?.browser||null,busy,pending:pending?{id:pending.id,status:pending.status,image_count:pending.imageCount,message:pending.message}:null};},
   prepare:input=>exclusive(async()=>{
    const {text,files}=validateThreadsInput(input),a=await account();if(!a.connected)throw new Error('Threads 로그인 연결을 먼저 확인해주세요.');
    if(pending&&['ready','posting','posted','post_requested','post_uncertain'].includes(pending.status))throw new Error('기존 작성·게시 결과를 확인한 뒤 전용 창을 닫고 다시 연결해주세요.');
    pending={id:crypto.randomUUID(),status:'preparing',text,imageCount:files.length,accountId:a.accountId,preparedAt:clock()};
+   const preparingRequest=pending;
    try{
     await page.bringToFront();
     if(!await page.getByRole('dialog').count()){
@@ -93,10 +99,11 @@ function createThreadsService({chromium,profileDir,clock=Date.now}={}){
      pending.images=await signature(scope);
      if(pending.images.length!==files.length)throw new Error('첨부 사진 장수를 확인하지 못했습니다. 전용 창을 확인해주세요.');
     }else pending.images=[];
+    if(pending!==preparingRequest||!page||page.isClosed())throw new Error('Threads 창 또는 페이지가 닫혔습니다. 다시 로그인 연결한 뒤 작성창을 채워 주세요.');
     pending.status='ready';pending.preparedAt=clock();await check(pending.id);
     pending.message='Threads 작성창에 글과 카드 이미지를 준비했습니다. 계정·본문·사진 순서를 확인한 뒤 게시해주세요.';
     return {success:true,id:pending.id,status:'ready',image_count:files.length,username:a.username,message:pending.message};
-   }catch(error){pending.status='prepare_failed';pending.message=error.message;throw error;}
+   }catch(error){if(!context||!page||page.isClosed())error=new Error('Threads 창 또는 페이지가 닫혔습니다. 다시 로그인 연결한 뒤 작성창을 채워 주세요.');if(pending===preparingRequest){pending.status='prepare_failed';pending.message=error.message;}throw error;}
   }),
   publish:input=>exclusive(async()=>{
    if(input?.reviewed!==true)throw new Error('Threads 계정·글·사진을 확인한 뒤 게시해주세요.');
@@ -108,7 +115,7 @@ function createThreadsService({chromium,profileDir,clock=Date.now}={}){
     return {success:true,status:pending.status,confirmed,message:pending.message};
    }catch{pending.status='post_uncertain';throw new Error('게시 결과가 불확실합니다. Threads에서 확인해주세요. 자동 재시도하지 않습니다.');}
   }),
-  close:()=>exclusive(async()=>{if(context)await context.close();await browserSession?.release();context=null;page=null;pending=null;return {success:true};})
+  close:()=>exclusive(async()=>{const session=browserSession;if(context)await context.close();await session?.release();await releasing;context=null;page=null;pending=null;browserSession=null;return {success:true};})
  };
 }
 module.exports={createThreadsService,validateThreadsInput};

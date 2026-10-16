@@ -27,7 +27,12 @@ async function launchSnsBrowser(engine,profileDir,choice='auto'){
     return {context,browser,release};
    }catch(error){
     // 프로필 사용 중·실행 오류는 다른 브라우저를 중복 실행해서 우회하지 않는다.
-    if(!/Executable doesn't exist|not found|not installed|distribution .*not found|executable.*missing/i.test(error.message||'')||i===choices.length-1)throw new Error('SNS 전용 브라우저를 열지 못했습니다. 선택한 Chrome/Edge를 설치하거나 다른 브라우저를 선택해 주세요. 전용 창이 이미 열렸다면 먼저 닫아 주세요. Chromium은 개발 환경에서 npx playwright install chromium으로 설치할 수 있습니다.');
+    const missing=/Executable doesn't exist|not found|not installed|distribution .*not found|executable.*missing/i.test(error.message||'');
+    if(!missing||i===choices.length-1){
+     const failure=new Error('SNS 전용 브라우저를 열지 못했습니다. 선택한 Chrome/Edge를 설치하거나 다른 브라우저를 선택해 주세요. 전용 창이 이미 열렸다면 먼저 닫아 주세요. Chromium은 개발 환경에서 npx playwright install chromium으로 설치할 수 있습니다.');
+     failure.code=missing?'SNS_BROWSER_MISSING':/lock|ProcessSingleton|already.*use/i.test(error.message||'')?'SNS_BROWSER_LOCKED':'SNS_BROWSER_LAUNCH_FAILED';
+     throw failure;
+    }
    }
   }
  }catch(error){await release();throw error;}

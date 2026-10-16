@@ -3,6 +3,7 @@ const path = require("path");
 const AI = require("./ai-provider");
 const {EMOJIS,checkWriting}=require("./instagram-writing-contract");
 const { getPlatformRules } = require("./platform-rules");
+const {normalizeHashtags}=require('./lib/generation-format');
 if (process.env.PLATFORM_AI_BRIDGE !== "core") require("dotenv").config({path: path.join(__dirname, ".env"), override: true, quiet: true});
 
 // 1. 구조화 출력: 문장별 근거와 해시태그는 게시 본문과 구분합니다.
@@ -24,8 +25,9 @@ async function generateInstagram(input) {
   const rules = getPlatformRules("instagram");
   const client = new AI({apiKey, timeout: 180000, maxRetries: 0});
   // 3. 검증 실패 시 최대 한 번 재생성합니다. API 자체 오류·거절은 재시도하지 않습니다.
-  let correction="";
+  let correction="",calls=0;
   for(let attempt=0;attempt<2;attempt++) {
+  calls++;
   const response = await client.responses.create({
     model: AI.model, store: false, max_output_tokens: 12000,
     instructions: `${rules.common_rules}\n${rules.writing_rules}
@@ -62,15 +64,27 @@ ${correction}`,
     throw new Error("Instagram 게시글의 필수 문장 또는 근거가 비어 있습니다.");
   }
   // 3. 해시태그의 개수·형식·중복은 코드로 확인합니다. 관련성은 별도 AI 검수 대상입니다.
-  const hashtags = draft.hashtags?.map(tag => typeof tag === "string" ? tag.trim() : "");
-  if (!hashtags || hashtags.length < 3 || hashtags.length > 5 ||
-      hashtags.some(tag => !tagPattern.test(tag)) ||
-      new Set(hashtags.map(tag => tag.toLowerCase())).size !== hashtags.length) {
-    throw new Error("관련 해시태그 3~5개가 올바르게 생성되지 않았습니다. 다시 시도해주세요.");
+  let hashtags=normalizeHashtags(draft.hashtags);
+  const tagsValid=value=>value&&value.length>=3&&value.length<=5&&value.every(tag=>tagPattern.test(tag));
+  if(!tagsValid(hashtags)&&calls<2){
+    calls++;
+    const repaired=await client.responses.create({
+      model:AI.model,store:false,max_output_tokens:1000,
+      instructions:'기사와 현재 원고에 관련된 서로 다른 해시태그 3~5개만 반환하세요. 각 항목은 #으로 시작하고 문자·숫자·밑줄만 사용합니다. 원고 문장·사실·원문 근거는 수정하지 않습니다. 입력에 없는 인물·사건·평가를 추가하지 않습니다.',
+      input:JSON.stringify({article:input.article,requirements:input.requirements,caption:blocks.map(block=>block.text),previous_hashtags:draft.hashtags}),
+      text:{format:{type:'json_schema',name:'instagram_hashtag_repair',strict:true,schema:object({hashtags:quotes})}},
+    });
+    const parts=(repaired.output||[]).filter(item=>item.type==='message').flatMap(item=>item.content||[]);
+    if(repaired.status!=='completed'||parts.some(part=>part.type==='refusal'))throw new Error('Instagram 해시태그 교정을 완료하지 못했습니다. 원고는 성공 처리하지 않았습니다.');
+    try {hashtags=normalizeHashtags(JSON.parse(parts.filter(part=>part.type==='output_text').map(part=>part.text).join('')).hashtags);}
+    catch {throw Object.assign(new Error('해시태그 교정 응답 형식을 확인하지 못했습니다.'),{code:'INSTAGRAM_HASHTAGS',field:'hashtags'});}
+  }
+  if(!tagsValid(hashtags)){
+    throw Object.assign(new Error('관련 해시태그 3~5개 형식 교정에 실패했습니다. 해당 플랫폼만 다시 시도해 주세요.'),{code:'INSTAGRAM_HASHTAGS',field:'hashtags'});
   }
   const writingIssues=checkWriting(draft,input.requirements||"");
   if(writingIssues.length){
-    if(attempt===1)throw new Error("Instagram 작성 기준을 충족하지 못했습니다. "+writingIssues.join(" "));
+    if(calls>=2)throw new Error("Instagram 작성 기준을 충족하지 못했습니다. "+writingIssues.join(" "));
     correction="[직전 생성의 형식 오류를 수정하여 전체 초안을 다시 생성]\n"+writingIssues.join("\n");
     continue;
   }

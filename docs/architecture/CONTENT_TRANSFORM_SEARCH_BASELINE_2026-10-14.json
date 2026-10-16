@@ -1,0 +1,76 @@
+{
+  "recorded_date": "2026-10-14",
+  "timezone": "Asia/Seoul",
+  "scope": "Read-only source baseline for proposed content transformation search experiment; not deployment version",
+  "algorithm": "SHA-256",
+  "files": [
+    {
+      "path": "platform-generator/platform-rules.js",
+      "sha256": "57b6437b797f9012c29ddc648969c428a44303160bc5d848cecd660723e59e45"
+    },
+    {
+      "path": "platform-generator/instagram-generator.js",
+      "sha256": "472704b97262b038027864756e115c8b354df7d2bb552cd6a75adcf37d77fbb7"
+    },
+    {
+      "path": "platform-generator/text-generator.js",
+      "sha256": "cf93fbf063b824b58207f21b88ad42ed325bd832e07e08771c25514f65daea1f"
+    },
+    {
+      "path": "platform-generator/card-news-generator.js",
+      "sha256": "72b1def51e7b261f74738f8b631cb6374cee67dedd88a392ef60640e5d7821a6"
+    },
+    {
+      "path": "platform-generator/draft-validator.js",
+      "sha256": "09bdedaa93d8f8028c1a7c174ff6ebb2dc453006fede55dfaf3b0ccdc52f21d4"
+    },
+    {
+      "path": "platform-generator/lib/source-excerpts.js",
+      "sha256": "03a2c94f6f165d62ff509b467c6f54296ffd94c108ba64883fbc0fe3aeaed76a"
+    },
+    {
+      "path": "article_editor/app/core/storage.py",
+      "sha256": "b742ba1a640442f4b4f03c8989290ed36a48e3cf52838623db0b5a8447d12315"
+    },
+    {
+      "path": "article_editor/app/core/vault.py",
+      "sha256": "5661b2ed003be653c6dc1f5994eaf3eb6728ae30ddc28e07d98bf1b90bc39bb9"
+    },
+    {
+      "path": "article_editor/app/core/source_index.py",
+      "sha256": "838ed9ffd78124ed27499cc37a045616b686c584cf7f0de6008de946e102c56f"
+    },
+    {
+      "path": "article_editor/app/core/ai/factcheck/retrieval.py",
+      "sha256": "3e1e21206d7d990e118bbfe22ea4c57e47d036b4e541e8d3a99ff6ea79f050a8"
+    },
+    {
+      "path": "article_editor/app/core/ai/factcheck/fusion.py",
+      "sha256": "b18fb01c47d5d5a7f02d38683d525fa7a899252b939b2b39eb85bd8ad9860305"
+    },
+    {
+      "path": "article_editor/app/core/ai/factcheck/remote_embedding.py",
+      "sha256": "f5213c1d42f930fca5dc7554844d8ad363bf56e502f9d6df59de1c5430517a46"
+    },
+    {
+      "path": "article_editor/app/core/managers/platform_manager.py",
+      "sha256": "57fd9803e5dcc684241895cb12250abe99f9c4079d4c984af05dc873a2e47607"
+    },
+    {
+      "path": "src/components/PlatformStudio.jsx",
+      "sha256": "eb1a46a627445bd7be268893468e4fa07edf7b394baa9be4c9dcf5b51e7ac391"
+    },
+    {
+      "path": "src/components/PlatformReview.jsx",
+      "sha256": "b8693e6700a90ae5ce0ca0739b6274388d797127ebfe37ac38b36db5e95458fe"
+    },
+    {
+      "path": "src/api/platform.js",
+      "sha256": "d30ef234eaedceee39b9f82c9bb8270130331fb21788f77854d4f8501db046b7"
+    },
+    {
+      "path": "src/api/core-api.js",
+      "sha256": "f61d5211db01c3cf29dbb8bee2d68c774079f45815a50bd21d4d42fc72691c1a"
+    }
+  ]
+}

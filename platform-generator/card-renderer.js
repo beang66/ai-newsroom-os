@@ -456,7 +456,11 @@ async function renderCardJpeg(payload) {
     if(payload.role || payload.content_version === 2 || payload.content?.answer !== undefined || payload.content?.detail !== undefined){
       await page.evaluate(async()=>{await document.fonts.ready;await Promise.all([...document.images].map(image=>image.decode()));});
       const fit=await page.evaluate(require('./lib/card-template').fitCard);
-      if(!fit.measured||fit.overflow||fit.overlap)throw Object.assign(new Error(fit.overlap?'텍스트 박스가 겹칩니다. 위치를 조정한 뒤 다시 렌더해 주세요.':'글이 카드 영역을 넘습니다. 문장을 줄이거나 카드를 나눈 뒤 다시 렌더해 주세요.'),{status:400});
+      if(!fit.measured||fit.overflow||fit.overlap){
+        const labels={keyword:'키워드',headline:'제목',answer:'핵심 문구',detail:'상세 설명',body:'본문',farewell:'끝인사'};
+        const fields=(fit.overflowFields||[]).map(field=>labels[field]||field).join('·');
+        throw Object.assign(new Error(!fit.measured?'카드 배치를 측정하지 못했습니다. 다시 확인해 주세요.':fit.overlap?'텍스트 박스가 겹칩니다. 위치를 조정한 뒤 다시 렌더해 주세요.':`글이 카드 영역을 넘습니다.${fields?` 확인할 항목: ${fields}.`:''} 본문 높이 ${fit.contentHeight}px / 허용 ${fit.availableHeight}px. 문안 또는 텍스트 위치를 편집한 뒤 JPG 준비를 다시 확인해 주세요.`),{status:400});
+      }
     }
     return await page.screenshot({ type: "jpeg", quality: 90, fullPage: true });
   } finally {

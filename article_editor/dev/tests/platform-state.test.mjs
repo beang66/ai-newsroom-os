@@ -1,7 +1,82 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {assertSameSource,currentRender,fingerprint,invalidateDraft,renderKey,reviewStatus,subtitleLabel,sourceText,supportedPlatforms,visibleDrafts} from '../../../src/lib/platformState.js';
+import {createHash} from 'node:crypto';
+import {assertSameSource,currentRender,fingerprint,invalidateDraft,renderKey,reviewStatus,subtitleLabel,sourceText,supportedPlatforms,visibleDrafts,selectedCardPhoto} from '../../../src/lib/platformState.js';
 import {sourceReady,appliedSource,applyCurrentSource,beginSourceTransition,claimSourceTransition,cancelSourceTransition} from '../../../src/lib/platformSource.js';
+import {attachCurrentReview,reusableReview} from '../../../src/lib/platformState.js';
+import {restoredPlatformFields,conditionsCurrent,heldConditions,sourceVersion,generationErrorCode,generationHistory,conditionValues} from '../../../src/lib/platformLifecycle.js';
+
+test('HTML과 일반 본문은 기존 변환기로 비교하고 숫자·조건 변경은 구분',()=>{
+ const html={articleId:'same',title:'제목',content:'<p>대상은 세 곳입니다.</p><p>다음 달 시행 예정입니다.</p>'};
+ const plain={...html,content:'대상은 세 곳입니다.\n\n다음 달 시행 예정입니다.'};
+ assert.equal(sourceText(html),sourceText(plain));assert.equal(sourceVersion(html),sourceVersion(plain));
+ assert.notEqual(sourceVersion(plain),sourceVersion({...plain,content:plain.content.replace('세 곳','네 곳')}));
+ assert.notEqual(sourceVersion(plain),sourceVersion({...plain,articleId:'other'}));
+ const ticket=beginSourceTransition(html);assert.equal(sourceReady(claimSourceTransition(plain).record,plain),true);assert.equal((ticket.claimed),true);
+});
+test('플랫폼 복원은 이전 기사 기본값을 물려주지 않고 실제 저장값·명시적 빈값 보존',()=>{
+ assert.deepEqual(restoredPlatformFields({}),{platformDrafts:{},cardNews:null,platformGeneration:{}});
+ const stored={platformDrafts:{instagram:{opening:'보존본'},blog:{text:'과거 기록'}},cardNews:{cards:[]},platformGeneration:{requirements:'조건'}};
+ assert.deepEqual(restoredPlatformFields(stored),stored);
+ assert.deepEqual(restoredPlatformFields({platformDrafts:null,cardNews:[],platformGeneration:null}),{platformDrafts:{},cardNews:null,platformGeneration:{}});
+});
+test('조건은 원문 버전에 묶고 구버전·연결 없는 이전 조건을 자동 적용하지 않음',()=>{
+ const a={articleId:'same',title:'제목',content:'첫 본문'},b={...a,content:'새 본문'};
+ const config={selectedKeywords:['첫 키워드'],requirements:'기존 조건',source_version:sourceVersion(a)};
+ assert(conditionsCurrent(config,a));assert(!conditionsCurrent(config,b));
+ assert.deepEqual(heldConditions(config,b).selectedKeywords,['첫 키워드']);
+ assert(!conditionsCurrent({selectedKeywords:['레거시']},a));assert(conditionsCurrent({},a));
+ const key=sourceVersion(a);assert(!key.includes('첫 본문'));
+ assert.equal(generationErrorCode(Error('closing 오류')),'WRITING_FORMAT');assert.equal(generationErrorCode(Error('해시태그 오류')),'HASHTAG_FORMAT');
+});
+test('손상된 선택 조건·작업 기록은 화면을 중단시키지 않고 추적 메타데이터는 검수를 무효화하지 않음',()=>{
+ assert.deepEqual(conditionValues({selectedKeywords:'잘못된 형식',requirements:{text:'객체'}}),{selectedKeywords:[],requirements:''});
+ assert.deepEqual(generationHistory([null,{id:'wrong',at:'today',platform:{},stage:{}},{}]),[]);
+ const source={articleId:'fixture',title:'제목',content:'본문',photos:[]},draft={article_id:'fixture',generation_input:{article:{title:'제목',content:'본문'}}};
+ const reviewed=attachCurrentReview('instagram',draft,source,{status:'passed'});
+ assert.equal(reusableReview('instagram',{...reviewed,generation_run:{id:'safe-id',revision_no:3}},source).status,'passed');
+});
+
+test('새 검수는 같은 런타임·원고·조건에서만 재사용하고 저장 복원·사진·원문 변경 시 다시 검사',()=>{
+ const source={articleId:'fixture',title:'제목',content:'본문',photos:[]};
+ const original={article_id:'fixture',opening:'도입',generation_input:{article:{title:'제목',content:'본문'},requirements:''}};
+ const result={status:'needs_revision',fact:{issues:[{reason:'조건 누락'}]},requirement:{issues:[]}};
+ const reviewed=attachCurrentReview('instagram',original,source,result);
+ assert.equal(reusableReview('instagram',reviewed,source),result);
+ assert.equal(reusableReview('threads',reviewed,source),null);
+ assert.equal(reusableReview('instagram',{...reviewed,opening:'새 도입'},source),null);
+ assert.equal(reusableReview('instagram',reviewed,{...source,content:'새 본문'}),null);
+ assert.equal(reusableReview('instagram',reviewed,{...source,photos:[{caption:'새 사진'}]}),null);
+ assert.equal(reusableReview('instagram',JSON.parse(JSON.stringify(reviewed)),source),null);
+ assert.equal(reusableReview('instagram',invalidateDraft(reviewed),source),null);
+ assert.equal(reusableReview('instagram',{...reviewed,generation_input:{...reviewed.generation_input,requirements:'반말'}},source),null);
+});
+
+test('실제 생성 API 어댑터는 결합이 확인된 새 카드 검수를 연결하고 다른 입력의 결과는 재사용하지 않음',async()=>{
+ const previous=globalThis.window;
+ const frozen={article_id:'fixture',title:'제목',content:'본문'};
+ const source={articleId:'fixture',title:'제목',content:'본문',photos:[]};
+ const review={platform:'card_news',status:'passed',fact:{issues:[]},requirement:{issues:[]}};
+ const result={platform:'card_news',article_id:'fixture',cards:[],generation_review:review};
+ // 플랫폼 모듈의 공유 연결 유틸리티는 Node와 브라우저에서 동일한 SHA-256을 사용한다.
+ await import('../../../platform-generator/lib/review-binding.js');
+ result.generation_review_binding=globalThis.ContentReviewBinding.bindReview(
+   {platform:'card_news',article:frozen,selected_keywords:[],requirements:''},result,
+   value=>createHash('sha256').update(value,'utf8').digest('hex'));
+ const calls=[];
+ ipcHandlers={core:async path=>{calls.push(path);return {status:200,body:{draft:result,snapshotId:'snapshot'}};}};
+ globalThis.window={pywebview:{api:ipcFixture}};
+ try{
+  const {generatePlatform}=await import('../../../src/api/platform.js');
+  const generated=await generatePlatform('card_news',frozen,[],'','snapshot',source);
+  assert.equal(reusableReview('card_news',generated,source)?.status,'passed');
+  assert.equal(reviewStatus(generated),'passed');
+  assert.equal(calls.filter(path=>path==='/api/platform/validate').length,0);
+  const changed=await generatePlatform('card_news',frozen,[],'조건 변경','snapshot',source);
+  assert.equal(reusableReview('card_news',changed,source),null);
+  assert.equal(reviewStatus(changed),'not_checked');
+ }finally{if(previous===undefined)delete globalThis.window;else globalThis.window=previous;}
+});
 // core singleton이 잡은 IPC 브리지는 유지하고 시험별 응답만 교체한다. 시험 사이 브리지 캐시 오염을 방지한다.
 let ipcHandlers;
 const ipcFixture={core:(...args)=>ipcHandlers.core(...args),coreBytes:(...args)=>ipcHandlers.coreBytes(...args)};
@@ -77,5 +152,28 @@ test('JPG 읽기는 IPC Core의 실제 미디어 참조를 쓰고 HTTP 주소에
   assert.equal(direct.type,'image/jpeg');assert.equal(direct.size,4);
   const restored=await storedJpg({id:assetId,uri:'http://unreachable.invalid/card.jpg'});
   assert.equal(restored.type,'image/jpeg');assert.deepEqual(calls,['/api/media/'+id,'/api/media-assets/'+assetId,'/api/media/'+id]);
+ }finally{if(previous===undefined)delete globalThis.window;else globalThis.window=previous;}
+});
+
+test('생성 카드의 빈 사진 메타데이터는 사진 없이 렌더하고 실제 사진의 저장 경계는 유지',async()=>{
+ const previous=globalThis.window,calls=[];
+ ipcHandlers={core:async(path,body)=>{calls.push({path,body});return {status:200,body:{asset:{id:'rendered-fixture',local_uri:'/api/media-assets/rendered-fixture/file'}}};},coreBytes:async()=>{throw Error('사진 없는 카드에서 사진 바이트를 읽으면 안 됩니다.');}};
+ globalThis.window={pywebview:{api:ipcFixture}};
+ try{
+  const {renderStoredCard}=await import('../../../src/api/platform.js');
+  const card={...draft.cards[0],photoId:undefined,image:{editable:true,selected_image_url:''}};
+  const result={...draft,cards:[card]};
+  assert.equal(selectedCardPhoto(card,article),null);
+  const rendered=await renderStoredCard(card,article,result);
+  assert.equal(rendered.id,'rendered-fixture');assert.equal(calls.length,1);
+  assert.equal(calls[0].path,'/api/platform/render');assert.equal(calls[0].body.payload.template,'text_only');
+  assert.equal(calls[0].body.payload.image?.url,undefined);
+  const withPhoto={...card,photoId:'p'};
+  await renderStoredCard(withPhoto,article,{...result,cards:[withPhoto]});
+  assert.equal(calls[1].body.payload.image.url,article.photos[0].url);
+  assert.equal(calls[1].body.payload.image.photographer,article.photos[0].source);
+  await assert.rejects(renderStoredCard({...card,image:{url:'https://example.invalid/unimported.jpg'}},article,result),/팀 사진/);
+  await assert.rejects(renderStoredCard({...card,photoId:'deleted'},article,result),/삭제/);
+  assert.equal(calls.length,2,'저장되지 않은 사진과 삭제된 사진은 렌더 요청 전에 거부');
  }finally{if(previous===undefined)delete globalThis.window;else globalThis.window=previous;}
 });

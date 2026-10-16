@@ -72,7 +72,9 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[browser,setBrowser]=useState('auto'),[attach,setAttach]=useState(true),[downloads,setDownloads]=useState([]);
  const live=useRef({platform,draft,cards,article});useLayoutEffect(()=>{live.current={platform,draft,cards,article};},[platform,draft,cards,article]);
  const inputKey=fingerprint({draft,cards,photos:article?.photos,source:sourceText(article)});
- useEffect(()=>{setMessage('');},[inputKey]);
+ const [evidenceAck,setEvidenceAck]=useState(false); // 근거 불일치를 사람이 확인했는지(입력이 바뀌면 다시 확인)
+ const evidenceMismatch=evidenceError(draft)||(attach&&evidenceError(cards));
+ useEffect(()=>{setMessage('');setEvidenceAck(false);},[inputKey]);
  const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
  const operation=useRef(false);
  const connection=useSnsConnection(platform,browser,preparing,()=>setMessage(''));
@@ -114,7 +116,7 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
  const prepare=()=>run(async()=>{
   const capture=structuredClone(live.current),hasCards=attach&&capture.cards?.cards?.length;
   assertSameSource(capture.draft,hasCards?capture.cards:null,capture.article);
-  if(evidenceError(capture.draft)||(hasCards&&evidenceError(capture.cards)))throw Error('원문과 일치하지 않는 근거가 표시된 결과입니다. 근거를 수정·검수한 뒤 작성창을 채워 주세요.');
+  if((evidenceError(capture.draft)||(hasCards&&evidenceError(capture.cards)))&&!evidenceAck)throw Error('원문과 일치하지 않는 근거가 표시된 결과입니다. 확인 체크를 한 뒤 작성창을 채워 주세요.');
   if(platform==='instagram'&&!hasCards)throw Error('Instagram은 카드 이미지가 필요합니다. 카드뉴스를 포함해 주세요.');
   const expected=fingerprint({draft:capture.draft,cards:capture.cards,photos:capture.article.photos}),source=sourceText(capture.article);
   const assets=hasCards?await renderAll(capture):[];
@@ -137,11 +139,11 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
    <p data-testid="sns-review-status" className="text-xs">현재 원고: {currentDraft?reviewLabel(reviewStatus(draft)):'이전 원문 결과'} · 카드: {cards&&!currentCards?'이전 원문 결과':reviewLabel(reviewStatus(cards))}. 준비는 게시하지 않습니다. 검수 상태를 확인하고 사람이 최종 검토합니다.</p>
    {(!currentDraft||(attach&&cards&&!currentCards))&&<p role="alert" className="text-xs text-amber-700">이전 원문 결과는 보존되어 있습니다. 현재 원문·같은 고정본의 결과로 SNS 작성창을 채워 주세요.</p>}
    {attach&&currentDraft&&currentCards&&!sameBundle&&<p role="alert" className="text-xs text-amber-700">원문은 같지만 원고와 카드의 고정본이 다릅니다. 같은 생성 작업의 결과를 함께 사용해 주세요. 기존 결과는 보존됩니다.</p>}
-   {(evidenceError(draft)||(attach&&evidenceError(cards)))&&<p role="alert" className="text-xs text-amber-700">원문 근거 불일치가 표시되어 SNS 입력을 중단합니다. 근거를 수정·검수해 주세요.</p>}
+   {evidenceMismatch&&<div role="alert" data-testid="evidence-warning" className="space-y-1 text-xs text-amber-700"><p>원문과 일치하지 않는 근거가 표시되어 있습니다. 기사에 없는 인용이 SNS 작성창에 들어갈 수 있으니 확인한 뒤 진행해 주세요.</p><label className="flex items-center gap-1.5"><input type="checkbox" data-testid="evidence-ack" checked={evidenceAck} disabled={blocked} onChange={e=>setEvidenceAck(e.target.checked)}/> 근거가 원문과 일치하지 않음을 확인했고, 그대로 작성창을 채웁니다.</label></div>}
    {platform==='instagram'?<p className="text-xs">Instagram 전용 브라우저: Chrome</p>:<label className="text-xs">로그인 브라우저 <select aria-label="SNS 브라우저" disabled={blocked||connection.state.checking} value={browser} onChange={e=>setBrowser(e.target.value)}><option value="auto">자동 (Chrome → Edge → Chromium)</option><option value="chrome">Chrome</option><option value="msedge">Edge</option><option value="chromium">Chromium</option></select></label>}
    <button className={button} disabled={blocked||connection.state.checking} data-testid={`${platform}-connect`} onClick={()=>connection.start()}>{platform==='threads'?'Threads':'Instagram'} 로그인 연결</button>
    <p role="status" data-testid={`${platform}-connection-status`} className="text-xs">{connection.state.text}</p>
-   <label className="text-xs"><input type="checkbox" checked={attach} disabled={blocked} onChange={e=>setAttach(e.target.checked)}/> 현재 카드뉴스 첨부</label><button className={button} disabled={blocked||connection.state.checking||!currentDraft||(attach&&cards&&(!currentCards||!sameBundle))||evidenceError(draft)||(attach&&evidenceError(cards))} data-testid="sns-prepare" onClick={prepare}>{platform==='threads'?'Threads':'Instagram'} 작성창 채우기</button>
+   <label className="text-xs"><input type="checkbox" checked={attach} disabled={blocked} onChange={e=>setAttach(e.target.checked)}/> 현재 카드뉴스 첨부</label><button className={button} disabled={blocked||connection.state.checking||!currentDraft||(attach&&cards&&(!currentCards||!sameBundle))||(evidenceMismatch&&!evidenceAck)} data-testid="sns-prepare" onClick={prepare}>{platform==='threads'?'Threads':'Instagram'} 작성창 채우기</button>
   </>}
   {message&&<p role="status" className="whitespace-pre-wrap text-xs" data-testid="delivery-status">{message}</p>}
   {downloads.map(item=><a className="mr-3 text-xs underline" key={item.url} href={item.url} download={item.name}>{item.name}</a>)}

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Check, ChevronDown, Pencil, RotateCcw, X } from "lucide-react";
 
-// 화자 프로필: 발언 앞의 프로필(이모지+이름)을 누르면 이름을 적는 칸이 열리고, "화자 수정하기"로 여러 단락을 골라 한 번에 바꾼다.
+// 화자 프로필: 발언 앞의 프로필(이모지+이름)을 누르면 화자를 고르거나 이름을 적는 칸이 열리고, "화자 수정하기"로 여러 단락을 골라 한 번에 바꾼다.
 // CLOVA 가 준 발언 원본은 바꾸지 않고, 고친 내용만 따로 저장된다.
 const AVATARS = ["😀", "😎", "🤓", "🧐", "😊", "🤠", "😇", "🙂"]; // 한 글자짜리 이모지만(이어 붙인 이모지는 Windows 10 에서 둘로 갈라져 보인다)
 const TONES = ["bg-slate-100 border-slate-300", "bg-blue-50 border-blue-200", "bg-amber-50 border-amber-200", "bg-emerald-50 border-emerald-200", "bg-violet-50 border-violet-200", "bg-rose-50 border-rose-200"];
@@ -9,12 +9,7 @@ const SAVE_TEXT = { saving: "저장 중…", saved: "수정 내용 저장됨", e
 const button = "px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed";
 const field = "px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 outline-none focus:border-slate-400";
 
-/** 이름 입력 후보(datalist) — 화면에서 한 번만 그린다. */
-export function SpeakerNameList({ id, speakers }) {
-  return <datalist id={id}>{speakers.map((speaker) => <option key={speaker.key} value={speaker.name} />)}</datalist>;
-}
-
-/** 발언 앞에 붙는 프로필: 이모지 + 이름. 누르면 이름 입력칸이 열린다. */
+/** 발언 앞에 붙는 프로필: 이모지 + 이름. 누르면 아래로 펼쳐진다. */
 export function SpeakerBadge({ index, name, open, disabled, onClick, testId }) {
   return (
     <button
@@ -35,26 +30,58 @@ export function SpeakerBadge({ index, name, open, disabled, onClick, testId }) {
   );
 }
 
-/** 프로필을 눌렀을 때 아래로 펼쳐지는 이름 입력칸. */
-export function SpeakerNameEditor({ initialName, listId, onWhole, onOnly, onClose }) {
+/** 지금까지 나온 화자들(고친 이름 + 처음 CLOVA 가 붙인 이름). 눌러서 고른다. */
+function RosterChips({ roster, currentKey, onPick, testPrefix }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {roster.map((speaker, index) => (
+        <button
+          key={speaker.key}
+          type="button"
+          onClick={() => onPick(speaker)}
+          aria-pressed={speaker.key === currentKey}
+          data-testid={`${testPrefix}-${speaker.key}`}
+          className={`flex items-center gap-1.5 pl-1 pr-2.5 py-0.5 rounded-full border text-[11px] transition cursor-pointer ${
+            speaker.key === currentKey ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-300 hover:border-slate-500"
+          }`}
+        >
+          <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-xs leading-none" aria-hidden="true">{AVATARS[index % AVATARS.length]}</span>
+          <span className="font-bold">{speaker.name}</span>
+          {speaker.originals.length > 0 && (
+            <span className={speaker.key === currentKey ? "text-slate-300" : "text-slate-400"}>원래 {speaker.originals.join("·")}</span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 프로필을 눌렀을 때 아래로 펼쳐지는 칸: 이미 나온 화자 중에 고르거나, 새 이름을 적는다. */
+export function SpeakerNameEditor({ initialName, roster, currentKey, onPick, onWhole, onOnly, onClose }) {
   const [draft, setDraft] = useState(initialName);
   const submit = (event) => {
     event.preventDefault();
     onWhole(draft);
   };
   return (
-    <form onSubmit={submit} onClick={(event) => event.stopPropagation()} className="mt-2 mb-1 rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-2" data-testid="speaker-editor">
-      <div className="flex flex-wrap items-center gap-2">
+    <div onClick={(event) => event.stopPropagation()} className="mt-2 mb-1 rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-2.5" data-testid="speaker-editor">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-bold text-slate-600">이 단락은 누가 말했나요?</span>
+        <button type="button" onClick={onClose} aria-label="닫기" className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-200 cursor-pointer">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <RosterChips roster={roster} currentKey={currentKey} onPick={(speaker) => onPick(speaker.key)} testPrefix="speaker-roster" />
+      <form onSubmit={submit} className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200">
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          list={listId}
           maxLength={40}
           autoFocus
           aria-label="화자 이름"
-          placeholder="화자 이름"
+          placeholder="새 이름 적기"
           data-testid="speaker-name-input"
-          className={`${field} w-44`}
+          className={`${field} w-40`}
         />
         <button type="submit" data-testid="speaker-name-whole" className={`${button} bg-slate-900 text-white hover:bg-slate-700 flex items-center gap-1`}>
           <Check className="w-3 h-3" aria-hidden="true" />이 화자 전체에 적용
@@ -62,12 +89,9 @@ export function SpeakerNameEditor({ initialName, listId, onWhole, onOnly, onClos
         <button type="button" onClick={() => onOnly(draft)} data-testid="speaker-name-only" className={`${button} bg-white border border-slate-200 text-slate-700 hover:bg-slate-100`}>
           이 단락만
         </button>
-        <button type="button" onClick={onClose} aria-label="닫기" className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-200 cursor-pointer">
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      </form>
       <p className="text-[11px] text-slate-400">다른 화자와 같은 이름을 쓰면 같은 화자로 합쳐져요. 이름을 비우면 원래 이름으로 돌아가요.</p>
-    </form>
+    </div>
   );
 }
 
@@ -91,7 +115,7 @@ export function SpeakerHeaderActions({ editMode, edited, saveState, onStart, onR
 }
 
 /** 화자 수정하기 중에 나타나는 막대: 고른 단락들의 화자 이름을 한 번에 바꾼다. */
-export function SpeakerEditBar({ pickedCount, totalCount, listId, onSelectAll, onClear, onApply, onDone }) {
+export function SpeakerEditBar({ pickedCount, totalCount, roster, onSelectAll, onClear, onApply, onDone }) {
   const [name, setName] = useState("");
   const submit = (event) => {
     event.preventDefault();
@@ -109,14 +133,14 @@ export function SpeakerEditBar({ pickedCount, totalCount, listId, onSelectAll, o
           <button type="button" onClick={onDone} data-testid="speaker-edit-done" className={`${button} bg-white border border-slate-300 text-slate-700 hover:bg-slate-100`}>수정 끝내기</button>
         </div>
       </div>
+      <RosterChips roster={roster} currentKey={null} onPick={(speaker) => setName(speaker.name)} testPrefix="speaker-bulk-roster" />
       <div className="flex flex-wrap items-center gap-2">
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
-          list={listId}
           maxLength={40}
           aria-label="고른 단락에 쓸 화자 이름"
-          placeholder="고른 단락의 화자 이름"
+          placeholder="위에서 고르거나 이름 적기"
           data-testid="speaker-bulk-name"
           className={`${field} w-52`}
         />

@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript, saveSpeakerEdits } from "../../services/sttService";
 import { mergeBySpeaker, speakerText, plainText } from "../../lib/transcriptText.js";
-import { SpeakerBadge, SpeakerEditBar, SpeakerHeaderActions, SpeakerNameEditor, SpeakerNameList } from "./SpeakerProfiles.jsx";
-import { applySpeakerEdits, assignByName, emptyEdits, isEdited, renameSpeakerSmart, sanitizeEdits, speakerIndex, speakerList } from "../../lib/speakerEdits.js";
+import { SpeakerBadge, SpeakerEditBar, SpeakerHeaderActions, SpeakerNameEditor } from "./SpeakerProfiles.jsx";
+import { applySpeakerEdits, assignByName, assignDialogues, emptyEdits, isEdited, renameSpeakerSmart, sanitizeEdits, speakerIndex, speakerList, speakerRoster } from "../../lib/speakerEdits.js";
 import {
   Upload,
   Play,
@@ -55,6 +55,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
   const [openParagraphId, setOpenParagraphId] = useState(null); // 프로필을 눌러 이름 입력칸이 열린 단락
   const dialogues = useMemo(() => applySpeakerEdits(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
   const speakers = useMemo(() => speakerList(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
+  // 화자 고르기 목록: 고친 이름과 처음 CLOVA 가 붙인 이름이 함께 남는다
+  const roster = useMemo(() => speakerRoster(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
   const [sttStatus, setSttStatus] = useState("대기 중");
   const [currentTranscript, setCurrentTranscript] = useState(null);
 
@@ -446,6 +448,10 @@ export default function InterviewStudio({ onReturnToArticle }) {
   };
   const renameParagraphOnly = (ids, name) => {
     commitSpeakerEdits(assignByName(speakerEdits, speakers, ids, name));
+    setOpenParagraphId(null);
+  };
+  const pickSpeakerForParagraph = (ids, key) => {
+    commitSpeakerEdits(assignDialogues(speakerEdits, ids, key));
     setOpenParagraphId(null);
   };
 
@@ -971,12 +977,11 @@ export default function InterviewStudio({ onReturnToArticle }) {
                 </div>
 
                 {/* 화자 수정하기: 재생을 멈추고 단락 박스를 여러 개 골라 화자 이름을 한 번에 바꾼다 */}
-                <SpeakerNameList id="speaker-name-list" speakers={speakers} />
                 {editMode && (
                   <SpeakerEditBar
                     pickedCount={pickedIds.length}
                     totalCount={paragraphs.length}
-                    listId="speaker-name-list"
+                    roster={roster}
                     onSelectAll={() => setPickedIds(paragraphs.map((paragraph) => paragraph.id))}
                     onClear={() => setPickedIds([])}
                     onApply={applyNameToPicked}
@@ -1063,7 +1068,9 @@ export default function InterviewStudio({ onReturnToArticle }) {
                         {openParagraphId === item.id && !editMode && (
                           <SpeakerNameEditor
                             initialName={item.speakerName}
-                            listId="speaker-name-list"
+                            roster={roster}
+                            currentKey={item.speaker}
+                            onPick={(key) => pickSpeakerForParagraph(item.ids, key)}
                             onWhole={(name) => renameWholeSpeaker(item.speaker, name)}
                             onOnly={(name) => renameParagraphOnly(item.ids, name)}
                             onClose={() => setOpenParagraphId(null)}

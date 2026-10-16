@@ -253,11 +253,31 @@ try {
   assert.match(await copyAll(), /^\[김 기자\] 00:00:00\nAI 기자가 .*네, 들어봤습니다/s, "같은 이름이면 같은 화자(한 단락)");
   step("화자 프로필: 다른 화자와 같은 이름을 쓰면 합쳐진다");
 
+  // 이름을 고치고 합쳐도 화자 목록에 고친 이름과 CLOVA 가 처음 붙인 이름이 함께 남는다
+  await page.getByTestId("speaker-badge-seg-1").click();
+  const rosterChip = await page.getByTestId("speaker-roster-1").innerText();
+  assert.match(rosterChip, /김 기자/);
+  assert.match(rosterChip, /원래 화자 1·화자 2/);
+  assert.equal(await page.getByTestId("speaker-roster-2").count(), 0, "합쳐진 화자는 한 사람으로 보인다");
+  await page.getByTestId("speaker-badge-seg-1").click();
+  step("화자 프로필: 이름을 고치고 합친 뒤에도 목록에 고친 이름과 원래 이름이 남는다");
+
   await page.getByTestId("speaker-reset").click();
   await paragraphsText(2);
   assert.deepEqual(speakerPosts.at(-1), { names: {}, merge: {}, assign: {} });
   assert.match(await copyAll(), /\[화자 1\] 00:00:00/);
   step("화자 프로필: 원본으로");
+
+  await page.getByTestId("speaker-badge-seg-2").click();
+  assert.match(await page.getByTestId("speaker-roster-1").innerText(), /화자 1/);
+  assert.match(await page.getByTestId("speaker-roster-2").innerText(), /화자 2/);
+  await page.getByTestId("speaker-roster-1").click();                          // 목록에서 화자를 눌러 고른다(이름을 적지 않아도 된다)
+  await paragraphsText(1);
+  assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "1", "seg-3": "1" });
+  assert.equal(await page.getByTestId("speaker-editor").count(), 0, "고르면 입력칸이 닫힌다");
+  await page.getByTestId("speaker-reset").click();
+  await paragraphsText(2);
+  step("화자 프로필: 펼친 칸의 화자 목록에서 눌러 고르면 그 화자의 말로 바뀐다");
 
   await page.getByTestId("speaker-badge-seg-2").click();
   await page.getByTestId("speaker-name-input").fill("취재원");

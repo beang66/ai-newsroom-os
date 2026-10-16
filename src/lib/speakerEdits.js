@@ -131,3 +131,16 @@ export function assignByName(edits, speakers, ids, name) {
   const added = addSpeaker(edits, clean);
   return assignDialogues(added.edits, ids, added.key);
 }
+
+/** 화자 고르기 목록: speakerList 에 "원래 CLOVA 가 붙인 이름"을 더한다. 이름을 고치거나 합쳐도 원래 이름이 남아 있다. */
+export function speakerRoster(dialogues, edits) {
+  const applied = applySpeakerEdits(dialogues, edits);
+  const originals = {};
+  (dialogues || []).forEach((item, index) => {
+    const key = applied[index].speaker;
+    const label = text(item.speakerName) || speakerKey(item);
+    if (!originals[key]) originals[key] = [];
+    if (!originals[key].includes(label)) originals[key].push(label);
+  });
+  return speakerList(dialogues, edits).map((speaker) => ({ ...speaker, originals: (originals[speaker.key] || []).filter((label) => label !== speaker.name) }));
+}

@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript, saveSpeakerEdits } from "../../services/sttService";
 import { mergeBySpeaker, speakerText, plainText } from "../../lib/transcriptText.js";
-import SpeakerProfiles, { SpeakerAssignBar } from "./SpeakerProfiles.jsx";
-import { addSpeaker, applySpeakerEdits, assignDialogues, emptyEdits, isEdited, mergeSpeaker, renameSpeaker, sanitizeEdits, speakerList } from "../../lib/speakerEdits.js";
+import { SpeakerBadge, SpeakerEditBar, SpeakerHeaderActions, SpeakerNameEditor, SpeakerNameList } from "./SpeakerProfiles.jsx";
+import { applySpeakerEdits, assignByName, emptyEdits, isEdited, renameSpeakerSmart, sanitizeEdits, speakerIndex, speakerList } from "../../lib/speakerEdits.js";
 import {
   Upload,
   Play,
@@ -51,6 +51,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
   const [transcriptId, setTranscriptId] = useState(null);
   const [speakerSave, setSpeakerSave] = useState("");
   const [pickedIds, setPickedIds] = useState([]);
+  const [editMode, setEditMode] = useState(false); // 화자 수정하기: 재생을 멈추고 여러 단락을 골라 한 번에 바꾼다
+  const [openParagraphId, setOpenParagraphId] = useState(null); // 프로필을 눌러 이름 입력칸이 열린 단락
   const dialogues = useMemo(() => applySpeakerEdits(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
   const speakers = useMemo(() => speakerList(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
   const [sttStatus, setSttStatus] = useState("대기 중");
@@ -168,6 +170,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
     setTranscriptId(null);
     setSpeakerSave("");
     setPickedIds([]);
+    setEditMode(false);
+    setOpenParagraphId(null);
     setAiSummary(null);
     setAnalysisError("");
     setEvidenceQuery("");
@@ -227,6 +231,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
       setTranscriptId(result.id || item.id);
       setSpeakerSave("");
       setPickedIds([]);
+      setEditMode(false);
+      setOpenParagraphId(null);
       setSelectedDialogueId(result.dialogues[0]?.id ?? null);
       setCurrentTranscript(result.transcript);
       setSttStatus(result.dialogues.length > 0 ? "저장된 전사 불러옴" : "저장된 전사 (발언 없음)");
@@ -419,14 +425,28 @@ export default function InterviewStudio({ onReturnToArticle }) {
   };
   const pickedDialogueIds = paragraphs.filter((paragraph) => pickedIds.includes(paragraph.id)).flatMap((paragraph) => paragraph.ids);
   const togglePicked = (id) => setPickedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
-  const assignPicked = (key) => {
-    commitSpeakerEdits(assignDialogues(speakerEdits, pickedDialogueIds, key));
+  const startSpeakerEdit = () => {
+    if (audioRef.current) audioRef.current.pause();
+    setIsPlaying(false);
+    setOpenParagraphId(null);
+    setPickedIds([]);
+    setEditMode(true);
+  };
+  const endSpeakerEdit = () => {
+    setEditMode(false);
     setPickedIds([]);
   };
-  const assignPickedToNew = (name) => {
-    const added = addSpeaker(speakerEdits, name);
-    commitSpeakerEdits(assignDialogues(added.edits, pickedDialogueIds, added.key));
+  const applyNameToPicked = (name) => {
+    commitSpeakerEdits(assignByName(speakerEdits, speakers, pickedDialogueIds, name));
     setPickedIds([]);
+  };
+  const renameWholeSpeaker = (key, name) => {
+    commitSpeakerEdits(renameSpeakerSmart(speakerEdits, speakers, key, name));
+    setOpenParagraphId(null);
+  };
+  const renameParagraphOnly = (ids, name) => {
+    commitSpeakerEdits(assignByName(speakerEdits, speakers, ids, name));
+    setOpenParagraphId(null);
   };
 
   // 핵심요약에서 드래그된 근거 매칭 세그먼트 ID Set
@@ -947,18 +967,22 @@ export default function InterviewStudio({ onReturnToArticle }) {
                       ({paragraphs.length}개 단락)
                     </span>
                   </div>
+                  <SpeakerHeaderActions editMode={editMode} edited={isEdited(speakerEdits)} saveState={speakerSave} onStart={startSpeakerEdit} onReset={() => commitSpeakerEdits(emptyEdits())} />
                 </div>
 
-                {/* 화자 프로필: 이름 바꾸기·합치기, 단락을 골라 화자 지정 */}
-                <SpeakerProfiles
-                  speakers={speakers}
-                  edited={isEdited(speakerEdits)}
-                  saveState={speakerSave}
-                  onRename={(key, name) => commitSpeakerEdits(renameSpeaker(speakerEdits, key, name))}
-                  onMerge={(from, into) => commitSpeakerEdits(mergeSpeaker(speakerEdits, from, into))}
-                  onReset={() => { commitSpeakerEdits(emptyEdits()); setPickedIds([]); }}
-                />
-                <SpeakerAssignBar speakers={speakers} pickedCount={pickedIds.length} onAssign={assignPicked} onAssignNew={assignPickedToNew} onClear={() => setPickedIds([])} />
+                {/* 화자 수정하기: 재생을 멈추고 단락 박스를 여러 개 골라 화자 이름을 한 번에 바꾼다 */}
+                <SpeakerNameList id="speaker-name-list" speakers={speakers} />
+                {editMode && (
+                  <SpeakerEditBar
+                    pickedCount={pickedIds.length}
+                    totalCount={paragraphs.length}
+                    listId="speaker-name-list"
+                    onSelectAll={() => setPickedIds(paragraphs.map((paragraph) => paragraph.id))}
+                    onClear={() => setPickedIds([])}
+                    onApply={applyNameToPicked}
+                    onDone={endSpeakerEdit}
+                  />
+                )}
 
                 {/* 화자별 세그먼트 대화 목록 */}
                 <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
@@ -970,8 +994,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
                     return (
                       <div
                         key={`speaker_segment_${item.id}`}
-                        onClick={() => handleSelectDialogue(item.timestamp, item.id)}
-                        className={`group p-3 rounded-xl transition cursor-pointer ${
+                        onClick={() => (editMode ? togglePicked(item.id) : handleSelectDialogue(item.timestamp, item.id))}
+                        className={`group p-3 rounded-xl transition cursor-pointer ${editMode && pickedIds.includes(item.id) ? "ring-2 ring-slate-900 " : ""}${
                           isCurrentActive
                             ? "bg-white border-2 border-slate-900 shadow-sm ring-2 ring-slate-900/10"
                             : isSelected
@@ -984,22 +1008,28 @@ export default function InterviewStudio({ onReturnToArticle }) {
                         {/* 세그먼트 상단: 화자명 태그 + 타임스탬프 */}
                         <div className="flex items-center justify-between gap-2 mb-1.5">
                           <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={pickedIds.includes(item.id)}
-                              onChange={() => togglePicked(item.id)}
-                              onClick={(e) => e.stopPropagation()}
-                              aria-label={`${item.speakerName} 단락 선택`}
-                              data-testid={`speaker-pick-${item.id}`}
-                              className="w-3.5 h-3.5 accent-slate-900 cursor-pointer"
+                            {editMode && (
+                              <input
+                                type="checkbox"
+                                checked={pickedIds.includes(item.id)}
+                                onChange={() => togglePicked(item.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label={`${item.speakerName} 단락 선택`}
+                                data-testid={`speaker-pick-${item.id}`}
+                                className="w-3.5 h-3.5 accent-slate-900 cursor-pointer"
+                              />
+                            )}
+                            <SpeakerBadge
+                              index={speakerIndex(speakers, item.speaker)}
+                              name={item.speakerName}
+                              open={openParagraphId === item.id}
+                              disabled={editMode}
+                              testId={`speaker-badge-${item.id}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenParagraphId((prev) => (prev === item.id ? null : item.id));
+                              }}
                             />
-                            <span
-                              className={`px-2 py-0.5 rounded text-[11px] font-bold border ${getSpeakerBadgeStyle(
-                                item.speakerName
-                              )}`}
-                            >
-                              {item.speakerName}
-                            </span>
                             <span className="font-mono text-[11px] text-slate-400">
                               {formatDuration(item.timestamp)}
                             </span>
@@ -1029,6 +1059,16 @@ export default function InterviewStudio({ onReturnToArticle }) {
                             </button>
                           </div>
                         </div>
+
+                        {openParagraphId === item.id && !editMode && (
+                          <SpeakerNameEditor
+                            initialName={item.speakerName}
+                            listId="speaker-name-list"
+                            onWhole={(name) => renameWholeSpeaker(item.speaker, name)}
+                            onOnly={(name) => renameParagraphOnly(item.ids, name)}
+                            onClose={() => setOpenParagraphId(null)}
+                          />
+                        )}
 
                         {/* 발화 텍스트 */}
                         <p className="text-xs text-slate-700 leading-relaxed font-sans pl-1">

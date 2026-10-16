@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  addSpeaker, applySpeakerEdits, assignDialogues, emptyEdits, isEdited, mergeSpeaker, renameSpeaker, resolveKey, sanitizeEdits, speakerList
+  addSpeaker, applySpeakerEdits, assignByName, assignDialogues, emptyEdits, isEdited, mergeSpeaker, renameSpeaker, renameSpeakerSmart, resolveKey, sanitizeEdits, speakerList
 } from "../../../src/lib/speakerEdits.js";
 
 // 1명이 말했는데 CLOVA 가 화자 1·2·3 으로 나눈 녹취
@@ -71,4 +71,26 @@ test("코어에서 받은 값이 이상해도 안전한 수정 객체가 된다"
   assert.deepEqual(sanitizeEdits(null), emptyEdits());
   assert.deepEqual(sanitizeEdits({ names: [1], merge: "x", assign: { d1: 5, d2: "1" } }), { names: {}, merge: {}, assign: { d2: "1" } });
   assert.deepEqual(sanitizeEdits({ names: { 1: "김 기자" } }).names, { 1: "김 기자" });
+});
+
+test("이름 바꾸기: 다른 화자와 같은 이름을 쓰면 같은 화자로 합쳐지고, 새 이름이면 이름만 바뀐다", () => {
+  const speakers = speakerList(dialogues, emptyEdits());
+  assert.deepEqual(names(renameSpeakerSmart(emptyEdits(), speakers, "1", "김 기자")), ["김 기자", "화자 2", "김 기자", "화자 3"]);
+  const merged = renameSpeakerSmart(emptyEdits(), speakers, "1", " 화자 2 ");          // 앞뒤 공백·대소문자는 무시
+  assert.deepEqual(merged.merge, { 1: "2" });
+  assert.deepEqual(names(merged), ["화자 2", "화자 2", "화자 2", "화자 3"]);
+  const renamed = renameSpeakerSmart(emptyEdits(), speakers, "1", "김 기자");
+  assert.deepEqual(names(renameSpeakerSmart(renamed, speakerList(dialogues, renamed), "1", "")), ["화자 1", "화자 2", "화자 1", "화자 3"]);
+});
+
+test("이름으로 지정: 발언을 같은 이름의 화자로 옮기고, 없으면 새 화자를 한 번만 만든다", () => {
+  let edits = assignByName(emptyEdits(), speakerList(dialogues, emptyEdits()), ["d2", "d4"], "취재원");
+  assert.deepEqual(names(edits), ["화자 1", "취재원", "화자 1", "취재원"]);
+  edits = assignByName(edits, speakerList(dialogues, edits), ["d1"], "취재원");         // 같은 이름 → 새 화자를 또 만들지 않는다
+  assert.deepEqual(Object.keys(edits.names), ["custom-1"]);
+  assert.deepEqual(names(edits), ["취재원", "취재원", "화자 1", "취재원"]);
+  edits = assignByName(edits, speakerList(dialogues, edits), ["d2"], "화자 1");        // 원래 화자의 이름 → 그 화자로
+  assert.equal(applySpeakerEdits(dialogues, edits)[1].speaker, "1");
+  assert.equal(assignByName(edits, speakerList(dialogues, edits), ["d3"], "  "), edits, "빈 이름은 아무것도 하지 않는다");
+  assert.equal(assignByName(edits, speakerList(dialogues, edits), [], "김"), edits, "고른 발언이 없으면 아무것도 하지 않는다");
 });

@@ -108,3 +108,26 @@ export function addSpeaker(edits, name) {
   const key = `custom-${(used.length ? Math.max(...used) : 0) + 1}`;
   return { key, edits: { ...edits, names: { ...edits.names, [key]: text(name).slice(0, NAME_MAX) || "새 화자" } } };
 }
+
+/** 화자 목록에서 몇 번째인지(프로필 모양을 정하는 데 쓴다. 같은 화자는 늘 같은 모양). */
+export const speakerIndex = (speakers, key) => Math.max(0, speakers.findIndex((speaker) => speaker.key === key));
+
+const sameName = (a, b) => text(a).toLowerCase() === text(b).toLowerCase();
+
+/** 화자 하나의 이름을 바꾼다. 다른 화자와 이름이 같으면 같은 사람이라는 뜻이라 그 화자로 합친다. 빈 이름은 원래 이름으로 되돌린다. */
+export function renameSpeakerSmart(edits, speakers, key, name) {
+  const clean = text(name).slice(0, NAME_MAX);
+  if (!clean) return renameSpeaker(edits, key, "");
+  const other = speakers.find((speaker) => speaker.key !== key && sameName(speaker.name, clean));
+  return other ? mergeSpeaker(edits, key, other.key) : renameSpeaker(edits, key, clean);
+}
+
+/** 발언들을 이름으로 고른 화자에게 옮긴다. 같은 이름의 화자가 있으면 그 화자로, 없으면 새 화자를 만든다. */
+export function assignByName(edits, speakers, ids, name) {
+  const clean = text(name).slice(0, NAME_MAX);
+  if (!clean || !ids.length) return edits;
+  const existing = speakers.find((speaker) => sameName(speaker.name, clean));
+  if (existing) return assignDialogues(edits, ids, existing.key);
+  const added = addSpeaker(edits, clean);
+  return assignDialogues(added.edits, ids, added.key);
+}

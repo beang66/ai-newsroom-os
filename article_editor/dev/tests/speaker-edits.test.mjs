@@ -152,31 +152,40 @@ test("글 수정: 고친 글이 박스 글을 대신하고, 원래 글과 같아
   assert.deepEqual(boxes.map((b) => b.text), ["원래 글", "둘째"], "원본 배열은 바뀌지 않는다");
 });
 
-test("글을 고쳐도 형광펜이 남는다: 앞에서 넣고 지우면 이동, 안에서 지우면 줄고, 끼워 넣으면 함께 칠하고, 통째로 바꾸면 새 말도 칠한다", () => {
+test("글을 고쳤을 때 형광펜: 칠한 글 안에서 고친 만큼만 늘거나 줄고, 앞·뒤 글이 바뀌어도 이동하지 않는다", () => {
   const mark = (s, e, c = "yellow") => ({ s, e, c });
   const text = "오늘 날씨가 좋네요";                                   // "날씨가" = [3, 6)
   const marks = [mark(3, 6)];
   assert.deepEqual(remapMarks(text, "오늘 날씨가 좋네요", marks), marks, "같은 글이면 그대로");
-  assert.deepEqual(remapMarks(text, "정말 오늘 날씨가 좋네요", marks), [mark(6, 9)], "앞에 글을 넣으면 같이 밀린다");
-  assert.deepEqual(remapMarks(text, "날씨가 좋네요", marks), [mark(0, 3)], "앞의 글을 지우면 당겨진다");
   assert.deepEqual(remapMarks(text, "오늘 날가 좋네요", marks), [mark(3, 5)], "칠한 곳 안에서 글자를 지우면 줄어든다");
   assert.deepEqual(remapMarks(text, "오늘 날아침씨가 좋네요", marks), [mark(3, 8)], "칠한 곳 한가운데에 끼워 넣은 글은 함께 칠해진다");
-  assert.deepEqual(remapMarks(text, "오늘 날씨가많이 좋네요", marks), [mark(3, 6)], "칠한 곳 끝에 이어 쓴 글은 칠하지 않는다");
-  assert.deepEqual(remapMarks(text, "오늘 기온이 좋네요", marks), [mark(3, 6)], "칠한 말을 통째로 바꾸면 새 말도 칠한다");
+  assert.deepEqual(remapMarks(text, "오늘 기온이 좋네요", marks), [mark(3, 6)], "칠한 말을 통째로 다른 말로 바꾸면 새 말도 칠한다");
+  assert.deepEqual(remapMarks(text, "오늘 기온이 매우 좋네요", marks), [mark(3, 9)], "통째로 바꾼 말이 더 길어도 새 말 전체가 칠해진다");
   assert.deepEqual(remapMarks(text, "오늘 좋네요", marks), [], "칠한 글이 모두 지워지면 형광펜도 사라진다");
   assert.deepEqual(remapMarks(text, "오늘 날씨가 좋네요", []), [], "형광펜이 없으면 아무것도 없다");
-  // 색이 다른 형광펜 둘과 앞뒤에서 동시에 고치기
+  // 앞·뒤 글이 바뀌어도 형광펜은 글자 번호 그대로(이동하지 않는다)
+  assert.deepEqual(remapMarks(text, "정말 오늘 날씨가 좋네요", marks), [mark(3, 6)], "앞에 글을 넣어도 이동하지 않는다");
+  assert.deepEqual(remapMarks(text, "날씨가 좋네요", marks), [mark(3, 6)], "앞의 글을 지워도 이동하지 않는다");
+  assert.deepEqual(remapMarks(text, "오늘 날씨가많이 좋네요", marks), [mark(3, 6)], "칠한 곳 끝에 이어 쓴 글은 칠하지 않는다");
+  assert.deepEqual(remapMarks(text, "오늘 날씨가 좋네요 정말", marks), [mark(3, 6)], "뒤에 글을 붙여도 그대로");
+  // 칠한 글에 걸쳐 고치면 걸친 만큼 줄어든다
+  assert.deepEqual(remapMarks(text, "오늘 날좋네요", marks), [mark(3, 4)], "칠한 곳 끝을 넘어 지우면 칠한 부분만 줄어든다");
+  assert.deepEqual(remapMarks(text, "오늘 씨가 좋네요", marks), [mark(3, 5)], "칠한 곳 앞부분을 지우면 시작은 그대로 두고 칠한 만큼 줄어든다");
+  // 색이 다른 형광펜 둘: 한쪽 안의 수정은 그쪽만 바꾼다
   const two = [mark(0, 2, "pink"), mark(7, 10, "blue")];                 // "오늘", "좋네요"
-  assert.deepEqual(remapMarks(text, "아, 오늘 날씨가 정말 좋네요", two), [mark(3, 5, "pink"), mark(13, 16, "blue")]);
+  assert.deepEqual(remapMarks(text, "오늘 날씨가 좋은네요", two), [mark(0, 2, "pink"), mark(7, 11, "blue")], "'좋네요' 안쪽에 한 글자를 끼우면 그 칠만 한 글자 늘어난다");
+  // 늘어난 칠이 옆 칠과 겹치면 뒤쪽 칠이 이긴다
+  const near = [mark(0, 3, "pink"), mark(3, 6, "blue")];                  // "가나다", "라마바"
+  assert.deepEqual(remapMarks("가나다라마바", "가나가나다라마바", near), [mark(0, 3, "pink"), mark(3, 6, "blue")], "겹치지 않게 정리된다");
   // 긴 글에서 한 곳만 고쳐도 빠르다(앞·뒤가 같은 부분은 걷어 낸다)
   const long = "가나다라 ".repeat(5000);
   const started = Date.now();
   const moved = remapMarks(long, `X${long}`, [mark(10000, 10010)]);
-  assert.deepEqual(moved, [mark(10001, 10011)]);
+  assert.deepEqual(moved, [mark(10000, 10010)]);
   assert.ok(Date.now() - started < 500, "긴 글에서도 빠르다");
   // 고친 곳이 아주 넓을 때(맞추기 한도 초과)도 오류 없이 처리된다
   const wide = remapMarks("가".repeat(3000) + "끝", "나".repeat(3000) + "끝", [mark(3000, 3001)]);
-  assert.deepEqual(wide, [mark(3000, 3001)], "한도를 넘으면 통째로 바뀐 것으로 보되, 바뀌지 않은 끝 글자는 남는다");
+  assert.deepEqual(wide, [mark(3000, 3001)], "한도를 넘어도 오류 없이, 칠한 곳 밖의 수정은 건드리지 않는다");
 });
 
 test("화자만 원래대로: 글 수정과 형광펜은 남는다. 코어에서 받은 글·형광펜은 걸러서 받는다", () => {

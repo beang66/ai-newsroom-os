@@ -427,6 +427,10 @@ export default function App() {
     if (nextSession?.signedIn && nextSession.email) setReporterName(nextSession.email);
   }, []);
 
+  // 로그인하지 않았으면(세션을 확인한 뒤) 작업 화면 대신 로그인 화면이 첫 화면이다. 프로필 메뉴의 "로그인 화면 열기"와 같은 화면이며,
+  // 로그인 전에는 닫을 수 없다(계정마다 자기 자료만 본다 — main #43 규칙). 세션을 아직 모르면(null) 열지 않는다.
+  const loginPage = authView || (session && !session.signedIn ? "login" : null);
+
   useEffect(() => {
     const syncRoute = () => {
       const route = readRoute();
@@ -466,10 +470,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    getSession().then((current) => {
-      applySession(current);
-      if (!current?.signedIn) setGateOpen(true); // 로그인 전에는 닫을 수 없는 로그인 창부터(계정마다 자기 자료만 본다)
-    }).catch(() => {});
+    getSession().then(applySession).catch(() => {});
   }, [applySession]);
 
   // 변환·배포는 저장된 기사(ID)를 기준으로 고정본을 만든다. 아직 저장된 적 없는 기사는 이 탭에 들어올 때 한 번 저장한다.
@@ -621,10 +622,11 @@ export default function App() {
       )}
 
       {/* 2. Main Workspace Layout 또는 로그인/회원가입 화면 (앰비언트 그라데이션 배경 유지) */}
-      {authView ? (
+      {loginPage ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 min-h-[calc(100vh-80px)] z-20">
           <LoginScreen
-            initialMode={authView}
+            initialMode={loginPage}
+            required={!session?.signedIn}
             onClose={closeAuth}
             onLoginSuccess={handleLoginSuccess}
           />
@@ -649,7 +651,7 @@ export default function App() {
                   {switching ? "현재 원고를 저장하고 작업을 전환합니다…" : storageStatus}
                 </p>
                 {/* 개발 실행 + 공용 테스트 계정이 있을 때만 보인다. 끄면 로그아웃되어 로그인 창이 뜬다 */}
-                <AutoLoginToggle session={session} onSession={(next) => { applySession(next); if (!next?.signedIn) setGateOpen(true); }} />
+                <AutoLoginToggle session={session} onSession={applySession} />
               </div>
             )}
             {!isLoaded && loadError ? (
@@ -728,8 +730,8 @@ export default function App() {
         </div>
       )}
 
-      {/* 인증이 필요한 요청이 멈췄을 때: 작업 화면을 유지한 채 로그인 창만 겹쳐 연다 */}
-      {gateOpen && (
+      {/* 인증이 필요한 요청이 멈췄을 때(예: 작업 중 세션 만료): 작업 화면을 유지한 채 로그인 창만 겹쳐 연다. 로그인 화면이 이미 떠 있으면 열지 않는다 */}
+      {gateOpen && !loginPage && (
         <div className="login-overlay fixed inset-0 z-[100] flex items-center justify-center p-6 overflow-auto bg-slate-900/30 backdrop-blur-sm">
           <LoginScreen initialMode="login" required={!session?.signedIn} onClose={() => closeGate(false)} onLoginSuccess={handleLoginSuccess} />
         </div>

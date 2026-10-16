@@ -377,6 +377,9 @@ try {
   await page.locator('header button[title="기자 정보"]').click(); // 로그아웃은 계정 메뉴 안에 있다
   await page.getByTestId("logout-button").click();
   await login.waitFor();
+  assert.equal(await page.locator(".login-overlay").count(), 0, "로그인 전 첫 화면은 팝업이 아니라 로그인 화면입니다");
+  assert.equal(await page.getByTestId("page-heading").count(), 0, "로그인 전에는 작업 화면 대신 로그인 화면만 보입니다");
+  assert.equal(await page.locator("header").count(), 1, "머리글(프로필 메뉴)은 로그인 화면에서도 보입니다");
   assert.equal(await login.getByRole("button", { name: "나중에", exact: true }).count(), 0, "로그인 전에는 건너뛸 수 없어야 합니다");
   assert.equal(await login.getByRole("button", { name: "닫기", exact: true }).count(), 0, "로그인 전에는 창을 닫을 수 없어야 합니다");
   await page.keyboard.press("Escape");
@@ -420,6 +423,27 @@ try {
   await go("보관함");
   await go("기사 작성");
   assert.equal(await login.count(), 0, "로그인한 뒤에는 로그인 창이 다시 열리지 않아야 합니다");
+  let expiredOnce = false;
+  await page.route(`${BASE}/api/articles`, (route) => {
+    if (!expiredOnce && route.request().method() === "GET") {
+      expiredOnce = true;
+      return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "로그인이 필요합니다.", code: "AUTH_REQUIRED" }) });
+    }
+    return route.fallback();
+  });
+  await go("보관함");                                                           // 보관함 목록 요청이 "세션 만료"로 거절된다
+  await login.waitFor();
+  assert.equal(await page.locator(".login-overlay").count(), 1, "작업 중 세션이 만료되면 작업 화면 위에 팝업이 뜬다(전체 로그인 화면이 아니다)");
+  assert.equal(await page.getByTestId("page-heading").count(), 1, "팝업 뒤로 작업 화면이 그대로 있다");
+  await page.getByTestId("login-email").fill("reporter@example.test");
+  await page.getByTestId("login-password").fill("valid-password");
+  signInStarted = new Promise((resolve) => { onSignInStarted = resolve; });
+  await page.getByTestId("login-submit").click();
+  await signInStarted;
+  finishSignIn();
+  await login.waitFor({ state: "detached" });
+  assert.equal(await page.locator(".login-overlay").count(), 0, "다시 로그인하면 팝업이 닫힌다");
+  await go("기사 작성");
   // 나머지 기존 단계의 새로고침에서는 로그인한 상태로 유지한다.
   session = { ...session, signedIn: true, email: "reporter@example.test" };
 

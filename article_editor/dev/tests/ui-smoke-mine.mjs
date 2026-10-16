@@ -242,13 +242,102 @@ try {
   await page.getByText("00:00:02", { exact: true }).first().waitFor();
   step("다시듣기: 왼쪽 위 파형을 눌러 그 위치로 이동(키보드 포함), 오른쪽 통합 텍스트는 눌러도 재생·이동하지 않음");
 
+  // 7-3. 텍스트 수정바: 왼쪽 박스의 글을 드래그하면 형광펜·수정 막대가 뜨고, 형광펜과 고친 글이 저장된다
+  const shot = (name, fullPage = true) => process.env.UI_SMOKE_SHOTS ? page.screenshot({ path: path.join(process.env.UI_SMOKE_SHOTS, `${name}.png`), fullPage }) : null; // 화면 모양 확인용(선택)
+  const savedState = () => page.getByTestId("speaker-save-state").filter({ hasText: "수정 내용 저장됨" }).waitFor();
+  const selectInBox = async (boxId, startChar, endChar) => {
+    await page.getByTestId(`box-text-${boxId}`).evaluate((el, [from, to]) => {
+      const locate = (offset) => {                                             // 형광펜으로 글 노드가 쪼개져 있어도 글자 위치로 찾는다
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let node;
+        let count = 0;
+        while ((node = walker.nextNode())) {
+          if (offset <= count + node.textContent.length) return [node, offset - count];
+          count += node.textContent.length;
+        }
+        return [el, 0];
+      };
+      const range = document.createRange();
+      range.setStart(...locate(from));
+      range.setEnd(...locate(to));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }, [startChar, endChar]);
+    await page.getByTestId(`box-text-${boxId}`).dispatchEvent("mouseup", { bubbles: true });
+  };
+  assert.equal(speakerPosts.length, 0, "열기만 해서는 저장하지 않는다");
+  assert.equal(await page.getByTestId("text-toolbar").count(), 0, "드래그하기 전에는 수정바가 없다");
+  await selectInBox("seg-1", 0, 6);                                            // "AI 기자가"
+  await page.getByTestId("text-toolbar").waitFor();
+  assert.equal(await page.getByTestId("mark-yellow").count() + await page.getByTestId("mark-orange").count() + await page.getByTestId("mark-blue").count(), 3);
+  assert.equal(await wave.getAttribute("aria-valuenow"), "2", "글을 드래그하는 동안 박스가 재생·이동하지 않는다(앞 단계에서 2초로 옮겨 둠)");
+  await shot("text-toolbar", false);                                           // 창 크기를 바꾸지 않는 사진(수정바가 닫히지 않는다)
+  await page.getByTestId("mark-orange").click();
+  await savedState();
+  assert.deepEqual(speakerPosts.at(-1).marks, { "seg-1": [{ s: 0, e: 6, c: "orange" }] });
+  assert.equal(await page.getByTestId("text-toolbar").count(), 0, "칠하면 수정바가 닫힌다");
+  assert.equal(await page.getByTestId("box-text-seg-1").locator("mark").innerText(), "AI 기자가");
+  assert.equal(await page.locator("#unified_text_seg-1 mark").first().innerText(), "AI 기자가", "오른쪽 통글에도 형광펜이 보인다");
+  await selectInBox("seg-2", 0, 2);
+  await page.getByTestId("mark-blue").click();
+  await savedState();
+  assert.deepEqual(speakerPosts.at(-1).marks["seg-2"], [{ s: 0, e: 2, c: "blue" }]);
+  // 칠한 부분의 일부를 드래그해 지우기: "AI 기자가" 중 "기자" 부분을 지운다(주황이 둘로 나뉜다)
+  await page.getByTestId("box-text-seg-1").evaluate((el) => {
+    const mark = el.querySelector("mark").firstChild;
+    const range = document.createRange();
+    range.setStart(mark, 3);
+    range.setEnd(mark, 5);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+  await page.getByTestId("box-text-seg-1").dispatchEvent("mouseup", { bubbles: true });
+  await page.getByTestId("mark-clear").click();
+  await savedState();
+  assert.deepEqual(speakerPosts.at(-1).marks["seg-1"], [{ s: 0, e: 3, c: "orange" }, { s: 5, e: 6, c: "orange" }]);
+  step("텍스트 수정바: 글을 드래그하면 형광펜 색·지우기·수정 막대가 뜨고, 칠한 형광펜이 저장되며 오른쪽 통글에도 보인다");
+
+  // 수정: 드래그한 부분이 선택된 채 글 수정칸이 열리고, 저장하면 박스 글과 오른쪽 통글·복사가 고친 글이 된다
+  await selectInBox("seg-1", 0, 3);
+  await page.getByTestId("text-edit-start").click();
+  const textBox = page.getByTestId("text-editor-input");
+  await textBox.waitFor();
+  assert.equal(await textBox.evaluate((el) => el.value.slice(el.selectionStart, el.selectionEnd)), "AI ", "드래그한 부분이 선택돼 있다");
+  await textBox.fill("인공지능 기자가 나온다는 얘기 들어보셨죠.");
+  await page.getByTestId("text-editor-save").click();
+  await savedState();
+  assert.equal(speakerPosts.at(-1).texts["seg-1"], "인공지능 기자가 나온다는 얘기 들어보셨죠.");
+  assert.equal(speakerPosts.at(-1).marks?.["seg-1"], undefined, "글을 고치면 그 박스의 형광펜은 지워진다");
+  assert.deepEqual(speakerPosts.at(-1).marks["seg-2"], [{ s: 0, e: 2, c: "blue" }], "다른 박스의 형광펜은 그대로");
+  assert.match(await page.getByTestId("box-text-seg-1").innerText(), /^인공지능 기자가/);
+  assert.match(await unified.innerText(), /^인공지능 기자가 나온다는 얘기 들어보셨죠\. 네, 들어봤습니다/);
+  await page.getByRole("button", { name: "전체 복사" }).click();
+  assert.match(await page.evaluate(() => navigator.clipboard.readText()), /^인공지능 기자가 나온다는 얘기 들어보셨죠\. 네, 들어봤습니다/);
+  await selectInBox("seg-1", 0, 2);                                            // 취소: Esc
+  await page.getByTestId("text-edit-start").click();
+  await page.getByTestId("text-editor-input").fill("버릴 글");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByTestId("text-editor").count(), 0);
+  assert.match(await page.getByTestId("box-text-seg-1").innerText(), /^인공지능 기자가/, "Esc 로 취소하면 고치지 않는다");
+  await selectInBox("seg-1", 0, 2);                                            // 원문으로
+  await page.getByTestId("text-edit-start").click();
+  await page.getByTestId("text-editor-original").click();
+  await page.getByTestId("text-editor-save").click();
+  await savedState();
+  assert.equal(speakerPosts.at(-1).texts, undefined, "원문과 같아지면 고친 기록이 없다");
+  assert.match(await page.getByTestId("box-text-seg-1").innerText(), /^AI 기자가 나온다는/);
+  await selectInBox("seg-2", 0, 2);                                            // 남은 형광펜을 지워 다음 단계를 깨끗한 상태로 시작한다
+  await page.getByTestId("mark-clear").click();
+  await savedState();
+  assert.equal(speakerPosts.at(-1).marks, undefined, "형광펜을 다 지우면 기록도 사라진다");
+  step("텍스트 수정바: 수정(드래그한 부분 선택된 채로 열림, Ctrl 없이 저장·Esc 취소·원문으로), 글을 고치면 그 박스의 형광펜만 지워진다");
+
   // 8. 화자 프로필: CLOVA 가 나눈 박스는 그대로 두고 이름만 바꾼다. 프로필 아이콘에서만 작은 메뉴가 열린다.
   const boxNames = async () => [await page.getByTestId("speaker-name-seg-1").innerText(), await page.getByTestId("speaker-name-seg-2").innerText()];
-  const shot = (name) => process.env.UI_SMOKE_SHOTS ? page.screenshot({ path: path.join(process.env.UI_SMOKE_SHOTS, `${name}.png`), fullPage: true }) : null; // 화면 모양 확인용(선택)
-  const savedState = () => page.getByTestId("speaker-save-state").filter({ hasText: "수정 내용 저장됨" }).waitFor();
   const boxesText = (n) => page.waitForFunction((count) => new RegExp(`\\(${count}개 단락\\)`).test(document.body.innerText), n);
   await page.getByTestId("speaker-edit-start").waitFor();
-  assert.equal(speakerPosts.length, 0, "열기만 해서는 저장하지 않는다");
   assert.match(await page.getByTestId("speaker-name-seg-1").innerText(), /화자 1/, "박스 맨 앞에 프로필 아이콘과 이름");
   assert.equal(await page.getByTestId("speaker-editor").count(), 0, "누르기 전에는 메뉴가 닫혀 있다");
   assert.equal(await page.getByText("이 단락은 누가 말했나요?").count(), 0, "안내 문구는 없다");

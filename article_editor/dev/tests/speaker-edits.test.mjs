@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  addSpeaker, applySpeakerEdits, assignByName, assignDialogues, emptyEdits, groupByOriginalSpeaker, isEdited, mergeSpeaker, renameSpeaker, renameSpeakerSmart, resolveKey, sanitizeEdits, speakerList, speakerRoster
+  addMark, addSpeaker, applySpeakerEdits, applyTextEdits, removeMarks, resetSpeakers, segmentsOf, setBoxText, assignByName, assignDialogues, emptyEdits, groupByOriginalSpeaker, isEdited, mergeSpeaker, renameSpeaker, renameSpeakerSmart, resolveKey, sanitizeEdits, speakerList, speakerRoster
 } from "../../../src/lib/speakerEdits.js";
 
 // 1명이 말했는데 CLOVA 가 화자 1·2·3 으로 나눈 녹취
@@ -118,4 +118,48 @@ test("박스: CLOVA 가 나눈 대로 유지되고, 이름을 고치거나 합�
   assert.deepEqual(boxes(merged), [["김 기자", "ab", "하나 둘"], ["김 기자", "c", "셋"]]);       // 박스는 그대로, 이름만 같다
   assert.deepEqual(boxes(assignDialogues(emptyEdits(), ["a", "b"], "2")).map((box) => box[0]), ["화자 2", "화자 2"]);
   assert.deepEqual(groupByOriginalSpeaker([{ id: "x", speaker: "9", speakerName: "화자 9", text: "  ", timestamp: 0 }], []), [], "빈 발언은 박스를 만들지 않는다");
+});
+
+test("형광펜: 글을 조각으로 나누고, 겹치면 남는 부분만 남기며, 같은 색이 맞닿으면 합친다", () => {
+  const body = "가나다라마바사";
+  let edits = addMark(emptyEdits(), "b1", 1, 3, "yellow", body.length);
+  assert.deepEqual(segmentsOf(body, edits.marks.b1).map((p) => [p.text, p.color]), [["가", null], ["나다", "yellow"], ["라마바사", null]]);
+  assert.equal(segmentsOf(body, edits.marks.b1).map((p) => p.text).join(""), body, "조각을 이으면 원래 글");
+  edits = addMark(edits, "b1", 2, 5, "green", body.length);                       // 노랑 일부를 덮는다
+  assert.deepEqual(edits.marks.b1, [{ s: 1, e: 2, c: "yellow" }, { s: 2, e: 5, c: "green" }]);
+  edits = addMark(edits, "b1", 5, 7, "green", body.length);                       // 같은 색이 맞닿으면 합친다
+  assert.deepEqual(edits.marks.b1, [{ s: 1, e: 2, c: "yellow" }, { s: 2, e: 7, c: "green" }]);
+  edits = removeMarks(edits, "b1", 3, 4);                                         // 가운데를 지우면 둘로 나뉜다
+  assert.deepEqual(edits.marks.b1, [{ s: 1, e: 2, c: "yellow" }, { s: 2, e: 3, c: "green" }, { s: 4, e: 7, c: "green" }]);
+  assert.equal(removeMarks(edits, "b1", 0, 0), edits, "지울 게 없으면 그대로");
+  assert.equal(addMark(emptyEdits(), "b1", 3, 3, "yellow", 7).marks, undefined, "빈 구간·글 밖은 무시");
+  assert.equal(addMark(emptyEdits(), "b1", 0, 3, "없는색", 7).marks, undefined);
+  edits = removeMarks(removeMarks(removeMarks(edits, "b1", 0, 7), "b1", 0, 7), "b1", 0, 7);
+  assert.equal(edits.marks, undefined, "다 지우면 기록도 사라진다");
+});
+
+test("글 수정: 고친 글이 박스 글을 대신하고, 원래 글과 같아지면 기록이 사라지며, 글을 고치면 그 박스의 형광펜은 지운다", () => {
+  const boxes = [{ id: "b1", text: "원래 글" }, { id: "b2", text: "둘째" }];
+  let edits = addMark(emptyEdits(), "b1", 0, 2, "pink", 4);
+  edits = addMark(edits, "b2", 0, 1, "blue", 2);
+  edits = setBoxText(edits, "b1", "고친 글", "원래 글");
+  assert.deepEqual(edits.marks, { b2: [{ s: 0, e: 1, c: "blue" }] }, "b1 의 형광펜만 지운다");
+  const applied = applyTextEdits(boxes, edits);
+  assert.deepEqual(applied.map((b) => [b.text, b.originalText, b.marks.length]), [["고친 글", "원래 글", 0], ["둘째", "둘째", 1]]);
+  edits = setBoxText(edits, "b1", "원래 글", "원래 글");
+  assert.equal(edits.texts, undefined, "원래 글로 돌아가면 고친 기록이 없다");
+  assert.deepEqual(boxes.map((b) => b.text), ["원래 글", "둘째"], "원본 배열은 바뀌지 않는다");
+});
+
+test("화자만 원래대로: 글 수정과 형광펜은 남는다. 코어에서 받은 글·형광펜은 걸러서 받는다", () => {
+  let edits = renameSpeaker(emptyEdits(), "1", "김 기자");
+  edits = setBoxText(addMark(edits, "b1", 0, 2, "yellow", 5), "b2", "고침", "원본");
+  const reset = resetSpeakers(edits);
+  assert.deepEqual(reset.names, {});
+  assert.deepEqual(reset.texts, { b2: "고침" });
+  assert.deepEqual(reset.marks, { b1: [{ s: 0, e: 2, c: "yellow" }] });
+  const clean = sanitizeEdits({ names: { 1: "김" }, texts: { a: "글", b: "  ", c: 5 }, marks: { a: [{ s: 0, e: 2, c: "yellow" }, { s: 2, e: 1, c: "yellow" }, { s: 0, e: 1, c: "없는색" }, null], b: "x" } });
+  assert.deepEqual(clean.texts, { a: "글" });
+  assert.deepEqual(clean.marks, { a: [{ s: 0, e: 2, c: "yellow" }] });
+  assert.equal(sanitizeEdits({ names: { 1: "김" } }).texts, undefined, "쓰이지 않으면 필드가 없다");
 });

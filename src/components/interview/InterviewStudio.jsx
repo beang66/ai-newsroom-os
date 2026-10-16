@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript, saveSpeakerEdits } from "../../services/sttService";
-import { plainText } from "../../lib/transcriptText.js";
 import { SpeakerEditBar, SpeakerHeaderActions, SpeakerProfileMenu } from "./SpeakerProfiles.jsx";
-import { applySpeakerEdits, assignByName, assignDialogues, emptyEdits, groupByOriginalSpeaker, isEdited, renameSpeakerSmart, sanitizeEdits, speakerIndex, speakerList, speakerRoster } from "../../lib/speakerEdits.js";
+import { BoxText, SelectionToolbar } from "./BoxTools.jsx";
+import { readBoxSelection } from "../../lib/boxSelection.js";
+import { MARK_COLORS, addMark, applySpeakerEdits, assignByName, assignDialogues, buildBoxes, emptyEdits, isEdited, removeMarks, renameSpeakerSmart, resetSpeakers, sanitizeEdits, segmentsOf, setBoxText, speakerIndex, speakerList, speakerRoster } from "../../lib/speakerEdits.js";
 import {
   Upload,
   Play,
@@ -53,10 +54,17 @@ export default function InterviewStudio({ onReturnToArticle }) {
   const [pickedIds, setPickedIds] = useState([]);
   const [editMode, setEditMode] = useState(false); // 화자 수정하기: 재생을 멈추고 여러 단락을 골라 한 번에 바꾼다
   const [openParagraphId, setOpenParagraphId] = useState(null); // 프로필을 눌러 이름 입력칸이 열린 단락
+  const [selection, setSelection] = useState(null); // 박스 글을 드래그해 선택한 곳(텍스트 수정바 위치)
+  const [editingBoxId, setEditingBoxId] = useState(null); // 글 수정칸이 열린 박스
+  const [editSelection, setEditSelection] = useState(null); // 수정칸을 열 때 미리 선택해 둘 글자 범위
   const dialogues = useMemo(() => applySpeakerEdits(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
   const speakers = useMemo(() => speakerList(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
   // 화자 고르기 목록: 고친 이름과 처음 CLOVA 가 붙인 이름이 함께 남는다
   const roster = useMemo(() => speakerRoster(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
+  // 화면의 화자 박스: CLOVA 가 나눈 박스(원래 화자가 같은 연속 발언)에 고친 이름·글·형광펜을 덧씌운 것.
+  // 이름을 고치거나 같은 이름으로 바꿔도 박스는 그대로이고 이름만 바뀐다.
+  const allBoxes = useMemo(() => buildBoxes(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
+  const boxesPlainText = () => allBoxes.map((box) => box.text.trim()).filter(Boolean).join(" ");
   const [sttStatus, setSttStatus] = useState("대기 중");
   const [currentTranscript, setCurrentTranscript] = useState(null);
 
@@ -138,7 +146,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // AI 요약 생성 함수
   const handleGenerateSummary = (transcriptObj) => {
-    const target = transcriptObj || currentTranscript;
+    const target = transcriptObj || (currentTranscript ? { ...currentTranscript, text: boxesPlainText() || currentTranscript.text } : null); // 재분석은 고친 글로
     if (!target) return;
     setIsAnalyzing(true);
     setAnalysisError("");
@@ -172,6 +180,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
     setPickedIds([]);
     setEditMode(false);
     setOpenParagraphId(null);
+    setEditingBoxId(null);
+    setSelection(null);
     setAiSummary(null);
     setAnalysisError("");
     setEvidenceQuery("");
@@ -233,6 +243,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
       setPickedIds([]);
       setEditMode(false);
       setOpenParagraphId(null);
+      setEditingBoxId(null);
+      setSelection(null);
       setSelectedDialogueId(result.dialogues[0]?.id ?? null);
       setCurrentTranscript(result.transcript);
       setSttStatus(result.dialogues.length > 0 ? "저장된 전사 불러옴" : "저장된 전사 (발언 없음)");
@@ -279,7 +291,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // 통 텍스트 전체 복사
   const handleCopyAllText = () => {
-    const fullText = plainText(dialogues);
+    const fullText = boxesPlainText();
     navigator.clipboard.writeText(fullText);
     setIsAllCopied(true);
     setTimeout(() => setIsAllCopied(false), 2000);
@@ -305,7 +317,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // TXT 파일 다운로드
   const handleDownloadTxt = () => {
-    const content = plainText(dialogues);
+    const content = boxesPlainText();
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -392,8 +404,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
     const selectedText = selection?.toString()?.trim();
     if (selectedText && selectedText.length >= 2) {
       setEvidenceQuery(selectedText);
-      const matched = dialogues.find((d) =>
-        d.text.toLowerCase().includes(selectedText.toLowerCase())
+      const matched = allBoxes.find((box) =>
+        box.text.toLowerCase().includes(selectedText.toLowerCase())
       );
       if (matched) {
         setSelectedDialogueId(matched.id);
@@ -416,19 +428,12 @@ export default function InterviewStudio({ onReturnToArticle }) {
   }, [currentTime, dialogues]);
 
   // 검색 필터 적용된 발언 목록
-  const filteredDialogues = useMemo(() => {
-    if (!searchKeyword.trim()) return dialogues;
-    const query = searchKeyword.toLowerCase();
-    return dialogues.filter((item) => {
-      return (
-        item.text.toLowerCase().includes(query) ||
-        item.speakerName.toLowerCase().includes(query)
-      );
-    });
-  }, [dialogues, searchKeyword]);
-
-  // CLOVA 가 나눈 화자 박스(원래 화자가 같은 연속 발언). 이름을 고치거나 같은 이름으로 바꿔도 박스는 그대로이고 이름만 바뀐다.
-  const paragraphs = useMemo(() => groupByOriginalSpeaker(filteredDialogues, baseDialogues), [filteredDialogues, baseDialogues]);
+  // 검색은 박스 글과 화자 이름으로 거른다.
+  const paragraphs = useMemo(() => {
+    const query = searchKeyword.trim().toLowerCase();
+    if (!query) return allBoxes;
+    return allBoxes.filter((box) => box.text.toLowerCase().includes(query) || box.speakerName.toLowerCase().includes(query));
+  }, [allBoxes, searchKeyword]);
 
   // 화자 수정: 화면에 바로 반영하고, 저장된 녹취면 코어 암호화 저장소에도 보낸다(발언 원본은 그대로 둔다)
   const commitSpeakerEdits = (next) => {
@@ -465,18 +470,61 @@ export default function InterviewStudio({ onReturnToArticle }) {
     setOpenParagraphId(null);
   };
 
+  // 텍스트 수정바: 왼쪽 박스의 글을 드래그하면 선택 위치 위에 형광펜·수정 막대가 뜬다
+  useEffect(() => {
+    const hide = () => setSelection(null);
+    const onSelectionChange = () => {
+      const current = window.getSelection();
+      if (!current || current.isCollapsed) hide();
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      document.removeEventListener("selectionchange", onSelectionChange);
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
+  }, []);
+  const refreshSelection = () => setSelection(editMode ? null : readBoxSelection());
+  const clearSelection = () => {
+    window.getSelection()?.removeAllRanges();
+    setSelection(null);
+  };
+  const selectedBox = selection ? allBoxes.find((box) => box.id === selection.boxId) : null;
+  const markSelection = (color) => {
+    if (!selectedBox) return;
+    commitSpeakerEdits(addMark(speakerEdits, selectedBox.id, selection.start, selection.end, color, selectedBox.text.length));
+    clearSelection();
+  };
+  const unmarkSelection = () => {
+    if (!selectedBox) return;
+    commitSpeakerEdits(removeMarks(speakerEdits, selectedBox.id, selection.start, selection.end));
+    clearSelection();
+  };
+  const startTextEdit = () => {
+    if (!selectedBox) return;
+    setEditSelection({ start: selection.start, end: selection.end });
+    setEditingBoxId(selectedBox.id);
+    clearSelection();
+  };
+  const saveBoxText = (box, value) => {
+    commitSpeakerEdits(setBoxText(speakerEdits, box.id, value, box.originalText));
+    setEditingBoxId(null);
+  };
+
   // 핵심요약에서 드래그된 근거 매칭 세그먼트 ID Set
   const evidenceMatchedIds = useMemo(() => {
     if (!evidenceQuery.trim()) return new Set();
     const q = evidenceQuery.toLowerCase();
     const matched = new Set();
-    dialogues.forEach((d) => {
-      if (d.text.toLowerCase().includes(q)) {
-        matched.add(d.id);
+    allBoxes.forEach((box) => {
+      if (box.text.toLowerCase().includes(q)) {
+        matched.add(box.id);
       }
     });
     return matched;
-  }, [dialogues, evidenceQuery]);
+  }, [allBoxes, evidenceQuery]);
 
   // STT 처리 완료 여부 (하단 큰 결과 박스 표시 조건)
   const hasSource = Boolean(audioUrl || storedSource);
@@ -549,7 +597,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
               if (aiSummary?.summary) {
                 exportParts.push(`[AI 핵심 요약]\n${aiSummary.summary}`);
               }
-              const exportText = dialogues.map((d) => d.text).join("\n\n");
+              const exportText = allBoxes.map((box) => box.text).join("\n\n");
               if (exportText) {
                 exportParts.push(`[통합 전사 전문]\n${exportText}`);
               }
@@ -994,7 +1042,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
                       ({paragraphs.length}개 단락)
                     </span>
                   </div>
-                  <SpeakerHeaderActions editMode={editMode} edited={isEdited(speakerEdits)} saveState={speakerSave} onStart={startSpeakerEdit} onReset={() => commitSpeakerEdits(emptyEdits())} />
+                  <SpeakerHeaderActions editMode={editMode} edited={isEdited(speakerEdits)} saveState={speakerSave} onStart={startSpeakerEdit} onReset={() => commitSpeakerEdits(resetSpeakers(speakerEdits))} />
                 </div>
 
                 {/* 화자 수정하기: 재생을 멈추고 단락 박스를 여러 개 골라 화자 이름을 한 번에 바꾼다 */}
@@ -1010,8 +1058,11 @@ export default function InterviewStudio({ onReturnToArticle }) {
                   />
                 )}
 
+                {/* 텍스트 수정바: 글을 드래그하면 선택 위치 위에 뜬다 */}
+                {selection && !editMode && <SelectionToolbar selection={selection} onMark={markSelection} onClear={unmarkSelection} onEdit={startTextEdit} />}
+
                 {/* 화자별 세그먼트 대화 목록 */}
-                <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1" onMouseUp={() => setTimeout(refreshSelection, 0)} onKeyUp={refreshSelection}>
                   {paragraphs.map((item) => {
                     const isSelected = item.ids.includes(selectedDialogueId);
                     const isCurrentActive = item.ids.includes(activeDialogueId);
@@ -1020,7 +1071,11 @@ export default function InterviewStudio({ onReturnToArticle }) {
                     return (
                       <div
                         key={`speaker_segment_${item.id}`}
-                        onClick={() => (editMode ? togglePicked(item.id) : handleSelectDialogue(item.timestamp, item.id))}
+                        onClick={() => {
+                          if (editMode) return togglePicked(item.id);
+                          if (editingBoxId === item.id || window.getSelection()?.toString()) return; // 글을 드래그했거나 고치는 중에는 이동·재생하지 않는다
+                          return handleSelectDialogue(item.timestamp, item.id);
+                        }}
                         className={`group p-3 rounded-xl transition cursor-pointer ${editMode && pickedIds.includes(item.id) ? "ring-2 ring-slate-900 " : ""}${
                           isCurrentActive
                             ? "bg-white border-2 border-slate-900 shadow-sm ring-2 ring-slate-900/10"
@@ -1093,9 +1148,13 @@ export default function InterviewStudio({ onReturnToArticle }) {
                         </div>
 
                         {/* 발화 텍스트 */}
-                        <p className="text-xs text-slate-700 leading-relaxed font-sans pl-1">
-                          {item.text}
-                        </p>
+                        <BoxText
+                          box={item}
+                          editing={editingBoxId === item.id}
+                          selection={editSelection}
+                          onSave={(value) => saveBoxText(item, value)}
+                          onCancel={() => setEditingBoxId(null)}
+                        />
                       </div>
                     );
                   })}
@@ -1152,28 +1211,39 @@ export default function InterviewStudio({ onReturnToArticle }) {
                 {/* 통합 텍스트: 통글(이어진 한 덩어리 글) 하나로 고정 */}
                 <div className="max-h-[580px] overflow-y-auto pr-2 space-y-3.5 text-xs md:text-sm leading-relaxed select-text font-sans scrollbar-thin" data-testid="unified-text">
                   {(() => {
-                    // 발언 하나의 글자(검색어·요약 근거 강조 포함). 눌러서 이동·재생하지 않는다 — 다시듣기는 왼쪽 박스와 위쪽 파형에서 한다.
+                    // 화자 박스 하나의 글(검색어·요약 근거·형광펜 표시 포함). 눌러서 이동·재생하지 않는다 — 다시듣기는 왼쪽 박스와 위쪽 파형에서 한다.
                     const segmentSpan = (item) => {
-                      const isSelected = selectedDialogueId === item.id;
+                      const isSelected = item.ids.includes(selectedDialogueId);
                       const isEvidence = evidenceMatchedIds.has(item.id);
                       const isMatchKeyword = searchKeyword.trim() && item.text.toLowerCase().includes(searchKeyword.toLowerCase());
-                      const mark = (query) => item.text.split(new RegExp(`(${query})`, "gi")).map((part, i) =>
-                        part.toLowerCase() === query.toLowerCase() ? (
-                          <mark key={i} className="bg-amber-200 text-slate-950 font-bold px-0.5 rounded">{part}</mark>
-                        ) : part
-                      );
+                      const query = isMatchKeyword ? searchKeyword.trim() : isEvidence && evidenceQuery ? evidenceQuery.trim() : "";
+                      const queryMarks = (value) => {
+                        if (!query) return value;
+                        const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                        return value.split(new RegExp(`(${escaped})`, "gi")).map((part, i) =>
+                          part.toLowerCase() === query.toLowerCase() ? (
+                            <mark key={i} className="bg-amber-200 text-slate-950 font-bold px-0.5 rounded">{part}</mark>
+                          ) : part
+                        );
+                      };
                       return (
                         <span
                           key={`unified_text_${item.id}`}
                           id={`unified_text_${item.id}`}
                           className={`transition-colors ${isSelected ? "text-slate-950 font-medium" : "text-slate-700"}`}
                         >
-                          {isMatchKeyword ? mark(searchKeyword) : isEvidence && evidenceQuery ? mark(evidenceQuery) : item.text}
+                          {segmentsOf(item.text, item.marks).map((part) =>
+                            part.color ? (
+                              <mark key={part.start} style={{ background: MARK_COLORS[part.color].bg }} className="rounded-sm text-slate-900">{queryMarks(part.text)}</mark>
+                            ) : (
+                              <React.Fragment key={part.start}>{queryMarks(part.text)}</React.Fragment>
+                            )
+                          )}
                         </span>
                       );
                     };
                     const spaced = (items) => items.flatMap((item, index) => (index ? [" ", segmentSpan(item)] : [segmentSpan(item)]));
-                    return <p className="leading-relaxed">{spaced(filteredDialogues)}</p>;
+                    return <p className="leading-relaxed">{spaced(paragraphs)}</p>;
                   })()}
                 </div>
               </div>

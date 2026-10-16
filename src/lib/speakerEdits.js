@@ -24,7 +24,7 @@ export function resolveKey(key, merge = {}) {
 }
 
 /** 코어에서 받은 값이 어떤 모양이어도 안전한 수정 객체로 만든다(문자열 값만 남긴다). */
-export function sanitizeEdits(raw) {
+function sanitizeSpeakerEdits(raw) {
   const clean = emptyEdits();
   for (const field of Object.keys(clean)) {
     const source = raw && typeof raw === "object" ? raw[field] : null;
@@ -165,3 +165,117 @@ export function groupByOriginalSpeaker(dialogues, baseDialogues) {
   }
   return boxes;
 }
+
+// ── 텍스트 수정과 형광펜: 화자 수정처럼 CLOVA 원본 위에 덧씌운다. 키는 화자 박스의 id(박스 첫 발언의 id) ──────────────
+//  - texts: { 박스 id: 고친 글 }                      박스 전체 글을 대신한다
+//  - marks: { 박스 id: [{ s, e, c }] }               글자 위치 [s, e) 에 형광펜 색 c. 글을 고치면 그 박스의 형광펜은 지운다
+export const MARK_COLORS = {
+  yellow: { label: "노랑", bg: "#FFF1A8" },
+  orange: { label: "주황", bg: "#FFD9B0" },
+  green: { label: "초록", bg: "#CDEFD4" },
+  blue: { label: "파랑", bg: "#CFE3FF" },
+  pink: { label: "분홍", bg: "#FFD3E2" },
+};
+const TEXT_MAX = 60_000;
+
+/** 코어에서 받은 값이 어떤 모양이어도 안전한 수정 객체로 만든다. 글·형광펜은 쓰인 것만 남긴다. */
+export function sanitizeEdits(raw) {
+  const clean = sanitizeSpeakerEdits(raw);
+  const texts = raw && typeof raw === "object" && raw.texts && typeof raw.texts === "object" && !Array.isArray(raw.texts) ? raw.texts : {};
+  for (const [id, value] of Object.entries(texts)) {
+    if (id && typeof value === "string" && value.trim() && value.length <= TEXT_MAX) (clean.texts ||= {})[id] = value;
+  }
+  const marks = raw && typeof raw === "object" && raw.marks && typeof raw.marks === "object" && !Array.isArray(raw.marks) ? raw.marks : {};
+  for (const [id, list] of Object.entries(marks)) {
+    if (!id || !Array.isArray(list)) continue;
+    const valid = list.filter((m) => m && Number.isInteger(m.s) && Number.isInteger(m.e) && m.s >= 0 && m.e > m.s && m.e <= TEXT_MAX && own(MARK_COLORS, m.c))
+      .map((m) => ({ s: m.s, e: m.e, c: m.c }));
+    if (valid.length) (clean.marks ||= {})[id] = valid;
+  }
+  return clean;
+}
+
+/** 발언 박스 목록에 고친 글을 덧씌운다. 박스마다 원래 글(originalText)과 형광펜(marks)도 함께 돌려준다. */
+export function applyTextEdits(boxes, edits) {
+  const texts = (edits && edits.texts) || {};
+  const marks = (edits && edits.marks) || {};
+  return boxes.map((box) => ({
+    ...box,
+    originalText: box.text,
+    text: own(texts, box.id) ? texts[box.id] : box.text,
+    marks: marks[box.id] || [],
+  }));
+}
+
+/** 글을 형광펜 조각으로 나눈다: [{ text, start, color|null }] — 이어 붙이면 원래 글이 된다. */
+export function segmentsOf(textValue, marks) {
+  const sorted = [...(marks || [])].filter((m) => m.s < textValue.length).sort((a, b) => a.s - b.s);
+  const parts = [];
+  let cursor = 0;
+  for (const m of sorted) {
+    const start = Math.max(m.s, cursor);
+    const end = Math.min(m.e, textValue.length);
+    if (end <= start) continue;
+    if (start > cursor) parts.push({ text: textValue.slice(cursor, start), start: cursor, color: null });
+    parts.push({ text: textValue.slice(start, end), start, color: m.c });
+    cursor = end;
+  }
+  if (cursor < textValue.length) parts.push({ text: textValue.slice(cursor), start: cursor, color: null });
+  return parts.length ? parts : [{ text: textValue, start: 0, color: null }];
+}
+
+// 형광펜 목록에서 [s, e) 구간을 비운다(겹친 형광펜은 남는 부분만 남긴다).
+const carve = (list, s, e) => list.flatMap((m) => {
+  if (m.e <= s || m.s >= e) return [m];
+  return [m.s < s ? { ...m, e: s } : null, m.e > e ? { ...m, s: e } : null].filter(Boolean);
+});
+// 같은 색이 맞닿아 있으면 하나로 합친다.
+const joinSame = (list) => [...list].sort((a, b) => a.s - b.s).reduce((out, m) => {
+  const last = out[out.length - 1];
+  if (last && last.c === m.c && last.e >= m.s) last.e = Math.max(last.e, m.e);
+  else out.push({ ...m });
+  return out;
+}, []);
+const withMarks = (edits, boxId, list) => {
+  const marks = { ...(edits.marks || {}) };
+  if (list.length) marks[boxId] = list;
+  else delete marks[boxId];
+  const next = { ...edits, marks };
+  if (!Object.keys(marks).length) delete next.marks;
+  return next;
+};
+
+/** 글자 위치 [start, end) 에 형광펜을 칠한다. */
+export function addMark(edits, boxId, start, end, color, length) {
+  const s = Math.max(0, start);
+  const e = Math.min(length, end);
+  if (e <= s || !own(MARK_COLORS, color)) return edits;
+  const list = joinSame([...carve((edits.marks || {})[boxId] || [], s, e), { s, e, c: color }]);
+  return withMarks(edits, boxId, list);
+}
+
+/** 글자 위치 [start, end) 의 형광펜을 지운다. */
+export function removeMarks(edits, boxId, start, end) {
+  const current = (edits.marks || {})[boxId] || [];
+  const list = carve(current, start, end);
+  return list.length === current.length && list.every((m, i) => m === current[i]) ? edits : withMarks(edits, boxId, list);
+}
+
+/** 박스의 글을 고친다. 원래 글과 같아지면 고친 기록을 지운다. 글을 고치면 그 박스의 형광펜은 위치가 어긋나므로 지운다. */
+export function setBoxText(edits, boxId, value, originalText) {
+  const texts = { ...(edits.texts || {}) };
+  if (value === originalText) delete texts[boxId];
+  else texts[boxId] = value;
+  let next = { ...edits, texts };
+  if (!Object.keys(texts).length) delete next.texts;
+  next = withMarks(next, boxId, []);
+  return next;
+}
+
+/** 화자 이름·합치기·지정만 원래대로(글 수정과 형광펜은 남긴다). */
+export function resetSpeakers(edits) {
+  return { ...edits, names: {}, merge: {}, assign: {} };
+}
+
+/** 화면의 화자 박스: CLOVA 박스에 고친 화자 이름·글·형광펜을 모두 덧씌운 것. */
+export const buildBoxes = (baseDialogues, edits) => applyTextEdits(groupByOriginalSpeaker(applySpeakerEdits(baseDialogues, edits), baseDialogues), edits);

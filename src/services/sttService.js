@@ -4,7 +4,9 @@
  * 데스크톱 앱에서도 같은 경로로 동작하고, 녹음·발언은 코어 암호화 저장소에만 남는다.
  */
 import { createTranscriptModel } from "../models/transcriptModel";
-import { transcribeAudio, analyzeInterview, listTranscripts, loadTranscript } from "../api/editorial.js";
+import { transcribeAudio, analyzeInterview, listTranscripts, loadTranscript, saveSpeakerEdits } from "../api/editorial.js";
+
+export { saveSpeakerEdits };
 
 const MAX_AUDIO_BYTES = 40_000_000; // 코어 전사 한도(core/ai/transcribe.py MAX_AUDIO)와 같게 — 올리기 전에 알려 준다
 
@@ -31,6 +33,7 @@ export async function requestSTT(file) {
     text: result.text || transcript?.text || "",
     duration: result.duration || durationOf(transcript),
     transcript,
+    transcriptId: result.transcriptId || null, // 화자 수정을 이 녹취에 저장할 때 쓴다
     engine: result.engine || transcript?.metadata?.sourceEngine || "clova"
   };
 }
@@ -73,6 +76,8 @@ export async function loadStoredTranscript(id) {
   // 분석 서버는 글자만 쓴다 — 저장본에는 전사 원본이 없어 발언을 이어 붙인다
   const transcript = { text: dialogues.map((item) => item.text).join("\n"), segments: [] };
   return {
+    id: result.id || id,
+    speakerEdits: result.speakerEdits || {},
     dialogues,
     text: transcript.text,
     duration: result.duration || 0,

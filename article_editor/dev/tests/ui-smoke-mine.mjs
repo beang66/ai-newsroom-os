@@ -110,7 +110,12 @@ try {
   await page.route("**/api/transcripts", (route) => json(route, { transcripts: [
     { id: TRANSCRIPT_ID, filename: "smoke.m4a", mimeType: "audio/mp4", duration: 14, createdAt: "2026-10-13T04:16:31.168Z", bytes: 4, segments: 3 },
   ] }));
-  await page.route(`**/api/transcripts/${TRANSCRIPT_ID}`, (route) => json(route, { id: TRANSCRIPT_ID, filename: "smoke.m4a", mimeType: "audio/mp4", dialogues: STT_DIALOGUES, duration: 14, createdAt: "2026-10-13T04:16:31.168Z" }));
+  const speakerPosts = []; // 화자 수정 저장 요청(코어가 받은 내용)
+  await page.route(`**/api/transcripts/${TRANSCRIPT_ID}`, (route) => json(route, { id: TRANSCRIPT_ID, filename: "smoke.m4a", mimeType: "audio/mp4", dialogues: STT_DIALOGUES, duration: 14, createdAt: "2026-10-13T04:16:31.168Z", speakerEdits: speakerPosts.at(-1) ?? {} }));
+  await page.route(`**/api/transcripts/${TRANSCRIPT_ID}/speakers`, (route) => {
+    speakerPosts.push(route.request().postDataJSON().speakerEdits);
+    return json(route, { id: TRANSCRIPT_ID, speakerEdits: speakerPosts.at(-1) });
+  });
   await page.route(`**/api/transcripts/${TRANSCRIPT_ID}/audio`, (route) => route.fulfill({ status: 200, contentType: "audio/mp4", body: Buffer.from([0, 0, 0, 0]) }));
 
   const step = (name) => console.log(`  ✓ ${name}`);
@@ -216,6 +221,53 @@ try {
   assert.match(copied, /\[화자 1\] 00:00:00\nAI 기자가/);
   assert.match(copied, /\[화자 2\] 00:00:06\n네, 들어봤습니다\. 근데 취재는/);
   step("STT: 같은 화자 발언을 한 단락으로 묶고, 통글 전환과 화자·단락 복사");
+
+  // 8. 화자 프로필: 이름 바꾸기 · 합치기 · 되돌리기 · 구간 지정, 코어에 저장, 다시 열어도 유지
+  const copyAll = async () => {
+    await page.getByRole("button", { name: "전체 복사" }).click();
+    return (await page.evaluate(() => navigator.clipboard.readText())).split("\r\n").join("\n");
+  };
+  const savedState = () => page.getByTestId("speaker-save-state").filter({ hasText: "수정 내용 저장됨" }).waitFor();
+  await page.getByTestId("speaker-profiles").waitFor();
+  assert.equal(speakerPosts.length, 0, "열기만 해서는 저장하지 않는다");
+  await page.getByTestId("speaker-chip-1").click();
+  await page.getByTestId("speaker-name-input").fill("김 기자");
+  await page.getByTestId("speaker-rename-save").click();
+  await savedState();
+  assert.equal(speakerPosts.at(-1).names["1"], "김 기자");
+  assert.match(await copyAll(), /\[김 기자\] 00:00:00\nAI 기자가/);
+  step("화자 프로필: 이름 바꾸기 → 화면·복사에 반영, 코어에 저장");
+
+  await page.getByTestId("speaker-chip-2").click();
+  await page.getByTestId("speaker-merge-select").selectOption({ label: "김 기자" });
+  await page.getByTestId("speaker-merge-apply").click();
+  await page.waitForFunction(() => /\(1개 단락\)/.test(document.body.innerText));
+  assert.deepEqual(speakerPosts.at(-1).merge, { 2: "1" });
+  assert.match(await copyAll(), /^\[김 기자\] 00:00:00\nAI 기자가 .*네, 들어봤습니다/s, "합치면 한 화자의 한 단락");
+  step("화자 프로필: 화자 2 를 김 기자로 합치기 → 1개 단락");
+
+  await page.getByTestId("speaker-reset").click();
+  await page.waitForFunction(() => /\(2개 단락\)/.test(document.body.innerText));
+  assert.deepEqual(speakerPosts.at(-1), { names: {}, merge: {}, assign: {} });
+  assert.match(await copyAll(), /\[화자 1\] 00:00:00/);
+  step("화자 프로필: 원본으로 되돌리기");
+
+  await page.getByTestId("speaker-pick-seg-2").check();
+  await page.getByTestId("speaker-assign-bar").waitFor();
+  await page.getByTestId("speaker-assign-select").selectOption("__new__");
+  await page.getByTestId("speaker-assign-new-name").fill("취재원");
+  await page.getByTestId("speaker-assign-apply").click();
+  await page.getByTestId("speaker-chip-custom-1").waitFor();
+  assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "custom-1", "seg-3": "custom-1" });
+  assert.equal(await page.getByTestId("speaker-assign-bar").count(), 0, "지정 뒤에는 선택이 풀린다");
+  assert.match(await copyAll(), /\[취재원\] 00:00:06\n네, 들어봤습니다/);
+  step("화자 프로필: 단락을 골라 새 화자로 지정");
+
+  await page.getByText("저장된 전사 불러오기").click();
+  await page.getByText("smoke.m4a").first().click();
+  await page.getByTestId("speaker-chip-custom-1").waitFor();
+  assert.match(await copyAll(), /\[취재원\] 00:00:06/);
+  step("화자 프로필: 저장된 전사를 다시 열어도 수정이 유지된다");
 
   assert.deepEqual(pageErrors, [], `브라우저 오류: ${pageErrors.join(" | ")}`);
   console.log("PASS ui-smoke-mine: 데스크·이동·기사 작성·저장·미리보기·사진 첨부·보관함·STT 화면");

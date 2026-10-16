@@ -128,6 +128,7 @@ export async function loadTranscript(id, signal) {
   const [transcript, audio] = await Promise.all([core.getTranscript(id, signal), core.transcriptAudio(id, signal)]);
   return { ...transcript, audioUrl: URL.createObjectURL(audio) };
 }
+export const saveSpeakerEdits = (id, speakerEdits, signal) => core.saveTranscriptSpeakers(id, speakerEdits, signal);
 export const publishCms = (article, signal) => core.publishCms(article, signal);
 export const getTransferFile = (signal) => core.getTransferFile(signal);
 export const makeTransferFile = (code, signal) => core.makeTransferFile(code, signal);

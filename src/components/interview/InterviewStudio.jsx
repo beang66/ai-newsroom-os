@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript } from "../../services/sttService";
+import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript, saveSpeakerEdits } from "../../services/sttService";
 import { mergeBySpeaker, speakerText, plainText } from "../../lib/transcriptText.js";
+import SpeakerProfiles, { SpeakerAssignBar } from "./SpeakerProfiles.jsx";
+import { addSpeaker, applySpeakerEdits, assignDialogues, emptyEdits, isEdited, mergeSpeaker, renameSpeaker, sanitizeEdits, speakerList } from "../../lib/speakerEdits.js";
 import {
   Upload,
   Play,
@@ -43,7 +45,14 @@ export default function InterviewStudio({ onReturnToArticle }) {
   const [storedMenu, setStoredMenu] = useState({ open: false, status: "idle", items: [], error: "" });
   const [fileName, setFileName] = useState("");
   const [fileSize, setFileSize] = useState(0);
-  const [dialogues, setDialogues] = useState([]);
+  // CLOVA 가 준 발언 원본. 화면에 쓰는 dialogues 는 여기에 사용자의 화자 수정(이름 바꾸기·합치기·구간 지정)을 덧씌운 것이다.
+  const [baseDialogues, setBaseDialogues] = useState([]);
+  const [speakerEdits, setSpeakerEdits] = useState(emptyEdits);
+  const [transcriptId, setTranscriptId] = useState(null);
+  const [speakerSave, setSpeakerSave] = useState("");
+  const [pickedIds, setPickedIds] = useState([]);
+  const dialogues = useMemo(() => applySpeakerEdits(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
+  const speakers = useMemo(() => speakerList(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
   const [sttStatus, setSttStatus] = useState("대기 중");
   const [currentTranscript, setCurrentTranscript] = useState(null);
 
@@ -154,7 +163,11 @@ export default function InterviewStudio({ onReturnToArticle }) {
     setCurrentTime(0);
     setIsPlaying(false);
 
-    setDialogues([]);
+    setBaseDialogues([]);
+    setSpeakerEdits(emptyEdits());
+    setTranscriptId(null);
+    setSpeakerSave("");
+    setPickedIds([]);
     setAiSummary(null);
     setAnalysisError("");
     setEvidenceQuery("");
@@ -163,7 +176,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
     requestSTT(file)
       .then((result) => {
         if (result.dialogues && result.dialogues.length > 0) {
-          setDialogues(result.dialogues);
+          setBaseDialogues(result.dialogues);
+          setTranscriptId(result.transcriptId || null);
           setSelectedDialogueId(result.dialogues[0].id);
           setSttStatus("전사 완료 100%");
           if (result.transcript) {
@@ -208,7 +222,11 @@ export default function InterviewStudio({ onReturnToArticle }) {
       setAiSummary(null);
       setAnalysisError("");
       setEvidenceQuery("");
-      setDialogues(result.dialogues);
+      setBaseDialogues(result.dialogues);
+      setSpeakerEdits(sanitizeEdits(result.speakerEdits));
+      setTranscriptId(result.id || item.id);
+      setSpeakerSave("");
+      setPickedIds([]);
       setSelectedDialogueId(result.dialogues[0]?.id ?? null);
       setCurrentTranscript(result.transcript);
       setSttStatus(result.dialogues.length > 0 ? "저장된 전사 불러옴" : "저장된 전사 (발언 없음)");
@@ -389,6 +407,27 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // 같은 화자의 연속 발언을 한 단락으로 묶은 목록(화자·단락 구분 표시용)
   const paragraphs = useMemo(() => mergeBySpeaker(filteredDialogues), [filteredDialogues]);
+
+  // 화자 수정: 화면에 바로 반영하고, 저장된 녹취면 코어 암호화 저장소에도 보낸다(발언 원본은 그대로 둔다)
+  const commitSpeakerEdits = (next) => {
+    setSpeakerEdits(next);
+    if (!transcriptId) return;
+    setSpeakerSave("saving");
+    saveSpeakerEdits(transcriptId, next)
+      .then(() => setSpeakerSave("saved"))
+      .catch(() => setSpeakerSave("error"));
+  };
+  const pickedDialogueIds = paragraphs.filter((paragraph) => pickedIds.includes(paragraph.id)).flatMap((paragraph) => paragraph.ids);
+  const togglePicked = (id) => setPickedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+  const assignPicked = (key) => {
+    commitSpeakerEdits(assignDialogues(speakerEdits, pickedDialogueIds, key));
+    setPickedIds([]);
+  };
+  const assignPickedToNew = (name) => {
+    const added = addSpeaker(speakerEdits, name);
+    commitSpeakerEdits(assignDialogues(added.edits, pickedDialogueIds, added.key));
+    setPickedIds([]);
+  };
 
   // 핵심요약에서 드래그된 근거 매칭 세그먼트 ID Set
   const evidenceMatchedIds = useMemo(() => {
@@ -910,6 +949,17 @@ export default function InterviewStudio({ onReturnToArticle }) {
                   </div>
                 </div>
 
+                {/* 화자 프로필: 이름 바꾸기·합치기, 단락을 골라 화자 지정 */}
+                <SpeakerProfiles
+                  speakers={speakers}
+                  edited={isEdited(speakerEdits)}
+                  saveState={speakerSave}
+                  onRename={(key, name) => commitSpeakerEdits(renameSpeaker(speakerEdits, key, name))}
+                  onMerge={(from, into) => commitSpeakerEdits(mergeSpeaker(speakerEdits, from, into))}
+                  onReset={() => { commitSpeakerEdits(emptyEdits()); setPickedIds([]); }}
+                />
+                <SpeakerAssignBar speakers={speakers} pickedCount={pickedIds.length} onAssign={assignPicked} onAssignNew={assignPickedToNew} onClear={() => setPickedIds([])} />
+
                 {/* 화자별 세그먼트 대화 목록 */}
                 <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
                   {paragraphs.map((item) => {
@@ -934,6 +984,15 @@ export default function InterviewStudio({ onReturnToArticle }) {
                         {/* 세그먼트 상단: 화자명 태그 + 타임스탬프 */}
                         <div className="flex items-center justify-between gap-2 mb-1.5">
                           <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={pickedIds.includes(item.id)}
+                              onChange={() => togglePicked(item.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`${item.speakerName} 단락 선택`}
+                              data-testid={`speaker-pick-${item.id}`}
+                              className="w-3.5 h-3.5 accent-slate-900 cursor-pointer"
+                            />
                             <span
                               className={`px-2 py-0.5 rounded text-[11px] font-bold border ${getSpeakerBadgeStyle(
                                 item.speakerName

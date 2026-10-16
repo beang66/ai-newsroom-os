@@ -222,48 +222,50 @@ try {
   assert.match(copied, /\[화자 2\] 00:00:06\n네, 들어봤습니다\. 근데 취재는/);
   step("STT: 같은 화자 발언을 한 단락으로 묶고, 통글 전환과 화자·단락 복사");
 
-  // 8. 화자 프로필: 발언 앞 프로필을 눌러 이름 적기, "화자 수정하기"로 여러 단락을 한 번에, 코어에 저장, 다시 열어도 유지
+  // 8. 화자 프로필: CLOVA 가 나눈 박스는 그대로 두고 이름만 바꾼다. 프로필 아이콘에서만 작은 메뉴가 열린다.
   const copyAll = async () => {
     await page.getByRole("button", { name: "전체 복사" }).click();
     return (await page.evaluate(() => navigator.clipboard.readText())).split("\r\n").join("\n");
   };
   const shot = (name) => process.env.UI_SMOKE_SHOTS ? page.screenshot({ path: path.join(process.env.UI_SMOKE_SHOTS, `${name}.png`), fullPage: true }) : null; // 화면 모양 확인용(선택)
   const savedState = () => page.getByTestId("speaker-save-state").filter({ hasText: "수정 내용 저장됨" }).waitFor();
-  const paragraphsText = (n) => page.waitForFunction((count) => new RegExp(`\\(${count}개 단락\\)`).test(document.body.innerText), n);
+  const boxesText = (n) => page.waitForFunction((count) => new RegExp(`\\(${count}개 단락\\)`).test(document.body.innerText), n);
   await page.getByTestId("speaker-edit-start").waitFor();
   assert.equal(speakerPosts.length, 0, "열기만 해서는 저장하지 않는다");
-  assert.match(await page.getByTestId("speaker-badge-seg-1").innerText(), /화자 1/, "발언 앞에 프로필(이모지+이름)");
-  assert.equal(await page.getByTestId("speaker-editor").count(), 0, "누르기 전에는 입력칸이 닫혀 있다");
+  assert.match(await page.getByTestId("speaker-name-seg-1").innerText(), /화자 1/, "박스 맨 앞에 프로필 아이콘과 이름");
+  assert.equal(await page.getByTestId("speaker-editor").count(), 0, "누르기 전에는 메뉴가 닫혀 있다");
+  assert.equal(await page.getByText("이 단락은 누가 말했나요?").count(), 0, "안내 문구는 없다");
 
   await page.getByTestId("speaker-badge-seg-1").click();
   await shot("speaker-dropdown");
   await page.getByTestId("speaker-name-input").fill("김 기자");
-  await page.getByTestId("speaker-name-whole").click();
+  await page.getByTestId("speaker-name-submit").click();
   await savedState();
   assert.equal(speakerPosts.at(-1).names["1"], "김 기자");
-  assert.equal(await page.getByTestId("speaker-editor").count(), 0, "적용하면 입력칸이 닫힌다");
+  assert.equal(await page.getByTestId("speaker-editor").count(), 0, "적용하면 메뉴가 닫힌다");
   assert.match(await copyAll(), /\[김 기자\] 00:00:00\nAI 기자가/);
-  step("화자 프로필: 프로필을 눌러 이름을 적으면 그 화자 전체가 바뀌고 저장된다");
+  step("화자 프로필: 아이콘을 눌러 이름을 적으면 그 화자의 이름이 바뀌고 저장된다");
 
   await page.getByTestId("speaker-badge-seg-2").click();
   await page.getByTestId("speaker-name-input").fill("김 기자");
-  await page.getByTestId("speaker-name-whole").click();
-  await paragraphsText(1);
+  await page.getByTestId("speaker-name-submit").click();
+  await savedState();
   assert.deepEqual(speakerPosts.at(-1).merge, { 2: "1" });
-  assert.match(await copyAll(), /^\[김 기자\] 00:00:00\nAI 기자가 .*네, 들어봤습니다/s, "같은 이름이면 같은 화자(한 단락)");
-  step("화자 프로필: 다른 화자와 같은 이름을 쓰면 합쳐진다");
+  await boxesText(2);                                                          // 같은 이름이 되어도 CLOVA 박스는 합쳐지지 않는다
+  assert.match(await copyAll(), /^\[김 기자\] 00:00:00\nAI 기자가 [^\n]*\n\n\[김 기자\] 00:00:06\n네, 들어봤습니다/s);
+  step("화자 프로필: 같은 이름을 써도 박스는 그대로이고 이름만 같아진다");
 
-  // 이름을 고치고 합쳐도 화자 목록에 고친 이름과 CLOVA 가 처음 붙인 이름이 함께 남는다
+  // 이름을 고치고 합쳐도 목록에 고친 이름과 CLOVA 가 처음 붙인 이름이 함께 남는다
   await page.getByTestId("speaker-badge-seg-1").click();
-  const rosterChip = await page.getByTestId("speaker-roster-1").innerText();
-  assert.match(rosterChip, /김 기자/);
-  assert.match(rosterChip, /원래 화자 1·화자 2/);
-  assert.equal(await page.getByTestId("speaker-roster-2").count(), 0, "합쳐진 화자는 한 사람으로 보인다");
+  const rosterRow = await page.getByTestId("speaker-roster-1").innerText();
+  assert.match(rosterRow, /김 기자/);
+  assert.match(rosterRow, /원래 화자 1·화자 2/);
+  assert.equal(await page.getByTestId("speaker-roster-2").count(), 0, "같은 사람이 된 화자는 한 줄로 보인다");
   await page.getByTestId("speaker-badge-seg-1").click();
-  step("화자 프로필: 이름을 고치고 합친 뒤에도 목록에 고친 이름과 원래 이름이 남는다");
+  step("화자 프로필: 고친 이름과 원래 이름이 메뉴 목록에 남는다");
 
   await page.getByTestId("speaker-reset").click();
-  await paragraphsText(2);
+  await boxesText(2);
   assert.deepEqual(speakerPosts.at(-1), { names: {}, merge: {}, assign: {} });
   assert.match(await copyAll(), /\[화자 1\] 00:00:00/);
   step("화자 프로필: 원본으로");
@@ -271,48 +273,48 @@ try {
   await page.getByTestId("speaker-badge-seg-2").click();
   assert.match(await page.getByTestId("speaker-roster-1").innerText(), /화자 1/);
   assert.match(await page.getByTestId("speaker-roster-2").innerText(), /화자 2/);
-  await page.getByTestId("speaker-roster-1").click();                          // 목록에서 화자를 눌러 고른다(이름을 적지 않아도 된다)
-  await paragraphsText(1);
-  assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "1", "seg-3": "1" });
-  assert.equal(await page.getByTestId("speaker-editor").count(), 0, "고르면 입력칸이 닫힌다");
-  await page.getByTestId("speaker-reset").click();
-  await paragraphsText(2);
-  step("화자 프로필: 펼친 칸의 화자 목록에서 눌러 고르면 그 화자의 말로 바뀐다");
-
-  await page.getByTestId("speaker-badge-seg-2").click();
-  await page.getByTestId("speaker-name-input").fill("취재원");
-  await page.getByTestId("speaker-name-only").click();
+  await page.getByTestId("speaker-roster-1").click();                          // 목록에서 눌러 고른다(이름을 적지 않아도 된다)
   await savedState();
-  assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "custom-1", "seg-3": "custom-1" });
-  assert.match(await copyAll(), /\[취재원\] 00:00:06\n네, 들어봤습니다/);
-  step("화자 프로필: '이 단락만'은 그 단락만 새 화자로");
+  assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "1", "seg-3": "1" });
+  await boxesText(2);
+  assert.match(await copyAll(), /\[화자 1\] 00:00:00\nAI 기자가 [^\n]*\n\n\[화자 1\] 00:00:06\n네, 들어봤습니다/s);
+  await page.getByTestId("speaker-reset").click();
+  await boxesText(2);
+  step("화자 프로필: 메뉴 목록에서 눌러 고르면 그 박스가 그 화자의 말로 바뀐다");
 
   await page.getByTestId("speaker-edit-start").click();
   await page.getByTestId("speaker-edit-bar").waitFor();
   assert.equal(await page.evaluate(() => document.querySelector("audio")?.paused ?? true), true, "화자 수정하기를 누르면 재생이 멈춘다");
-  assert.equal(await page.getByTestId("speaker-badge-seg-1").isDisabled(), true, "수정하기 중에는 프로필을 눌러 입력칸을 열지 않는다");
-  assert.equal(await page.getByTestId("speaker-bulk-apply").isDisabled(), true, "고른 단락이 없으면 적용할 수 없다");
+  assert.equal(await page.getByTestId("speaker-badge-seg-1").isDisabled(), true, "수정하기 중에는 프로필 메뉴를 열지 않는다");
+  assert.equal(await page.getByTestId("speaker-bulk-apply").isDisabled(), true, "고른 박스가 없으면 적용할 수 없다");
+  await page.getByTestId("speaker-pick-seg-2").check();
+  await page.getByTestId("speaker-bulk-name").fill("취재원");
+  await page.getByTestId("speaker-bulk-apply").click();
+  await savedState();
+  assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "custom-1", "seg-3": "custom-1" });
   await page.getByTestId("speaker-pick-seg-1").check();
   await page.getByTestId("speaker-pick-seg-2").check();
   await shot("speaker-bulk-edit");
   assert.match(await page.getByTestId("speaker-picked-count").innerText(), /2개 선택됨/);
+  await page.getByTestId("speaker-bulk-roster-custom-1").click();              // 목록의 이름을 눌러 이름 칸을 채운다
+  assert.equal(await page.getByTestId("speaker-bulk-name").inputValue(), "취재원");
   await page.getByTestId("speaker-bulk-name").fill("발표자");
   await page.getByTestId("speaker-bulk-apply").click();
-  await paragraphsText(1);
+  await boxesText(2);
   await savedState();
   assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "custom-2", "seg-3": "custom-2", "seg-1": "custom-2" });
   assert.match(await page.getByTestId("speaker-picked-count").innerText(), /0개 선택됨/, "적용 뒤 선택이 풀린다");
   await page.getByTestId("speaker-select-all").click();
-  assert.match(await page.getByTestId("speaker-picked-count").innerText(), /1개 선택됨/);
+  assert.match(await page.getByTestId("speaker-picked-count").innerText(), /2개 선택됨/);
   await page.getByTestId("speaker-edit-done").click();
   assert.equal(await page.getByTestId("speaker-edit-bar").count(), 0);
-  assert.match(await copyAll(), /^\[발표자\] 00:00:00\nAI 기자가 .*네, 들어봤습니다/s);
-  step("화자 프로필: 화자 수정하기 → 재생 멈춤, 여러 단락을 골라 한 번에 이름 적용");
+  assert.match(await copyAll(), /^\[발표자\] 00:00:00\nAI 기자가 [^\n]*\n\n\[발표자\] 00:00:06\n네, 들어봤습니다/s);
+  step("화자 프로필: 화자 수정하기 → 재생 멈춤, 박스를 여러 개 골라 한 번에 이름 적용(박스는 그대로)");
 
   await page.getByText("저장된 전사 불러오기").click();
   await page.getByText("smoke.m4a").first().click();
-  await page.getByTestId("speaker-badge-seg-1").waitFor();
-  assert.match(await page.getByTestId("speaker-badge-seg-1").innerText(), /발표자/);
+  await page.getByTestId("speaker-name-seg-1").waitFor();
+  assert.match(await page.getByTestId("speaker-name-seg-1").innerText(), /발표자/);
   step("화자 프로필: 저장된 전사를 다시 열어도 수정이 유지된다");
 
   assert.deepEqual(pageErrors, [], `브라우저 오류: ${pageErrors.join(" | ")}`);

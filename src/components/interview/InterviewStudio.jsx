@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript, saveSpeakerEdits } from "../../services/sttService";
-import { mergeBySpeaker, speakerText, plainText } from "../../lib/transcriptText.js";
-import { SpeakerBadge, SpeakerEditBar, SpeakerHeaderActions, SpeakerNameEditor } from "./SpeakerProfiles.jsx";
-import { applySpeakerEdits, assignByName, assignDialogues, emptyEdits, isEdited, renameSpeakerSmart, sanitizeEdits, speakerIndex, speakerList, speakerRoster } from "../../lib/speakerEdits.js";
+import { plainText } from "../../lib/transcriptText.js";
+import { SpeakerEditBar, SpeakerHeaderActions, SpeakerProfileMenu } from "./SpeakerProfiles.jsx";
+import { applySpeakerEdits, assignByName, assignDialogues, emptyEdits, groupByOriginalSpeaker, isEdited, renameSpeakerSmart, sanitizeEdits, speakerIndex, speakerList, speakerRoster } from "../../lib/speakerEdits.js";
 import {
   Upload,
   Play,
@@ -281,7 +281,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // 통 텍스트 전체 복사
   const handleCopyAllText = () => {
-    const fullText = textMode === "plain" ? plainText(dialogues) : speakerText(dialogues, formatDuration);
+    const fullText = textMode === "plain" ? plainText(dialogues) : speakerBoxText();
     navigator.clipboard.writeText(fullText);
     setIsAllCopied(true);
     setTimeout(() => setIsAllCopied(false), 2000);
@@ -307,7 +307,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // TXT 파일 다운로드
   const handleDownloadTxt = () => {
-    const content = textMode === "plain" ? plainText(dialogues) : speakerText(dialogues, formatDuration);
+    const content = textMode === "plain" ? plainText(dialogues) : speakerBoxText();
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -413,8 +413,11 @@ export default function InterviewStudio({ onReturnToArticle }) {
     });
   }, [dialogues, searchKeyword]);
 
-  // 같은 화자의 연속 발언을 한 단락으로 묶은 목록(화자·단락 구분 표시용)
-  const paragraphs = useMemo(() => mergeBySpeaker(filteredDialogues), [filteredDialogues]);
+  // CLOVA 가 나눈 화자 박스(원래 화자가 같은 연속 발언). 이름을 고치거나 같은 이름으로 바꿔도 박스는 그대로이고 이름만 바뀐다.
+  const paragraphs = useMemo(() => groupByOriginalSpeaker(filteredDialogues, baseDialogues), [filteredDialogues, baseDialogues]);
+  // 복사·다운로드용 "[화자] 시각" 글(검색과 상관없이 전체 박스)
+  const speakerBoxText = () => groupByOriginalSpeaker(dialogues, baseDialogues)
+    .map((box) => `[${box.speakerName}] ${formatDuration(box.timestamp)}\n${box.text}`).join("\n\n");
 
   // 화자 수정: 화면에 바로 반영하고, 저장된 녹취면 코어 암호화 저장소에도 보낸다(발언 원본은 그대로 둔다)
   const commitSpeakerEdits = (next) => {
@@ -444,10 +447,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
   };
   const renameWholeSpeaker = (key, name) => {
     commitSpeakerEdits(renameSpeakerSmart(speakerEdits, speakers, key, name));
-    setOpenParagraphId(null);
-  };
-  const renameParagraphOnly = (ids, name) => {
-    commitSpeakerEdits(assignByName(speakerEdits, speakers, ids, name));
     setOpenParagraphId(null);
   };
   const pickSpeakerForParagraph = (ids, key) => {
@@ -1024,16 +1023,22 @@ export default function InterviewStudio({ onReturnToArticle }) {
                                 className="w-3.5 h-3.5 accent-slate-900 cursor-pointer"
                               />
                             )}
-                            <SpeakerBadge
+                            <SpeakerProfileMenu
                               index={speakerIndex(speakers, item.speaker)}
                               name={item.speakerName}
                               open={openParagraphId === item.id}
                               disabled={editMode}
                               testId={`speaker-badge-${item.id}`}
-                              onClick={(e) => {
+                              nameTestId={`speaker-name-${item.id}`}
+                              roster={roster}
+                              currentKey={item.speaker}
+                              onToggle={(e) => {
                                 e.stopPropagation();
                                 setOpenParagraphId((prev) => (prev === item.id ? null : item.id));
                               }}
+                              onClose={() => setOpenParagraphId((prev) => (prev === item.id ? null : prev))}
+                              onPick={(key) => pickSpeakerForParagraph(item.ids, key)}
+                              onRename={(name) => renameWholeSpeaker(item.speaker, name)}
                             />
                             <span className="font-mono text-[11px] text-slate-400">
                               {formatDuration(item.timestamp)}
@@ -1064,18 +1069,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
                             </button>
                           </div>
                         </div>
-
-                        {openParagraphId === item.id && !editMode && (
-                          <SpeakerNameEditor
-                            initialName={item.speakerName}
-                            roster={roster}
-                            currentKey={item.speaker}
-                            onPick={(key) => pickSpeakerForParagraph(item.ids, key)}
-                            onWhole={(name) => renameWholeSpeaker(item.speaker, name)}
-                            onOnly={(name) => renameParagraphOnly(item.ids, name)}
-                            onClose={() => setOpenParagraphId(null)}
-                          />
-                        )}
 
                         {/* 발화 텍스트 */}
                         <p className="text-xs text-slate-700 leading-relaxed font-sans pl-1">

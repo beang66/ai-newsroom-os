@@ -144,3 +144,24 @@ export function speakerRoster(dialogues, edits) {
   });
   return speakerList(dialogues, edits).map((speaker) => ({ ...speaker, originals: (originals[speaker.key] || []).filter((label) => label !== speaker.name) }));
 }
+
+/** 화면에 보이는 박스: CLOVA 가 나눈 대로(원래 화자가 같은 연속 발언) 묶는다. 이름을 고치거나 합쳐도 박스는 그대로이고 이름만 바뀐다. */
+export function groupByOriginalSpeaker(dialogues, baseDialogues) {
+  const original = {};
+  for (const item of baseDialogues || []) original[String(item.id)] = speakerKey(item);
+  const boxes = [];
+  for (const item of dialogues || []) {
+    const body = text(item.text);
+    if (!body) continue;
+    const origin = original[String(item.id)] ?? speakerKey(item);
+    const last = boxes[boxes.length - 1];
+    if (last && last.origin === origin) {
+      last.ids.push(item.id);
+      last.items.push(item);
+      last.text = `${last.text} ${body}`;
+    } else {
+      boxes.push({ id: item.id, ids: [item.id], items: [item], origin, speaker: item.speaker, speakerName: item.speakerName, timestamp: item.timestamp, text: body });
+    }
+  }
+  return boxes;
+}

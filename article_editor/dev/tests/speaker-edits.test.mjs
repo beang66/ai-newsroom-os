@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  addSpeaker, applySpeakerEdits, assignByName, assignDialogues, emptyEdits, isEdited, mergeSpeaker, renameSpeaker, renameSpeakerSmart, resolveKey, sanitizeEdits, speakerList, speakerRoster
+  addSpeaker, applySpeakerEdits, assignByName, assignDialogues, emptyEdits, groupByOriginalSpeaker, isEdited, mergeSpeaker, renameSpeaker, renameSpeakerSmart, resolveKey, sanitizeEdits, speakerList, speakerRoster
 } from "../../../src/lib/speakerEdits.js";
 
 // 1명이 말했는데 CLOVA 가 화자 1·2·3 으로 나눈 녹취
@@ -104,4 +104,18 @@ test("화자 고르기 목록: 이름을 고치거나 합쳐도 CLOVA 가 붙인
   const added = addSpeaker(edits, "취재원");
   const assigned = assignDialogues(added.edits, ["d2"], added.key);
   assert.deepEqual(speakerRoster(dialogues, assigned).map((s) => [s.name, s.originals]), [["김 기자", ["화자 1", "화자 3"]], ["취재원", ["화자 2"]]]);
+});
+
+test("박스: CLOVA 가 나눈 대로 유지되고, 이름을 고치거나 합쳐도 박스는 합쳐지지 않는다", () => {
+  const base = [
+    { id: "a", speaker: "1", speakerName: "화자 1", text: "하나", timestamp: 0 },
+    { id: "b", speaker: "1", speakerName: "화자 1", text: "둘", timestamp: 2 },
+    { id: "c", speaker: "2", speakerName: "화자 2", text: "셋", timestamp: 5 },
+  ];
+  const boxes = (edits) => groupByOriginalSpeaker(applySpeakerEdits(base, edits), base).map((box) => [box.speakerName, box.ids.join(""), box.text]);
+  assert.deepEqual(boxes(emptyEdits()), [["화자 1", "ab", "하나 둘"], ["화자 2", "c", "셋"]]);
+  const merged = mergeSpeaker(renameSpeaker(emptyEdits(), "1", "김 기자"), "2", "1");        // 같은 사람이 되어도
+  assert.deepEqual(boxes(merged), [["김 기자", "ab", "하나 둘"], ["김 기자", "c", "셋"]]);       // 박스는 그대로, 이름만 같다
+  assert.deepEqual(boxes(assignDialogues(emptyEdits(), ["a", "b"], "2")).map((box) => box[0]), ["화자 2", "화자 2"]);
+  assert.deepEqual(groupByOriginalSpeaker([{ id: "x", speaker: "9", speakerName: "화자 9", text: "  ", timestamp: 0 }], []), [], "빈 발언은 박스를 만들지 않는다");
 });

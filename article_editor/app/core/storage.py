@@ -85,6 +85,7 @@ def get_transcript(identifier):
             'duration': row[3], 'createdAt': row[4], 'speakerEdits': json.loads(edits[0]) if edits else {}}
 
 
+MARK_COLORS = {'yellow', 'orange', 'green', 'blue', 'pink'}  # 형광펜 색(화면 src/lib/speakerEdits.js 와 같게)
 SPEAKER_EDITS_PREFIX = 'speaker_edits:'  # app_meta 키 — 발언 원본(transcripts.dialogues_json)은 바꾸지 않고 사용자의 화자 수정만 따로 둔다
 
 
@@ -101,6 +102,27 @@ def _clean_speaker_edits(edits):
             if not isinstance(key, str) or not isinstance(value, str) or not key or not value or len(key) > 100 or len(value) > 100:
                 raise RequestError('화자 수정 형식을 확인해 주세요.')
         clean[field] = dict(raw)
+    # 글 수정(texts: 박스 id → 고친 글)과 형광펜(marks: 박스 id → [{s, e, c}]) — 쓰이지 않으면 필드를 만들지 않는다
+    texts = edits.get('texts')
+    if texts is not None:
+        if not isinstance(texts, dict) or len(texts) > 2_000:
+            raise RequestError('화자 수정 형식을 확인해 주세요.')
+        for key, value in texts.items():
+            if not isinstance(key, str) or not key or len(key) > 100 or not isinstance(value, str) or not value.strip() or len(value) > 60_000:
+                raise RequestError('화자 수정 형식을 확인해 주세요.')
+        clean['texts'] = dict(texts)
+    marks = edits.get('marks')
+    if marks is not None:
+        if not isinstance(marks, dict) or len(marks) > 2_000:
+            raise RequestError('화자 수정 형식을 확인해 주세요.')
+        for key, items in marks.items():
+            if not isinstance(key, str) or not key or len(key) > 100 or not isinstance(items, list) or len(items) > 200:
+                raise RequestError('화자 수정 형식을 확인해 주세요.')
+            for mark in items:
+                ok = isinstance(mark, dict) and all(isinstance(mark.get(f), int) and not isinstance(mark.get(f), bool) for f in ('s', 'e'))
+                if not ok or not 0 <= mark['s'] < mark['e'] <= 60_000 or mark.get('c') not in MARK_COLORS:
+                    raise RequestError('화자 수정 형식을 확인해 주세요.')
+        clean['marks'] = {key: [{'s': m['s'], 'e': m['e'], 'c': m['c']} for m in items] for key, items in marks.items()}
     return clean
 
 

@@ -68,6 +68,23 @@ class SpeakerEdits(unittest.TestCase):
         storage.save_speaker_edits(self.identifier, EDITS)
         self.assertEqual(storage.get_transcript(other)['speakerEdits'], {})
 
+    def test_text_edits_and_highlights_are_saved_when_used(self):
+        edits = {'names': {}, 'merge': {}, 'assign': {}, 'texts': {'a1': '고친 글'}, 'marks': {'a2': [{'s': 0, 'e': 2, 'c': 'yellow'}]}}
+        saved = storage.save_speaker_edits(self.identifier, edits)
+        self.assertEqual(saved['speakerEdits'], edits)
+        self.assertEqual(storage.get_transcript(self.identifier)['speakerEdits'], edits)
+        self.assertEqual(storage.get_transcript(self.identifier)['dialogues'], DIALOGUES)           # 원본 발언은 그대로
+
+    def test_bad_text_edits_and_highlights_are_refused(self):
+        good = {'names': {}, 'merge': {}, 'assign': {}}
+        for bad in ({'texts': []}, {'texts': {'a1': ''}}, {'texts': {'a1': '  '}}, {'texts': {'a1': 5}}, {'texts': {'a1': 'x' * 60_001}},
+                    {'marks': {'a1': 'x'}}, {'marks': {'a1': [{'s': 0, 'e': 2, 'c': '없는색'}]}}, {'marks': {'a1': [{'s': 2, 'e': 2, 'c': 'yellow'}]}},
+                    {'marks': {'a1': [{'s': -1, 'e': 2, 'c': 'yellow'}]}}, {'marks': {'a1': [{'s': 0, 'e': True, 'c': 'yellow'}]}},
+                    {'marks': {'a1': [{'s': 0, 'e': 2, 'c': 'yellow'}] * 201}}, {'marks': {'a1': [5]}}):
+            with self.assertRaises(RequestError, msg=repr(bad)[:50]):
+                storage.save_speaker_edits(self.identifier, {**good, **bad})
+        self.assertEqual(storage.get_transcript(self.identifier)['speakerEdits'], {})
+
 
 if __name__ == '__main__':
     unittest.main()

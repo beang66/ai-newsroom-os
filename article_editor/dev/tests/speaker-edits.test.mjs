@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  addMark, addSpeaker, applySpeakerEdits, applyTextEdits, removeMarks, resetSpeakers, segmentsOf, setBoxText, assignByName, assignDialogues, emptyEdits, groupByOriginalSpeaker, isEdited, mergeSpeaker, renameSpeaker, renameSpeakerSmart, resolveKey, sanitizeEdits, speakerList, speakerRoster
+  addMark, addSpeaker, applySpeakerEdits, applyTextEdits, removeMarks, remapMarks, resetSpeakers, segmentsOf, setBoxText, assignByName, assignDialogues, emptyEdits, groupByOriginalSpeaker, isEdited, mergeSpeaker, renameSpeaker, renameSpeakerSmart, resolveKey, sanitizeEdits, speakerList, speakerRoster
 } from "../../../src/lib/speakerEdits.js";
 
 // 1명이 말했는데 CLOVA 가 화자 1·2·3 으로 나눈 녹취
@@ -138,17 +138,45 @@ test("형광펜: 글을 조각으로 나누고, 겹치면 남는 부분만 남�
   assert.equal(edits.marks, undefined, "다 지우면 기록도 사라진다");
 });
 
-test("글 수정: 고친 글이 박스 글을 대신하고, 원래 글과 같아지면 기록이 사라지며, 글을 고치면 그 박스의 형광펜은 지운다", () => {
+test("글 수정: 고친 글이 박스 글을 대신하고, 원래 글과 같아지면 기록이 사라지며, 다른 박스의 형광펜은 건드리지 않는다", () => {
   const boxes = [{ id: "b1", text: "원래 글" }, { id: "b2", text: "둘째" }];
   let edits = addMark(emptyEdits(), "b1", 0, 2, "pink", 4);
   edits = addMark(edits, "b2", 0, 1, "blue", 2);
-  edits = setBoxText(edits, "b1", "고친 글", "원래 글");
-  assert.deepEqual(edits.marks, { b2: [{ s: 0, e: 1, c: "blue" }] }, "b1 의 형광펜만 지운다");
+  edits = setBoxText(edits, "b1", "원래 글에 덧붙임", "원래 글");
+  assert.deepEqual(edits.marks, { b1: [{ s: 0, e: 2, c: "pink" }], b2: [{ s: 0, e: 1, c: "blue" }] }, "고치지 않은 부분의 형광펜은 그대로");
   const applied = applyTextEdits(boxes, edits);
-  assert.deepEqual(applied.map((b) => [b.text, b.originalText, b.marks.length]), [["고친 글", "원래 글", 0], ["둘째", "둘째", 1]]);
+  assert.deepEqual(applied.map((b) => [b.text, b.originalText, b.marks.length]), [["원래 글에 덧붙임", "원래 글", 1], ["둘째", "둘째", 1]]);
   edits = setBoxText(edits, "b1", "원래 글", "원래 글");
   assert.equal(edits.texts, undefined, "원래 글로 돌아가면 고친 기록이 없다");
+  assert.deepEqual(edits.marks.b1, [{ s: 0, e: 2, c: "pink" }], "되돌려도 형광펜은 그대로 남는다");
   assert.deepEqual(boxes.map((b) => b.text), ["원래 글", "둘째"], "원본 배열은 바뀌지 않는다");
+});
+
+test("글을 고쳐도 형광펜이 남는다: 앞에서 넣고 지우면 이동, 안에서 지우면 줄고, 끼워 넣으면 함께 칠하고, 통째로 바꾸면 새 말도 칠한다", () => {
+  const mark = (s, e, c = "yellow") => ({ s, e, c });
+  const text = "오늘 날씨가 좋네요";                                   // "날씨가" = [3, 6)
+  const marks = [mark(3, 6)];
+  assert.deepEqual(remapMarks(text, "오늘 날씨가 좋네요", marks), marks, "같은 글이면 그대로");
+  assert.deepEqual(remapMarks(text, "정말 오늘 날씨가 좋네요", marks), [mark(6, 9)], "앞에 글을 넣으면 같이 밀린다");
+  assert.deepEqual(remapMarks(text, "날씨가 좋네요", marks), [mark(0, 3)], "앞의 글을 지우면 당겨진다");
+  assert.deepEqual(remapMarks(text, "오늘 날가 좋네요", marks), [mark(3, 5)], "칠한 곳 안에서 글자를 지우면 줄어든다");
+  assert.deepEqual(remapMarks(text, "오늘 날아침씨가 좋네요", marks), [mark(3, 8)], "칠한 곳 한가운데에 끼워 넣은 글은 함께 칠해진다");
+  assert.deepEqual(remapMarks(text, "오늘 날씨가많이 좋네요", marks), [mark(3, 6)], "칠한 곳 끝에 이어 쓴 글은 칠하지 않는다");
+  assert.deepEqual(remapMarks(text, "오늘 기온이 좋네요", marks), [mark(3, 6)], "칠한 말을 통째로 바꾸면 새 말도 칠한다");
+  assert.deepEqual(remapMarks(text, "오늘 좋네요", marks), [], "칠한 글이 모두 지워지면 형광펜도 사라진다");
+  assert.deepEqual(remapMarks(text, "오늘 날씨가 좋네요", []), [], "형광펜이 없으면 아무것도 없다");
+  // 색이 다른 형광펜 둘과 앞뒤에서 동시에 고치기
+  const two = [mark(0, 2, "pink"), mark(7, 10, "blue")];                 // "오늘", "좋네요"
+  assert.deepEqual(remapMarks(text, "아, 오늘 날씨가 정말 좋네요", two), [mark(3, 5, "pink"), mark(13, 16, "blue")]);
+  // 긴 글에서 한 곳만 고쳐도 빠르다(앞·뒤가 같은 부분은 걷어 낸다)
+  const long = "가나다라 ".repeat(5000);
+  const started = Date.now();
+  const moved = remapMarks(long, `X${long}`, [mark(10000, 10010)]);
+  assert.deepEqual(moved, [mark(10001, 10011)]);
+  assert.ok(Date.now() - started < 500, "긴 글에서도 빠르다");
+  // 고친 곳이 아주 넓을 때(맞추기 한도 초과)도 오류 없이 처리된다
+  const wide = remapMarks("가".repeat(3000) + "끝", "나".repeat(3000) + "끝", [mark(3000, 3001)]);
+  assert.deepEqual(wide, [mark(3000, 3001)], "한도를 넘으면 통째로 바뀐 것으로 보되, 바뀌지 않은 끝 글자는 남는다");
 });
 
 test("화자만 원래대로: 글 수정과 형광펜은 남는다. 코어에서 받은 글·형광펜은 걸러서 받는다", () => {

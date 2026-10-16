@@ -93,7 +93,7 @@ function BoxEditor({ value, original, selection, onSave, onCancel }) {
         {draft !== original && (
           <button type="button" onClick={() => setDraft(original)} data-testid="text-editor-original" className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 cursor-pointer">원문으로</button>
         )}
-        <span className="text-[11px] text-slate-400">Ctrl+Enter 저장 · Esc 취소 · 글을 고치면 이 박스의 형광펜은 지워져요</span>
+        <span className="text-[11px] text-slate-400">Ctrl+Enter 저장 · Esc 취소 · 고치지 않은 글의 형광펜은 그대로 남아요</span>
       </div>
     </div>
   );

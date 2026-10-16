@@ -309,7 +309,8 @@ try {
   await page.getByTestId("text-editor-save").click();
   await savedState();
   assert.equal(speakerPosts.at(-1).texts["seg-1"], "인공지능 기자가 나온다는 얘기 들어보셨죠.");
-  assert.equal(speakerPosts.at(-1).marks?.["seg-1"], undefined, "글을 고치면 그 박스의 형광펜은 지워진다");
+  assert.deepEqual(speakerPosts.at(-1).marks["seg-1"], [{ s: 0, e: 5, c: "orange" }, { s: 7, e: 8, c: "orange" }], "글을 고쳐도 형광펜이 새 위치에 남는다");
+  assert.deepEqual(await page.getByTestId("box-text-seg-1").locator("mark").evaluateAll((els) => els.map((el) => el.textContent)), ["인공지능 ", "가"], "고친 글에서 칠했던 부분(바꾼 말 포함)이 그대로 칠해져 있다");
   assert.deepEqual(speakerPosts.at(-1).marks["seg-2"], [{ s: 0, e: 2, c: "blue" }], "다른 박스의 형광펜은 그대로");
   assert.match(await page.getByTestId("box-text-seg-1").innerText(), /^인공지능 기자가/);
   assert.match(await unified.innerText(), /^인공지능 기자가 나온다는 얘기 들어보셨죠\. 네, 들어봤습니다/);
@@ -327,12 +328,16 @@ try {
   await page.getByTestId("text-editor-save").click();
   await savedState();
   assert.equal(speakerPosts.at(-1).texts, undefined, "원문과 같아지면 고친 기록이 없다");
+  assert.deepEqual(speakerPosts.at(-1).marks["seg-1"], [{ s: 0, e: 3, c: "orange" }, { s: 5, e: 6, c: "orange" }], "원문으로 되돌려도 형광펜이 원래 위치로 돌아온다");
   assert.match(await page.getByTestId("box-text-seg-1").innerText(), /^AI 기자가 나온다는/);
-  await selectInBox("seg-2", 0, 2);                                            // 남은 형광펜을 지워 다음 단계를 깨끗한 상태로 시작한다
-  await page.getByTestId("mark-clear").click();
-  await savedState();
+  for (const boxId of ["seg-1", "seg-2"]) {                                    // 남은 형광펜을 지워 다음 단계를 깨끗한 상태로 시작한다
+    const length = (await page.getByTestId(`box-text-${boxId}`).evaluate((el) => el.textContent.length));
+    await selectInBox(boxId, 0, length);
+    await page.getByTestId("mark-clear").click();
+    await savedState();
+  }
   assert.equal(speakerPosts.at(-1).marks, undefined, "형광펜을 다 지우면 기록도 사라진다");
-  step("텍스트 수정바: 수정(드래그한 부분 선택된 채로 열림, Ctrl 없이 저장·Esc 취소·원문으로), 글을 고치면 그 박스의 형광펜만 지워진다");
+  step("텍스트 수정바: 수정(드래그한 부분 선택된 채로 열림, 저장·Esc 취소·원문으로), 글을 고쳐도 고치지 않은 글의 형광펜은 새 위치에 남는다");
 
   // 8. 화자 프로필: CLOVA 가 나눈 박스는 그대로 두고 이름만 바꾼다. 프로필 아이콘에서만 작은 메뉴가 열린다.
   const boxNames = async () => [await page.getByTestId("speaker-name-seg-1").innerText(), await page.getByTestId("speaker-name-seg-2").innerText()];

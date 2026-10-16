@@ -168,7 +168,7 @@ export function groupByOriginalSpeaker(dialogues, baseDialogues) {
 
 // ── 텍스트 수정과 형광펜: 화자 수정처럼 CLOVA 원본 위에 덧씌운다. 키는 화자 박스의 id(박스 첫 발언의 id) ──────────────
 //  - texts: { 박스 id: 고친 글 }                      박스 전체 글을 대신한다
-//  - marks: { 박스 id: [{ s, e, c }] }               글자 위치 [s, e) 에 형광펜 색 c. 글을 고치면 그 박스의 형광펜은 지운다
+//  - marks: { 박스 id: [{ s, e, c }] }               글자 위치 [s, e) 에 형광펜 색 c. 글을 고치면 바뀌지 않은 글자에 붙은 형광펜은 새 위치로 옮긴다
 export const MARK_COLORS = {
   yellow: { label: "노랑", bg: "#FFF1A8" },
   orange: { label: "주황", bg: "#FFD9B0" },
@@ -261,14 +261,90 @@ export function removeMarks(edits, boxId, start, end) {
   return list.length === current.length && list.every((m, i) => m === current[i]) ? edits : withMarks(edits, boxId, list);
 }
 
-/** 박스의 글을 고친다. 원래 글과 같아지면 고친 기록을 지운다. 글을 고치면 그 박스의 형광펜은 위치가 어긋나므로 지운다. */
+// ── 글을 고쳐도 형광펜이 남게 하는 계산 ──────────────────────────────────────────────────────────────
+// 고치기 전·후 글을 글자 단위로 비교해(앞·뒤 같은 부분은 먼저 걷어 내고, 가운데만 LCS 로 맞춘다) 바뀌지 않은 글자에 붙은 형광펜을 새 위치로 옮긴다.
+//  - 형광펜 안에서 지운 글자는 빠지고, 형광펜 안에 끼워 넣은 글은 함께 칠해진다.
+//  - 칠한 부분을 통째로 다른 말로 바꾸면 새 말에도 형광펜이 이어진다. 칠한 부분의 끝 경계에 이어 쓴 글은 칠하지 않는다.
+//  - 칠한 글이 모두 사라지면 그 형광펜도 사라진다.
+const LCS_CELL_LIMIT = 4_000_000; // 가운데 부분이 이보다 크면(고친 곳이 아주 넓으면) 맞추지 않고 통째로 바뀐 것으로 본다
+
+/** 글자 하나씩 짝: 앞·뒤 같은 부분 + 가운데 LCS. 돌려주는 값은 [옛 위치, 새 위치] 목록(순서대로). */
+function matchChars(before, after) {
+  let prefix = 0;
+  const limit = Math.min(before.length, after.length);
+  while (prefix < limit && before[prefix] === after[prefix]) prefix += 1;
+  let suffix = 0;
+  while (suffix < limit - prefix && before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) suffix += 1;
+  const pairs = [];
+  for (let i = 0; i < prefix; i += 1) pairs.push([i, i]);
+  const n = before.length - prefix - suffix;
+  const m = after.length - prefix - suffix;
+  if (n > 0 && m > 0 && (n + 1) * (m + 1) <= LCS_CELL_LIMIT) {
+    const width = m + 1;
+    const table = new Uint32Array((n + 1) * width);
+    for (let i = n - 1; i >= 0; i -= 1) {
+      for (let j = m - 1; j >= 0; j -= 1) {
+        table[i * width + j] = before[prefix + i] === after[prefix + j]
+          ? table[(i + 1) * width + j + 1] + 1
+          : Math.max(table[(i + 1) * width + j], table[i * width + j + 1]);
+      }
+    }
+    let i = 0;
+    let j = 0;
+    while (i < n && j < m) {
+      if (before[prefix + i] === after[prefix + j]) {
+        pairs.push([prefix + i, prefix + j]);
+        i += 1;
+        j += 1;
+      } else if (table[(i + 1) * width + j] >= table[i * width + j + 1]) i += 1;
+      else j += 1;
+    }
+  }
+  for (let k = suffix; k > 0; k -= 1) pairs.push([before.length - k, after.length - k]);
+  return pairs;
+}
+
+/** 글을 고쳤을 때 형광펜을 새 글의 위치로 옮긴다. */
+export function remapMarks(before, after, marks) {
+  if (!marks || !marks.length || before === after) return marks || [];
+  const pairs = matchChars(before, after);
+  const colorAt = new Array(after.length).fill(null);
+  const markOf = new Array(before.length).fill(null);
+  for (const m of marks) for (let i = m.s; i < Math.min(m.e, before.length); i += 1) markOf[i] = m;
+  // 바뀌지 않은 글자는 그 글자의 새 위치에 같은 색
+  for (const [oldIndex, newIndex] of pairs) if (markOf[oldIndex]) colorAt[newIndex] = markOf[oldIndex].c;
+  // 사이사이 바뀐 곳(지운 글자와 새로 쓴 글)
+  const edges = [[-1, -1], ...pairs, [before.length, after.length]];
+  for (let k = 1; k < edges.length; k += 1) {
+    const a = edges[k - 1][0] + 1;
+    const b = edges[k][0];
+    const c = edges[k - 1][1] + 1;
+    const d = edges[k][1];
+    if (d <= c) continue; // 새로 쓴 글이 없다(지우기만 했다)
+    const owner = b > a
+      ? marks.find((m) => m.s <= a && b <= m.e)          // 칠한 부분 안의 글을 다른 말로 바꿨다 → 새 말도 칠한다
+      : marks.find((m) => m.s < a && a < m.e);           // 칠한 부분 한가운데에 글을 끼워 넣었다 → 함께 칠한다
+    if (owner) for (let x = c; x < d; x += 1) colorAt[x] = owner.c;
+  }
+  const out = [];
+  for (let x = 0; x < colorAt.length; x += 1) {
+    if (!colorAt[x]) continue;
+    const last = out[out.length - 1];
+    if (last && last.c === colorAt[x] && last.e === x) last.e = x + 1;
+    else out.push({ s: x, e: x + 1, c: colorAt[x] });
+  }
+  return out;
+}
+
+/** 박스의 글을 고친다. 원래 글과 같아지면 고친 기록을 지운다. 형광펜은 고친 글의 위치에 맞게 옮긴다. */
 export function setBoxText(edits, boxId, value, originalText) {
+  const current = own(edits.texts || {}, boxId) ? edits.texts[boxId] : originalText;
   const texts = { ...(edits.texts || {}) };
   if (value === originalText) delete texts[boxId];
   else texts[boxId] = value;
   let next = { ...edits, texts };
   if (!Object.keys(texts).length) delete next.texts;
-  next = withMarks(next, boxId, []);
+  next = withMarks(next, boxId, remapMarks(current, value, (edits.marks || {})[boxId] || []));
   return next;
 }
 

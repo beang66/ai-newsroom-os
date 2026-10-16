@@ -174,7 +174,8 @@ class Handler(BaseHTTPRequestHandler):
         job_cancel=re.fullmatch(r'/api/jobs/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/cancel',self.path)
         source_delete=re.fullmatch(r'/api/sources/([a-f0-9]{32}|[a-f0-9]{16})/delete',self.path)
         knowledge_file_delete=re.fullmatch(r'/api/knowledge-files/('+UUID+')/delete',self.path)
-        if not restore and not prune and not article_delete and not snapshot and not job_cancel and not source_delete and not knowledge_file_delete and self.path not in ('/api/media-assets','/api/knowledge-files/import','/api/assist','/api/articles/save','/api/articles/publish','/api/session','/api/session/signup','/api/session/keep','/api/transfer/upload','/api/backup/restore','/api/backup/disable','/api/transfer/download','/api/transfer/delete','/api/transfer/file','/api/transfer/file/delete','/api/session/signout','/api/session/auto','/api/settings','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/stt','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate','/api/platform/render','/api/platform/validate','/api/platform/sns','/api/cms/publish','/api/vault/export','/api/vault/restore'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
+        speakers=re.fullmatch(r'/api/transcripts/([a-f0-9]{32})/speakers',self.path)
+        if not restore and not prune and not article_delete and not snapshot and not job_cancel and not source_delete and not knowledge_file_delete and not speakers and self.path not in ('/api/media-assets','/api/knowledge-files/import','/api/assist','/api/articles/save','/api/articles/publish','/api/session','/api/session/signup','/api/session/keep','/api/transfer/upload','/api/backup/restore','/api/backup/disable','/api/transfer/download','/api/transfer/delete','/api/transfer/file','/api/transfer/file/delete','/api/session/signout','/api/session/auto','/api/settings','/api/models/install','/api/models/cancel','/api/factcheck/run','/api/semantic/parse','/api/interview/transcribe','/api/stt','/api/materials/extract','/api/sources/open','/api/factcheck/external','/api/platform/keywords','/api/platform/generate','/api/platform/render','/api/platform/validate','/api/platform/sns','/api/cms/publish','/api/vault/export','/api/vault/restore'):return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
         try:
             size=int(self.headers.get('Content-Length','0'))
@@ -211,6 +212,7 @@ class Handler(BaseHTTPRequestHandler):
             if restore:return self.send(200,CORE.storage.restore_revision(restore.group(1),int(restore.group(2))))
             if prune:return self.send(200,CORE.storage.prune_legacy_revisions(prune.group(1)))
             if article_delete:return self.send(200,CORE.storage.delete_article(article_delete.group(1)))
+            if speakers:return self.send(200,CORE.storage.save_speaker_edits(speakers.group(1),data.get('speakerEdits')))
             if snapshot:return self.send(200,CORE.storage.create_snapshot(snapshot.group(1),data))
             if self.path=='/api/materials/extract':return self.send(200,extract_text(data))
             if self.path=='/api/sources/open':return self.send(200,CORE.storage.open_source(data))

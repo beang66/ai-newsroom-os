@@ -78,10 +78,42 @@ def get_transcript(identifier):
     with vault.connect() as db:
         row = db.execute('SELECT filename, mime_type, dialogues_json, duration, created_at FROM transcripts WHERE id = ?',
                          (identifier,)).fetchone()
+        edits = db.execute('SELECT value FROM app_meta WHERE key = ?', (SPEAKER_EDITS_PREFIX + identifier,)).fetchone() if row else None
     if not row:
         raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
     return {'id': identifier, 'filename': row[0], 'mimeType': row[1], 'dialogues': json.loads(row[2]),
-            'duration': row[3], 'createdAt': row[4]}
+            'duration': row[3], 'createdAt': row[4], 'speakerEdits': json.loads(edits[0]) if edits else {}}
+
+
+SPEAKER_EDITS_PREFIX = 'speaker_edits:'  # app_meta 키 — 발언 원본(transcripts.dialogues_json)은 바꾸지 않고 사용자의 화자 수정만 따로 둔다
+
+
+def _clean_speaker_edits(edits):
+    """화면이 보낸 화자 수정(이름 바꾸기 names · 합치기 merge · 구간 지정 assign)을 검사해 정리한다."""
+    if not isinstance(edits, dict):
+        raise RequestError('화자 수정 형식을 확인해 주세요.')
+    clean = {}
+    for field, limit in (('names', 200), ('merge', 500), ('assign', 10_000)):
+        raw = edits.get(field, {})
+        if not isinstance(raw, dict) or len(raw) > limit:
+            raise RequestError('화자 수정 형식을 확인해 주세요.')
+        for key, value in raw.items():
+            if not isinstance(key, str) or not isinstance(value, str) or not key or not value or len(key) > 100 or len(value) > 100:
+                raise RequestError('화자 수정 형식을 확인해 주세요.')
+        clean[field] = dict(raw)
+    return clean
+
+
+def save_speaker_edits(identifier, edits):
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    clean = _clean_speaker_edits(edits)
+    with vault.connect() as db:
+        if not db.execute('SELECT 1 FROM transcripts WHERE id = ?', (identifier,)).fetchone():
+            raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+        db.execute('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)',
+                   (SPEAKER_EDITS_PREFIX + identifier, json.dumps(clean, ensure_ascii=False)))
+    return {'id': identifier, 'speakerEdits': clean}
 
 
 def transcript_audio(identifier):

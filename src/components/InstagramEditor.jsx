@@ -64,13 +64,13 @@ export default function InstagramEditor({ draft, changed, Evidence, cards = [], 
   const hashtags = (draft.hashtags || []).join(" ");
   const caption = [draft.opening, ...paragraphs, draft.closing, hashtags].filter(Boolean).join("\n\n");
   const parts = [
-    { key: "opening", label: "도입", value: draft.opening, evidence: draft.block_evidence?.opening,
+    { key: "opening", label: "도입", value: draft.opening, evidence: draft.block_evidence?.opening, valid: draft.block_evidence_valid?.opening,
       set: (value) => changed((next) => { next.opening = value; }) },
     ...paragraphs.map((paragraph, index) => ({
-      key: `p${index}`, label: `본문 ${index + 1}`, value: paragraph, evidence: draft.block_evidence?.paragraphs?.[index],
+      key: `p${index}`, label: `본문 ${index + 1}`, value: paragraph, evidence: draft.block_evidence?.paragraphs?.[index], valid: draft.block_evidence_valid?.paragraphs?.[index],
       set: (value) => changed((next) => { next.paragraphs[index] = value; }),
     })),
-    { key: "closing", label: "마무리", value: draft.closing, evidence: draft.block_evidence?.closing,
+    { key: "closing", label: "마무리", value: draft.closing, evidence: draft.block_evidence?.closing, valid: draft.block_evidence_valid?.closing,
       set: (value) => changed((next) => { next.closing = value; }) },
     { key: "hashtags", label: "해시태그", value: hashtags, hashtag: true,
       set: (value) => changed((next) => { next.hashtags = value.trim() ? value.trim().split(/\s+/u) : []; }) },
@@ -119,16 +119,18 @@ export default function InstagramEditor({ draft, changed, Evidence, cards = [], 
           <span className="text-[13px] font-bold text-[#101010]">{ACCOUNT}</span>
           <div className="mt-1 space-y-2">
             {parts.map((part) => (
-              <CaptionPart
-                key={part.key}
-                id={partId(part.key)}
-                label={part.label}
-                value={part.value}
-                hashtag={part.hashtag}
-                active={activePart === part.key}
-                onFocus={() => setActivePart(part.key)}
-                onChange={part.set}
-              />
+              <div key={part.key}>
+                <CaptionPart
+                  id={partId(part.key)}
+                  label={part.label}
+                  value={part.value}
+                  hashtag={part.hashtag}
+                  active={activePart === part.key}
+                  onFocus={() => setActivePart(part.key)}
+                  onChange={part.set}
+                />
+                {!part.hashtag && <Evidence quotes={part.evidence} valid={part.valid} />}
+              </div>
             ))}
           </div>
           <p className={`mt-2 text-right font-mono text-[11px] ${caption.length > LIMIT ? "font-bold text-red-600" : "text-[#B0AAA2]"}`}>

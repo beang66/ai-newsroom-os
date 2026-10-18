@@ -15,6 +15,7 @@ import PlatformReview from "./PlatformReview.jsx";
 import PlatformCardEditor from "./PlatformCardEditor.jsx";
 import PlatformDelivery from "./PlatformDelivery.jsx";
 import ThreadsEditor from "./ThreadsEditor.jsx";
+import InstagramEditor from "./InstagramEditor.jsx";
 import PlatformArticlePicker from './PlatformArticlePicker.jsx';
 import {appliedSource,applyCurrentSource,sourceReady,beginSourceTransition,claimSourceTransition,cancelSourceTransition} from '../lib/platformSource.js';
 import {articleId, fingerprint, invalidateDraft, sourceText, subtitleLabel, supportedPlatforms, visibleDrafts,sameGenerationSource} from "../lib/platformState.js";
@@ -45,21 +46,6 @@ function Evidence({ quotes, valid }) {
         ))}
       </ul>
     </details>
-  );
-}
-
-function TextArea({ label, value, onChange, rows = 4, evidence, valid }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-[11px] font-extrabold text-[#57514A]">{label}</label>
-      <textarea
-        value={value || ""}
-        rows={rows}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full resize-y rounded-2xl border border-[#DDD6CB] bg-white px-4 py-3 text-sm leading-7 text-[#292929] outline-none transition focus:border-[#292929]"
-      />
-      <Evidence quotes={evidence} valid={valid} />
-    </div>
   );
 }
 
@@ -105,41 +91,7 @@ function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
   };
 
   if (platform === "instagram") {
-    return (
-      <div className="space-y-4">
-        <TextArea
-          label="도입"
-          value={draft.opening}
-          onChange={(value) => changed((next) => { next.opening = value; })}
-          rows={3}
-          evidence={draft.block_evidence?.opening}
-        />
-        {(draft.paragraphs || []).map((paragraph, index) => (
-          <TextArea
-            key={index}
-            label={`본문 ${index + 1}`}
-            value={paragraph}
-            onChange={(value) => changed((next) => { next.paragraphs[index] = value; })}
-            evidence={draft.block_evidence?.paragraphs?.[index]}
-          />
-        ))}
-        <TextArea
-          label="마무리"
-          value={draft.closing}
-          onChange={(value) => changed((next) => { next.closing = value; })}
-          rows={3}
-          evidence={draft.block_evidence?.closing}
-        />
-        <TextArea
-          label="해시태그 · 3~5개"
-          value={(draft.hashtags || []).join(" ")}
-          onChange={(value) => changed((next) => {
-            next.hashtags = value.trim() ? value.trim().split(/\s+/u) : [];
-          })}
-          rows={2}
-        />
-      </div>
-    );
+    return <InstagramEditor draft={draft} changed={changed} Evidence={Evidence} cards={cards} article={article} />;
   }
 
   if (platform === "threads") {

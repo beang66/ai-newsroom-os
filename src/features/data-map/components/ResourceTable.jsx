@@ -32,8 +32,8 @@ export default function ResourceTable({
     <section className="library">
       <div className="section-heading">
         <div>
-          <h2>문서 목록</h2>
-          <p>가져온 Markdown과 기사에 첨부한 자료를 분류별로 확인합니다.</p>
+          <h2>자료 목록</h2>
+          <p>기사에 첨부한 자료 파일과 가져온 Markdown 노트를 한 목록에서 분류별로 확인합니다.</p>
         </div>
         <div className="library-heading-actions">
           <label className="sort-control">
@@ -53,7 +53,7 @@ export default function ResourceTable({
         </div>
       </div>
       <p className="file-notice" role="status">
-        {importNotice || "Markdown은 앱의 암호화 저장소에 복사되며 원본 파일은 변경하지 않습니다."}
+        {importNotice || "Markdown은 앱의 암호화 저장소에 복사되며 원본 파일은 변경하지 않습니다. 원래 폴더를 고친 뒤에는 '다시 가져오기'로 같은 폴더를 고르면 바뀐 파일만 갱신됩니다."}
       </p>
       <div className="table-scroll">
         <table>

@@ -34,5 +34,11 @@ services:
         sync: false
       - key: AUTH_REQUIRED
         value: "true"
+      # 쓸 수 있는 계정(쉼표, '@donga.com' 같은 도메인 가능). 비우면 로그인한 모든 계정(사용자 테스트 기간)
+      - key: ALLOWED_EMAILS
+        sync: false
+      # CMS 송고 계정. 비우면 아무도 송고할 수 없다
+      - key: CMS_ALLOWED_EMAILS
+        sync: false
       - key: RATE_LIMIT_PER_MIN
         value: "120"

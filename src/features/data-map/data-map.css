@@ -69,7 +69,7 @@
 .dm-root .map-views { display: inline-flex; padding: 4px; border: 1px solid var(--border-soft); border-radius: 999px; background: var(--bg-card); }
 .dm-root .map-views button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 .dm-root .map-views button.active { background: var(--text-primary); color: white; }
-.dm-root .dm-import { display: inline-flex; gap: 8px; }
+.dm-root .dm-import { display: inline-flex; flex-wrap: wrap; gap: 8px; }
 .dm-root .dm-import-notice { padding: 10px 14px; border-radius: var(--dm-radius-control); background: var(--bg-card); border: 1px solid var(--border-soft); font-size: 12px; color: var(--text-secondary); }
 
 /* 분류 필터 */

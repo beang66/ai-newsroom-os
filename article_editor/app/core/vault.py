@@ -7,6 +7,7 @@
 import base64
 import contextlib
 import datetime
+import functools
 import hashlib
 import hmac
 import os
@@ -90,9 +91,13 @@ def adopt_legacy(user_id):
         marker.write_text(user_id, encoding='utf-8')
         return moved
 _INIT_LOCK = threading.RLock()
-SCHEMA_VERSION = 5  # 4: article_deleted / 5: 고정본의 부제·출처 사본(기존 해시·불변 트리거 유지)
+SCHEMA_VERSION = 7  # 4: article_deleted / 5: 고정본 보강 / 6: 노트 역할 / 7: 동의 기반 UT 이벤트
 # api.py 의 /api/vault/restore 요청 한도(220MB)에 base64(4/3배)·JSON 여유를 뺀 값. 넘는 백업은 받아도 복구할 수 없다.
 MAX_BACKUP_BYTES = 160_000_000
+
+# storage.purge_trash 가 영구 삭제 때만 잠시 지웠다가 이것으로 되돌린다
+SNAPSHOT_NO_DELETE = """CREATE TRIGGER IF NOT EXISTS article_snapshots_no_delete BEFORE DELETE ON article_snapshots
+BEGIN SELECT RAISE(ABORT, 'article_snapshots are immutable'); END;"""
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS articles (
@@ -132,7 +137,7 @@ CREATE TABLE IF NOT EXISTS source_index (
 CREATE TABLE IF NOT EXISTS knowledge_files (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, path TEXT NOT NULL, path_key TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL, content TEXT NOT NULL, sha256 TEXT NOT NULL,
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'note');
 CREATE TABLE IF NOT EXISTS knowledge_links (
   source_id TEXT NOT NULL REFERENCES knowledge_files(id), ordinal INTEGER NOT NULL,
   kind TEXT NOT NULL, raw_text TEXT NOT NULL, target_ref TEXT NOT NULL,
@@ -148,8 +153,7 @@ CREATE TABLE IF NOT EXISTS article_snapshots (
   UNIQUE (article_id, revision_id, content_hash));
 CREATE TRIGGER IF NOT EXISTS article_snapshots_no_update BEFORE UPDATE ON article_snapshots
 BEGIN SELECT RAISE(ABORT, 'article_snapshots are immutable'); END;
-CREATE TRIGGER IF NOT EXISTS article_snapshots_no_delete BEFORE DELETE ON article_snapshots
-BEGIN SELECT RAISE(ABORT, 'article_snapshots are immutable'); END;
+""" + SNAPSHOT_NO_DELETE + """
 CREATE TABLE IF NOT EXISTS processing_jobs (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, type TEXT NOT NULL, status TEXT NOT NULL,
   progress REAL NOT NULL DEFAULT 0,
@@ -161,6 +165,9 @@ CREATE TABLE IF NOT EXISTS processing_jobs (
 CREATE TABLE IF NOT EXISTS transcripts (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, filename TEXT NOT NULL, mime_type TEXT NOT NULL,
   audio BLOB NOT NULL, dialogues_json TEXT NOT NULL, duration REAL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS ut_events (
+  event_id TEXT PRIMARY KEY, occurred_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS ut_events_occurred_at ON ut_events(occurred_at);
 """
 # article_snapshots: 검증·변환용 고정본(계약 ArticleSnapshot). 이력 줄을 참조하지 않고 내용을 **복사해** 둔다 —
 # 이력이 MAX_REVISIONS 로 정리돼도 남는다. 두 트리거 때문에 한 번 쓴 줄은 고치거나 지울 수 없다(코드 실수로도).
@@ -174,6 +181,12 @@ def _migrate(db):
     for column in ('subtitle', 'url'):
         if column not in snapshot_columns:
             db.execute(f"ALTER TABLE article_snapshots ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+    # 6: 노트 역할을 코어가 저장한다. 옛 노트는 경로의 역할 폴더로 한 번 채운다(화면이 하던 규칙과 같다)
+    if not any(row[1] == 'role' for row in db.execute('PRAGMA table_info(knowledge_files)')):
+        from .knowledge_files import role_from_path
+        db.execute("ALTER TABLE knowledge_files ADD COLUMN role TEXT NOT NULL DEFAULT 'note'")
+        db.executemany('UPDATE knowledge_files SET role = ? WHERE id = ?',
+                       [(role_from_path(path), ident) for ident, path in db.execute('SELECT id, path FROM knowledge_files').fetchall()])
     if not any(row[1] == 'id' for row in db.execute('PRAGMA table_info(article_revisions)')):
         db.execute('ALTER TABLE article_revisions ADD COLUMN id TEXT')
     for article_id, revision_no in db.execute('SELECT article_id, revision_no FROM article_revisions WHERE id IS NULL').fetchall():
@@ -199,6 +212,7 @@ def _migrate(db):
                    ('manual_save_since', datetime.datetime.now(datetime.timezone.utc).isoformat() if added else MANUAL_SAVE_INTRODUCED))
 
 
+@functools.cache  # 처음 읽은 키를 기억한다(연결마다 자격 증명 관리자를 부르지 않게). 예외는 기억하지 않으므로 키가 없으면 계속 닫힌 채 실패한다
 def _device_key():
     try:
         key = keyring.get_password(SERVICE, ACCOUNT)

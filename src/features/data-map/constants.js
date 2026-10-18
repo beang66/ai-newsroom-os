@@ -11,14 +11,7 @@ export const CATEGORIES = {
   missing: { label: "미확보 자료", description: "링크는 있지만 아직 가져오지 않은 문서" },
 };
 
-/** Markdown 경로의 폴더 이름 → 분류. 가장 안쪽 폴더부터 찾는다(예: projects/인터뷰/a.md → 인터뷰·발언). */
-export const CATEGORY_FOLDERS = {
-  기사: "article", articles: "article",
-  기획: "plan", 메모: "plan", plan: "plan", plans: "plan",
-  원자료: "data", 자료: "data", 데이터: "data", data: "data",
-  인터뷰: "interview", 녹취: "interview", 발언: "interview", interviews: "interview",
-  검증: "verify", 팩트체크: "verify", factcheck: "verify",
-};
+// 노트의 역할 폴더 규칙(기획·원자료·인터뷰·검증 폴더 → 분류)은 코어(core/knowledge_files.py ROLE_FOLDERS)에 있다.
 
 export function categoryLabel(node) {
   return CATEGORIES[node?.category]?.label || "자료";

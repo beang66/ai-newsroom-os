@@ -51,15 +51,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dist', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
-    parser.add_argument('--label', default='2026-10-07 팀 테스트')
+    parser.add_argument('--label', default='팀 테스트')
     args = parser.parse_args()
     root = args.dist.resolve()
-    required = ['AINewsroom.exe', 'AINewsroom-debug.exe', '_internal/python313.dll',
+    required = ['AINewsroom.exe', 'AINewsroom-debug.exe',
                 '_internal/models_manifest.json', '_internal/frontend/index.html',
                 '_internal/node/node.exe', '_internal/node/LICENSE',
                 '_internal/platform-generator/core-adapter.js',
                 '_internal/platform-generator/node_modules/dotenv/dist/index.cjs']
     missing = [name for name in required if not (root / name).is_file()]
+    if not any((root / '_internal').glob('python3*.dll')):
+        missing.append('_internal/python3*.dll')
     if missing:
         raise RuntimeError('Incomplete EXE build: ' + ', '.join(missing))
     payload = [p for p in root.rglob('*') if p.is_file()]
@@ -70,7 +72,7 @@ def main():
         raise RuntimeError('User/config data found in distribution: ' + ', '.join(forbidden))
     manifest = json.loads((root / '_internal/models_manifest.json').read_text(encoding='utf-8'))
     total_models = sum(file['size'] for item in manifest['models'] for file in item['files'])
-    readme = f"""AI Newsroom — {args.label}
+    readme = fr"""AI Newsroom — {args.label}
 
 1. ZIP 파일을 폴더에 전부 압축 해제합니다. ZIP 안에서 직접 실행하지 마세요.
 2. '시작하기.cmd'를 더블클릭합니다. Python이나 Node 설치는 필요하지 않습니다.

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getSettings, saveSettings, setKeepLogin, getDiagnostics } from "../api/editorial";
+import { deleteUtEvents, exportUtEvents, getSettings, getUtEvents, openExportFolder, saveSettings, setKeepLogin, getDiagnostics } from "../api/editorial";
 import AppDialog from "./AppDialog";
 import CloudBackupSection from "./CloudBackupSection";
 
@@ -7,12 +7,15 @@ import CloudBackupSection from "./CloudBackupSection";
 export default function SettingsDialog({ onClose, session, onSession, onTransfer }) {
   const [settings, setSettings] = useState(null);
   const [settingsError, setSettingsError] = useState("");
+  const [utStatus, setUtStatus] = useState(null);
+  const [utNotice, setUtNotice] = useState("");
 
   useEffect(() => {
     const request = new AbortController();
     getSettings(request.signal).then(setSettings).catch((e) => {
       if (!request.signal.aborted) setSettingsError(e?.message || String(e));
     });
+    getUtEvents(request.signal).then(setUtStatus).catch(() => {});
     return () => request.abort();
   }, []);
 
@@ -27,7 +30,7 @@ export default function SettingsDialog({ onClose, session, onSession, onTransfer
         `파이프라인: ${d.pipelineVersion}`,
         `연결 방식: ${window.pywebview?.api?.core ? "IPC" : "HTTP"} · ${d.frozen ? "배포본(EXE)" : "개발 실행"}`,
         `OS: ${d.os}`,
-        `팩트체크: ${d.factcheckMode === "local" ? "로컬 모델" : "외부 모델"}`,
+        `AI 엔진: ${d.factcheckMode === "local" ? "로컬 AI" : "OpenAI"}`,
         `모델: ${d.models.map((m) => `${m.id} ${m.installed ? "설치됨" : `미설치(${m.files})`}`).join(", ") || "없음"}`,
         `로그인: ${d.signedIn ? "예" : "아니오"} · 로그인 유지: ${d.keepLogin ? "켜짐" : "꺼짐"}`,
         `설정: ${JSON.stringify(d.settings)}`,
@@ -51,8 +54,31 @@ export default function SettingsDialog({ onClose, session, onSession, onTransfer
     const before = settings;
     setSettingsError("");
     setSettings({ ...settings, ...patch }); // 바로 반영하고, 저장에 실패하면 되돌린다
-    try { setSettings(await saveSettings(patch)); }
+    try { const updated = await saveSettings(patch); setSettings(updated); return updated; }
     catch (e) { setSettings(before); setSettingsError(e?.message || String(e)); }
+  };
+
+  const changeMeasurement = async (enabled) => {
+    if (enabled && !window.confirm("사용자 테스트 기록 v1을 켤까요? 기사 저장·다시 열기·파일 내보내기의 성공 여부와 시간만 이 PC의 암호화 저장소에 기록합니다. 원고·음성·이메일·검색어·파일명·경로는 기록하거나 전송하지 않습니다.")) return;
+    const updated = await change({ utMeasurement: enabled });
+    if (updated) setUtStatus(await getUtEvents());
+  };
+
+  const exportMeasurement = async () => {
+    setSettingsError(""); setUtNotice("");
+    try {
+      const preview = await getUtEvents(); setUtStatus(preview);
+      const summary = `${preview.count}건, ${preview.eventNames.join(", ") || "이벤트 없음"}\n필드: ${preview.fields.join(", ") || "없음"}`;
+      if (!window.confirm(`다음 사용자 테스트 기록을 JSONL 파일로 이 PC에 내보낼까요?\n\n${summary}\n\n외부로 자동 전송되지 않습니다.`)) return;
+      const result = await exportUtEvents();
+      setUtNotice(`${result.count}건을 내보냈습니다.`);
+    } catch (e) { setSettingsError(e?.message || String(e)); }
+  };
+
+  const deleteMeasurement = async () => {
+    if (!window.confirm("이 PC의 사용자 테스트 기록만 모두 삭제할까요? 기사와 취재자료는 지워지지 않습니다.")) return;
+    try { const result = await deleteUtEvents(); setUtStatus(await getUtEvents()); setUtNotice(`${result.deleted}건을 삭제했습니다.`); }
+    catch (e) { setSettingsError(e?.message || String(e)); }
   };
 
   return (
@@ -71,16 +97,6 @@ export default function SettingsDialog({ onClose, session, onSession, onTransfer
         <p className="text-xs text-[#666666] leading-relaxed">켜면 다음에 앱을 열 때 바로 로그인된 상태로 시작해요. 비밀번호는 저장하지 않고, 로그인 유지용 토큰만 이 PC의 Windows 자격 증명 관리자에 보관합니다. 로그아웃하면 자동으로 꺼집니다. 공용 PC에서는 켜지 마세요.</p>
       </section>
       <hr className="border-[#DDD6CB]" />
-      <section className="space-y-3" aria-labelledby="local-factcheck-title">
-        <h3 id="local-factcheck-title" className="font-black">팩트체크 판정 방식</h3>
-        <label className="flex items-center gap-2 text-sm font-bold">
-          <input type="checkbox" data-testid="settings-local-factcheck" checked={settings?.localFactcheck ?? true} disabled={!settings}
-            onChange={(event) => change({ localFactcheck: event.target.checked })} />
-          팩트체크에 로컬 모델 사용
-        </label>
-        <p className="text-xs text-[#666666] leading-relaxed">켜면 이 PC의 판정 모델이 문장을 판정하고, 확정하지 못한 문장만 직접 골라 외부 모델에 재검토를 요청해요(토큰 절약). 끄면 모든 문장을 외부 모델(API)이 판정해요(성능 우선, 토큰 사용 증가). 끄면 로컬 판정 모델을 설치하지 않아도 되지만 로그인과 인터넷 연결이 필요해요. 문장과 근거 조각 일부가 외부 서비스로 전송됩니다.</p>
-      </section>
-      <hr className="border-[#DDD6CB]" />
       <section className="space-y-3" aria-labelledby="diagnostics-title">
         <h3 id="diagnostics-title" className="font-black">문제 보고</h3>
         <p className="text-xs text-[#666666] leading-relaxed">문제가 생기면 아래 버튼으로 앱 버전·모델 설치 상태·설정을 복사해 보고에 붙여 주세요. 기사·자료 내용과 이메일은 들어가지 않습니다.</p>
@@ -95,6 +111,26 @@ export default function SettingsDialog({ onClose, session, onSession, onTransfer
         <p className="text-xs text-[#666666] leading-relaxed">PC를 바꿀 때 기사·취재자료를 옮기는 안내 마법사예요. 일회용 코드로 암호화한 이전 파일을 만들고, 새 PC에서 그 코드로 풀어요.</p>
         <button type="button" data-testid="settings-open-transfer" onClick={onTransfer}
           className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">이전 마법사 열기</button>
+      </section>
+      <hr className="border-[#DDD6CB]" />
+      <section className="space-y-3" aria-labelledby="ut-measurement-title">
+        <h3 id="ut-measurement-title" className="font-black">사용자 테스트 기록</h3>
+        <label className="flex items-center gap-2 text-sm font-bold">
+          <input type="checkbox" role="switch" data-testid="settings-ut-measurement" checked={settings?.utMeasurement ?? false} disabled={!settings}
+            onChange={(event) => changeMeasurement(event.target.checked)} />
+          선택 측정 켜기
+        </label>
+        <p className="text-xs text-[#666666] leading-relaxed">v1 범위: 기사 저장·다시 열기·파일 내보내기의 결과와 처리 시간만 이 PC의 암호화 저장소에 최대 7일·10,000건 보관합니다. 원고·음성·개인정보·검색어·파일명·경로·토큰은 기록하지 않으며 외부 전송도 하지 않습니다.</p>
+        <p className="text-xs text-[#666666]">현재 {utStatus?.count ?? 0}건{utStatus?.dropped ? ` · 용량 제한으로 ${utStatus.dropped}건 정리` : ""}</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" data-testid="settings-export-ut-events" onClick={exportMeasurement}
+            className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">미리보기 후 내보내기</button>
+          <button type="button" data-testid="settings-open-ut-folder" onClick={() => openExportFolder("diagnostics").catch((e) => setSettingsError(e?.message || String(e)))}
+            className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">폴더 열기</button>
+          <button type="button" data-testid="settings-delete-ut-events" onClick={deleteMeasurement}
+            className="px-4 py-2 text-xs font-bold bg-white border border-rose-200 text-rose-700 rounded-full cursor-pointer">기록 삭제</button>
+        </div>
+        {utNotice && <p role="status" data-testid="settings-ut-notice" className="text-xs text-emerald-700">{utNotice}</p>}
       </section>
     </AppDialog>
   );

@@ -15,6 +15,9 @@ export const ROUTES = Object.freeze({
   sessionAuto: "/api/session/auto",
   settings: "/api/settings",
   diagnostics: "/api/diagnostics",
+  utEvents: "/api/ut-events",
+  utEventsExport: "/api/ut-events/export",
+  utEventsDelete: "/api/ut-events/delete",
   backupKey: "/api/backup-key",
   backup: "/api/backup",
   backupList: "/api/backup/list",
@@ -47,6 +50,10 @@ export const ROUTES = Object.freeze({
   articleRevisions: (id) => "/api/articles/" + encodeURIComponent(id) + "/revisions",
   articleRevision: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no),
   articleDelete: (id) => "/api/articles/" + encodeURIComponent(id.replaceAll("-", "")) + "/delete",
+  articleUndelete: (id) => "/api/articles/" + encodeURIComponent(id.replaceAll("-", "")) + "/undelete",
+  trash: "/api/trash",
+  exports: "/api/exports",
+  exportsOpen: "/api/exports/open",
   articlePruneLegacy: (id) => "/api/articles/" + encodeURIComponent(id) + "/revisions/prune-legacy",
   articleRestore: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no) + "/restore",
   factcheckStatus: "/api/factcheck/status",
@@ -133,6 +140,12 @@ export function createCoreApi(transport) {
     getBackupKey: (signal) => transport.json(ROUTES.backupKey, null, signal),
     /** 문제 보고용 진단 정보(앱 버전·모델 설치 상태·설정 요약). 원고·자료·이메일은 없다 */
     getDiagnostics: (signal) => transport.json(ROUTES.diagnostics, null, signal),
+    /** 동의 기반 사용자 테스트 기록의 개수·기간·필드 미리보기. 원고 내용은 없다 */
+    getUtEvents: (signal) => transport.json(ROUTES.utEvents, null, signal),
+    /** 사용자가 미리보기 뒤 확인했을 때만 로컬 JSONL 파일을 만든다 */
+    exportUtEvents: (signal) => transport.json(ROUTES.utEventsExport, {}, signal),
+    /** 사용자 테스트 기록만 지운다. 기사·자료는 유지된다 */
+    deleteUtEvents: (signal) => transport.json(ROUTES.utEventsDelete, {}, signal),
     /** 환경 설정(이 PC) → { cloudBackup }. 모델 설치와는 별개 */
     getSettings: (signal) => transport.json(ROUTES.settings, null, signal),
     /** 환경 설정 변경. 준 항목만 바뀐다 → 바뀐 뒤의 설정 전체 */
@@ -213,8 +226,16 @@ export function createCoreApi(transport) {
     listRevisions: (articleId, signal) => transport.json(ROUTES.articleRevisions(articleId), null, signal),
     /** 저장 이력 한 건의 미리보기(읽기 전용) → { title, subtitle, content, ... } */
     getRevision: (articleId, revisionNo, signal) => transport.json(ROUTES.articleRevision(articleId, revisionNo), null, signal),
-    /** 보관소에서 기사 지우기(보관소·이어서 작업에서 빠지고 더 저장되지 않는다) → { deleted, articleId } */
+    /** 보관소에서 기사 지우기 = 휴지통(30일 뒤 영구 삭제) → { deleted, articleId, purgeAt } */
     deleteArticle: (articleId, signal) => transport.json(ROUTES.articleDelete(articleId), {}, signal),
+    /** 휴지통 → { articles: [{ articleId, title, deletedAt, purgeAt }] } */
+    listTrash: (signal) => transport.json(ROUTES.trash, null, signal),
+    /** 휴지통에서 되살리기 → { restored, articleId } */
+    restoreDeleted: (articleId, signal) => transport.json(ROUTES.articleUndelete(articleId), {}, signal),
+    /** 내 문서\AI Newsroom\내보내기\<종류> 에 저장. kind: backup|cards|photos|transcripts, files: [{data(base64), ext}] → { folder, files } */
+    saveExport: (kind, files, { title, label } = {}, signal) => transport.json(ROUTES.exports, { kind, files, title, label }, signal),
+    /** 내보내기 폴더를 파일 탐색기로 연다(kind 없으면 내보내기 전체) → { opened, folder } */
+    openExportFolder: (kind, signal) => transport.json(ROUTES.exportsOpen, kind ? { kind } : {}, signal),
     /** 수동 저장 도입 전의 옛 자동 저장 이력 정리 → { deleted } */
     pruneLegacyRevisions: (articleId, signal) => transport.json(ROUTES.articlePruneLegacy(articleId), {}, signal),
     /** 옛 저장본을 새 최신 저장본으로 복원(이력은 지우지 않음) → { draft, revisionNo, fromRevision } */

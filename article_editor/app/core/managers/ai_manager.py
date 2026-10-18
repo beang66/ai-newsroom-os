@@ -1,7 +1,7 @@
 """AI Module Manager — single interface over AI features (doc §4, §7, §8).
 
-Dispatches an AI task by ``kind``. Local AI is preferred; external models are
-reached only through the backend proxy (see ARCHITECTURE.md — backend-managed keys).
+Dispatches an AI task by ``kind``. OpenAI (through the backend proxy, see ARCHITECTURE.md —
+backend-managed keys) is the default; the localAi setting switches to local models.
 
 팩트체크·의미 청킹(core/ai/factcheck)은 torch/onnxruntime 을 쓰므로 처음 호출할 때 불러온다.
 """
@@ -38,7 +38,7 @@ class AIManager:
     def factcheck_status(self):
         """팩트체크에 필요한 모델·런타임 준비 상태."""
         from ..ai.factcheck import paths
-        from .settings_manager import local_factcheck
+        from .settings_manager import local_ai
         deps = {name: importlib.util.find_spec(name) is not None
                 for name in paths.embedding_dependencies()}
         embedding_ready = False
@@ -50,7 +50,7 @@ class AIManager:
             'embedding': embedding_ready,
             'boundary': (paths.BOUNDARY_DIR / 'model.onnx').is_file(),  # 없으면 규칙만으로 청킹
         }
-        local = local_factcheck()  # 끄면 판정은 외부 모델이 하므로 로컬 판정 모델은 필요 없다
+        local = local_ai()  # 끄면 판정은 외부 모델이 하므로 로컬 판정 모델은 필요 없다
         return {'ready': all(deps.values()) and (models['judge'] or not local) and models['embedding'],
                 'mode': 'local' if local else 'external', 'models': models, 'runtime': deps}
 

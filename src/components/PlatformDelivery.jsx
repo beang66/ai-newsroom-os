@@ -1,6 +1,8 @@
 import {useEffect,useLayoutEffect,useRef,useState} from "react";
 import {Check,Loader2,Send} from "lucide-react";
 import {renderStoredCard,snsAction,storedJpg} from "../api/platform.js";
+import {exportFiles} from "../api/editorial.js";
+import ExportNotice from "./ExportNotice.jsx";
 import {assertSameSource,draftText,fingerprint,reviewLabel,reviewStatus,sourceText,sameGenerationSource,articleId} from "../lib/platformState.js";
 import {cardImageReadiness,prepareCardImages} from '../lib/cardPreparation.js';
 
@@ -83,7 +85,7 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
  const currentCards=!!cards&&cards.article_id===articleId(article)&&sameGenerationSource(cards,article);
  const sameBundle=!cards||(cards.article_id===draft?.article_id&&(cards.snapshot_id||null)===(draft?.snapshot_id||null));
  const evidenceError=value=>value?.evidence_valid===false||value?.core_text?.evidence_valid===false||(Array.isArray(value?.cards)&&value.cards.some(card=>card?.evidence_valid===false));
- const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[browser,setBrowser]=useState('auto'),[attach,setAttach]=useState(true),[downloads,setDownloads]=useState([]);
+ const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[browser,setBrowser]=useState('auto'),[attach,setAttach]=useState(true),[exported,setExported]=useState(null);
  const live=useRef({platform,draft,cards,article});useLayoutEffect(()=>{live.current={platform,draft,cards,article};},[platform,draft,cards,article]);
  const inputKey=fingerprint({draft,cards,photos:article?.photos,source:sourceText(article)});
  const [evidenceAck,setEvidenceAck]=useState(false); // 근거 불일치를 사람이 확인했는지(입력이 바뀌면 다시 확인)
@@ -114,18 +116,18 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
   const assets=await renderAll(capture);
   const exportKey=value=>fingerprint({draft:value.draft,cards:value.cards,photos:value.article.photos,origin:[value.article.articleId||value.article.id,sourceText(value.article)]});
   const expected=exportKey(capture);
-  const links=[];
+  const blobs=[];
   for(const [index,asset] of assets.entries()){
    try{
     const blob=await storedJpg(asset);
     if(!mounted.current||expected!==exportKey(live.current))throw Error('JPG 읽기 중 기사·원고·카드·사진이 바뀌었습니다. 최신 결과로 다시 내보내 주세요.');
-    const url=URL.createObjectURL(blob),name=`card_${String(index+1).padStart(2,'0')}.jpg`;
-    links.push({url,name});
-   }catch(error){setDownloads(links);throw Error(`${index+1}번 카드 JPG 읽기 실패: ${error.message} 다시 내보내기를 눌러 재시도해 주세요.`);}
+    blobs.push({data:blob,ext:'jpg'});
+   }catch(error){throw Error(`${index+1}번 카드 JPG 읽기 실패: ${error.message} 다시 내보내기를 눌러 재시도해 주세요.`);}
   }
-  downloads.forEach(item=>URL.revokeObjectURL(item.url));setDownloads(links);
-  links.forEach(item=>{const a=document.createElement('a');a.href=item.url;a.download=item.name;a.click();});
-  setMessage(`${links.length}장 JPG 다운로드를 요청했습니다. 브라우저가 여러 다운로드를 막으면 아래 카드별 링크를 누르세요. Core 보관과 사용자 폴더 내보내기는 별도입니다.`);
+  // 내 문서\AI Newsroom\내보내기\카드뉴스\YYYYMMDD_<기사 제목>\01.jpg … (브라우저 다운로드 폴더로 흩어지지 않게)
+  const saved=await exportFiles('cards',blobs,{title:capture.article.title});
+  setExported(saved);
+  setMessage(`${blobs.length}장 JPG를 저장했습니다.`);
  });
  const prepare=()=>run(async()=>{
   const capture=structuredClone(live.current),hasCards=attach&&capture.cards?.cards?.length;
@@ -179,6 +181,6 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
    {sns&&<Step n={readiness.total>0?4:3} icon="send" title="게시 준비 완료" hint="전용 창에서 사진 순서·줄바꿈을 확인한 뒤 사람이 직접 게시합니다." state={stateOf(prepared,false)} />}
   </ol>
   {message&&<p role="status" className="whitespace-pre-wrap rounded-xl bg-[#FAF8F5] px-3 py-2 text-[11px] leading-5 text-[#57514A]" data-testid="delivery-status">{message}</p>}
-  {downloads.map(item=><a className="mr-3 text-xs underline" key={item.url} href={item.url} download={item.name}>{item.name}</a>)}
+  <ExportNotice result={exported} kind="cards"/>
  </section>;
 }

@@ -23,11 +23,17 @@ class SettingsTests(unittest.TestCase):
         self.settings = settings_manager.SettingsManager()
 
     def test_default_on_then_off_persists_and_keeps_other_keys(self):
-        self.assertEqual(self.settings.get(), {'cloudBackup': True, 'localFactcheck': True})
+        self.assertEqual(self.settings.get(), {'cloudBackup': True, 'localAi': False, 'utMeasurement': False})
         self.file.write_text(json.dumps({'auto_login': False}), encoding='utf-8')
-        self.assertEqual(self.settings.update({'cloudBackup': False}), {'cloudBackup': False, 'localFactcheck': True})
-        self.assertEqual(settings_manager.SettingsManager().get(), {'cloudBackup': False, 'localFactcheck': True})
+        self.assertEqual(self.settings.update({'cloudBackup': False}), {'cloudBackup': False, 'localAi': False, 'utMeasurement': False})
+        self.assertEqual(settings_manager.SettingsManager().get(), {'cloudBackup': False, 'localAi': False, 'utMeasurement': False})
         self.assertEqual(json.loads(self.file.read_text(encoding='utf-8'))['auto_login'], False)
+
+    def test_local_ai_defaults_to_openai_and_ignores_old_factcheck_key(self):
+        self.file.write_text(json.dumps({'local_factcheck': True}), encoding='utf-8')  # 예전 기본값(로컬)이 남아 있어도 OpenAI
+        self.assertFalse(settings_manager.local_ai())
+        self.assertTrue(self.settings.update({'localAi': True})['localAi'])
+        self.assertTrue(settings_manager.local_ai())
 
     def test_rejects_non_boolean(self):
         with self.assertRaises(RequestError):

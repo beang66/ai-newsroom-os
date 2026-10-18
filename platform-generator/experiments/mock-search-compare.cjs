@@ -159,7 +159,8 @@ async function runMockComparison({ selected = fixture, mockSearch = preparedMock
 module.exports = { runMockComparison, preparedMockSearch, checkedCandidates };
 if (require.main === module) {
   runMockComparison().then(report => {
-    const reportPath = path.join(root, 'docs/architecture/CONTENT_TRANSFORM_SEARCH_MOCK_RESULT_2026-10-14.json');
+    const reportPath = path.join(root, 'platform-generator/output/mock-search-result.json');
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n', 'utf8');
     console.log(`Offline mock report: ${path.relative(root, reportPath)}; ${report.runs.length} runs`);
   }).catch(error => { console.error(error.message); process.exitCode = 1; });

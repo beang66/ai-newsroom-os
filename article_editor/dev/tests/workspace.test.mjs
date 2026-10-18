@@ -47,37 +47,35 @@ test("article saves send the loaded revision to prevent silent overwrites", asyn
   assert.equal(request.payload.replaceLatest, true);
 });
 
-test("desk KPIs follow the four newsroom stages and the queue is sorted by deadline", async () => {
-  const { DESK_STAGES, countByStage, deadlineQueue, focusStory } = await import("../../../src/data/desk.js");
+test("desk counts, focus and checks come only from stored article facts", async () => {
+  const { countByStage, focusStory, issuesOf, writingStep, articlesInRange, nextAction } = await import("../../../src/data/desk.js");
+  const base = { revision_no: 1, revision_count: 1, linkedSources: ["s"], linkedInterviews: [], snapshot_count: 0 };
   const items = [
-    { id: "late", deadline: "15:30", stage: "송고 준비" },
-    { id: "done", deadline: "07:30", stage: "출고 완료" },
-    { id: "soon", deadline: "09:05", stage: "검증 대기" },
-    { id: "mid", deadline: "11:20", stage: "편집 중" },
+    { ...base, id: "pub", state: "published", updated_at: "2026-10-18T01:00:00+00:00", snapshot_count: 1 },
+    { ...base, id: "old", state: "draft", updated_at: "2026-10-17T01:00:00+00:00" },
+    { ...base, id: "new", state: "editing", updated_at: "2026-10-18T02:00:00+00:00", unsaved_changes: true },
+    { id: "unsaved", state: "draft", updated_at: "2026-10-18T03:00:00+00:00" }, // 저장 전(현재 원고)은 세지 않는다
   ];
-  assert.deepEqual(DESK_STAGES, ["편집 중", "검증 대기", "송고 준비", "출고 완료"]);
-  assert.deepEqual(countByStage(items), [["편집 중", 1], ["검증 대기", 1], ["송고 준비", 1], ["출고 완료", 1]]);
-  assert.deepEqual(deadlineQueue(items).map((item) => item.id), ["soon", "mid", "late"]);
-  assert.equal(focusStory(items).id, "soon");
-  assert.equal(focusStory([{ id: "done", deadline: "07:30", stage: "출고 완료" }]), null);
+  assert.deepEqual(countByStage(items.filter((i) => i.revision_no)), [["작성 중", 1], ["송고 후 수정", 1], ["송고 완료", 1]]);
+  assert.equal(focusStory(items).id, "new", "송고를 마치지 않은 기사 중 가장 최근 것");
+  assert.deepEqual(issuesOf(items[2]).map((i) => i.kind), ["save", "verify"]);
+  assert.deepEqual(issuesOf({ ...base, linkedSources: [] }).map((i) => i.kind), ["evidence"]);
+  assert.equal(writingStep(items[1]), 2, "자료·저장은 끝났고 고정본(검증)이 없다");
+  assert.equal(writingStep(items[0]), 4);
+  assert.deepEqual(articlesInRange(items, "2026-10-18").map((i) => i.id), ["new", "pub"], "서울 날짜 기준, 저장된 기사만");
+  assert.equal(nextAction(items[1]).to, "evidence");
+  assert.equal(focusStory([items[0]]), null);
 });
 
-test("every desk next step opens a real destination", async () => {
-  const { deskSchedule } = await import("../../../src/data/desk.js");
+test("every desk action opens a real destination", async () => {
+  const { issuesOf, nextAction } = await import("../../../src/data/desk.js");
   const targets = new Set([...destinations.map((item) => item.id), "evidence"]);
-  for (const item of deskSchedule) {
-    if (item.next) assert.ok(targets.has(item.next.to), `${item.slug}: ${item.next.to}`);
-    for (const issue of item.issues || []) assert.ok(targets.has(issue.to), `${issue.title}: ${issue.to}`);
+  const sample = { revision_no: 1, state: "editing", unsaved_changes: true, linkedSources: [] };
+  for (const issue of issuesOf(sample)) assert.ok(targets.has(issue.to), issue.title);
+  for (const step of [0, 1, 2, 3]) {
+    const article = { revision_no: 1, state: step === 3 ? "draft" : "draft", linkedSources: step > 0 ? ["s"] : [], revision_count: step > 1 ? 1 : 0, snapshot_count: step > 2 ? 1 : 0 };
+    assert.ok(targets.has(nextAction(article).to));
   }
-});
-
-test("archive shows desk schedule samples read-only inside the 원고/송고 split", async () => {
-  const { deskArchiveItems, deskSchedule } = await import("../../../src/data/desk.js");
-  const items = deskArchiveItems();
-  assert.equal(items.length, deskSchedule.length);
-  assert.ok(items.every((item) => item.sample && item.id.startsWith("desk:") && !item.revision_no), "예시는 저장본이 아니어서 삭제·수정 대상이 아니다");
-  assert.equal(items.filter((item) => item.state === "published").length, 13, "출고 완료는 송고로 분류");
-  assert.ok(items.filter((item) => item.state !== "published").every((item) => item.stage !== "출고 완료"));
 });
 
 test("photo captions from outside sources cannot inject HTML into the article body", () => {

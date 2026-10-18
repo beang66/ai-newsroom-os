@@ -89,6 +89,16 @@ class ReadModelTests(unittest.TestCase):
         self.assertEqual((out['articles'], out['sources'], out['snapshots'], out['edges'], out['entities']), ([], [], [], [], []))
         self.assertEqual(read_models.list_articles(), {'articles': []})
 
+    def test_map_links_saved_interviews_to_article(self):
+        import base64
+        tid = storage.save_transcript({'filename': '인터뷰.m4a', 'mimeType': 'audio/mp4', 'data': base64.b64encode(b'A').decode()},
+                                      {'dialogues': [{'id': 's1', 'speakerName': '기자', 'text': '질문', 'timestamp': 0}], 'duration': 90})['transcriptId']
+        aid = storage.save_article(article(linkedInterviews=[{'id': tid, 'filename': '인터뷰.m4a'}, {'id': 'gone'}]))['articleId']
+        out = read_models.knowledge_map()
+        art = ids.uuid_text(aid)
+        self.assertEqual([(i['id'], i['used_by']) for i in out['interviews']], [(tid, [art])])  # 저장소에 없는 녹취(gone)는 빠진다
+        self.assertIn({'source': art, 'target': tid, 'relation': 'uses_interview'}, out['edges'])
+
     def test_map_has_real_edges_only_and_uuid_ids(self):
         s1, _ = storage.save_source('a.txt', b'a', 'a')
         s2, _ = storage.save_source('b.txt', b'b', 'b')  # 어떤 기사도 쓰지 않는 자료

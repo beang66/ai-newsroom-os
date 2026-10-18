@@ -36,7 +36,7 @@ class SubtitleStyle(unittest.TestCase):
     def test_openai_repair(self):
         bad={'subtitle_candidates':['전용 프로그램 확인 가능한 워터마크 도입함','탐지율 92%에서','원문 기반 추가 정보']}
         good={'subtitle_candidates':['전용 프로그램으로 식별하는 워터마크 도입','단어 수정에 따른 탐지 성능 변화','원문 기반 추가 정보']}
-        with patch.dict(os.environ,{'USE_LOCAL_MODELS':'false'}),patch.object(server,'structured_call',side_effect=[bad,{f'subtitle_{i+1}':v for i,v in enumerate(bad['subtitle_candidates'])},good]) as call:
+        with patch('core.managers.settings_manager.local_ai',return_value=False),patch.object(server,'structured_call',side_effect=[bad,{f'subtitle_{i+1}':v for i,v in enumerate(bad['subtitle_candidates'])},good]) as call:
             r=server.assist({'kind':'metadata','requested':'subheadline','body':'워터마크 탐지율은 92%다. 기사 테스트 본문입니다. '*5})
             self.assertEqual(r,good);self.assertEqual(call.call_args_list[-1].args[0],'subtitle_style_repair')
     def test_persistent_errors_rejected(self):

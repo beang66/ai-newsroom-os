@@ -156,7 +156,7 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
       </label>
       <label className="dm-button">
         <FolderUp size={14} />
-        폴더 추가
+        {graph?.nodes?.some((n) => n.kind === "note" && !n.placeholder) ? "다시 가져오기" : "폴더 추가"}
         <input className="sr-only" type="file" accept=".md,text/markdown" multiple webkitdirectory="" directory="" disabled={importing}
           onChange={(event) => { importMarkdown(event.target.files); event.target.value = ""; }} />
       </label>

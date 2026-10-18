@@ -12,29 +12,16 @@ import {
   Download,
   Sparkles
 } from "lucide-react";
-import { modelStatus, installModels, cancelModelInstall } from "../api/editorial";
+import { modelStatus, installModels, cancelModelInstall, exportFiles, openExportFolder } from "../api/editorial";
 import { core } from "../api/core.js";
 import SettingsDialog from "./SettingsDialog";
+import AiEngineSection from "./AiEngineSection";
+import ExportNotice from "./ExportNotice";
 import TransferWizard from "./TransferWizard";
 import { restoreTransferFile } from "../lib/vaultTransfer";
 import { beginRestore, endRestore } from "../restoreState";
 
 const MIN_BACKUP_PASSWORD = 12; // Core 가 요구하는 최소 길이와 같다
-
-// Core 가 base64 로 돌려준 백업을 파일로 내려받게 한다.
-function downloadBase64File(filename, base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 // 화면의 단계 카드 id → Core(models_manifest.json) 모델 id
 const CORE_MODEL_ID = {
@@ -162,6 +149,7 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
   const [backupPassword, setBackupPassword] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [backupBusy, setBackupBusy] = useState(false);
+  const [backupExport, setBackupExport] = useState(null); // 마지막 백업 저장 위치(내 문서\AI Newsroom\내보내기\백업)
   const [dialog, setDialog] = useState(null); // null | "settings" | "transfer"  (main 의 설정·이전 창)
   const restoreFileInput = useRef(null);
 
@@ -179,9 +167,9 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
     }
     setBackupBusy(true);
     try {
-      const { filename, data } = await core.exportVault(backupPassword);
-      downloadBase64File(filename || "ai-newsroom-backup.db", data);
-      showFeedback("사용자 자료를 암호화한 백업 파일을 내려받았습니다. 암호를 안전하게 보관하세요.");
+      const { data } = await core.exportVault(backupPassword);
+      setBackupExport(await exportFiles("backup", [{ data, ext: "db" }]));
+      showFeedback("사용자 자료를 암호화한 백업 파일을 저장했습니다. 암호를 안전하게 보관하세요.");
     } catch (error) {
       showFeedback(error?.message || String(error));
     } finally {
@@ -866,6 +854,7 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
                 <span>백업에서 복구</span>
               </button>
             </div>
+            <ExportNotice result={backupExport} kind="backup" className="text-xs text-stone-600" />
           </div>
         </section>
 
@@ -896,8 +885,18 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
             >
               다른 PC로 이전
             </button>
+            <button
+              type="button"
+              data-testid="open-export-folder"
+              onClick={() => openExportFolder().catch((error) => showFeedback(error?.message || String(error)))}
+              className="px-5 py-2.5 rounded-2xl bg-white hover:bg-stone-100 text-stone-800 text-xs font-bold border border-stone-200/90 transition cursor-pointer shadow-2xs active:scale-95"
+            >
+              내보내기 폴더 열기
+            </button>
           </div>
+          <p className="text-xs text-stone-500">백업·카드뉴스·사진·녹취를 내보내면 내 문서\AI Newsroom\내보내기\종류별 폴더에 저장됩니다.</p>
         </section>
+        <AiEngineSection />
       </div>
 
       {dialog === "settings" && (

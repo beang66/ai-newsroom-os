@@ -638,17 +638,14 @@ try {
   await page.getByTestId("transfer-local-file").waitFor({ state: "detached" });
   assert.equal(fs.existsSync(transferPath), false, "복제본 파일이 지워진다");
   await transfer.getByRole("button", { name: "닫기", exact: true }).click();
-  await openSettings();
-  await settings.waitFor();
-  // 팩트체크 로컬 모델 사용: 기본 켜짐, 끄면 유지(끄면 모든 문장을 외부 모델이 판정)
-  assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), true, "로컬 팩트체크 기본값은 켜짐");
-  await page.getByTestId("settings-local-factcheck").uncheck();
-  await settings.getByRole("button", { name: "닫기", exact: true }).click();
-  await openSettings();
-  await page.waitForFunction(() => document.querySelector('[data-testid="settings-local-factcheck"]')?.disabled === false);
-  assert.equal(await page.getByTestId("settings-local-factcheck").isChecked(), false, "끈 로컬 팩트체크 설정이 유지됨");
-  await page.getByTestId("settings-local-factcheck").check();
-  await settings.getByRole("button", { name: "닫기", exact: true }).click();
+  // AI 엔진(환경 설정 화면): 기본 OpenAI, 로컬 AI 로 바꾸면 저장된다
+  await page.waitForFunction(() => document.querySelector('[data-testid="settings-local-ai"]')?.disabled === false);
+  assert.equal(await page.getByTestId("settings-local-ai").isChecked(), false, "기본 AI 엔진은 OpenAI");
+  await page.getByTestId("settings-local-ai").check();
+  await page.getByTestId("settings-ai-engine").getByText("로컬 AI").waitFor();
+  assert.equal((await (await page.request.get(`${BASE}/api/settings`)).json()).localAi, true, "켠 로컬 AI 설정이 저장됨");
+  await page.getByTestId("settings-local-ai").uncheck();
+  await page.getByTestId("settings-ai-engine").getByText("OpenAI").waitFor();
 
   // 목업 없이 빈 원고로 시작해야 한다(환경 설정 화면에서 기사 작성으로 돌아온다)
   await go("기사 작성");
@@ -711,9 +708,16 @@ try {
     await page.getByTestId("factcheck-error").getByRole("button", { name: "모델 설치 열기" }).click(); // 환경 설정 화면으로 간다
     await page.getByTestId("models-summary").getByText(/모든 모델이 설치되어 있습니다/).waitFor();
     await go("기사 작성");
-    // 서랍을 새로 열어야 순서형 검사가 켜진다(열려 있으면 닫았다가 연다)
-    if (await page.getByText("팩트체크 & 근거자료 검증").first().isVisible()) await page.getByText("기사 팩트체크 & 근거자료").first().click();
-    await page.getByText("기사 팩트체크 & 근거자료").first().click();
+    // 서랍을 새로 열어야 순서형 검사가 켜진다(열려 있으면 닫았다가 연다). 화면 복원이 끝난 뒤(두 프레임) 버튼 상태로 판단한다
+    const factToggle = page.getByTestId("factcheck-toggle");
+    await factToggle.waitFor();
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    if (await factToggle.getAttribute("aria-pressed") === "true") {
+      await factToggle.click();
+      await page.waitForFunction(() => document.querySelector('[data-testid="factcheck-toggle"]')?.getAttribute("aria-pressed") === "false");
+    }
+    await factToggle.click();
+    await page.waitForFunction(() => document.querySelector('[data-testid="factcheck-toggle"]')?.getAttribute("aria-pressed") === "true");
     await see("팩트체크 & 근거자료 검증");
   }
   // 이미 검증한 문장은 다시 보내지 않는다 — 문장 하나를 덧붙이면 그 문장만 코어로
@@ -901,8 +905,12 @@ try {
 
   // 실패 카드 재시도와 전체 JPG 링크, 두 채널의 팀 Core 작성 준비. 게시 작업은 없다.
   await converter.getByTestId('cards-export').click();
-  await converter.getByTestId('delivery-status').getByText(/3장 JPG 다운로드를 요청/).waitFor();
-  assert.equal(await converter.getByTestId('platform-delivery').locator('a[download]').count(),3);
+  await converter.getByTestId('delivery-status').getByText(/3장 JPG를 저장했습니다/).waitFor();
+  await converter.getByTestId('export-notice').waitFor();
+  // 내 문서\AI Newsroom\내보내기\카드뉴스\YYYYMMDD_<제목>\01.jpg~03.jpg (시험은 SMOKE_DOCS 가 내 문서 자리)
+  const cardFolders = fs.readdirSync(path.join(SMOKE_DOCS, '내보내기', '카드뉴스'));
+  assert.equal(cardFolders.length, 1);
+  assert.deepEqual(fs.readdirSync(path.join(SMOKE_DOCS, '내보내기', '카드뉴스', cardFolders[0])).sort(), ['01.jpg', '02.jpg', '03.jpg']);
   // 원고/카드의 고정본 혼합은 실제 원문 변경으로 만든다. 플랫폼 편집 저장만으로는 새 고정본을 만들지 않는다.
   await go('기사 작성');await body.fill((await body.inputValue())+'\n새 원문 고정본 구분 문장입니다.');await go('플랫폼 변환');
   await converter.getByTestId('applied-source').getByText(/재적용이 필요/).waitFor();
@@ -938,11 +946,16 @@ try {
   await page.getByText("취재자료 (1건)").waitFor();
   await page.getByText("• 자료.txt").waitFor();
   await snapshot('prototype-ux-archive');
+  // 휴지통(코어 /api/trash): 지운 기사가 없으면 비어 있다고 보이고, 다시 누르면 목록으로 돌아온다
+  await page.getByTestId("archive-trash").click();
+  await page.getByTestId("trash-list").getByText("휴지통이 비어 있습니다.").waitFor();
+  await page.getByTestId("archive-trash").click();
+  await page.getByTestId("trash-list").waitFor({ state: "detached" });
   assert.equal(await page.getByTestId("data-map").count(), 0, "보관함에는 데이터맵을 중복 렌더링하지 않는다");
   await go("데이터맵");
   assert.equal(await page.getByTestId("archive-view").count(), 0);
   const dataMap = page.getByTestId("data-map");
-  const sampleRoot = new URL('../sample-data/datamap/', ROOT);
+  const sampleRoot = new URL('dev/tests/fixtures/datamap/', ROOT);
   const samples = fs.readdirSync(sampleRoot).filter((name) => name.endsWith('.md'));
   assert.equal(samples.length, 5);
   await dataMap.locator('input[type="file"]:not([webkitdirectory])').first().setInputFiles(samples.map((name) => ({
@@ -1081,7 +1094,7 @@ try {
   const previewStored=async id=>{
     await go('보관함');
     const view=page.getByTestId('archive-view');
-    await view.locator('.workspace-article-list .archive-item > button:first-child').filter({hasText:dbTitles.get(id)}).click();
+    await view.locator('.workspace-article-list .archive-item > button:not(.archive-delete)').filter({hasText:dbTitles.get(id)}).click();
     return view;
   };
   const selectStored=async id=>{

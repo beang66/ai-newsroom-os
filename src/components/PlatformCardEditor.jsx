@@ -1,7 +1,8 @@
 import {Component,useEffect,useLayoutEffect,useRef,useState} from "react";
 import PhotoSearch from "./photo/PhotoSearch.jsx";
 import ImageEditor from "./photo/ImageEditor.jsx";
-import {importPhoto,dongaPhotoData,trackPhotoDownload} from "../api/editorial.js";
+import {importPhoto,dongaPhotoData,trackPhotoDownload,exportFiles,imageExtension} from "../api/editorial.js";
+import ExportNotice from "./ExportNotice.jsx";
 import {blobToDataUrl,photoDataUrl,renderStoredCard} from "../api/platform.js";
 import {articleId,fingerprint,invalidateDraft,renderKey,selectedCardPhoto,currentRender,sourceText} from "../lib/platformState.js";
 import {CardModel,CardTemplate} from "../lib/cardRuntime.js";
@@ -34,7 +35,7 @@ function CardPreview({card,index,total,photo,previewPhoto}){
 }
 export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,preparing=false}) {
   const [activeIndex,setActiveIndex]=useState(0),[rendering,setRendering]=useState(false),[error,setError]=useState("");
-  const [searching,setSearching]=useState(false),[editing,setEditing]=useState(null);
+  const [searching,setSearching]=useState(false),[editing,setEditing]=useState(null),[exported,setExported]=useState(null);
   const live=useRef({draft,article});useLayoutEffect(()=>{live.current={draft,article};},[draft,article]);
   const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const cards=Array.isArray(draft?.cards)?draft.cards:[],index=activeIndex<cards.length?activeIndex:0,active=cards[index];
@@ -72,7 +73,7 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
     const imported=p.provider==='donga'?{id:'donga-'+p.id,url:await dongaPhotoData(p),caption:p.title,source:'동아일보 DB',provider:'donga',sourceUrl:'https://www.donga.com/archive/newslibrary/list?m=photo'}:await importPhoto(p);
     imported.original=imported.url;
     if(articleKey(live.current.article)!==sourceKey||fingerprint(live.current.draft?.generation_input)!==originKey||!live.current.draft.cards.some(c=>c?.card_id===cardId))throw Error("사진을 가져오는 동안 기사가 바뀌었습니다. 다시 선택해 주세요.");
-    if(action==='download'){const a=document.createElement('a');a.href=imported.url;a.download='photo.jpg';a.click();return;}
+    if(action==='download'){setExported(await exportFiles('photos',[{data:imported.url,ext:imageExtension(imported.url)}],{title:article?.title,label:'카드사진'}));return;}
     setSearching(false);
     if(action==='edit'){setEditing({photo:imported,cardId,articleKey:sourceKey});return;}
     onAddPhoto(imported,cardId);
@@ -117,6 +118,7 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
         </div>
         <section data-testid="card-image-section" className="border-t border-[#F0EFEA] pt-4"><button className={button} data-testid="card-image-make" disabled={rendering||preparing} onClick={makeImage}>{rendering?'이미지 생성 중…':'카드 이미지 만들기'}</button><p className="mt-2 text-[11px] text-[#8E8982]">{rendered?'현재 카드 이미지를 Core 암호화 보관소에 보관했습니다.':active.rendered_image?'카드·사진·위치가 변경됐습니다. 이미지를 다시 만들어 주세요.':'이미지를 만들어 암호화 보관소에 보관합니다. JPG 내보내기는 별도입니다.'}</p>{rendered&&<img data-testid="card-image-preview" src={rendered.uri} alt={`${content.headline||'카드'} 완성 이미지`} className="mt-2 max-w-[220px] rounded-lg"/>}</section>
         {error&&<p role="alert" data-testid="card-image-error" className="text-xs text-rose-700">{error}</p>}
+        <ExportNotice result={exported} kind="photos"/>
       </div>
     </div>
     {searching&&<PhotoSearch body={article.content} card={active} onClose={()=>setSearching(false)} onChoose={choose}/>}

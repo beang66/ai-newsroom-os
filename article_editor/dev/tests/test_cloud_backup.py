@@ -169,6 +169,29 @@ class CloudBackupTests(unittest.TestCase):
         self.backup.flush()
         self.assertEqual(self.server.uploads(), [], '다른 계정의 기사를 올리지 않는다')
 
+    def test_moving_to_trash_deletes_server_copy_and_restoring_uploads_again(self):
+        self.storage.save_article({'draft': DRAFT, 'kind': 'manual'})
+        article_id = storage.latest_article()['draft']['articleId']
+        self.backup.flush()
+        path = f'user-1/backups/{article_id}.enc'
+        self.assertIn(path, self.server.files)
+        self.storage.delete_article(article_id)
+        self.backup.flush()
+        self.assertNotIn(path, self.server.files, '휴지통으로 옮기면 서버 사본을 지운다(영구 삭제 뒤 서버 복구로 되살아나지 않게)')
+        self.storage.restore_deleted(article_id)
+        self.backup.flush()
+        self.assertIn(path, self.server.files)
+
+    def test_moving_to_trash_deletes_server_copy_when_backup_is_disabled(self):
+        self.storage.save_article({'draft': DRAFT, 'kind': 'manual'})
+        article_id = storage.latest_article()['draft']['articleId']
+        self.backup.flush()
+        path = f'user-1/backups/{article_id}.enc'
+        self.backup.disable({'deleteServer': False})
+        self.storage.delete_article(article_id)
+        self.backup.flush()
+        self.assertNotIn(path, self.server.files, '백업을 껐어도 삭제한 기사의 서버 사본은 지운다')
+
     def test_list_restore_on_new_pc_and_disable_deletes_server_copy(self):
         self.storage.save_article({'draft': DRAFT, 'kind': 'manual'})
         article_id = storage.latest_article()['draft']['articleId']
@@ -184,6 +207,10 @@ class CloudBackupTests(unittest.TestCase):
         cloud_backup.forget_key()
         rows = self.backup.list()['backups']
         self.assertEqual([(r['articleId'], r['title']) for r in rows], [(article_id, '백업할 기사')])
+        self.server.files['user-1/backups/' + 'e' * 32 + '.enc'] = b'not a backup'  # 깨진 백업 하나가 목록 전체를 막지 않는다
+        rows = self.backup.list()['backups']
+        self.assertEqual(sorted((r['articleId'], r.get('damaged', False)) for r in rows), sorted([(article_id, False), ('e' * 32, True)]))
+        del self.server.files['user-1/backups/' + 'e' * 32 + '.enc']
         result = self.backup.restore({'articleIds': [article_id, 'f' * 32]})
         self.assertEqual(result['restored'], [article_id])
         self.assertEqual(result['skipped'][0]['articleId'], 'f' * 32)

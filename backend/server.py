@@ -11,6 +11,8 @@
     SUPABASE_URL          JWT 검증용 (https://<ref>.supabase.co)
     SUPABASE_ANON_KEY     JWT 검증용 apikey
     AUTH_REQUIRED         기본 true. false 는 개발 전용(토큰 없이 허용)
+    ALLOWED_EMAILS        쓸 수 있는 계정(쉼표 구분, '@donga.com' 처럼 도메인도 가능). 비우면 로그인한 모든 계정
+    CMS_ALLOWED_EMAILS    CMS 송고를 할 수 있는 계정(같은 형식). 비우면 아무도 송고할 수 없다
     OPENAI_BASE_URL       기본 https://api.openai.com/v1 (시험용 대체 가능)
     UNSPLASH_BASE_URL     기본 https://api.unsplash.com
     RATE_LIMIT_PER_MIN    기본 120 (사용자별)
@@ -41,6 +43,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import http.client
 import json
 import os
 import re
@@ -68,7 +71,8 @@ _CLOVA_HITS: dict[str, list[float]] = {}
 # 앱이 보내는 옵션은 받지 않는다 — 결과를 다른 주소로 보내는 callback 같은 옵션을 끼워 넣지 못하게 서버가 고정한다
 CLOVA_PARAMS = {'language': 'ko-KR', 'completion': 'sync', 'wordAlignment': True, 'fullText': True,
                 'diarization': {'enable': True}, 'sed': {'enable': True}}
-MAX_BODY = 40_000_000  # 가장 큰 경로(전사·이미지) 한도. 나머지 경로는 아래에서 더 작게 자른다
+MAX_BODY = 40_000_000  # 가장 큰 경로(전사·이미지) 한도. 아래 경로는 더 작게 자른다
+BODY_LIMITS = {'/cms/publish': 10_000_000, '/ai/embeddings': 2_000_000}
 
 _LOCK = threading.Lock()
 _HITS: dict[str, list[float]] = {}
@@ -138,6 +142,15 @@ def _verify_remote(token: str):
         return None
 
 
+def email_allowed(email: str, entries: str) -> bool:
+    """entries: 'a@x.com, @donga.com' — 정확한 주소 또는 '@도메인'."""
+    email = (email or '').strip().lower()
+    for entry in (e.strip().lower() for e in entries.split(',')):
+        if entry and email and (email == entry or (entry.startswith('@') and email.endswith(entry))):
+            return True
+    return False
+
+
 def forward(url: str, body, headers: dict, method: str = 'GET'):
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
@@ -146,7 +159,7 @@ def forward(url: str, body, headers: dict, method: str = 'GET'):
     except urllib.error.HTTPError as error:
         mime = error.headers.get_content_type() if error.headers else 'application/json'
         return error.code, mime, error.read()
-    except (urllib.error.URLError, TimeoutError):
+    except (OSError, http.client.HTTPException):  # 응답을 읽는 중 끊겨도(IncompleteRead 등) JSON 으로 답한다
         return 504, 'application/json', json.dumps({'error': '업스트림에 연결하지 못했습니다.'}).encode()
 
 
@@ -174,26 +187,32 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, status, payload):
         self._send(status, json.dumps(payload, ensure_ascii=False).encode())
 
-    def _body(self):
-        size = int(self.headers.get('Content-Length', '0'))
-        if size > MAX_BODY:
-            return None  # 로그인 확인 전이라 읽지 않는다(큰 본문으로 메모리를 채우지 못하게). 응답은 Connection: close
-        return self.rfile.read(size) if size > 0 else b''
+    def _size(self):
+        try:
+            return int(self.headers.get('Content-Length') or 0)
+        except ValueError:
+            return MAX_BODY + 1
 
-    def _user_id(self):
+    def _user(self):
         header = self.headers.get('Authorization', '')
         token = header[7:] if header.lower().startswith('bearer ') else ''
         if not AUTH_REQUIRED:
-            return 'dev'
-        user = verify_user(token)
-        return (user or {}).get('id') or None
+            return {'id': 'dev'}
+        user = verify_user(token) or {}
+        return user if user.get('id') else None
 
-    def _guard(self):
+    def _guard(self, cms=False):
         """통과하면 사용자 id, 아니면 응답을 이미 보내고 None."""
-        user = self._user_id()
+        user = self._user()
         if user is None:
             self._json(401, {'error': '로그인이 필요합니다.'})
             return None
+        allowed = os.environ.get('ALLOWED_EMAILS', '').strip()
+        if AUTH_REQUIRED and ((allowed and not email_allowed(user.get('email'), allowed))
+                              or (cms and not email_allowed(user.get('email'), os.environ.get('CMS_ALLOWED_EMAILS', '')))):
+            self._json(403, {'error': '이 계정은 이 기능을 쓸 수 없습니다. 관리자에게 문의해 주세요.'})
+            return None
+        user = user['id']
         if not rate_ok(user):
             self._json(429, {'error': '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.'})
             return None
@@ -216,7 +235,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.path == '/unsplash/absolute':
             target = (urllib.parse.parse_qs(path.query).get('url') or [''])[0]
-            if urllib.parse.urlsplit(target).hostname != 'api.unsplash.com':
+            parsed = urllib.parse.urlsplit(target)
+            if parsed.scheme != 'https' or parsed.hostname != 'api.unsplash.com':  # http 면 키가 평문으로 나간다
                 return self._json(400, {'error': '허용되지 않은 사진 주소입니다.'})
             status, mime, raw = forward(target, None, {
                 'Authorization': 'Client-ID ' + os.environ.get('UNSPLASH_ACCESS_KEY', ''),  # 키 없이는 Unsplash 가 401 로 거절한다
@@ -235,11 +255,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(status, raw, mime)
         self._json(404, {'error': '지원하지 않는 경로입니다.'})
 
-    def _clova(self, audio):
+    def _clova(self, user, audio):
         """녹음 원본 → CLOVA Speech. 키·옵션은 서버가 정하고, 사용자별 횟수와 동시 처리 수를 제한한다(요금·메모리 보호)."""
-        user = self._guard()
-        if user is None:
-            return
         key = os.environ.get('CLOVA_SPEECH_SECRET_KEY', '').strip()
         invoke = os.environ.get('CLOVA_SPEECH_INVOKE_URL', '').strip().rstrip('/')
         host = urllib.parse.urlsplit(invoke)
@@ -265,16 +282,17 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(status, raw, out_mime)
 
     def do_POST(self):
-        # 본문을 **먼저** 읽는다 — 401/404 로 조기 반환할 때 남은 본문이 다음 요청을 오염시키지 않게.
-        body = self._body()
-        if body is None:
-            return self._json(413, {'error': '요청이 너무 큽니다.'})
+        # 크기와 로그인을 본문보다 먼저 본다 — 로그인 안 한 요청이 큰 본문으로 메모리(무료 플랜 512MB)를 채우지 못하게.
+        # 읽지 않은 본문이 다음 요청을 오염시키지 않는 것은 모든 응답의 Connection: close 가 맡는다.
         path = urllib.parse.urlsplit(self.path).path
+        size = self._size()
+        if size > BODY_LIMITS.get(path, MAX_BODY):
+            return self._json(413, {'error': '요청이 너무 큽니다.'})
+        user = self._guard(cms=path == '/cms/publish')
+        if user is None:
+            return
+        body = self.rfile.read(size) if size > 0 else b''
         if path == '/cms/publish':
-            if self._guard() is None:
-                return
-            if len(body) > 10_000_000:
-                return self._json(413, {'error': '기사 요청이 너무 큽니다.'})
             target = os.environ.get('CMS_PUBLISH_URL', '').strip()
             token = os.environ.get('CMS_BEARER_TOKEN', '').strip()
             parsed = urllib.parse.urlsplit(target)
@@ -286,11 +304,8 @@ class Handler(BaseHTTPRequestHandler):
             status, mime, raw = forward(target, body, headers, method='POST')
             return self._send(status, raw, mime)
         if path == '/ai/audio/clova':
-            return self._clova(body)
+            return self._clova(user, body)
         if path == '/ai/backup-key':
-            user = self._guard()
-            if user is None:
-                return
             master = os.environ.get('BACKUP_MASTER_KEY', '')
             if len(master) < 32:
                 return self._json(503, {'error': '백업 키가 서버에 설정되지 않았습니다.'})
@@ -302,13 +317,7 @@ class Handler(BaseHTTPRequestHandler):
         sub = path[len('/ai/'):]
         if sub not in ALLOWED_AI:
             return self._json(404, {'error': '지원하지 않는 AI 경로입니다.'})
-        if self._guard() is None:
-            return
-        if len(body) > 40_000_000:
-            return self._json(413, {'error': '요청이 너무 큽니다.'})
         if sub == 'embeddings':
-            if len(body) > 2_000_000:
-                return self._json(413, {'error': '요청이 너무 큽니다.'})
             account = os.environ.get('CF_ACCOUNT_ID', '')
             status, mime, raw = forward(
                 f'{CF_BASE}/accounts/{account}/ai/run/{CF_EMBEDDING_MODEL}', body,

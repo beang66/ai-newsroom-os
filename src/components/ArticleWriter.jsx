@@ -15,6 +15,7 @@ import DongaPreview from "./DongaPreview.jsx";
 import { SECTIONS } from "../data/sections.js";
 import { trackPhotoDownload } from "../api/editorial";
 import "./articleWriterFont.css";
+import SaveBar from "./SaveBar.jsx";
 import {
   Sparkles,
   Search,
@@ -66,6 +67,7 @@ export default function ArticleWriter({
   flush,
   isSidebarCollapsed = true,
   onConnectSource,
+  onSave,
   isReaderPreview,
   setIsReaderPreview,
   isPhotoEditing,
@@ -1181,21 +1183,12 @@ export default function ArticleWriter({
         }
       }
 
-      // 5. article.content 데이터에 즉시 반영 및 저장
+      // 5. article.content 에 반영(저장은 자동 저장이 암호화 저장소로 한다 — 평문 localStorage 에 원고를 두지 않는다)
       const updatedContent = bodyInputRef.current.innerHTML;
       setArticle((prev) => ({
         ...prev,
         content: updatedContent
       }));
-
-      // 로컬 스토리지 드래프트 즉시 저장 동기화
-      try {
-        const saved = localStorage.getItem("team01_article_draft_v1");
-        const parsed = saved ? JSON.parse(saved) : {};
-        localStorage.setItem("team01_article_draft_v1", JSON.stringify({ ...parsed, content: updatedContent }));
-      } catch {
-        // ignore
-      }
 
       setToastMessage("✨ 문장이 새 위치로 이동되었습니다.");
       setTimeout(() => setToastMessage(""), 2000);
@@ -2170,6 +2163,9 @@ export default function ArticleWriter({
               <div className="relative w-10 h-10 group">
                 <button
                   type="button"
+                  data-testid="factcheck-toggle"
+                  aria-label="기사 팩트체크 & 근거자료"
+                  aria-pressed={activeSidePanel === "factcheck"}
                   onClick={() => {
                     if (activeSidePanel === "factcheck") {
                       setActiveSidePanel(null);
@@ -2219,6 +2215,7 @@ export default function ArticleWriter({
 
         {/* 메인 flex 컨테이너 닫기 */}
       </div>
+      {onSave && !isReaderPreview && <SaveBar onSave={onSave} testId="writer-save" />}
 
       {/* ──────────────────────────────────────────
           4. CMS 최종 발행 성공 알림 모달

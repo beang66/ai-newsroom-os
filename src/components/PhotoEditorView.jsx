@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { exportFiles, imageExtension } from "../api/editorial";
+import ExportNotice from "./ExportNotice.jsx";
 import Header from "./Header";
 import {
   clampCrop, cropForRatio, maskContains, maskPath, moveMask, renderDerivative, renderMosaics, resizeCrop,
@@ -37,13 +39,6 @@ async function readableSource(src) {
   });
 }
 
-function download(href, name) {
-  const a = document.createElement("a");
-  a.href = href;
-  a.download = name;
-  a.click();
-}
-const extension = (data) => (data.startsWith("data:image/png") ? "png" : data.startsWith("data:image/webp") ? "webp" : "jpg");
 
 function Slider({ label, min, max, value, onChange, suffix = "" }) {
   return (
@@ -73,6 +68,7 @@ function PhotoEditorBody({ photo, onBack: onCancel, onApplyToArticle, onTrackDow
   const canvasRef = useRef(null);
   const st = useRef(null); // 캔버스 조작 상태(그림 그릴 때마다 React 를 다시 그리지 않도록 ref 에 둔다)
   const [ready, setReady] = useState(false);
+  const [exported, setExported] = useState(null); // 마지막 저장 위치(내 문서\AI Newsroom\내보내기\사진)
   const [ratio, setRatio] = useState(initialRatio(photo));
   const [tool, setTool] = useState(null); // null | "paint" | "erase"
   const [brush, setBrush] = useState(48);
@@ -437,12 +433,13 @@ function PhotoEditorBody({ photo, onBack: onCancel, onApplyToArticle, onTrackDow
 
           <div className="grid grid-cols-2 gap-2 pt-1">
             <button type="button" disabled={!ready}
-              onClick={safely(async () => { await track(); const o = photo.original || photo.url; download(o, `original-photo.${extension(o)}`); })}
-              className="py-2 px-3 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer text-center disabled:opacity-50">원본 다운로드</button>
+              onClick={safely(async () => { await track(); const o = photo.original || photo.url; setExported(await exportFiles("photos", [{ data: o, ext: imageExtension(o) }], { label: "원본사진" })); })}
+              className="py-2 px-3 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer text-center disabled:opacity-50">원본 저장</button>
             <button type="button" disabled={!ready}
-              onClick={safely(async () => { await track(); download(derivative(), "article-photo.jpg"); })}
-              className="py-2 px-3 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer text-center disabled:opacity-50">편집본 다운로드</button>
+              onClick={safely(async () => { await track(); setExported(await exportFiles("photos", [{ data: derivative(), ext: "jpg" }], { label: "편집사진" })); })}
+              className="py-2 px-3 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer text-center disabled:opacity-50">편집본 저장</button>
           </div>
+          <ExportNotice result={exported} kind="photos" className="text-xs text-slate-600" />
 
           <button type="button" disabled={!ready} onClick={apply} data-testid="image-apply"
             className="w-full py-3 bg-[#23211F] hover:bg-black text-white text-xs md:text-sm font-bold rounded-xl transition cursor-pointer active:scale-95 shadow-sm disabled:opacity-50">

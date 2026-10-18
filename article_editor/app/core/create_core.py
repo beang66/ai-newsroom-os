@@ -12,16 +12,18 @@ from .managers.session_manager import SessionManager
 from .managers.settings_manager import SettingsManager
 from .managers.storage_manager import StorageManager
 from .managers.transfer_manager import TransferManager
+from .managers.ut_event_manager import UtEventManager
 
 
 class Core:
     def __init__(self):
         self.session = SessionManager()
         self.backup = BackupManager(self.session)
-        self.storage = StorageManager(on_saved=self.backup.notify)
+        self.settings = SettingsManager()
+        self.events = UtEventManager(self.settings)
+        self.storage = StorageManager(on_saved=self.backup.notify, events=self.events)
         self.ai = AIManager()
         self.models = ModelManager()
-        self.settings = SettingsManager()
         self.transfer = TransferManager(self.session)
         self.platform = PlatformManager()
         self.jobs = JobManager()

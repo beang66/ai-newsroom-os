@@ -129,7 +129,7 @@ class ServerTests(ApiTestCase):
         self.assertEqual(self.request('/api/unsplash/search?q=')[0], 400)
 
     def test_missing_openai_key(self):
-        with patch.dict(os.environ, {'OPENAI_API_KEY': '', 'USE_LOCAL_MODELS': 'false'}), patch.object(core_config, 'AI_BACKEND', 'local'):
+        with patch.dict(os.environ, {'OPENAI_API_KEY': ''}), patch('core.managers.settings_manager.local_ai', return_value=False), patch.object(core_config, 'AI_BACKEND', 'local'):
             self.assertEqual(self.request('/api/assist', {'kind': 'metadata', 'requested': 'headline', 'body': '가' * 100})[0], 503)
 
     def test_structured_schemas(self):
@@ -142,7 +142,7 @@ class ServerTests(ApiTestCase):
             # su4228 v30: 부제는 최종 교열(subtitle_N 문자열)을 한 번 더 거치므로, 스키마가 요구하는 모양대로 채워 돌려준다
             answer = {key: ('부제 문구' if spec['type'] == 'string' else ['후보가', '후보나', '후보다']) for key, spec in schema['properties'].items()}
             return {'output': [{'content': [{'type': 'output_text', 'text': json.dumps(answer, ensure_ascii=False)}]}]}
-        with patch.dict(os.environ, {'USE_LOCAL_MODELS': 'false'}), patch.object(ai_client, 'openai_call', side_effect=call):
+        with patch('core.managers.settings_manager.local_ai', return_value=False), patch.object(ai_client, 'openai_call', side_effect=call):
             for kind, requested in [('metadata', 'headline'), ('metadata', 'subheadline'), ('photo_keywords', '')]:
                 status, raw, _ = self.request('/api/assist', {'kind': kind, 'requested': requested, 'body': '가' * 100})
                 self.assertEqual(status, 200)
@@ -358,11 +358,11 @@ class ServerTests(ApiTestCase):
             self.assertEqual(schema['properties']['paragraphs']['maxItems'], 5)
             self.assertIn('20~50자', prompt)
             return {'paragraphs': ['첫 핵심', '둘째 핵심', '셋째 핵심'], 'advice': ''}
-        with patch.dict(os.environ, {'FLOW_SUMMARY_PROVIDER': 'openai'}), patch.object(ai_router, 'structured_call', side_effect=summarize):
+        with patch('core.managers.settings_manager.local_ai', return_value=False), patch.object(ai_router, 'structured_call', side_effect=summarize):
             self.assertEqual(len(ai_router.assist({'kind': 'flow', 'body': '기사 내용 ' * 30})['paragraphs']), 3)
 
     def test_kobart_summary_drafts(self):
-        with patch.dict(os.environ, {'FLOW_SUMMARY_PROVIDER': 'kobart'}), patch.object(ai_router, 'generate_subtitle_drafts', return_value=[['모델 요약']]) as model, patch.object(ai_router, 'structured_call', return_value={'paragraphs': ['하나', '둘', '셋'], 'advice': ''}):
+        with patch('core.managers.settings_manager.local_ai', return_value=True), patch.object(ai_router, 'generate_subtitle_drafts', return_value=[['모델 요약']]) as model, patch.object(ai_router, 'structured_call', return_value={'paragraphs': ['하나', '둘', '셋'], 'advice': ''}):
             ai_router.assist({'kind': 'flow', 'body': '첫 문단입니다. 둘째 문단입니다. 셋째 문단입니다.'})
             self.assertTrue(model.called)
 

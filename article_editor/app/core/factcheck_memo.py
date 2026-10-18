@@ -19,8 +19,8 @@ def _digest(*parts):
 
 def model_version():
     """판정을 한 모델. 로컬 판정을 끄고 외부 모델로 판정하면 따로 취급한다(서로의 기록을 쓰지 않는다)."""
-    from .managers.settings_manager import local_factcheck
-    suffix = '' if local_factcheck() else '+external'
+    from .managers.settings_manager import local_ai
+    suffix = '' if local_ai() else '+external'
     try:
         from .ai.factcheck.paths import settings
         return settings.model_id + suffix

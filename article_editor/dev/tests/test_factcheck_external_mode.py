@@ -23,16 +23,16 @@ class ExternalModeTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def set_local(self, value):
-        settings_manager.SettingsManager().update({'localFactcheck': value})
+        settings_manager.SettingsManager().update({'localAi': value})
 
-    def test_setting_default_on_validates_and_changes_memo_version(self):
-        self.assertTrue(settings_manager.local_factcheck())
-        local_version = factcheck_memo.model_version()
-        self.set_local(False)
-        self.assertFalse(settings_manager.local_factcheck())
-        self.assertEqual(factcheck_memo.model_version(), local_version + '+external')
+    def test_setting_default_is_openai_validates_and_changes_memo_version(self):
+        self.assertFalse(settings_manager.local_ai())
+        external_version = factcheck_memo.model_version()
+        self.set_local(True)
+        self.assertTrue(settings_manager.local_ai())
+        self.assertEqual(factcheck_memo.model_version() + '+external', external_version)
         with self.assertRaises(Exception):
-            settings_manager.SettingsManager().update({'localFactcheck': 'no'})
+            settings_manager.SettingsManager().update({'localAi': 'no'})
 
     def test_status_does_not_need_judge_model_when_external(self):
         self.set_local(False)

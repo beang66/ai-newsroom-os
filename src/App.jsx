@@ -234,7 +234,8 @@ export default function App() {
     };
   }, [unsynced, flush]);
 
-  const persistArticle = useCallback(async () => {
+  // update: 저장 직전에 원고를 고친다(인터뷰 화면의 '저장하기'가 녹취를 이 기사에 연결하고 바로 저장)
+  const persistArticle = useCallback(async (update) => {
     if (isRestoring()) return false;
     if (!loaded.current) {
       setStorageStatus("Core 연결이 준비된 뒤 저장할 수 있습니다.");
@@ -242,12 +243,14 @@ export default function App() {
     }
     await autoRunning.current; // 진행 중인 임시 저장이 끝난 뒤에 저장해 충돌 검사 번호가 어긋나지 않게 한다
     setStorageStatus("암호화 저장소에 저장 중…");
+    const target = typeof update === "function" ? update(article) : article;
+    if (target !== article) { articleRef.current = target; setArticle(target); }
     try {
-      const saved = await saveArticle(article, revisionNo.current, { kind: "manual" });
+      const saved = await saveArticle(target, revisionNo.current, { kind: "manual" });
       revisionNo.current = saved.revisionNo;
       savedIdRef.current = saved.articleId;
       articleRef.current = { ...articleRef.current, id: saved.articleId, articleId: saved.articleId, revisionNo: saved.revisionNo };
-      syncedSnapshot.current = snapshotOf(article);
+      syncedSnapshot.current = snapshotOf(target);
       const caughtUp = snapshotOf(articleRef.current) === syncedSnapshot.current;
       setUnsynced(!caughtUp);
       if (caughtUp) void clearBackup();
@@ -338,6 +341,7 @@ export default function App() {
   const [storedArticles, setStoredArticles] = useState([]);
   const [listError, setListError] = useState("");
   const [mapArticleId, setMapArticleId] = useState(null);
+  const [archiveVersion, setArchiveVersion] = useState(0); // 휴지통에서 되살리면 목록을 다시 읽는다
   useEffect(() => {
     if (activeTab !== "archive") return undefined;
     let active = true;
@@ -347,26 +351,34 @@ export default function App() {
       setListError("");
     }).catch((error) => { if (active) setListError(error.message); });
     return () => { active = false; };
-  }, [activeTab, storageStatus]);
+  }, [activeTab, storageStatus, archiveVersion]);
   const currentId = article.articleId || article.id;
   const storedCurrent = storedArticles.find((item) => item.id === currentId);
   const currentSummary = { ...storedCurrent, id: currentId, title: article.title, subtitle: article.subtitle,
     state: storedCurrent?.state || "draft", published: storedCurrent?.published || null,
     updated_at: storedCurrent?.updated_at || article.updatedAt };
-  const archiveArticles = storedCurrent ? storedArticles.map((item) => item.id === currentId ? currentSummary : item) : [currentSummary, ...storedArticles];
-  // 보관소의 × — 기사를 지운다. 지금 쓰던 기사면 새 기사로 바꾼다(남은 백업도 지운다)
-  const deleteArticle = async (id) => {
-    const target = archiveArticles.find((item) => item.id === id);
-    if (!window.confirm(`'${target?.title || "제목 없는 기사"}' 기사를 보관소에서 삭제할까요?
-삭제하면 보관소와 이어서 작업에서 사라집니다.`)) return;
+  // 아직 저장 안 한 빈 새 원고는 보관함에 넣지 않는다(삭제한 기사가 남은 것처럼 보였다)
+  const blankDraft = !article.title?.trim() && !article.content?.trim();
+  const archiveArticles = storedCurrent ? storedArticles.map((item) => item.id === currentId ? currentSummary : item)
+    : blankDraft ? storedArticles : [currentSummary, ...storedArticles];
+  // 보관소의 휴지통 버튼·선택 삭제 — 기사를 지운다. 지금 쓰던 기사면 새 기사로 바꾼다(남은 백업도 지운다)
+  const deleteArticles = async (ids) => {
+    const target = archiveArticles.find((item) => item.id === ids[0]);
+    const name = ids.length === 1 ? `'${target?.title || "제목 없는 기사"}' 기사를` : `선택한 기사 ${ids.length}건을`;
+    if (!window.confirm(`${name} 보관소에서 삭제할까요?
+휴지통으로 옮기고 30일 뒤 이력·송고본·고정본까지 영구 삭제합니다. 그 전에는 보관함 > 휴지통에서 되살릴 수 있습니다.`)) return [];
     setSwitchError("");
-    try {
-      await core.deleteArticle(id);
-    } catch (error) {
-      setSwitchError(`기사를 삭제하지 못했습니다. ${error.message}`);
-      return;
+    const deleted = [];
+    for (const id of ids) {
+      try {
+        await core.deleteArticle(id);
+        deleted.push(id);
+      } catch (error) {
+        setSwitchError(`기사를 삭제하지 못했습니다(${deleted.length}/${ids.length}건 삭제). ${error.message}`);
+        break;
+      }
     }
-    if (id === currentId) {
+    if (deleted.includes(currentId)) {
       const empty = createEmptyArticle();
       syncedSnapshot.current = snapshotOf(empty);
       savedIdRef.current = null;
@@ -374,7 +386,8 @@ export default function App() {
       await clearBackup();
       setArticle(empty);
     }
-    setStoredArticles((list) => list.filter((item) => item.id !== id));
+    setStoredArticles((list) => list.filter((item) => !deleted.includes(item.id)));
+    return deleted;
   };
 
   const studioArticle = useMemo(() => toStudioArticle(article), [article]);
@@ -494,9 +507,16 @@ export default function App() {
   useEffect(() => {
     if (!isLoaded || !backupOwner || backupChecked.current) return;
     backupChecked.current = true;
-    readBackup().then((backup) => {
+    readBackup().then(async (backup) => {
       if (!backup) return;
       if (sameDraft(backup.article, articleRef.current)) {
+        void clearBackup();
+        return;
+      }
+      // 휴지통으로 옮긴 기사의 백업은 되살리지 않는다 — 되살리면 보관함에 지울 수 없는 '저장 전' 기사로 남고 저장도 ARTICLE_DELETED 로 막힌다
+      const backupId = backup.article?.articleId;
+      if (backupId && backupId !== articleRef.current.articleId
+        && await core.getArticle(backupId).then(() => false, (error) => error.status === 404)) {
         void clearBackup();
         return;
       }
@@ -564,20 +584,22 @@ export default function App() {
     if (to === "evidence") handleRunFactCheck();
     else setActiveTab(to);
   };
+  // 데스크에서 고른 기사를 연다(지금 쓰는 기사면 전환 없이). evidence 면 근거자료 서랍까지 연다
+  const handleDeskOpen = async (id, to) => {
+    if (id !== (article.articleId || article.id)) await changeArticle(id, "writer").catch(() => {});
+    handleDeskNavigate(to);
+  };
 
+  // 녹취를 기사에 연결해 둔다(저장하면 기사와 함께 Core에 보관되고 보관함·데이터맵이 이 기사 ID로 찾는다).
+  const linkInterview = (prev, source) => {
+    const linked = prev.linkedInterviews || [];
+    if (!source?.id || linked.some((item) => (item?.id || item) === source.id)) return prev;
+    return { ...prev, linkedInterviews: [...linked, { id: source.id, filename: source.filename || "" }] };
+  };
   const handleReturnFromInterview = (editedTranscript, source) => {
     if (editedTranscript) {
       const interviewQuote = `\n\n[인터뷰 발췌 녹취: ${editedTranscript.slice(0, 80)}...]`;
-      setArticle((prev) => {
-        // 인용한 녹취를 기사에 연결해 둔다(저장하면 기사와 함께 Core에 보관된다).
-        const linked = prev.linkedInterviews || [];
-        const alreadyLinked = linked.some((item) => (item?.id || item) === source?.id);
-        return {
-          ...prev,
-          content: prev.content + interviewQuote,
-          linkedInterviews: source?.id && !alreadyLinked ? [...linked, { id: source.id, filename: source.filename || "" }] : linked,
-        };
-      });
+      setArticle((prev) => ({ ...linkInterview(prev, source), content: prev.content + interviewQuote }));
     }
     setActiveTab("writer");
   };
@@ -673,6 +695,7 @@ export default function App() {
                 setIsToolsCollapsed={setIsToolsCollapsed}
                 isSidebarCollapsed={isSidebarCollapsed}
                 onConnectSource={handleConnectSource}
+                onSave={() => persistArticle()}
                 isReaderPreview={isReaderPreview}
                 setIsReaderPreview={setIsReaderPreview}
                 isPhotoEditing={isPhotoEditing}
@@ -680,12 +703,13 @@ export default function App() {
               />
             ) : activeTab === "interview" ? (
               <main className="flex-1 py-7 px-5 md:px-10 min-w-0 transition-all z-20">
-                <InterviewStudio onReturnToArticle={handleReturnFromInterview} />
+                <InterviewStudio onReturnToArticle={handleReturnFromInterview}
+                  onSave={(source) => persistArticle((prev) => linkInterview(prev, source))} />
               </main>
             ) : activeTab === "desk" ? (
               <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
                 {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
-                <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} onNewArticle={startNewArticle} busy={false} />
+                <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} onOpen={handleDeskOpen} onNewArticle={startNewArticle} busy={switching} />
               </main>
             ) : activeTab === "map" ? (
               <main className="flex min-h-0 flex-1 min-w-0 flex-col transition-all z-20 pt-6 pb-0 px-5 md:px-10">
@@ -697,7 +721,7 @@ export default function App() {
                 <PageHeader page="archive" />
                 {listError && <div role="alert" className="workspace-global-error">저장된 기사 목록을 불러오지 못했습니다. {listError}</div>}
                 {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
-                <ArchiveView article={article} articles={archiveArticles} onOpen={(id) => changeArticle(id, "writer").catch(() => {})} onDelete={deleteArticle}
+                <ArchiveView article={article} articles={archiveArticles} onOpen={(id) => changeArticle(id, "writer").catch(() => {})} onDelete={deleteArticles} onRestored={() => setArchiveVersion((n) => n + 1)}
                   onMap={(id) => { setActiveTab("map"); setMapArticleId(id === currentId ? null : id); }} busy={switching} />
               </main>
             ) : activeTab === "settings" ? (
@@ -715,6 +739,7 @@ export default function App() {
                   onApplyArticle={(id) => changeArticle(id, "convert")}
                   onOpenArticles={() => setActiveTab("archive")}
                   onEditArticle={() => setActiveTab("writer")}
+                  onSave={() => persistArticle()}
                   sourceLoading={switching}
                   sourceError={switchError}
                 />

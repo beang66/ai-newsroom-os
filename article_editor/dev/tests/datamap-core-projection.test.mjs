@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createDataMapApi } from "../../../src/features/data-map/api.js";
-import { articleUuid, categoryFromPath, projectKnowledgeMap } from "../../../src/features/data-map/domain/coreProjection.js";
+import { articleUuid, projectKnowledgeMap } from "../../../src/features/data-map/domain/coreProjection.js";
 import { MAP_CENTER, MAP_RADIUS } from "../../../src/features/data-map/domain/layout.js";
 
 const workspaceId = "10000000-0000-4000-8000-000000000001";
@@ -83,12 +83,12 @@ test("nodes stay inside the map circle with the first node centred", () => {
     assert.ok(Number.isFinite(n.x) && Math.hypot(n.x - MAP_CENTER.x, n.y - MAP_CENTER.y) <= MAP_RADIUS + 0.001);
 });
 
-test("categories come from core facts: article, attached source, role folder, missing link", () => {
+test("categories come from core facts: article, attached source, stored note role, missing link", () => {
   const map = projectKnowledgeMap({ ...payload, files: [
     ...payload.files,
-    { id: "f-int", path: "vault/프로젝트/인터뷰/a.md", title: "인터뷰", updated_at: "", outgoing_count: 0, backlink_count: 0 },
-    { id: "f-chk", path: "검증/b.md", title: "검증", updated_at: "", outgoing_count: 0, backlink_count: 0 },
-    { id: "f-pub", path: "기사/c.md", title: "출고 기사", updated_at: "", outgoing_count: 0, backlink_count: 0 },
+    { id: "f-int", path: "vault/프로젝트/인터뷰/a.md", title: "인터뷰", role: "interview", updated_at: "", outgoing_count: 0, backlink_count: 0 },
+    { id: "f-chk", path: "검증/b.md", title: "검증", role: "verify", updated_at: "", outgoing_count: 0, backlink_count: 0 },
+    { id: "f-pub", path: "기사/c.md", title: "출고 기사", role: "article", updated_at: "", outgoing_count: 0, backlink_count: 0 },
   ] });
   const category = (id) => map.nodes.find((n) => n.id === id).category;
   assert.equal(category(articleId), "article");
@@ -98,8 +98,6 @@ test("categories come from core facts: article, attached source, role folder, mi
   assert.equal(category("f-int"), "interview");
   assert.equal(category("f-chk"), "verify");
   assert.equal(category("f-pub"), "article");
-  assert.equal(categoryFromPath("원자료/기획/x.md"), "plan", "가장 안쪽 폴더가 우선");
-  assert.equal(categoryFromPath("기획.md"), "note", "파일 이름은 분류에 쓰지 않는다");
 });
 
 test("empty vault yields an empty map; malformed responses are rejected", () => {
@@ -131,4 +129,16 @@ test("adapter needs an injected Core method, passes the signal and honours abort
   assert.deepEqual(imported, [{ files: [{ path: "a.md", content: "# A" }] }, controller.signal]);
   controller.abort();
   await assert.rejects(api.getKnowledgeMap({ signal: controller.signal }), { name: "AbortError" });
+});
+
+test("코어 투영: 기사에 연결한 녹취는 인터뷰 노드와 기사-녹취 선으로 그린다", () => {
+  const tid = "c".repeat(32);
+  const graph = projectKnowledgeMap({ ...payload,
+    interviews: [{ id: tid, filename: "interview.m4a", duration: 90, created_at: "2026-10-09T00:00:00+00:00", used_by: [articleId] }],
+    edges: [...payload.edges, { source: articleId, target: tid, relation: "uses_interview" }] });
+  const audio = graph.nodes.find((n) => n.id === tid);
+  assert.equal(audio.kind, "audio");
+  assert.equal(audio.category, "interview");
+  assert.equal(audio.summary, "녹취 · 2분");
+  assert.ok(graph.edges.some((e) => e.source === articleId && e.target === tid));
 });

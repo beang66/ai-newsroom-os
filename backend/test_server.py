@@ -78,6 +78,7 @@ def load_proxy(upstream_base: str):
             'RATE_LIMIT_PER_MIN': '1000',
             'CMS_PUBLISH_URL': upstream_base + '/cms-target',
             'CMS_BEARER_TOKEN': 'cms-secret',
+            'CMS_ALLOWED_EMAILS': '@example.com',
             'BACKUP_MASTER_KEY': 'test-master-key-0123456789abcdef0123456789',
             'CLOVA_SPEECH_SECRET_KEY': 'clova-secret-key',
             'CLOVA_SPEECH_INVOKE_URL': upstream_base + '/clova',
@@ -198,6 +199,43 @@ class ProxyTests(unittest.TestCase):
         self.assertEqual((status, payload['path']), (200, '/cms-target'))
         self.assertEqual(SEEN[-1], ('POST', '/cms-target', 'Bearer cms-secret'))
 
+    def test_cms_publish_needs_allow_listed_account(self):
+        saved = os.environ['CMS_ALLOWED_EMAILS']
+        self.addCleanup(os.environ.__setitem__, 'CMS_ALLOWED_EMAILS', saved)
+        os.environ['CMS_ALLOWED_EMAILS'] = 'editor@example.com, @donga.com'
+        self.assertEqual(self.call('/cms/publish', {'article': {'title': 'x'}}, token='good-token')[0], 403)
+        os.environ['CMS_ALLOWED_EMAILS'] = ''                                   # 비우면 아무도 송고할 수 없다
+        self.assertEqual(self.call('/cms/publish', {'article': {'title': 'x'}}, token='good-token')[0], 403)
+
+    def test_allowed_emails_limits_every_feature(self):
+        self.addCleanup(os.environ.pop, 'ALLOWED_EMAILS', None)
+        os.environ['ALLOWED_EMAILS'] = '@donga.com'
+        self.assertEqual(self.call('/ai/responses', {'model': 'x'}, token='good-token')[0], 403)
+        os.environ['ALLOWED_EMAILS'] = 'Writer@Example.com'                     # 대소문자는 가리지 않는다
+        self.assertEqual(self.call('/ai/responses', {'model': 'x'}, token='good-token')[0], 200)
+
+    def test_email_allowed_rules(self):
+        allowed = self.proxy_module.email_allowed
+        self.assertTrue(allowed('a@donga.com', '@donga.com'))
+        self.assertFalse(allowed('a@notdonga.com.evil', '@donga.com'))
+        self.assertFalse(allowed('', '@donga.com'))
+        self.assertFalse(allowed('a@donga.com', ''))
+
+    def test_unauthorized_post_is_refused_before_reading_the_body(self):
+        """로그인 전에는 본문을 읽지 않는다 — 헤더만 보내도(본문 미전송) 바로 401 이어야 한다."""
+        import socket
+        with socket.create_connection(('127.0.0.1', self.proxy.server_port), timeout=5) as sock:
+            sock.sendall(b'POST /ai/responses HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n'
+                         b'Content-Length: 30000000\r\n\r\n')
+            self.assertIn(b'401', sock.recv(4096).split(b'\r\n')[0])
+
+    def test_upstream_dropping_mid_response_is_json_504(self):
+        import http.client
+        from unittest import mock
+        with mock.patch.object(urllib.request, 'urlopen', side_effect=http.client.IncompleteRead(b'')):
+            status, _, raw = self.proxy_module.forward('http://x', None, {})
+        self.assertEqual((status, 'error' in json.loads(raw)), (504, True))
+
     def test_unsplash_search_forwards(self):
         status, payload = self.call('/unsplash/search/photos?query=sea&per_page=3', token='good-token')
         self.assertEqual(status, 200)
@@ -210,6 +248,7 @@ class ProxyTests(unittest.TestCase):
         self.assertEqual(
             self.call('/unsplash/absolute?url=https://evil.example/a.jpg', token='good-token')[0], 400
         )
+        self.assertEqual(self.call('/unsplash/absolute?url=http://api.unsplash.com/x', token='good-token')[0], 400)
 
     def test_unauthorized_post_closes_connection(self):
         """401 로 답할 때 연결을 닫아야 한다 — 남은 본문이 다음 요청으로 파싱되면 501/400 이 난다."""

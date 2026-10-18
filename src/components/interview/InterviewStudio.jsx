@@ -3,6 +3,9 @@ import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStored
 import { SpeakerEditBar, SpeakerHeaderActions, SpeakerProfileMenu } from "./SpeakerProfiles.jsx";
 import { BoxText, SelectionToolbar } from "./BoxTools.jsx";
 import { readBoxSelection } from "../../lib/boxSelection.js";
+import { exportFiles } from "../../api/editorial";
+import ExportNotice from "../ExportNotice.jsx";
+import SaveBar from "../SaveBar.jsx";
 import { MARK_COLORS, addMark, applySpeakerEdits, assignByName, assignDialogues, buildBoxes, emptyEdits, isEdited, removeMarks, renameSpeakerSmart, resetSpeakers, sanitizeEdits, segmentsOf, setBoxText, speakerIndex, speakerList, speakerRoster } from "../../lib/speakerEdits.js";
 import {
   Upload,
@@ -38,7 +41,7 @@ const WAVEFORM_BARS = [
   35, 60, 90, 45, 70, 85, 30, 65, 50, 80, 40, 75, 90, 55, 65, 40, 70, 85, 35, 60
 ];
 
-export default function InterviewStudio({ onReturnToArticle }) {
+export default function InterviewStudio({ onReturnToArticle, onSave }) {
   // 1. 녹음 파일 및 인터뷰 상태
   const [audioUrl, setAudioUrl] = useState(null);
   // 저장된 전사를 다시 연 경우(원본 오디오 없음). 목록은 처음 펼칠 때 불러온다.
@@ -91,6 +94,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
   const [isSummaryCopied, setIsSummaryCopied] = useState(false);
+  const [txtExport, setTxtExport] = useState(null); // { folder, files } | { error }
 
   // 6. 핵심요약 텍스트 드래그(선택) 기반 녹취 근거 하이라이트 상태
   const [evidenceQuery, setEvidenceQuery] = useState("");
@@ -315,18 +319,15 @@ export default function InterviewStudio({ onReturnToArticle }) {
     setTimeout(() => setIsSummaryCopied(false), 2000);
   };
 
-  // TXT 파일 다운로드
-  const handleDownloadTxt = () => {
-    const content = boxesPlainText();
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${fileName ? fileName.replace(/\.[^/.]+$/, "") : "interview"}_plain_transcript.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  // TXT 내보내기 → 내 문서\AI Newsroom\내보내기\녹취\YYYYMMDD_<녹음 파일 이름>_전사.txt
+  const handleDownloadTxt = async () => {
+    try {
+      const blob = new Blob([boxesPlainText()], { type: "text/plain;charset=utf-8" });
+      const label = `${fileName ? fileName.replace(/\.[^/.]+$/, "") : "interview"}_전사`;
+      setTxtExport(await exportFiles("transcripts", [{ data: blob, ext: "txt" }], { label }));
+    } catch (error) {
+      setTxtExport({ error: error?.message || String(error) });
+    }
   };
 
   // 재생/일시정지
@@ -601,7 +602,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
               if (exportText) {
                 exportParts.push(`[통합 전사 전문]\n${exportText}`);
               }
-              onReturnToArticle(exportParts.join("\n\n---\n\n"), { id: storedSource?.id || currentTranscript?.id, filename: fileName });
+              onReturnToArticle(exportParts.join("\n\n---\n\n"), { id: transcriptId || storedSource?.id, filename: fileName });
             }}
             className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs active:scale-95"
             title="기사 작성기로 내보내기"
@@ -1200,13 +1201,15 @@ export default function InterviewStudio({ onReturnToArticle }) {
                     <button
                       onClick={handleDownloadTxt}
                       className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
-                      title="TXT 다운로드"
+                      title="TXT 내보내기"
                     >
                       <Download className="w-3 h-3 text-slate-500" />
-                      <span>다운로드</span>
+                      <span>TXT 저장</span>
                     </button>
                   </div>
                 </div>
+                {txtExport?.error ? <p role="alert" className="text-xs text-rose-700">{txtExport.error}</p>
+                  : <ExportNotice result={txtExport} kind="transcripts" className="text-xs text-slate-600" />}
 
                 {/* 통합 텍스트: 통글(이어진 한 덩어리 글) 하나로 고정 */}
                 <div className="max-h-[580px] overflow-y-auto pr-2 space-y-3.5 text-xs md:text-sm leading-relaxed select-text font-sans scrollbar-thin" data-testid="unified-text">
@@ -1255,6 +1258,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
           <div className="w-full h-16 bg-gradient-to-b from-white via-white/60 to-transparent pointer-events-none rounded-b-2xl border-b border-transparent" />
         </div>
       )}
+      {onSave && <SaveBar onSave={() => onSave({ id: transcriptId || storedSource?.id, filename: fileName })} testId="interview-save" />}
     </div>
   );
 }

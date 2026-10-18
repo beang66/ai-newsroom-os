@@ -20,8 +20,28 @@ export const downloadTransfer = (code, signal) => core.downloadTransfer(code, si
 export const deleteTransfer = (signal) => core.deleteTransfer(signal);
 export const getBackupKey = (signal) => core.getBackupKey(signal);
 export const getDiagnostics = (signal) => core.getDiagnostics(signal);
+export const getUtEvents = (signal) => core.getUtEvents(signal);
+export const exportUtEvents = (signal) => core.exportUtEvents(signal);
+export const deleteUtEvents = (signal) => core.deleteUtEvents(signal);
 export const getSettings = (signal) => core.getSettings(signal);
 export const saveSettings = (patch, signal) => core.saveSettings(patch, signal);
+
+// 내보내기: 코어가 내 문서\AI Newsroom\내보내기\<종류> 에 쓴다(브라우저 다운로드 폴더로 흩어지지 않게).
+// data: data URL·blob:/http 주소·Blob·base64 글자 중 하나
+async function base64Of(data) {
+  if (typeof data === "string" && data.startsWith("data:")) return data.slice(data.indexOf(",") + 1);
+  const blob = typeof data === "string" && /^(blob:|https?:)/.test(data) ? await (await fetch(data)).blob() : data;
+  if (typeof blob === "string") return blob;
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let text = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(text);
+}
+/** files: [{ data, ext }] → { folder, files } */
+export const exportFiles = async (kind, files, meta) =>
+  core.saveExport(kind, await Promise.all(files.map(async ({ data, ext }) => ({ ext, data: await base64Of(data) }))), meta);
+export const openExportFolder = (kind) => core.openExportFolder(kind);
+export const imageExtension = (data) => (String(data).startsWith("data:image/png") ? "png" : String(data).startsWith("data:image/webp") ? "webp" : "jpg");
 export const modelStatus = (signal) => core.models(signal);
 export const installModels = (modelId, signal) => core.installModels({ modelId }, signal);
 export const cancelModelInstall = (signal) => core.cancelModelInstall(signal);

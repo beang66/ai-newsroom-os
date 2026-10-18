@@ -19,6 +19,7 @@ import InstagramEditor from "./InstagramEditor.jsx";
 import PlatformArticlePicker from './PlatformArticlePicker.jsx';
 import {appliedSource,applyCurrentSource,sourceReady,beginSourceTransition,claimSourceTransition,cancelSourceTransition} from '../lib/platformSource.js';
 import {articleId, fingerprint, invalidateDraft, sourceText, subtitleLabel, supportedPlatforms, visibleDrafts,sameGenerationSource} from "../lib/platformState.js";
+import SaveBar from './SaveBar.jsx';
 import {sourceVersion,conditionsCurrent,heldConditions as conditionsToHold,hasConditions,generationErrorCode,conditionValues,generationHistory} from '../lib/platformLifecycle.js';
 
 const PLATFORM_LIST = [
@@ -114,7 +115,7 @@ class CardViewBoundary extends Component {
   }
 }
 
-export default function PlatformStudio({ article, setArticle, flush, onOpenArticles, onEditArticle, onApplyArticle,
+export default function PlatformStudio({ article, setArticle, flush, onOpenArticles, onEditArticle, onApplyArticle, onSave,
   sourceLoading = false, sourceError = "" }) {
   const savedConfig = article.platformGeneration || {};
   const savedValues=conditionValues(savedConfig);
@@ -781,6 +782,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
               />
             </>
           )}
+          {onSave && <SaveBar onSave={onSave} testId="convert-save" />}
         </main>
       </div>
     </div>

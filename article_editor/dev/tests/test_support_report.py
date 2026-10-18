@@ -13,7 +13,7 @@ class SupportReportTests(unittest.TestCase):
         self.addCleanup(auth.clear)
         models = {'models': [{'id': 'judge', 'installed': True, 'files': 2, 'filesDone': 2},
                              {'id': 'boundary', 'installed': False, 'files': 3, 'filesDone': 1}]}
-        report = support_report.report(models, 'external', {'cloudBackup': True, 'localFactcheck': False})
+        report = support_report.report(models, 'external', {'cloudBackup': True, 'localAi': False})
         for key in ('appVersion', 'pipelineVersion', 'os', 'factcheckMode', 'signedIn', 'models', 'settings'):
             self.assertIn(key, report)
         self.assertEqual(report['models'][1], {'id': 'boundary', 'installed': False, 'files': '1/3'})

@@ -33,7 +33,7 @@ class SubtitleDonga(unittest.TestCase):
         self.assertIn('[KoBART 초안]\n초안', payload['input'][0]['content'][0]['text'])
 
     def test_subheadline_request_uses_donga_route(self):
-        with patch.dict(os.environ, {'USE_LOCAL_MODELS': 'true'}), \
+        with patch('core.managers.settings_manager.local_ai', return_value=True), \
                 patch.object(subtitle_donga, 'generate_subtitle_drafts', return_value=[['초안']]), \
                 patch.object(subtitle_donga, 'openai_call', side_effect=fake_openai(['고사목 제거-나무예방주사 실시', '2030년 청정지역 목표'])), \
                 patch.object(router, 'metadata_assist') as old_route:

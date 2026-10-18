@@ -17,10 +17,10 @@ except ImportError:  # 팩트체크 런타임이 없는 환경
 
 @unittest.skipIf(retrieval is None, 'numpy 필요')
 class RetrievalLabelTests(unittest.TestCase):
-    def test_default_is_densefly_bm25_rrf(self):
+    def test_default_is_kc_band_bm25_rrf(self):
         with mock.patch.dict(os.environ):
             os.environ.pop('FACTCHECK_RETRIEVAL', None)
-            self.assertEqual(retrieval.retrieval_mode(), 'densefly-bm25-rrf')
+            self.assertEqual(retrieval.retrieval_mode(), 'kc-band-bm25-rrf')
             self.assertIn('BM25', retrieval.RETRIEVAL_LABELS[retrieval.retrieval_mode()])
 
     def test_exact_switch(self):
@@ -28,9 +28,13 @@ class RetrievalLabelTests(unittest.TestCase):
             self.assertEqual(retrieval.retrieval_mode(), 'exact')
             self.assertNotIn('BM25', retrieval.RETRIEVAL_LABELS['exact'])
 
+    def test_previous_densefly_switch(self):
+        with mock.patch.dict(os.environ, {'FACTCHECK_RETRIEVAL': 'densefly-bm25-rrf'}):
+            self.assertEqual(retrieval.retrieval_mode(), 'densefly-bm25-rrf')
+
     def test_unknown_value_falls_back_to_default(self):
         with mock.patch.dict(os.environ, {'FACTCHECK_RETRIEVAL': 'typo'}):
-            self.assertEqual(retrieval.retrieval_mode(), 'densefly-bm25-rrf')  # rank_chunks 와 같은 규칙
+            self.assertEqual(retrieval.retrieval_mode(), 'kc-band-bm25-rrf')  # rank_chunks 와 같은 규칙
 
 
 if __name__ == '__main__':

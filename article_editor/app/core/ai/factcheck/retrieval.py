@@ -32,12 +32,16 @@ MAX_K = 150
 RETRIEVAL_LABELS = {
     "exact": "Qwen3-Embedding-0.6B exact",
     "densefly-bm25-rrf": "DenseFly x2 (seed 101,307) + BM25 RRF",
+    "kc-band-bm25-rrf": "Mushroom-body KC x8 (input-expanded, number SimHash bands) + BM25 RRF",
 }
+DEFAULT_MODE = "kc-band-bm25-rrf"
 
 
 def retrieval_mode() -> str:
-    """검색 방식의 단일 기준: 기본 densefly-bm25-rrf(버섯체 2개 + BM25 순위 융합), FACTCHECK_RETRIEVAL=exact 면 Qwen 코사인만."""
-    return "exact" if os.getenv("FACTCHECK_RETRIEVAL", "densefly-bm25-rrf") == "exact" else "densefly-bm25-rrf"
+    """검색 방식의 단일 기준: 기본 kc-band-bm25-rrf(입력 확장 버섯체 + 숫자 밴드 + BM25, kc_band.py).
+    FACTCHECK_RETRIEVAL=exact 면 Qwen 코사인만, =densefly-bm25-rrf 면 이전 방식. 모르는 값은 기본."""
+    mode = os.getenv("FACTCHECK_RETRIEVAL", DEFAULT_MODE)
+    return mode if mode in RETRIEVAL_LABELS else DEFAULT_MODE
 
 
 def query_input(text: str) -> str:
@@ -236,12 +240,26 @@ class ChunkIndex:
         self.texts = [str(row.get("text") or "") for row in chunks]
         self.vectors = (cache or get_vector_cache()).encode(self.texts, "document")
         self._fusion = None
+        self._kc = None
+        self._bm25 = None
+
+    def bm25(self):
+        if self._bm25 is None:
+            from .fusion import BM25
+            self._bm25 = BM25(self.texts)
+        return self._bm25
 
     def fusion_parts(self):
         if self._fusion is None:
-            from .fusion import BM25, SEEDS, doc_codes
-            self._fusion = (BM25(self.texts), {seed: doc_codes(self.vectors, seed) for seed in SEEDS})
+            from .fusion import SEEDS, doc_codes
+            self._fusion = (self.bm25(), {seed: doc_codes(self.vectors, seed) for seed in SEEDS})
         return self._fusion
+
+    def kc_index(self):
+        if self._kc is None:
+            from .kc_band import KCIndex
+            self._kc = KCIndex(self.texts, self.vectors)
+        return self._kc
 
 
 def rank_chunks(
@@ -254,7 +272,8 @@ def rank_chunks(
 ) -> list[dict]:
     """Rank the caller-provided chunk scope.
 
-    기본: DenseFly x2 + BM25 RRF (fusion.py, 버섯체 연구 최적안). FACTCHECK_RETRIEVAL=exact 면 Qwen 코사인만.
+    기본: 입력 확장 버섯체 + 숫자 밴드 + BM25 RRF (kc_band.py). FACTCHECK_RETRIEVAL=exact 면 Qwen 코사인만,
+    =densefly-bm25-rrf 면 이전 DenseFly x2 + BM25 RRF (fusion.py).
     retrieval_score 는 두 방식 모두 Qwen 코사인(판정 단계 호환용)이다."""
 
     if not chunks:
@@ -268,10 +287,17 @@ def rank_chunks(
 
     scores = corpus_vectors @ query_vector
     engine = "qwen3-embedding-0.6b-exact"
-    if retrieval_mode() == "exact":
+    mode = retrieval_mode()
+    if mode == "exact":
         order = np.lexsort(
             (np.arange(len(chunks), dtype=np.int32), -scores)
         )
+    elif mode == "kc-band-bm25-rrf":
+        from .fusion import LIST_K
+        from .kc_band import fused_order as kc_fused_order
+        fused = kc_fused_order(query, query_vector, index.kc_index(), index.bm25(), k=max(limit, LIST_K))
+        order = np.asarray(fused, dtype=np.int64)
+        engine = "qwen3-embedding-0.6b-kc8-band-bm25-rrf"
     else:
         from .fusion import LIST_K, fused_order
         bm25, codes = index.fusion_parts()

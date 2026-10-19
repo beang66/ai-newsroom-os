@@ -55,13 +55,16 @@ class StorageManager:
         """CMS 최종 발행 ``{"draft": {...}}`` — 수동 저장 + 기사당 하나인 발행본 덮어쓰기(발행 시각 갱신)."""
         return self._saved(guarded('article_publish', _publish_article, data), 'manual')
 
-    def get_article(self, article_id, version=None, photo_refs=False):
+    def get_article(self, article_id, version=None, photo_refs=False, record=True):
         """기사 하나를 편집기로 연다. 모양은 latest_article 과 같다.
-        version 없음 = 그 기사의 최신 저장본(임시 저장 포함) | 'saved'(마지막 수동 저장본) | 'published'(발행본)."""
+        version 없음 = 그 기사의 최신 저장본(임시 저장 포함) | 'saved'(마지막 수동 저장본) | 'published'(발행본).
+        record=False: 보관함 미리보기처럼 사용자가 기사를 연 것이 아닌 읽기 — '다시 열기'로 기록하지 않는다."""
         started = time.monotonic()
         result = _latest_article(photo_refs, article_id) if version is None else _get_article(article_id, version, photo_refs)
-        if self._events:
-            self._events.record('article_reopened', article_id=article_id, revision_no=result.get('revisionNo'),
+        if self._events and record:
+            # 최신 원고 응답은 저장 번호를 draft 안에만 싣는다
+            revision_no = result.get('revisionNo') or (result.get('draft') or {}).get('revisionNo')
+            self._events.record('article_reopened', article_id=article_id, revision_no=revision_no,
                                 duration_ms=int((time.monotonic() - started) * 1000))
         return result
 

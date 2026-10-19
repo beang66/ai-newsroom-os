@@ -91,7 +91,7 @@ def adopt_legacy(user_id):
         marker.write_text(user_id, encoding='utf-8')
         return moved
 _INIT_LOCK = threading.RLock()
-SCHEMA_VERSION = 7  # 4: article_deleted / 5: 고정본 보강 / 6: 노트 역할 / 7: 동의 기반 UT 이벤트
+SCHEMA_VERSION = 8  # 8: 재시작 후 이어지는 플랫폼 생성 작업
 # api.py 의 /api/vault/restore 요청 한도(220MB)에 base64(4/3배)·JSON 여유를 뺀 값. 넘는 백업은 받아도 복구할 수 없다.
 MAX_BACKUP_BYTES = 160_000_000
 
@@ -162,6 +162,12 @@ CREATE TABLE IF NOT EXISTS processing_jobs (
   error_code TEXT, error_message TEXT, retryable INTEGER,
   cancel_requested INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT, finished_at TEXT);
+CREATE TABLE IF NOT EXISTS platform_runs (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, article_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL, source_signature TEXT NOT NULL,
+  targets_json TEXT NOT NULL, options_json TEXT NOT NULL, results_json TEXT NOT NULL,
+  status TEXT NOT NULL, active_target TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS platform_runs_article ON platform_runs(workspace_id, article_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS transcripts (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, filename TEXT NOT NULL, mime_type TEXT NOT NULL,
   audio BLOB NOT NULL, dialogues_json TEXT NOT NULL, duration REAL, created_at TEXT NOT NULL);

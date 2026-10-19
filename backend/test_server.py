@@ -19,6 +19,9 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parent
 SEEN: list[tuple] = []
 CLOVA_SEEN: list[dict] = []
+SHARE_OK = '11111111-2222-3333-4444-555555555555'
+SHARE_OTHER = '99999999-2222-3333-4444-555555555555'
+LINK_OK = 'ab' * 32
 
 
 class Stub(BaseHTTPRequestHandler):
@@ -47,6 +50,11 @@ class Stub(BaseHTTPRequestHandler):
         size = int(self.headers.get('Content-Length', '0'))
         raw = self.rfile.read(size) if size else b'{}'
         SEEN.append(('POST', self.path, self.headers.get('Authorization')))
+        if self.path == '/rest/v1/rpc/article_share_role':  # 공유 권한: 초대된 공유(SHARE_OK)이거나 링크 토큰(LINK_OK)이 맞을 때만
+            args = json.loads(raw or b'{}')
+            allowed = self.headers.get('Authorization') == 'Bearer good-token' and (
+                args.get('p_share') == SHARE_OK or args.get('p_token') == LINK_OK)
+            return self._send('viewer' if allowed else None)
         if self.path.endswith('/clova/recognizer/upload'):  # CLOVA Speech — 받은 키 헤더와 본문을 기록하고 변환 결과를 돌려준다
             CLOVA_SEEN.append({'key': self.headers.get('X-CLOVASPEECH-API-KEY'), 'type': self.headers.get('Content-Type'), 'raw': raw})
             return self._send({'text': '스텁 전사', 'segments': [{'start': 0, 'end': 1000, 'text': '스텁 전사'}], 'duration': 1000})
@@ -174,6 +182,28 @@ class ProxyTests(unittest.TestCase):
             self.assertFalse(self.call('/ai/health')[1]['backupKey'])
         finally:
             os.environ['BACKUP_MASTER_KEY'] = saved
+
+    def test_share_key_needs_share_permission(self):
+        import base64
+        import hashlib
+        import hmac
+        self.assertEqual(self.call('/ai/share-key', {'shareId': SHARE_OK})[0], 401)
+        status, payload = self.call('/ai/share-key', {'shareId': SHARE_OK}, token='good-token')
+        self.assertEqual(status, 200)
+        expected = hmac.new(b'test-master-key-0123456789abcdef0123456789', b'article-share:' + SHARE_OK.encode(), hashlib.sha256).digest()
+        self.assertEqual(base64.b64decode(payload['key']), expected, '마스터 키에서 공유 id 로 파생한 키')
+        self.assertEqual(self.call('/ai/share-key', {'shareId': SHARE_OTHER}, token='good-token')[0], 403, '권한 없는 공유')
+        self.assertEqual(self.call('/ai/share-key', {'shareId': SHARE_OTHER, 'token': LINK_OK}, token='good-token')[0], 200, '링크 토큰으로 열 수 있음')
+        self.assertEqual(self.call('/ai/share-key', {'shareId': 'not-a-uuid'}, token='good-token')[0], 400)
+        self.assertEqual(self.call('/ai/share-key', {'shareId': SHARE_OK, 'token': '../x'}, token='good-token')[0], 400)
+
+    def test_share_link_page_needs_no_login_and_shows_no_content(self):
+        with urllib.request.urlopen(self.base + '/s/' + LINK_OK) as response:
+            page = response.read().decode()
+            self.assertEqual(response.headers.get_content_type(), 'text/html')
+        self.assertIn('링크로 받기', page)
+        self.assertIn(LINK_OK, page)
+        self.assertEqual(self.call('/s/not-a-token')[0], 404)
 
     def test_verified_token_is_cached_for_a_minute(self):
         self.call('/ai/embeddings', {'text': ['a']}, token='good-token')

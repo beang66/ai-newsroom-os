@@ -459,6 +459,7 @@ async function generateCardNews(input) {
     generation_review:generationReview,
     cards: draft.cards.map((card, index) => ({
       card_id: `C${index + 1}`, page: index + 1, ...card,
+      auto_fit: true,
       content_version: 2,
       evidence_valid: checkEvidence(card.source_evidence),
       evidence_status: 'quote_presence_only',

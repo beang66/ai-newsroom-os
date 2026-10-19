@@ -39,9 +39,26 @@ const stub = createServer((req, res) => {
     const url = new URL(req.url, "http://stub");
     let out = null;
     if (req.method === "POST" && url.pathname === "/ai/responses") {
-      const name = JSON.parse(body).text?.format?.name;
+      const request = JSON.parse(body);
+      const name = request.text?.format?.name;
       stubCalls.push(name);
-      if (AI[name]) out = { output: [{ content: [{ type: "output_text", text: JSON.stringify(AI[name]) }] }] };
+      if (name === 'factcheck_recheck') {
+        const prompt = typeof request.input === 'string' ? request.input
+          : (request.input || []).flatMap((message) => message.content || []).map((part) => part.text || '').join('\n');
+        const results = [...prompt.matchAll(/^### 항목 id=([^\n]+)/gm)].map((match) => ({
+          id: match[1].trim(), verdict: 'NOT_ENOUGH_INFO', reason: '스모크 테스트용 합성 판정', wrong_text: '', evidence_text: '',
+        }));
+        out = { output: [{ content: [{ type: 'output_text', text: JSON.stringify({ results }) }] }] };
+      } else if (AI[name]) out = { output: [{ content: [{ type: "output_text", text: JSON.stringify(AI[name]) }] }] };
+    } else if (req.method === 'POST' && url.pathname === '/ai/embeddings') {
+      // UI 연결만 확인하는 합성 벡터. 실제 임베딩의 검색 품질을 검증하는 대역은 아니다.
+      const request = JSON.parse(body), texts = request.documents || request.queries || [];
+      stubCalls.push('embeddings');
+      out = { data: texts.map((text) => {
+        const vector = Array(1024).fill(0); let hash = 0;
+        for (const char of text || ' ') { hash = (Math.imul(hash, 31) + char.codePointAt(0)) >>> 0; vector[hash % 1024] += 1; }
+        return vector;
+      }) };
     } else if (req.method === "POST" && url.pathname === "/ai/audio/transcriptions") {
       stubCalls.push("stt:" + (req.headers["content-type"] || "").split(";")[0]);
       out = {
@@ -70,6 +87,7 @@ const stub = createServer((req, res) => {
         results: [1, 2, 3].map((i) => ({ id: `stub${i}`, alt_description: `stub photo ${i}`, user: { name: "Stub" }, urls: { small: PIXEL, thumb: PIXEL }, links: { html: "" } })),
       };
     }
+    if (!out) console.error('Unstubbed backend request:', req.method, url.pathname);
     res.writeHead(out ? 200 : 404, { "Content-Type": "application/json" });
     res.end(JSON.stringify(out || { error: "stub: unknown" }));
   });
@@ -723,7 +741,9 @@ try {
   // 이미 검증한 문장은 다시 보내지 않는다 — 문장 하나를 덧붙이면 그 문장만 코어로
   if (factcheckReady) {
     const next = page.waitForRequest((r) => r.url().endsWith("/api/factcheck/run"), { timeout: 15_000 });
-    await body.fill(((await body.innerText()).trim()) + " 고친 문장을 하나 더 씁니다.");
+    // 사진의 조작 안내·캡션을 innerText로 평탄화해 기사 본문에 다시 넣지 않는다.
+    await body.press('Control+End'); await page.keyboard.press('Enter');
+    await page.keyboard.insertText('고친 문장을 하나 더 씁니다.');
     assert.deepEqual(JSON.parse((await next).postData()).nodes.map((n) => n.text), ["고친 문장을 하나 더 씁니다."]);
   }
   // 등록한 자료 이름을 누르면 추출 본문을 볼 수 있다
@@ -748,7 +768,8 @@ try {
   await page.getByRole("status").getByText("임시 저장됨").first().waitFor({ timeout: 15_000 });
   await page.keyboard.press("Control+s"); // 저장 이력에는 수동 저장만 남는다 — 취재자료가 들어간 판을 이력에 남긴다
   await page.getByRole("status").getByText(/^저장됨/).first().waitFor({ timeout: 15_000 });
-  await body.fill(((await body.innerText()).trim()) + " 순서형 검사용 새 문장을 하나 더 씁니다.");
+  await body.press('Control+End'); await page.keyboard.press('Enter');
+  await page.keyboard.insertText('순서형 검사용 새 문장을 하나 더 씁니다.');
   const sequence = page.getByTestId("factcheck-review"); // 서랍을 열면 순서형 검사가 함께 켜진다
   await sequence.getByText(/AI 팩트체크 순서형 검사/).waitFor({ timeout: 15_000 });
   await sequence.getByText("스모크 불일치 사유").waitFor();
@@ -801,6 +822,11 @@ try {
   // 6. 플랫폼 변환: FormatConverter UI -> App Core -> platform-generator 어댑터
   await go("플랫폼 변환");
   const converter = page.getByTestId("format-converter");
+  const openEditorialOptions = async () => {
+    const panel = converter.getByTestId('optional-editorial-direction');
+    if (await panel.getAttribute('open') === null) await panel.locator('summary').first().click();
+    return panel;
+  };
   await converter.getByRole("button", { name: "선택 항목 생성", exact: true }).waitFor(); // 편집실 제목 문구는 화면에서 빠졌다(실제 있는 버튼으로 확인)
   let studioAiCalls=0,studioSnapshots=0;
   page.on('request',request=>{if(request.url().endsWith('/api/platform/generate'))studioAiCalls++;if(/\/snapshots$/.test(request.url()))studioSnapshots++;});
@@ -812,6 +838,9 @@ try {
   };
   assert.equal(await converter.getByTestId('generate-active').isDisabled(),true);
   await applyStudio();
+  const editorialOptions = await openEditorialOptions();
+  const topicOptions = editorialOptions.locator('details').filter({has:page.getByText(/^특정 주제 강조/)});
+  if (await topicOptions.getAttribute('open') === null) await topicOptions.locator('summary').first().click();
   await converter.getByRole("button", { name: /추천/ }).click();
   await converter.getByRole("button", { name: /스모크 핵심/ }).click();
   await converter.getByRole("button", { name: "선택 항목 생성" }).click();
@@ -1198,7 +1227,8 @@ try {
     editStarted();await editHold;await route.fulfill({response,body:JSON.stringify(result)});
   });
   await converter.getByTestId('generate-active').click();await editWaiting;
-  await converter.getByPlaceholder('톤, 분량, 반드시 포함할 조건 등을 입력').fill('생성 도중 바꾼 요구사항');editRelease();
+  await openEditorialOptions();
+  await converter.getByLabel('덧붙일 편집 방향 (선택)').fill('생성 도중 바꾼 요구사항');editRelease();
   await converter.getByText(/원문 또는 입력 조건이 바뀌어 이전 작업의 후속 호출과 결과 적용을 중단했습니다/).waitFor();
   assert.equal(await converter.locator('textarea').evaluateAll(elements=>elements.some(element=>element.value==='조건 수정 중 응답 (적용 금지)')),false);
   await page.unroute('**/api/platform/generate');
@@ -1297,6 +1327,7 @@ try {
 } catch (error) {
   if (page) await page.screenshot({ path: fileURLToPath(new URL("temp/ui-smoke-failure.png", ROOT)) }).catch(() => {});
   console.error("FAIL ui-smoke:", error.stack || error.message);
+  if(page)console.error('Workspace failure context:',(await page.locator('body').innerText({timeout:2000}).catch(()=>'' )).slice(0,2200));
   if(page)console.error('UI failure context:',(await page.locator('[data-testid="format-converter"], [data-testid="archive-view"]').first().innerText({timeout:2000}).catch(()=>'' )).slice(-1800));
   if (problems.length) console.error(problems.join("\n"));
   process.exitCode = 1;

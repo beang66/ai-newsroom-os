@@ -73,15 +73,17 @@ class BackupManager:
 
     # ---- 저장 알림 → 묶어서 올리기 ----
     def notify(self, article_id, kind='auto'):
-        """기사 저장이 끝났다(StorageManager 가 부른다). 켜져 있을 때만 일을 만든다. 절대 저장을 막거나 실패시키지 않는다."""
+        """기사 저장이 끝났다(StorageManager 가 부른다). 백업이 켜졌거나 삭제 알림일 때만 일을 만든다."""
         try:
-            if not self._active():
+            user = self._user()
+            if not user or (kind != 'deleted' and not self._active()):
                 return
             now = self._clock()
             with self._lock:
-                item = self._dirty.setdefault(article_id, {'user': self._user(), 'first': now, 'last': now, 'manual': False})
+                item = self._dirty.setdefault(article_id, {'user': user, 'first': now, 'last': now, 'manual': False})
                 item['last'] = now
                 item['manual'] = item['manual'] or kind == 'manual'
+                item['deleted'] = kind == 'deleted'  # 휴지통으로 옮겼으면 서버 사본을 지운다(되살리면 다음 알림이 False 로 되돌린다)
             self._ensure_thread()
         except Exception:
             pass
@@ -98,7 +100,7 @@ class BackupManager:
             self.run_due()
 
     def _due(self, item, now):
-        return item['manual'] or now - item['last'] >= QUIET_SECONDS or now - item['first'] >= MAX_WAIT_SECONDS
+        return item['manual'] or item.get('deleted') or now - item['last'] >= QUIET_SECONDS or now - item['first'] >= MAX_WAIT_SECONDS
 
     def run_due(self, force=False):
         """올릴 때가 된 기사를 하나씩 올린다. force=True 면 때가 안 됐어도 전부(앱 종료·'지금 백업'). → 올린 수"""
@@ -114,7 +116,7 @@ class BackupManager:
             if item is None:
                 continue
             try:
-                if self._upload(article_id, item['user']):
+                if self._upload(article_id, item['user'], item.get('deleted')):
                     sent += 1
                 with self._lock:
                     self._dirty.pop(article_id, None)
@@ -138,9 +140,15 @@ class BackupManager:
         except Exception:
             pass
 
-    def _upload(self, article_id, user):
-        """한 기사를 올린다. 계정이 바뀌었거나 꺼져 있으면 건너뛴다(True=올림, False=건너뜀)."""
-        if user != self._user() or not self._active():
+    def _upload(self, article_id, user, deleted=False):
+        """한 기사를 올린다(deleted 면 설정과 무관하게 서버 사본을 지운다). 계정이 바뀌면 건너뛴다."""
+        if user != self._user():
+            return False
+        if deleted:
+            supabase.storage_delete(BUCKET, f'{self._folder(user)}/{article_id}.enc', self._token())
+            self._uploaded.pop((user, article_id), None)
+            return True
+        if not self._active():
             return False
         raw = cloud_backup.build_payload(article_id)
         if raw is None:
@@ -156,7 +164,8 @@ class BackupManager:
 
     # ---- 복구 ----
     def list(self):
-        """서버에 있는 백업 목록 → {backups: [{articleId, title, savedAt, bytes}]} (키로 풀어서 제목을 읽는다)"""
+        """서버에 있는 백업 목록 → {backups: [{articleId, title, savedAt, bytes, damaged?}]} (키로 풀어서 제목을 읽는다)
+        shortcut: 제목을 읽으려고 백업마다 내려받는다(기사 수십 건까지), 수백 건이면 제목·시각을 별도 목록 파일로 둔다."""
         token, user = self._token(), self._user()
         key = self._key(user)
         rows = []
@@ -166,7 +175,11 @@ class BackupManager:
             raw = supabase.storage_download(BUCKET, f'{self._folder(user)}/{name}', token)
             if raw is None:
                 continue
-            data = json.loads(cloud_backup.open_sealed(key, raw).decode('utf-8'))
+            try:
+                data = json.loads(cloud_backup.open_sealed(key, raw).decode('utf-8'))
+            except (RequestError, ValueError):  # 하나가 깨져도 나머지는 복구할 수 있게 목록에 남긴다
+                rows.append({'articleId': name[:-4], 'title': '', 'savedAt': '', 'bytes': len(raw), 'damaged': True})
+                continue
             rows.append({'articleId': name[:-4], 'title': data.get('title') or '', 'savedAt': data.get('savedAt') or '', 'bytes': len(raw)})
         return {'backups': sorted(rows, key=lambda r: r['savedAt'], reverse=True)}
 

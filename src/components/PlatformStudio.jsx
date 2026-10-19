@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -8,15 +8,19 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
-import { freezeArticle, generatePlatform, suggestPlatformKeywords, getStudioArticle } from "../api/platform";
+import { freezeArticle, suggestPlatformKeywords, getStudioArticle, startPlatformRun, listPlatformRuns, getPlatformRun } from "../api/platform";
 
 import PlatformReview from "./PlatformReview.jsx";
 import PlatformCardEditor from "./PlatformCardEditor.jsx";
 import PlatformDelivery from "./PlatformDelivery.jsx";
 import ThreadsEditor from "./ThreadsEditor.jsx";
+import InstagramEditor from "./InstagramEditor.jsx";
 import PlatformArticlePicker from './PlatformArticlePicker.jsx';
 import {appliedSource,applyCurrentSource,sourceReady,beginSourceTransition,claimSourceTransition,cancelSourceTransition} from '../lib/platformSource.js';
-import {articleId, fingerprint, invalidateDraft, sourceText, subtitleLabel, supportedPlatforms, visibleDrafts} from "../lib/platformState.js";
+import {articleId, fingerprint, invalidateDraft, sourceText, subtitleLabel, supportedPlatforms, visibleDrafts,sameGenerationSource,attachCurrentReview} from "../lib/platformState.js";
+import SaveBar from './SaveBar.jsx';
+import {sourceVersion,conditionsCurrent,heldConditions as conditionsToHold,hasConditions,conditionValues,generationHistory} from '../lib/platformLifecycle.js';
+import {EditorialDirection} from '../lib/editorialDirection.js';
 
 const PLATFORM_LIST = [
   { id: "instagram", label: "Instagram", badge: "피드 원고" },
@@ -43,21 +47,6 @@ function Evidence({ quotes, valid }) {
         ))}
       </ul>
     </details>
-  );
-}
-
-function TextArea({ label, value, onChange, rows = 4, evidence, valid }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-[11px] font-extrabold text-[#57514A]">{label}</label>
-      <textarea
-        value={value || ""}
-        rows={rows}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full resize-y rounded-2xl border border-[#DDD6CB] bg-white px-4 py-3 text-sm leading-7 text-[#292929] outline-none transition focus:border-[#292929]"
-      />
-      <Evidence quotes={evidence} valid={valid} />
-    </div>
   );
 }
 
@@ -88,7 +77,7 @@ function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
           아직 {VIEW_LABELS[platform]} 원고가 없습니다.
         </p>
         <p className="mt-1 text-xs text-[#8E8982]">
-          왼쪽에서 키워드를 선택한 뒤 실제 생성 엔진을 실행하세요.
+          기사를 적용하고 생성할 항목을 선택하면, 원문의 흐름과 핵심 내용을 읽어 정리합니다.
         </p>
       </div>
     );
@@ -103,41 +92,7 @@ function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
   };
 
   if (platform === "instagram") {
-    return (
-      <div className="space-y-4">
-        <TextArea
-          label="도입"
-          value={draft.opening}
-          onChange={(value) => changed((next) => { next.opening = value; })}
-          rows={3}
-          evidence={draft.block_evidence?.opening}
-        />
-        {(draft.paragraphs || []).map((paragraph, index) => (
-          <TextArea
-            key={index}
-            label={`본문 ${index + 1}`}
-            value={paragraph}
-            onChange={(value) => changed((next) => { next.paragraphs[index] = value; })}
-            evidence={draft.block_evidence?.paragraphs?.[index]}
-          />
-        ))}
-        <TextArea
-          label="마무리"
-          value={draft.closing}
-          onChange={(value) => changed((next) => { next.closing = value; })}
-          rows={3}
-          evidence={draft.block_evidence?.closing}
-        />
-        <TextArea
-          label="해시태그 · 3~5개"
-          value={(draft.hashtags || []).join(" ")}
-          onChange={(value) => changed((next) => {
-            next.hashtags = value.trim() ? value.trim().split(/\s+/u) : [];
-          })}
-          rows={2}
-        />
-      </div>
-    );
+    return <InstagramEditor draft={draft} changed={changed} Evidence={Evidence} cards={cards} article={article} />;
   }
 
   if (platform === "threads") {
@@ -147,18 +102,34 @@ function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
   return null;
 }
 
-export default function PlatformStudio({ article, setArticle, flush, onOpenArticles, onEditArticle, onApplyArticle,
+class CardViewBoundary extends Component {
+  state = { failed: false, draft: this.props.draft };
+  static getDerivedStateFromProps(props, state) {
+    return props.draft !== state.draft ? { failed: false, draft: props.draft } : null;
+  }
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed
+      ? <p role="alert" className="rounded-2xl border border-rose-300 p-4 text-sm text-rose-700">카드뉴스 화면을 표시하지 못했습니다. 생성된 결과는 보존되어 있습니다. 다른 플랫폼 탭은 계속 확인할 수 있습니다.</p>
+      : this.props.children;
+  }
+}
+
+export default function PlatformStudio({ article, setArticle, flush, onOpenArticles, onEditArticle, onApplyArticle, onSave,
   sourceLoading = false, sourceError = "" }) {
   const savedConfig = article.platformGeneration || {};
+  const savedValues=conditionValues(savedConfig);
+  const savedCurrent=conditionsCurrent(savedConfig,article);
   const [selectedPlatforms, setSelectedPlatforms] = useState(
     supportedPlatforms(savedConfig.selectedPlatforms).length
       ? supportedPlatforms(savedConfig.selectedPlatforms)
       : ["instagram", "threads"],
   );
   const [includeCardNews, setIncludeCardNews] = useState(savedConfig.includeCardNews === true);
-  const [requirements, setRequirements] = useState(savedConfig.requirements || "");
+  const [requirements, setRequirements] = useState(savedCurrent?savedValues.requirements:"");
+  const [previousConditions,setPreviousConditions]=useState(()=>conditionsToHold(savedConfig,article));
   const [keywordCandidates, setKeywordCandidates] = useState([]);
-  const [selectedKeywords, setSelectedKeywords] = useState(savedConfig.selectedKeywords || []);
+  const [selectedKeywords, setSelectedKeywords] = useState(savedCurrent?savedValues.selectedKeywords:[]);
   const [drafts, setDrafts] = useState(visibleDrafts(article.platformDrafts));
   const initialCardNews = article.cardNews && !Array.isArray(article.cardNews) ? article.cardNews : null;
   const [cardNews, setCardNews] = useState(initialCardNews);
@@ -171,6 +142,11 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState("");
   const [requestSource, setRequestSource] = useState(null);
+  const [lastRun,setLastRun]=useState(null);
+  const [storedRun,setStoredRun]=useState(null);
+  const [runHistory,setRunHistory]=useState(()=>generationHistory(savedConfig.run_history));
+  const history=useRef(runHistory);
+  const [runSignal,setRunSignal]=useState(0);
   const [customKeyword, setCustomKeyword] = useState("");
   // 미리보기와 적용 원문은 편집실 전용 상태다. 목록 선택은 팀 작업 기사를 바꾸지 않는다.
   const [pickerOpen,setPickerOpen]=useState(false),[preview,setPreview]=useState({article:structuredClone(article),subtitle:article.subtitle});
@@ -241,9 +217,9 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
     return()=>{mounted.current=false;lookups.controller?.abort();application.current?.controller.abort();};
   }, []);
 
-  const live=useRef({article,drafts,cardNews,requirements,selectedKeywords,selectedPlatforms,includeCardNews});
-  useLayoutEffect(()=>{live.current={article,drafts,cardNews,requirements,selectedKeywords,selectedPlatforms,includeCardNews};},[article,drafts,cardNews,requirements,selectedKeywords,selectedPlatforms,includeCardNews]);
-  const origin=useRef({id:articleId(article),source:sourceText(article),photos:fingerprint(article.photos||[])});
+  const live=useRef({article,drafts,cardNews,requirements,selectedKeywords,selectedPlatforms,includeCardNews,sourceLoading});
+  useLayoutEffect(()=>{live.current={article,drafts,cardNews,requirements,selectedKeywords,selectedPlatforms,includeCardNews,sourceLoading};},[article,drafts,cardNews,requirements,selectedKeywords,selectedPlatforms,includeCardNews,sourceLoading]);
+  const origin=useRef({id:articleId(article),source:sourceText(article),version:sourceVersion(article),photos:fingerprint(article.photos||[])});
 
 
   const targets = useMemo(
@@ -265,84 +241,67 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
         includeCardNews,
         selectedKeywords,
         requirements,
+        source_version:sourceVersion(expected),
+        previous_conditions:previousConditions,
         ...configPatch,
       },
     }));
-  },[setArticle,drafts,cardNews,selectedPlatforms,includeCardNews,selectedKeywords,requirements]);
+  },[setArticle,drafts,cardNews,selectedPlatforms,includeCardNews,selectedKeywords,requirements,previousConditions]);
 
   const persistRef=useRef(persist);
   useLayoutEffect(()=>{persistRef.current=persist;},[persist]);
   useEffect(()=>{
-    const next={id:articleId(article),source:sourceText(article),photos:fingerprint(article.photos||[])};
+    const next={id:articleId(article),source:sourceText(article),version:sourceVersion(article),photos:fingerprint(article.photos||[])};
     const previous=origin.current;origin.current=next;
     if(previous.id!==next.id && (previous.id || previous.source!==next.source)){
       setDrafts(visibleDrafts(article.platformDrafts));setCardNews(article.cardNews||null);
       setActiveView(Object.keys(visibleDrafts(article.platformDrafts))[0] || (article.cardNews ? "card_news" : "instagram"));
       setSelectedPlatforms(supportedPlatforms(article.platformGeneration?.selectedPlatforms));
       setIncludeCardNews(article.platformGeneration?.includeCardNews === true);
-      setSelectedKeywords(article.platformGeneration?.selectedKeywords||[]);setRequirements(article.platformGeneration?.requirements||'');
+      const config=article.platformGeneration||{},current=conditionsCurrent(config,article),values=conditionValues(config);
+      setSelectedKeywords(current?values.selectedKeywords:[]);setRequirements(current?values.requirements:'');
+      setPreviousConditions(conditionsToHold(config,article));history.current=generationHistory(config.run_history);setRunHistory(history.current);
+      setProgress({});setMessage('');setLastRun(null);setStoredRun(null);setCustomKeyword('');
       setKeywordCandidates([]);return;
     }
     if(previous.source!==next.source || previous.photos!==next.photos){
       const current=live.current;
       const nextDrafts=Object.fromEntries(Object.entries(current.drafts).map(([key,value])=>[key,invalidateDraft(value)]));
       const nextCards=current.cardNews?invalidateDraft(current.cardNews):null;
-      live.current={...current,drafts:nextDrafts,cardNews:nextCards};setDrafts(nextDrafts);setCardNews(nextCards);
-      persistRef.current(nextDrafts,nextCards);
+      let patch={};
+      if(previous.source!==next.source){
+        const held=hasConditions(current)?{selectedKeywords:current.selectedKeywords,requirements:current.requirements,source_version:previous.version}:previousConditions;
+        setPreviousConditions(held);setSelectedKeywords([]);setRequirements('');setKeywordCandidates([]);setCustomKeyword('');
+        setProgress({});setMessage('');setLastRun(null);setStoredRun(null);
+        if(articleId(previewLive.current?.article)===next.id){const view={article:structuredClone(article),subtitle:article.subtitle};previewLive.current=view;setPreview(view);}
+        patch={selectedKeywords:[],requirements:'',previous_conditions:held,source_version:sourceVersion(article)};
+      }
+      live.current={...current,drafts:nextDrafts,cardNews:nextCards,...(previous.source!==next.source?{selectedKeywords:[],requirements:''}:{})};setDrafts(nextDrafts);setCardNews(nextCards);
+      persistRef.current(nextDrafts,nextCards,patch);
     }
-  },[article]);
+  },[article,previousConditions]);
 
   const togglePlatform = (id) => {
-    setSelectedPlatforms((current) => {
-      const next = current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id];
-      if (!next.includes(activeView) && activeView !== "card_news") {
-        setActiveView(next[0] || (includeCardNews ? "card_news" : "instagram"));
-      }
-      if (setArticle) {
-        setArticle((previous) => ({
-          ...previous,
-          platformGeneration: {
-            ...(previous.platformGeneration || {}),
-            selectedPlatforms: next,
-            includeCardNews,
-            selectedKeywords,
-            requirements,
-          },
-        }));
-      }
-      return next;
+    const next=selectedPlatforms.includes(id)?selectedPlatforms.filter((item)=>item!==id):[...selectedPlatforms,id];
+    setSelectedPlatforms(next);
+    if(!next.includes(activeView)&&activeView!=="card_news")setActiveView(next[0]||(includeCardNews?"card_news":"instagram"));
+    persist(drafts,cardNews,{
+      selectedPlatforms:next,selectedKeywords,requirements,
     });
   };
 
   const toggleKeyword = (keyword) => {
-    setSelectedKeywords((current) => {
-      const next = current.includes(keyword)
-        ? current.filter((item) => item !== keyword)
-        : [...current, keyword];
-      if (setArticle) {
-        setArticle((previous) => ({
-          ...previous,
-          platformGeneration: {
-            ...(previous.platformGeneration || {}),
-            selectedPlatforms,
-            includeCardNews,
-            selectedKeywords: next,
-            requirements,
-          },
-        }));
-      }
-      return next;
-    });
+    const next=selectedKeywords.includes(keyword)?selectedKeywords.filter((item)=>item!==keyword):[...selectedKeywords,keyword];
+    setSelectedKeywords(next);
+    persist(drafts,cardNews,{selectedKeywords:next,requirements});
   };
 
   // 변환을 시작할 때 지금 글을 저장해 고정본으로 만든다. 한 생성 작업의 모든 결과는 같은 고정본을 쓴다.
   // 고정본을 만들지 못하면 중단한다. 저장 큐와 표시 중인 원문이 일치해야 한다.
-  const freeze = async () => {
+  const freeze = async (allowMenuChange=false) => {
     if(!sourceReady(applied,live.current.article))throw Error('생성 원문을 먼저 적용해 주세요. 원문 변경 후에는 재적용이 필요합니다.');
     const frozen = await freezeArticle(article, {flush, strict:true});
-    if (!mounted.current || sourceText(article) !== sourceText(live.current.article)) throw Error("고정 중 기사가 변경됐습니다. 다시 실행해 주세요.");
+    if ((!mounted.current&&!allowMenuChange) || (mounted.current&&sourceText(article) !== sourceText(live.current.article))) throw Error("고정 중 기사가 변경됐습니다. 다시 실행해 주세요.");
     if (frozen?.articleId && frozen.articleId !== article.articleId && setArticle) {
       setArticle((previous) => articleId(previous)!==articleId(article)||sourceText(previous)!==sourceText(article)?previous:({ ...previous, articleId: frozen.articleId }));
     }
@@ -376,73 +335,104 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   const runGeneration = async (only) => {
     if (pending.current) return;
     const list = Array.isArray(only) ? only : targets;
-    if (!article.title?.trim() || !article.content?.trim()) {
-      setMessage("기사 제목과 본문을 먼저 작성해 주세요.");
-      return;
-    }
-    if (!list.length) {
-      setMessage("생성할 플랫폼 또는 카드뉴스를 선택해 주세요.");
-      return;
-    }
-
-    pending.current = true; setGenerating(true); setRequestSource({title:article.title});
-    setMessage("");
-    const nextProgress = Object.fromEntries(list.map((id) => [id, "대기 중"]));
-    setProgress({ ...nextProgress });
-    const success = [];
-    const inputSource=sourceText(article),inputConfig=fingerprint({requirements,selectedKeywords,selectedPlatforms,includeCardNews});
-    const startingDrafts=Object.fromEntries(list.map(target=>[target,fingerprint(target==='card_news'?live.current.cardNews:live.current.drafts[target])]));
-    let frozen;
-    try { frozen = await freeze(); setRequestSource({title:frozen.article.title, snapshotId:frozen.snapshotId}); }
-    catch (error) {
-      pending.current = false;
-      if (mounted.current) { setMessage(error.message); setGenerating(false); setRequestSource(null); setProgress({}); }
-      return;
-    }
-
-    for (const target of list) {
-      if (!mounted.current) break;
-      nextProgress[target] = "생성 중";
-      setProgress({ ...nextProgress });
-      try {
-        const before=startingDrafts[target];
-        const generated = await generatePlatform(
-          target,
-          frozen.article,
-          selectedKeywords,
-          requirements,
-          frozen?.snapshotId,
-          article,
-          frozen.source_url,
-        );
-        if (!generated) throw new Error("생성 결과가 비어 있습니다.");
-        if(!generated.article_id)throw Error("기사 ID를 확인할 수 없습니다. 기사를 저장한 뒤 다시 생성해 주세요.");
-        if(generated.article_id!==frozen.articleId || generated.snapshot_id!==frozen.snapshotId)throw Error("생성 결과의 기사·고정본이 요청과 다릅니다. 결과를 적용하지 않았습니다.");
-        const current=live.current;
-        if(!mounted.current||inputSource!==sourceText(current.article)||articleId(current.article)!==frozen.articleId||inputConfig!==fingerprint({requirements:current.requirements,selectedKeywords:current.selectedKeywords,selectedPlatforms:current.selectedPlatforms,includeCardNews:current.includeCardNews})||before!==fingerprint(target==='card_news'?current.cardNews:current.drafts[target]))throw Error("생성 중 원문·조건·원고가 바뀌어 결과를 적용하지 않았습니다. 다시 생성해 주세요.");
-        if(target==='card_news')updateCardNews(generated);else updateDraft(target,generated);
-        nextProgress[target] = "완료";
-        success.push(target);
-      } catch (error) {
-        nextProgress[target] = `실패 · ${error.message || "생성 오류"}`;
-      }
-      if (mounted.current) setProgress({ ...nextProgress });
-    }
-    pending.current = false;
-    if (!mounted.current) return;
-    if (success.length) {
-      setActiveView(success[0]);
-    }
-    setMessage(
-      success.length
-        ? `${success.length}/${list.length}개 결과를 실제 생성 엔진에서 받아왔습니다.${
-            frozen ? ` (저장 ${frozen.revisionNo}번 버전의 글 기준)` : " (고정본을 만들지 못해 현재 글로 생성했습니다)"
-          }`
-        : "생성된 결과가 없습니다. 오류 내용을 확인해 주세요.",
-    );
-    setGenerating(false);
-    setRequestSource(null);
+    if (!article.title?.trim() || !article.content?.trim()) { setMessage('기사 제목과 본문을 먼저 작성해 주세요.'); return; }
+    if (!list.length) { setMessage('생성할 플랫폼 또는 카드뉴스를 선택해 주세요.'); return; }
+    pending.current=true;setGenerating(true);setMessage('');setRequestSource({title:article.title});
+    setProgress(Object.fromEntries(list.map(target=>[target,'고정본 준비 중'])));
+    const source=sourceText(article);
+    const bases=Object.fromEntries(list.map(target=>[target,fingerprint(target==='card_news'?live.current.cardNews:live.current.drafts[target])||'']));
+    try {
+      const frozen=await freeze(true);
+      const run=await startPlatformRun({articleId:frozen.articleId,snapshotId:frozen.snapshotId,revisionNo:frozen.revisionNo,
+        sourceSignature:source,targets:list,selectedKeywords,requirements,baseFingerprints:bases});
+      if(!mounted.current)return;
+      setLastRun({id:run.id,revision_no:frozen.revisionNo,snapshot_id:frozen.snapshotId});
+      setRequestSource({title:frozen.article.title,snapshotId:frozen.snapshotId});
+      setProgress(Object.fromEntries(run.targets.map(target=>[target,'대기 중'])));
+      setMessage('생성 작업을 시작했습니다. 다른 메뉴로 이동해도 계속 진행됩니다.');
+      persistRef.current(live.current.drafts,live.current.cardNews);
+      setRunSignal(value=>value+1);
+    } catch(error) {
+      if(mounted.current){setMessage(error.message||'생성 작업을 시작하지 못했습니다.');setGenerating(false);setRequestSource(null);setProgress({});}
+    } finally { pending.current=false; }
   };
+
+  useEffect(() => {
+    const watchedId=articleId(article);
+    if(!watchedId)return undefined;
+    let cancelled=false,timer;
+    const poll=async()=>{
+      try{
+        const listed=await listPlatformRuns(watchedId);
+        const latest=listed.runs?.[0];
+        if(cancelled||!latest)return;
+        const run=await getPlatformRun(latest.id);
+        if(cancelled)return;
+        setStoredRun(run);
+        const active=run.status==='queued'||run.status==='running';
+        setLastRun({id:run.id,revision_no:run.revision_no,snapshot_id:run.snapshot_id});
+        setGenerating(active);
+        setProgress(Object.fromEntries(Object.entries(run.progress).map(([target,status])=>{
+          const label=({pending:'대기 중',running:'생성 중',rendering:'JPG 준비 중',succeeded:'완료',
+            jpg_failed:'원고 완료 · JPG 확인 필요',failed:'실패'})[status]||status;
+          const error=run.results?.[target]?.error||run.results?.[target]?.draft?.cards?.find(card=>card.render_error)?.render_error?.reason;
+          return [target,error?`${label} · ${error}`:label];
+        })));
+        const current=live.current;
+        const sameArticle=articleId(current.article)===run.article_id;
+        const sameSource=sameArticle&&sourceText(current.article)===run.source_signature;
+        if(!sameSource){
+          setMessage('이 작업의 결과는 시작 당시 기사·고정본에 보관되어 있습니다. 현재 수정한 기사에는 적용하지 않습니다.');
+        }else{
+          for(const target of run.targets){
+            const entry=run.results?.[target],draft=entry?.draft;
+            if(!draft?.generation_review_binding||draft.validation_review)continue;
+            const {generation_run:_run,...boundDraft}=draft;
+            if(await globalThis.ContentReviewBinding.reviewMatches({...draft.generation_input,platform:target},boundDraft))
+              entry.draft=attachCurrentReview(target,draft,current.article,draft.generation_review);
+          }
+          if(cancelled)return;
+          const bases=run.options?.base_fingerprints||{};
+          let nextDrafts=current.drafts,nextCards=current.cardNews,changed=false,skipped=false;
+          for(const target of run.targets){
+            const entry=run.results?.[target];
+            if(!entry?.draft||!['succeeded','jpg_failed'].includes(entry.status))continue;
+            const present=target==='card_news'?nextCards:nextDrafts[target];
+            if(present?.generation_run?.id===run.id)continue;
+            if((fingerprint(present)||'')!==(bases[target]||'')){skipped=true;continue;}
+            if(target==='card_news')nextCards=entry.draft;
+            else nextDrafts={...nextDrafts,[target]:entry.draft};
+            changed=true;
+          }
+          if(changed){
+            live.current={...current,drafts:nextDrafts,cardNews:nextCards};
+            setDrafts(nextDrafts);setCardNews(nextCards);
+            setArticle?.(previous=>{
+              if(articleId(previous)!==run.article_id||sourceText(previous)!==run.source_signature)return previous;
+              let platformDrafts={...(previous.platformDrafts||{})},cardResult=previous.cardNews,applied=false;
+              for(const target of run.targets){
+                const entry=run.results?.[target];
+                if(!entry?.draft||!['succeeded','jpg_failed'].includes(entry.status))continue;
+                const present=target==='card_news'?cardResult:platformDrafts[target];
+                if(present?.generation_run?.id===run.id||(fingerprint(present)||'')!==(bases[target]||''))continue;
+                if(target==='card_news')cardResult=entry.draft;
+                else platformDrafts[target]=entry.draft;
+                applied=true;
+              }
+              return applied?{...previous,platformDrafts,cardNews:cardResult}:previous;
+            });
+          }
+          if(skipped)setMessage('생성 결과는 시작 당시 고정본에 보관했습니다. 이후 수정한 원고는 덮어쓰지 않았습니다.');
+          else if(!active)setMessage(run.status==='completed'?'생성 작업이 끝났습니다. 결과를 확인해 주세요.':'생성 작업을 완료하지 못했습니다.');
+        }
+        if(active)timer=setTimeout(poll,1500);
+      }catch(error){
+        if(!cancelled){setMessage(error.message||'생성 작업 상태를 확인하지 못했습니다.');timer=setTimeout(poll,3000);}
+      }
+    };
+    poll();
+    return()=>{cancelled=true;clearTimeout(timer);};
+  },[articleId(article),sourceText(article),runSignal,setArticle]);
 
   const updateDraft = (platform, change) => {
     const current=live.current,next=typeof change==='function'?change(current.drafts[platform]):change;
@@ -469,10 +459,12 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   };
 
   const currentDraft = activeView === "card_news" ? cardNews : drafts[activeView];
+  const currentResult=!!currentDraft&&currentDraft.article_id===articleId(article)&&sameGenerationSource(currentDraft,article);
 
   return (
     <div className="w-full space-y-5 animate-float-in text-[#292929]" data-testid="format-converter">
-      <div className="flex flex-col gap-3 border-b border-[#E7E2D9] pb-4 sm:flex-row sm:items-end sm:justify-end">
+      <div className="flex flex-col gap-3 border-b border-[#E7E2D9] pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs leading-5 text-[#756F67]">원문의 흐름과 핵심 내용을 바탕으로 자동 정리합니다. 추가 입력 없이 바로 생성하세요.</p>
         <button
           type="button"
           onClick={() => runGeneration()}
@@ -564,18 +556,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                     const checked = event.target.checked;
                     setIncludeCardNews(checked);
                     if (checked && !selectedPlatforms.length) setActiveView("card_news");
-                    if (setArticle) {
-                      setArticle((previous) => ({
-                        ...previous,
-                        platformGeneration: {
-                          ...(previous.platformGeneration || {}),
-                          selectedPlatforms,
-                          includeCardNews: checked,
-                          selectedKeywords,
-                          requirements,
-                        },
-                      }));
-                    }
+                    persist(drafts,cardNews,{includeCardNews:checked});
                   }}
                   className="mt-0.5"
                 />
@@ -590,9 +571,49 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
           </section>
 
           <section className="rounded-3xl border border-[#DDD6CB] bg-white/90 p-5 shadow-sm space-y-3">
+            <details className="group" data-testid="optional-editorial-direction">
+              <summary className="cursor-pointer text-xs font-black">
+                편집 방향 추가 <span className="font-normal text-[#8E8982]">(선택)</span>
+                {hasConditions({selectedKeywords,requirements})&&<span className="ml-2 text-[10px] font-medium text-[#756F67]">다음 생성에 반영</span>}
+              </summary>
+              <p className="mt-2 text-[11px] leading-5 text-[#8E8982]">비워 두면 원문을 기준으로 정리합니다. 별도로 강조하거나 남기고 싶은 내용이 있을 때만 덧붙이세요.</p>
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label htmlFor="platform-editorial-direction" className="mb-1.5 block text-xs font-bold">덧붙일 편집 방향 (선택)</label>
+                  <textarea
+                    id="platform-editorial-direction"
+                    value={requirements}
+                    onChange={(event) => setRequirements(event.target.value.slice(0, 3000))}
+                    onBlur={() => persist(drafts, cardNews, { requirements })}
+                    rows={4}
+                    placeholder="예: 지원 금액보다 신청 자격을 먼저 설명하고, 제외 대상은 꼭 남겨 주세요."
+                    className="w-full resize-y rounded-xl border border-[#DDD6CB] bg-[#FAF8F5] px-3 py-2 text-xs leading-5 outline-none focus:border-[#292929]"
+                  />
+                  {requirements.trim()&&<div role="status" className="mt-2 space-y-1 text-[11px] leading-5 text-[#756F67]">
+                    <p className="font-bold">다음 생성에 반영할 문체</p>
+                    {supportedPlatforms(selectedPlatforms).map(platform=><p key={platform}>{EditorialDirection.summary(platform,requirements)}</p>)}
+                    <p>명시한 문체만 변경하며, 사실·근거와 중요한 조건은 유지합니다. 기존 결과는 다시 생성해야 반영됩니다.</p>
+                  </div>}
+                  <button type="button" title="선택한 Instagram·Threads 원고를 다시 생성합니다. 기존 원고와 수정 내용은 새 결과로 바뀝니다." disabled={!requirements.trim()||!ready||applying||generating||keywordLoading||sourceLoading||!article.title?.trim()||!article.content?.trim()||!selectedPlatforms.length} onClick={()=>runGeneration(supportedPlatforms(selectedPlatforms))} className="mt-3 rounded-xl bg-[#292929] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">편집 방향 반영해 다시 생성</button>
+                </div>
+                {hasConditions({selectedKeywords,requirements})&&<button type="button" disabled={generating||keywordLoading||applying} className="text-xs text-[#756F67] underline" onClick={()=>{
+                  setSelectedKeywords([]);setRequirements('');setCustomKeyword('');
+                  persist(drafts,cardNews,{selectedKeywords:[],requirements:''});
+                }}>추가 방향 지우기</button>}
+            {previousConditions&&hasConditions(previousConditions)&&<div data-testid="previous-conditions" className="rounded-xl border border-amber-300 p-3 text-xs">
+              <p>이전 원문의 입력 조건을 보존했습니다. 현재 생성에는 자동 적용하지 않습니다.</p>
+              <details><summary>보존한 조건 보기</summary><p>{(previousConditions.selectedKeywords||[]).join(', ')}</p><p>{previousConditions.requirements}</p></details>
+              <button type="button" disabled={generating||keywordLoading||applying} data-testid="reuse-conditions" onClick={()=>{
+                const held=previousConditions;setSelectedKeywords(held.selectedKeywords||[]);setRequirements(held.requirements||'');setPreviousConditions(null);
+                persist(drafts,cardNews,{selectedKeywords:held.selectedKeywords||[],requirements:held.requirements||'',previous_conditions:null});
+              }} className="mt-2 underline">확인 후 현재 원문에 다시 사용</button>
+            </div>}
+            <details className="rounded-xl border border-[#E7E2D9] p-3">
+              <summary className="cursor-pointer text-xs font-bold">특정 주제 강조 (선택){selectedKeywords.length>0&&` · ${selectedKeywords.length}개`}</summary>
+              <div className="mt-3 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-1.5 text-xs font-black">
-                <Hash className="h-3.5 w-3.5" /> 핵심 키워드
+                <Hash className="h-3.5 w-3.5" /> 강조할 키워드
               </h3>
               <button
                 type="button"
@@ -637,7 +658,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
               </div>
             ) : (
               <p className="rounded-xl bg-[#FAF8F5] p-3 text-[10px] leading-4 text-[#8E8982]">
-                ‘추천’을 누르면 불러온 기사에서 핵심 키워드를 제안합니다.
+                필요할 때만 ‘추천’으로 강조할 주제 후보를 확인하세요. 선택하지 않아도 생성할 수 있습니다.
               </p>
             )}
 
@@ -662,21 +683,15 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
               </div>
             )}
 
-            <div>
-              <label className="mb-1.5 block text-[10px] font-bold text-[#8E8982]">추가 요구사항</label>
-              <textarea
-                value={requirements}
-                onChange={(event) => setRequirements(event.target.value.slice(0, 3000))}
-                onBlur={() => persist(drafts, cardNews, { requirements })}
-                rows={4}
-                placeholder="톤, 분량, 반드시 포함할 조건 등을 입력"
-                className="w-full resize-y rounded-xl border border-[#DDD6CB] bg-[#FAF8F5] px-3 py-2 text-xs leading-5 outline-none focus:border-[#292929]"
-              />
-            </div>
+              </div>
+            </details>
+              </div>
+            </details>
           </section>
 
-          {(Object.keys(progress).length > 0 || message) && (
+          {(Object.keys(progress).length > 0 || message || runHistory.length>0) && (
             <section className="rounded-3xl border border-[#DDD6CB] bg-[#FAF8F5] p-4 text-[11px]">
+              {lastRun&&<p data-testid="generation-run" className="mb-2">이번 생성 시도 · {lastRun.id.slice(0,8)} · 저장 {lastRun.revision_no}번 고정본 기준</p>}
               {Object.entries(progress).map(([id, status]) => (
                 <div key={id} className="flex justify-between gap-3 py-1">
                   <span className="font-bold">{VIEW_LABELS[id]}</span>
@@ -685,7 +700,21 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                   </span>
                 </div>
               ))}
+              {cardNews&&progress.card_news?.startsWith('실패')&&<p role="status" className="mt-2 text-amber-700">현재 보이는 카드뉴스와 JPG 준비 수는 이번 생성 결과가 아닌 이전 성공 결과입니다.</p>}
               {message && <p className="mt-2 border-t border-[#DDD6CB] pt-2 leading-5 text-[#57514A]">{message}</p>}
+              {storedRun?.targets?.some(target=>storedRun.results?.[target]?.draft)&&<details className="mt-2 border-t border-[#DDD6CB] pt-2">
+                <summary className="cursor-pointer font-bold">고정본에 보관된 생성 결과 보기</summary>
+                <p className="mt-2">기사 {storedRun.article_id.slice(0,8)} · 저장 {storedRun.revision_no}번 고정본</p>
+                {storedRun.targets.map(target=>{
+                  const draft=storedRun.results?.[target]?.draft;
+                  if(!draft)return null;
+                  const value=target==='card_news'?(draft.cards||[]).map(card=>[card.content?.keyword,card.content?.headline,card.content?.body].filter(Boolean).join(' · ')).join('\n\n'):draftToText(target,draft);
+                  return <div key={target} className="mt-3"><p className="font-bold">{VIEW_LABELS[target]}</p><pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words">{value}</pre></div>;
+                })}
+              </details>}
+              {runHistory.length>0&&<details data-testid="generation-history" className="mt-2 border-t pt-2"><summary>최근 작업 기록 · 원문과 AI 응답은 기록하지 않음</summary>{runHistory.map((entry,index)=><p key={index}>
+                {entry.id.slice(0,8)} · {entry.source_version===sourceVersion(article)?'현재 원문':'이전 원문'} · {VIEW_LABELS[entry.platform]||entry.platform} · {entry.stage} · {entry.code||entry.status} · {entry.at}
+              </p>)}</details>}
             </section>
           )}
         </aside>
@@ -734,7 +763,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                 {VIEW_LABELS[activeView] || "플랫폼 원고"} 편집
               </h3>
               <p className="mt-1 text-[11px] leading-5 text-[#8E8982]">
-                {currentDraft?.validation_status === "needs_recheck"
+                {currentDraft&&!currentResult?'이전 원문으로 생성한 보존본입니다. 현재 원문의 생성 성공·검수·SNS 준비 결과가 아닙니다.':currentDraft?.validation_status === "needs_recheck"
                   ? "생성 뒤 수정된 내용입니다. 원문 근거 재검수가 필요합니다."
                   : currentDraft
                   ? "실제 생성 엔진 결과입니다. 발행 전 사람이 최종 검토해야 합니다."
@@ -768,19 +797,32 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
             </div>
           </div>
 
-          <PlatformReview key={"review:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} article={article} onChange={change=>activeView==='card_news'?updateCardNews(change):updateDraft(activeView,change)}/>
-          <PlatformDelivery key={"delivery:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} cards={cardNews} article={article} onCards={updateCardNews}/>
+          {currentDraft&&<p role={currentResult?'status':'alert'} data-testid="draft-origin-status" className={`mb-4 rounded-xl border p-3 text-xs ${currentResult?'text-slate-600':'border-amber-300 text-amber-800'}`}>
+            {currentResult?'현재 원문 결과':'이전 원문 결과 · SNS 준비에서 제외'} · 기준 원문: {currentDraft.generation_input?.article?.title||'연결 확인 필요'}
+            {currentDraft.generation_run?.revision_no!=null&&` · 저장 ${currentDraft.generation_run.revision_no}번 고정본`}
+            {!currentResult&&' · 새 생성이 실패해도 이 보존본은 삭제하지 않습니다.'}
+          </p>}
+
           {activeView === "card_news" ? (
-            <PlatformCardEditor key={articleId(article)} draft={cardNews} article={article} onChange={updateCardNews} onAddPhoto={addCardPhoto} />
+            <CardViewBoundary key={articleId(article)} draft={cardNews}>
+              <PlatformReview platform={activeView} draft={cardNews} article={article} onChange={updateCardNews}/>
+              <PlatformDelivery platform={activeView} draft={cardNews} cards={cardNews} article={article} onCards={updateCardNews} preparing={generating}/>
+              <PlatformCardEditor draft={cardNews} article={article} onChange={updateCardNews} onAddPhoto={addCardPhoto} preparing={generating} />
+            </CardViewBoundary>
           ) : (
-            <PlatformDraftEditor
-              platform={activeView}
-              draft={drafts[activeView]}
-              onChange={(next) => updateDraft(activeView, next)}
-              cards={cardNews?.cards || []}
-              article={article}
-            />
+            <>
+              <PlatformReview key={"review:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} article={article} onChange={change=>updateDraft(activeView,change)}/>
+              <PlatformDelivery key={"delivery:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} cards={cardNews} article={article} onCards={updateCardNews} preparing={generating}/>
+              <PlatformDraftEditor
+                platform={activeView}
+                draft={drafts[activeView]}
+                onChange={(next) => updateDraft(activeView, next)}
+                cards={cardNews?.cards || []}
+                article={article}
+              />
+            </>
           )}
+          {onSave && <SaveBar onSave={onSave} testId="convert-save" />}
         </main>
       </div>
     </div>

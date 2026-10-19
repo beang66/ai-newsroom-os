@@ -68,6 +68,22 @@ class ServerTests(ApiTestCase):
         status, raw, headers = self.request('/api/transcripts/' + identifier + '/audio')
         self.assertEqual((status, raw, headers['Content-Type']), (200, b'AUDIO', 'audio/mp4'))
 
+    def test_speaker_edits_route_saves_and_detail_returns_them(self):
+        import base64
+        use_temp_vault(self)
+        identifier = storage.save_transcript(
+            {'filename': 'interview.m4a', 'mimeType': 'audio/mp4', 'data': base64.b64encode(b'AUDIO').decode()},
+            {'dialogues': [{'id': 's1', 'speaker': '1', 'speakerName': '화자 1', 'text': '질문', 'timestamp': 0}], 'duration': 3},
+        )['transcriptId']
+        edits = {'names': {'1': '김 기자'}, 'merge': {}, 'assign': {}}
+        status, raw, _ = self.request('/api/transcripts/' + identifier + '/speakers', {'speakerEdits': edits})
+        self.assertEqual((status, json.loads(raw)['speakerEdits']), (200, edits))
+        detail = json.loads(self.request('/api/transcripts/' + identifier)[1])
+        self.assertEqual(detail['speakerEdits'], edits)
+        self.assertEqual(detail['dialogues'][0]['speakerName'], '화자 1')            # 원본 발언은 그대로
+        self.assertEqual(self.request('/api/transcripts/' + identifier + '/speakers', {'speakerEdits': 'x'})[0], 400)
+        self.assertEqual(self.request('/api/transcripts/' + 'f' * 32 + '/speakers', {'speakerEdits': edits})[0], 404)
+
     def test_cms_route_only_returns_success_from_platform_manager(self):
         with patch.object(api.CORE.platform, 'publish', return_value={'published': True, 'id': 'cms-1'}) as publish:
             status, raw, _ = self.request('/api/cms/publish', {'article': {'title': '기사', 'content': '본문'}})
@@ -113,7 +129,7 @@ class ServerTests(ApiTestCase):
         self.assertEqual(self.request('/api/unsplash/search?q=')[0], 400)
 
     def test_missing_openai_key(self):
-        with patch.dict(os.environ, {'OPENAI_API_KEY': '', 'USE_LOCAL_MODELS': 'false'}), patch.object(core_config, 'AI_BACKEND', 'local'):
+        with patch.dict(os.environ, {'OPENAI_API_KEY': ''}), patch('core.managers.settings_manager.local_ai', return_value=False), patch.object(core_config, 'AI_BACKEND', 'local'):
             self.assertEqual(self.request('/api/assist', {'kind': 'metadata', 'requested': 'headline', 'body': '가' * 100})[0], 503)
 
     def test_structured_schemas(self):
@@ -126,7 +142,7 @@ class ServerTests(ApiTestCase):
             # su4228 v30: 부제는 최종 교열(subtitle_N 문자열)을 한 번 더 거치므로, 스키마가 요구하는 모양대로 채워 돌려준다
             answer = {key: ('부제 문구' if spec['type'] == 'string' else ['후보가', '후보나', '후보다']) for key, spec in schema['properties'].items()}
             return {'output': [{'content': [{'type': 'output_text', 'text': json.dumps(answer, ensure_ascii=False)}]}]}
-        with patch.dict(os.environ, {'USE_LOCAL_MODELS': 'false'}), patch.object(ai_client, 'openai_call', side_effect=call):
+        with patch('core.managers.settings_manager.local_ai', return_value=False), patch.object(ai_client, 'openai_call', side_effect=call):
             for kind, requested in [('metadata', 'headline'), ('metadata', 'subheadline'), ('photo_keywords', '')]:
                 status, raw, _ = self.request('/api/assist', {'kind': kind, 'requested': requested, 'body': '가' * 100})
                 self.assertEqual(status, 200)
@@ -342,11 +358,11 @@ class ServerTests(ApiTestCase):
             self.assertEqual(schema['properties']['paragraphs']['maxItems'], 5)
             self.assertIn('20~50자', prompt)
             return {'paragraphs': ['첫 핵심', '둘째 핵심', '셋째 핵심'], 'advice': ''}
-        with patch.dict(os.environ, {'FLOW_SUMMARY_PROVIDER': 'openai'}), patch.object(ai_router, 'structured_call', side_effect=summarize):
+        with patch('core.managers.settings_manager.local_ai', return_value=False), patch.object(ai_router, 'structured_call', side_effect=summarize):
             self.assertEqual(len(ai_router.assist({'kind': 'flow', 'body': '기사 내용 ' * 30})['paragraphs']), 3)
 
     def test_kobart_summary_drafts(self):
-        with patch.dict(os.environ, {'FLOW_SUMMARY_PROVIDER': 'kobart'}), patch.object(ai_router, 'generate_subtitle_drafts', return_value=[['모델 요약']]) as model, patch.object(ai_router, 'structured_call', return_value={'paragraphs': ['하나', '둘', '셋'], 'advice': ''}):
+        with patch('core.managers.settings_manager.local_ai', return_value=True), patch.object(ai_router, 'generate_subtitle_drafts', return_value=[['모델 요약']]) as model, patch.object(ai_router, 'structured_call', return_value={'paragraphs': ['하나', '둘', '셋'], 'advice': ''}):
             ai_router.assist({'kind': 'flow', 'body': '첫 문단입니다. 둘째 문단입니다. 셋째 문단입니다.'})
             self.assertTrue(model.called)
 

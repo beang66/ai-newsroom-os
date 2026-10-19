@@ -14,7 +14,7 @@
 | UI ↔ Core | 창: pywebview IPC 브리지, 브라우저·시험: HTTP. 같은 named method·같은 응답(시험으로 비교) | 팀원 브랜치 병합 후 재확인 |
 | 기사 저장 | 계정별 SQLCipher 저장소, `ArticleRevision`(UUID id, `expectedRevisionNo` 충돌 검사), 수동·자동 저장 | — |
 | 고정본 | `ArticleSnapshot` 구현. 키워드·생성·렌더·팩트체크가 `snapshotId`를 받음 | — |
-| 로그인/클라우드 | Supabase Auth(회원가입·로그인·로그인 유지). 기사·자료는 서버에 저장하지 않음 | 서버 저장·팀 공유(S1) |
+| 로그인/클라우드 | Supabase Auth(회원가입·로그인·로그인 유지). 작성 중 기사만 암호화 서버 백업 가능, 기사 삭제 때 서버 사본도 삭제 | 자료·팀 공유(S1) |
 | 사진 | 로컬 `media` + `MediaAsset` 등록(`generated` 구분). 검색은 백엔드 경유 Unsplash | — |
 | STT | `transcripts` 저장, 목록·조회·원본 오디오 | 구간(Segment) 고정 ID |
 | 기사 검증 | 로컬 판정기 또는(설정) 외부 모델, 결과는 `factcheck_memo` 캐시. 동기 호출 | `Claim`/`EvidenceLink`/`VerificationRun` 정규화 저장, 비동기 실행 |

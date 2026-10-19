@@ -4,7 +4,6 @@
 - 현재 배포: Render `beang66/ai-newsroom-os` @ **`main`** = 기존 **웹앱(Express + vite + Gemini)**
   → 앱이 필요로 하는 계약 경로(`/ai/*`)가 **하나도 없음** (`/api/health` 만 존재)
 - 앱 쪽 구현(이미 완료): `app/core/backend_proxy.py`(호출) · `app/core/ai/providers/backend.py` · `docs/BACKEND_INTEGRATION.md`
-- 전면수정 전 임시 브리지: `backend/express/ai-proxy.ts` (Express에 3줄 추가로 붙임)
 
 ## 1. 역할이 어떻게 바뀌나
 

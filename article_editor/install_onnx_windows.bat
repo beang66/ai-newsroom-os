@@ -12,7 +12,7 @@ if errorlevel 1 goto failure
 if errorlevel 1 goto failure
 .onnx-env\Scripts\python.exe scripts\verify_onnx.py
 if errorlevel 1 goto failure
-echo OK. Set USE_LOCAL_MODELS=true, FLOW_SUMMARY_PROVIDER=kobart and LOCAL_MODEL_RUNTIME=onnx in .env.
+echo OK. Set LOCAL_MODEL_RUNTIME=onnx in .env and turn on the local AI toggle in the app settings.
 pause
 exit /b 0
 :failure

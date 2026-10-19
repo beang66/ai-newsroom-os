@@ -24,7 +24,7 @@
 
 | # | 업무 | 왜 백엔드여야 하나 | 필요한 경로 | 규모 |
 |---|---|---|---|---|
-| 1 | **운영키 프록시**(LLM·이미지·Unsplash API) | 앱에 운영키를 두지 않는 규칙(`ARCHITECTURE.md`) | `/ai/responses`, `/ai/images/generations`, `/unsplash/*` | **코드 완성** (`backend/server.py`, `backend/express/ai-proxy.ts`) |
+| 1 | **운영키 프록시**(LLM·이미지·Unsplash API) | 앱에 운영키를 두지 않는 규칙(`ARCHITECTURE.md`) | `/ai/responses`, `/ai/images/generations`, `/unsplash/*` | **코드 완성** (`backend/server.py`) |
 | 2 | **인증 게이트 + 레이트리밋** | 익명 호출 차단·사용자별 쿼터 | 위 경로 공통(`Authorization: Bearer <Supabase JWT>`) | **코드 완성** |
 | 3 | **모델 팩 호스팅**(2.18GB·Range·SHA-256) | 배포본은 모델 미동봉(`docs/LOCAL_MODELS.md`) | 정적 파일(HF/S3/R2/사내서버) | **코드 0줄** — 호스팅만 |
 | 4 | **앱 업데이트 피드** | 새 버전 알림·강제 최소버전·무결성 | `GET /app/updates/latest` (+서명/해시) | 소 (1~2) |

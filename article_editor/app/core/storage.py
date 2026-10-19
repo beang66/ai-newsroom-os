@@ -22,7 +22,7 @@ from .errors import RequestError
 SAVE_LOCK = threading.Lock()
 MAX_REVISIONS = 200  # ponytail: 자동저장 이력은 원고마다 최근 200개만 둔다. 더 필요하면 간격 저장(예: 1분)이나 압축으로
 OPEN_DIR = APP_DATA / 'open'  # 외부 프로그램으로 열 때만 만드는 임시 복호화본(cleanup_open)
-MAX_TRANSCRIPT_AUDIO = 25_000_000
+MAX_TRANSCRIPT_AUDIO = 40_000_000
 
 
 def _now():
@@ -48,7 +48,7 @@ def save_transcript(payload, result):
     except ValueError:
         raise RequestError('녹음 파일을 읽지 못했어요.') from None
     if not audio or len(audio) > MAX_TRANSCRIPT_AUDIO:
-        raise RequestError('녹음 파일은 25MB 이하만 보관할 수 있어요.', 413)
+        raise RequestError('녹음 파일은 40MB 이하만 보관할 수 있어요.', 413)
     for item in dialogues:
         if not isinstance(item, dict) or not isinstance(item.get('text'), str) or len(item['text']) > 20_000:
             raise RequestError('녹취 발언 형식을 확인해 주세요.')
@@ -78,10 +78,64 @@ def get_transcript(identifier):
     with vault.connect() as db:
         row = db.execute('SELECT filename, mime_type, dialogues_json, duration, created_at FROM transcripts WHERE id = ?',
                          (identifier,)).fetchone()
+        edits = db.execute('SELECT value FROM app_meta WHERE key = ?', (SPEAKER_EDITS_PREFIX + identifier,)).fetchone() if row else None
     if not row:
         raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
     return {'id': identifier, 'filename': row[0], 'mimeType': row[1], 'dialogues': json.loads(row[2]),
-            'duration': row[3], 'createdAt': row[4]}
+            'duration': row[3], 'createdAt': row[4], 'speakerEdits': json.loads(edits[0]) if edits else {}}
+
+
+MARK_COLORS = {'yellow', 'orange', 'green', 'blue', 'pink'}  # 형광펜 색(화면 src/lib/speakerEdits.js 와 같게)
+SPEAKER_EDITS_PREFIX = 'speaker_edits:'  # app_meta 키 — 발언 원본(transcripts.dialogues_json)은 바꾸지 않고 사용자의 화자 수정만 따로 둔다
+
+
+def _clean_speaker_edits(edits):
+    """화면이 보낸 화자 수정(이름 바꾸기 names · 합치기 merge · 구간 지정 assign)을 검사해 정리한다."""
+    if not isinstance(edits, dict):
+        raise RequestError('화자 수정 형식을 확인해 주세요.')
+    clean = {}
+    for field, limit in (('names', 200), ('merge', 500), ('assign', 10_000)):
+        raw = edits.get(field, {})
+        if not isinstance(raw, dict) or len(raw) > limit:
+            raise RequestError('화자 수정 형식을 확인해 주세요.')
+        for key, value in raw.items():
+            if not isinstance(key, str) or not isinstance(value, str) or not key or not value or len(key) > 100 or len(value) > 100:
+                raise RequestError('화자 수정 형식을 확인해 주세요.')
+        clean[field] = dict(raw)
+    # 글 수정(texts: 박스 id → 고친 글)과 형광펜(marks: 박스 id → [{s, e, c}]) — 쓰이지 않으면 필드를 만들지 않는다
+    texts = edits.get('texts')
+    if texts is not None:
+        if not isinstance(texts, dict) or len(texts) > 2_000:
+            raise RequestError('화자 수정 형식을 확인해 주세요.')
+        for key, value in texts.items():
+            if not isinstance(key, str) or not key or len(key) > 100 or not isinstance(value, str) or not value.strip() or len(value) > 60_000:
+                raise RequestError('화자 수정 형식을 확인해 주세요.')
+        clean['texts'] = dict(texts)
+    marks = edits.get('marks')
+    if marks is not None:
+        if not isinstance(marks, dict) or len(marks) > 2_000:
+            raise RequestError('화자 수정 형식을 확인해 주세요.')
+        for key, items in marks.items():
+            if not isinstance(key, str) or not key or len(key) > 100 or not isinstance(items, list) or len(items) > 200:
+                raise RequestError('화자 수정 형식을 확인해 주세요.')
+            for mark in items:
+                ok = isinstance(mark, dict) and all(isinstance(mark.get(f), int) and not isinstance(mark.get(f), bool) for f in ('s', 'e'))
+                if not ok or not 0 <= mark['s'] < mark['e'] <= 60_000 or mark.get('c') not in MARK_COLORS:
+                    raise RequestError('화자 수정 형식을 확인해 주세요.')
+        clean['marks'] = {key: [{'s': m['s'], 'e': m['e'], 'c': m['c']} for m in items] for key, items in marks.items()}
+    return clean
+
+
+def save_speaker_edits(identifier, edits):
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    clean = _clean_speaker_edits(edits)
+    with vault.connect() as db:
+        if not db.execute('SELECT 1 FROM transcripts WHERE id = ?', (identifier,)).fetchone():
+            raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+        db.execute('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)',
+                   (SPEAKER_EDITS_PREFIX + identifier, json.dumps(clean, ensure_ascii=False)))
+    return {'id': identifier, 'speakerEdits': clean}
 
 
 def transcript_audio(identifier):
@@ -140,7 +194,7 @@ def _unpack(db, draft):
         for key in PHOTO_FIELDS if isinstance(photo, dict) else ():
             found = MEDIA_REF.fullmatch(photo[key]) if isinstance(photo.get(key), str) else None
             row = db.execute('SELECT header, data FROM media WHERE id = ?', (found.group(1),)).fetchone() if found else None
-            if row:  # ponytail: 행이 없으면 참조를 그대로 둔다(깨진 사진). 고아 media 정리(GC)는 용량이 문제될 때
+            if row:  # 행이 없으면 참조를 그대로 둔다(깨진 사진). 쓰지 않는 사진은 purge_trash 가 drop_unused_media 로 지운다
                 photo[key] = row[0] + ',' + base64.b64encode(bytes(row[1])).decode()
     return draft
 
@@ -213,7 +267,8 @@ def import_legacy_files():
             except (OSError, ValueError, KeyError, TypeError):
                 report['failed'].append(path.name)
                 continue
-            if db.execute('SELECT 1 FROM articles WHERE id = ?', (identifier,)).fetchone():
+            if db.execute('SELECT 1 FROM articles WHERE id = ? UNION ALL SELECT 1 FROM app_meta WHERE key = ?',
+                          (identifier, 'purged:' + identifier)).fetchone():
                 report['skipped'] += 1
                 continue
             body = json.dumps(_pack(db, dict(draft, articleId=identifier, savedAt=None)), ensure_ascii=False, sort_keys=True)
@@ -247,7 +302,7 @@ def _append_revision(db, identifier, body, now, kind='manual'):
     """이력에 저장본을 더한다. → 최신 revision 번호
     - manual(수동 저장): 저장 이력에 남는 버전. 바로 앞 줄이 자동 임시 저장이면 그 줄을 이 버전으로 올린다.
     - auto(자동 임시 저장): 이력을 늘리지 않고 '마지막 수동 저장 뒤의 한 칸'을 계속 덮어쓴다 — 앱이 갑자기 꺼져도
-      이어서 작업할 수 있게 하는 작업본이다. 저장 이력·보관소에는 보이지 않는다.
+      이어서 작업할 수 있게 하는 작업본이다. 저장 이력·보관함에는 보이지 않는다.
     마지막 줄과 내용이 같으면 아무것도 늘리지 않는다."""
     last = db.execute('SELECT revision_no, draft_json, kind, id FROM article_revisions WHERE article_id = ? '
                       'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone()
@@ -290,16 +345,18 @@ def _check_draft(data):
 
 
 def _save_in(db, draft, identifier, expected, kind, now, replace_latest=False):
-    """한 트랜잭션 안에서 원고를 저장한다 → (revision_no, 저장한 draft_json). 보관소에서 지운 기사에는 저장하지 않는다.
+    """한 트랜잭션 안에서 원고를 저장한다 → (revision_no, 저장한 draft_json). 보관함에서 지운 기사에는 저장하지 않는다.
     replace_latest=True 면 같은 편집 세션의 최신 이력 줄을 새 줄 없이 덮어쓴다(스냅샷이 가리키는 줄은 절대 덮어쓰지 않는다)."""
     if is_deleted(db, identifier):
-        raise RequestError('보관소에서 삭제한 기사입니다. 새 기사로 작성해 주세요.', 409, code='ARTICLE_DELETED')
+        raise RequestError('보관함에서 삭제한 기사입니다. 새 기사로 작성해 주세요.', 409, code='ARTICLE_DELETED')
     if expected is not None:
         current = db.execute('SELECT max(revision_no) FROM article_revisions WHERE article_id = ?', (identifier,)).fetchone()[0] or 0
         if current != expected:
             raise RequestError(f'다른 곳에서 먼저 저장된 원고입니다(현재 {current}번 저장본). 최신 원고를 다시 불러온 뒤 저장해 주세요.',
                                409, code='REVISION_CONFLICT')
-    body = json.dumps(_pack(db, dict(draft, articleId=identifier, savedAt=None)), ensure_ascii=False, sort_keys=True)
+    # 상태(status)는 원고에 저장하지 않는다 — 코어가 송고본에서 계산한다(article_state). 화면이 보낸 값은 버린다
+    kept = {key: value for key, value in draft.items() if key != 'status'}
+    body = json.dumps(_pack(db, dict(kept, articleId=identifier, savedAt=None)), ensure_ascii=False, sort_keys=True)
     db.execute('INSERT OR IGNORE INTO articles VALUES (?, ?, ?, ?)', (identifier, vault.WORKSPACE_ID, now, now))
     latest = db.execute('SELECT revision_no, draft_json, id, kind FROM article_revisions WHERE article_id = ? '
                         'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone() if replace_latest else None
@@ -371,10 +428,20 @@ def _manual_summary(manual):
 
 
 def edited_after_publish(db, article_id):
-    """발행한 뒤 수동 저장한 내용이 발행본과 다른가(보관소 '발행 후 수정 중')."""
+    """발행한 뒤 수동 저장한 내용이 발행본과 다른가(보관함 '발행 후 수정 중')."""
     row = _published_row(db, article_id)
     manual = _last_manual(db, article_id)
     return bool(row and manual and manual[2] != row[4])
+
+
+STATE_LABELS = {'draft': '작성 중', 'published': '송고됨', 'editing': '수정 중'}
+
+
+def article_state(db, article_id):
+    """기사 상태의 유일한 출처: draft(송고 전) | published(송고본과 마지막 저장본이 같음) | editing(송고 뒤 고쳐 저장함)."""
+    if not _published_row(db, article_id):
+        return 'draft'
+    return 'editing' if edited_after_publish(db, article_id) else 'published'
 
 
 def publish_article(data):
@@ -385,7 +452,7 @@ def publish_article(data):
     draft, identifier, expected = _check_draft(data)
     now = _now()
     with SAVE_LOCK, vault.connect() as db:
-        revision, body = _save_in(db, dict(draft, status='송고됨'), identifier, expected, 'manual', now)
+        revision, body = _save_in(db, draft, identifier, expected, 'manual', now)
         before = _published_row(db, identifier)
         if before:
             db.execute('UPDATE article_published SET revision_no = ?, draft_json = ?, published_at = ?, publish_count = publish_count + 1 '
@@ -403,8 +470,8 @@ ARTICLE_VERSIONS = ('saved', 'published')
 
 
 def get_article(article_id, version='saved', photo_refs=False):
-    """보관소에서 '수정'을 누른 기사를 편집기로 연다(읽기만 하고 아무것도 바꾸지 않는다).
-    - saved: 마지막 수동 저장본(보관소 '작성 중'에 보이는 판). 수동 저장이 없으면 최신 임시 저장본
+    """보관함에서 '수정'을 누른 기사를 편집기로 연다(읽기만 하고 아무것도 바꾸지 않는다).
+    - saved: 마지막 수동 저장본(보관함 '작성 중'에 보이는 판). 수동 저장이 없으면 최신 임시 저장본
     - published: 발행본
     응답 모양은 latest_article 과 같다."""
     article_id = _article_id(article_id)
@@ -412,7 +479,7 @@ def get_article(article_id, version='saved', photo_refs=False):
         raise RequestError("version 은 'saved' 또는 'published' 입니다.")
     with vault.connect() as db:
         if is_deleted(db, article_id):
-            raise _not_found('보관소에서 삭제한 기사입니다.')
+            raise _not_found('보관함에서 삭제한 기사입니다.')
         manual = _last_manual(db, article_id)
         pub = _published_row(db, article_id)
         if version == 'published':
@@ -427,7 +494,9 @@ def get_article(article_id, version='saved', photo_refs=False):
             if not row:
                 raise _not_found('기사를 찾지 못했습니다.')
             body, at = row
-        return {'draft': _full_draft(db, body, at, unpack_photos=not photo_refs), 'version': version,
+        latest_rev = db.execute('SELECT max(revision_no) FROM article_revisions WHERE article_id = ?', (article_id,)).fetchone()[0] or 0
+        return {'draft': _full_draft(db, body, at, latest_rev, unpack_photos=not photo_refs), 'version': version,
+                'revisionNo': latest_rev,
                 # 연 판이 마지막 수동 저장본과 다르면(발행 뒤 저장한 수정본이 따로 있는 경우) 화면이 '저장하지 않은 변경'으로 알린다
                 'revisionKind': 'manual' if manual and manual[2] == body else 'auto',
                 'lastManual': _manual_summary(manual), 'published': published_info(db, article_id),
@@ -439,28 +508,89 @@ def is_deleted(db, article_id):
     return bool(db.execute('SELECT 1 FROM article_deleted WHERE article_id = ?', (article_id,)).fetchone())
 
 
+TRASH_DAYS = 30
+
+
+def _purge_at(deleted_at):
+    return (datetime.datetime.fromisoformat(deleted_at) + datetime.timedelta(days=TRASH_DAYS)).isoformat()
+
+
 def delete_article(article_id):
-    """보관소에서 기사 지우기 → {deleted: true, articleId}.
-    보관소·이어서 작업·자료 사용처에서 모두 빠진다. 고정본(article_snapshots)은 검증·변환 근거라 지울 수 없게 설계돼 있어,
-    이력·고정본 줄은 암호화 저장소에 그대로 두고 '지움' 표시만 남긴다(지운 기사에는 더 저장하지 않는다)."""
+    """보관함에서 기사 지우기 = 휴지통으로 옮기기 → {deleted, articleId, purgeAt}.
+    보관함·이어서 작업·자료 사용처에서 빠지고 더 저장되지 않는다. TRASH_DAYS 동안 되살릴 수 있고, 지나면 purge_trash 가 영구 삭제한다."""
     article_id = _article_id(article_id)
     with SAVE_LOCK, vault.connect() as db:
         if not db.execute('SELECT 1 FROM articles WHERE id = ?', (article_id,)).fetchone():
             raise _not_found('기사를 찾지 못했습니다.')
         db.execute('INSERT OR IGNORE INTO article_deleted VALUES (?, ?)', (article_id, _now()))
-    return {'deleted': True, 'articleId': article_id}
+        deleted_at = db.execute('SELECT deleted_at FROM article_deleted WHERE article_id = ?', (article_id,)).fetchone()[0]
+    return {'deleted': True, 'articleId': article_id, 'purgeAt': _purge_at(deleted_at)}
+
+
+def list_trash():
+    """휴지통 → {articles: [{articleId, title, deletedAt, purgeAt}]} (최근 지운 순)."""
+    with vault.connect() as db:
+        rows = db.execute('SELECT d.article_id, d.deleted_at, (SELECT draft_json FROM article_revisions WHERE article_id = d.article_id '
+                          'ORDER BY revision_no DESC LIMIT 1) FROM article_deleted d ORDER BY d.deleted_at DESC').fetchall()
+    return {'articles': [{'articleId': article_id, 'title': (json.loads(body).get('title') if body else '') or '',
+                          'deletedAt': at, 'purgeAt': _purge_at(at)} for article_id, at, body in rows]}
+
+
+def restore_deleted(article_id):
+    """휴지통에서 되살린다 → {restored, articleId}. 이력·송고본·고정본은 지운 적이 없어 그대로 돌아온다."""
+    article_id = _article_id(article_id)
+    with SAVE_LOCK, vault.connect() as db:
+        if not is_deleted(db, article_id):
+            raise _not_found('휴지통에 없는 기사입니다.')
+        db.execute('DELETE FROM article_deleted WHERE article_id = ?', (article_id,))
+    return {'restored': True, 'articleId': article_id}
+
+
+def purge_trash(now=None):
+    """휴지통에 TRASH_DAYS 넘게 있던 기사를 영구 삭제한다(이력·송고본·고정본까지, 2026-10-18 결정 D1).
+    이어서 어떤 원고·고정본·미디어 자산도 쓰지 않는 사진을 지운다. → 영구 삭제한 기사 id 목록"""
+    cutoff = ((now or datetime.datetime.now(datetime.timezone.utc)) - datetime.timedelta(days=TRASH_DAYS)).isoformat()
+    with SAVE_LOCK, vault.connect() as db:
+        gone = [row[0] for row in db.execute('SELECT article_id FROM article_deleted WHERE deleted_at <= ?', (cutoff,))]
+        if not gone:
+            return []
+        marks = ','.join('?' * len(gone))
+        # 고정본은 평소 고치거나 지울 수 없다(트리거). 영구 삭제 때만 같은 트랜잭션 안에서 잠시 풀고 바로 되돌린다
+        db.execute('DROP TRIGGER IF EXISTS article_snapshots_no_delete')
+        try:
+            for table in ('article_snapshots', 'article_revisions', 'article_published', 'article_first_saved', 'article_deleted'):
+                db.execute(f'DELETE FROM {table} WHERE article_id IN ({marks})', gone)
+            db.execute(f'DELETE FROM articles WHERE id IN ({marks})', gone)
+            # 예전 평문 원본(import_legacy_files)이 남아 있어도 다음 로그인 때 되살아나지 않게 표시를 남긴다
+            db.executemany('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)', [('purged:' + a, cutoff) for a in gone])
+        finally:
+            db.execute(vault.SNAPSHOT_NO_DELETE)
+        drop_unused_media(db)
+    return gone
+
+
+def drop_unused_media(db):
+    """어떤 원고(이력·송고본)·고정본·미디어 자산도 가리키지 않는 사진(media)을 지운다 → 지운 수.
+    shortcut: 저장된 원고 JSON 을 전부 훑는다(기사 수백 건까지), 수천 건이면 사진 참조 표를 따로 둔다."""
+    used = {row[0] for row in db.execute('SELECT media_id FROM media_assets')}
+    for (text,) in db.execute('SELECT draft_json FROM article_revisions UNION ALL SELECT draft_json FROM article_published '
+                              'UNION ALL SELECT body_html FROM article_snapshots'):
+        used.update(MEDIA_REF.findall(text))
+    stale = [(row[0],) for row in db.execute('SELECT id FROM media') if row[0] not in used]
+    db.executemany('DELETE FROM media WHERE id = ?', stale)
+    return len(stale)
 
 
 def latest_revisions(db, limit=None, manual=False, article_id=None):
     """기사마다 **최신 저장본** 한 줄 (article_id, created_at, updated_at, revision_no, draft_json) — 최근 수정순.
     "기사가 지금 무엇을 쓰는가"(자료 사용처·읽기 모델·이어서 작업)는 모두 이 한 곳에서 읽는다.
-    manual=True 면 마지막 **수동 저장본**(보관소 '작성 중'에 보이는 판). 수동 저장이 아직 없는 기사는 최신 임시 저장본."""
+    manual=True 면 마지막 **수동 저장본**(보관함 '작성 중'에 보이는 판). 수동 저장이 아직 없는 기사는 최신 임시 저장본."""
     pick = ('(SELECT revision_no FROM article_revisions WHERE article_id = a.id '
             "ORDER BY kind = 'manual' DESC, revision_no DESC LIMIT 1)") if manual else \
         '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id)'
     sql = ('SELECT a.id, a.created_at, a.updated_at, r.revision_no, r.draft_json FROM articles a '
            'JOIN article_revisions r ON r.article_id = a.id AND r.revision_no = ' + pick
-           + ' WHERE a.id NOT IN (SELECT article_id FROM article_deleted)')  # 보관소에서 지운 기사는 어디에도 보이지 않는다
+           + ' WHERE a.id NOT IN (SELECT article_id FROM article_deleted)')  # 보관함에서 지운 기사는 어디에도 보이지 않는다
     params = []
     if article_id is not None:
         sql += ' AND a.id = ?'
@@ -514,6 +644,8 @@ def media_file(media_id):
 def _full_draft(db, draft_json, saved_at, revision_no=None, unpack_photos=True):
     """이력 한 줄 → 화면이 쓰는 원고(사진 되돌리기 + 취재자료 본문 붙이기)."""
     draft = dict(json.loads(draft_json), savedAt=saved_at)
+    if isinstance(draft.get('articleId'), str) and re.fullmatch(r'[a-f0-9]{32}', draft['articleId']):
+        draft['status'] = STATE_LABELS[article_state(db, draft['articleId'])]  # 옛 원고에 저장된 status 도 이 값으로 덮는다
     if revision_no is not None:
         draft['revisionNo'] = revision_no
     if unpack_photos:

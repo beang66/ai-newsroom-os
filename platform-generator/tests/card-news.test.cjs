@@ -19,6 +19,32 @@ function fixture(type='summary'){
 }
 function planFixture(){return {card_count:3,main_topic:article.title,points:[{id:'P1',summary:article.content,body_page:2,source_evidence:[article.content]}],closing_summary:'주말 확대 계획과 시행일 확정 조건'};}
 function loadWithAI(file,FakeAI){const mod={exports:{}};vm.runInNewContext(fs.readFileSync(path.join(root,file),'utf8'),{module:mod,__dirname:root,process,console,require:n=>n==='./ai-provider'?FakeAI:n==='dotenv'?{config(){}}:n.startsWith('./')?require(path.join(root,n)):require(n)});return mod.exports;}
+
+test('AI가 고른 비교형의 항목 수만 맞지 않으면 설명형으로 전환하고 문안·근거·표지·마지막 장을 유지',async()=>{
+ let drafts=0;const original=fixture();original.cards[1].design.layout='comparison';original.cards[1].content.detail=original.cards[1].content.detail.replace(/\n+/g,' ');
+ class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
+  let value;if(request.text.format.name.endsWith('_validation'))value={issues:[]};else if(request.text.format.name==='card_news_information_plan')value=planFixture();else{drafts++;value=JSON.parse(JSON.stringify(original));value.cards.forEach((card,i)=>{card.content.farewell='';card.covered_point_ids=i===1?['P1']:[];});}
+  return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]};
+ }};}
+ const draft=await loadWithAI('card-news-generator.js',FakeAI).generateCardNews({article,selected_keywords:[],requirements:''});
+ assert.equal(drafts,1);assert.equal(draft.cards[1].design.layout,'standard');assert.equal(draft.cards[1].content.detail,original.cards[1].content.detail);
+ assert.equal(draft.cards[0].content.headline,original.cards[0].content.headline);assert.equal(draft.cards[2].content.detail,original.cards[2].content.detail);
+ assert.deepEqual(Array.from(draft.cards[1].source_evidence),[article.content]);
+ assert.match(Model.layoutError(original.cards[1]),/비교형/,'저장·사용자 배치는 기존 검사에서 계속 오류 안내');
+});
+test('새 목록·단계형 카드의 항목 수 오류만 설명형으로 복구하고 문안·근거를 유지',()=>{
+ const {repairGeneratedLayouts}=require('../lib/generation-format');
+ for(const layout of ['list','steps'])for(const detail of ['한 문단으로 작성한 긴 설명입니다.','첫 항목\n둘째 항목\n셋째 항목\n넷째 항목\n다섯째 항목']){
+  const original=fixture();original.cards[1].design.layout=layout;original.cards[1].content.detail=detail;
+  const repaired=repairGeneratedLayouts(original);
+  assert.equal(repaired.cards[1].design.layout,'standard');
+  assert.equal(repaired.cards[1].content.detail,detail);
+  assert.deepEqual(repaired.cards[1].source_evidence,original.cards[1].source_evidence);
+  assert.equal(original.cards[1].design.layout,layout);
+  assert.match(Model.layoutError(original.cards[1]),/목록·단계형/);
+  assert.equal(Model.layoutError(repaired.cards[1]),'');
+ }
+});
 test('카드뉴스 생성·검수 프롬프트는 한국어 문장 품질을 일관되게 확인',async()=>{
  process.env.PLATFORM_LOCAL_STORAGE="1";
  const requests=[];
@@ -35,9 +61,135 @@ test('카드뉴스 생성·검수 프롬프트는 한국어 문장 품질을 일
  await generateCardNews({article,selected_keywords:[],requirements:''});
  const prompts=Object.fromEntries(requests.map(request=>[request.text.format.name,request.instructions]));
  assert.match(prompts.card_news_information_plan,/모든 headline·answer·detail은 자연스러운 한국어/);
- assert.match(prompts.card_news_draft,/조사와 어미를 확인/);
+ assert.match(prompts.card_news_draft,/조사와 어미, 주어와 서술어의 호응을 확인/);
  assert.match(prompts.requirement_validation,/조사·어미 호응이 틀리거나/);
  assert.match(prompts.requirement_validation,/같은 원문 사실·조건을 유지하면서 자연스러운 한국어/);
+ assert.match(prompts.card_news_draft,/headline이 질문이면 answer에서 직접 답하고/);
+ assert.match(prompts.card_news_draft,/공통 \[문장\]의 완전한 문장 원칙보다 아래 \[본문\]/);
+ assert.match(prompts.card_news_draft,/answer가 질문이면 같은 카드의 detail에서 답하세요/);
+ assert.match(prompts.card_news_draft,/answer가 headline의 긴 재서술이나 카드 전체의 선행 요약이 되지 않게/);
+ assert.match(prompts.requirement_validation,/질문형 answer는 원문에 분명한 답이 있을 때만 허용/);
+ assert.match(prompts.requirement_validation,/detail이 answer의 주장을 다른 단어로 되풀이하고 필요한 새 설명을 거의 더하지 않으면/);
+ assert.match(prompts.requirement_validation,/answer 자체의 확정·단정 표현을 detail이 뒤늦게 정정해도 통과시키지 않습니다/);
+ assert.match(prompts.requirement_validation,/배정된 주요 정보의 답이나 필수 조건을 다음 카드·마지막 카드로 미루면/);
+ assert.match(prompts.fact_validation,/질문의 사실적 전제가 원문에 있는지 검사/);
+});
+
+test('본문 표현별 모의 초안은 같은 필드·근거로 생성하고 불필요한 교정 호출 없이 검수',async()=>{
+ const forms=[
+  {name:'질문형 headline의 직접 답변',headline:'어디에서 무엇이 바뀌나요?',answer:'세 곳의 도서관 주말 운영을 두 시간 늘릴 계획입니다.',detail:'대상은 중앙·동부·서부 도서관입니다. 평일 운영은 유지하며 인력 배치 후 시행일을 확정할 예정입니다.',layout:'standard'},
+  {name:'질문형 answer와 같은 카드의 답',headline:'주말 운영 확대 계획',answer:'언제 시행일이 정해지나요?',detail:'서울시는 인력 배치를 마친 뒤 시행일을 확정할 예정입니다. 세 곳의 도서관에서 주말 운영 시간을 두 시간 늘릴 계획이며 평일 운영은 유지합니다.',layout:'standard'},
+  {name:'명사형 answer와 조건 연결',headline:'도서관 운영 변경',answer:'세 곳의 주말 운영 두 시간 확대 계획',detail:'서울시는 중앙·동부·서부 도서관의 주말 운영을 늘릴 계획입니다. 평일 운영은 유지하며 인력 배치를 마친 뒤 시행일을 확정할 예정입니다.',layout:'standard'},
+  {name:'서술형 answer',headline:'도서관 운영 변경',answer:'서울시는 주말 운영을 늘릴 계획입니다.',detail:'중앙·동부·서부 도서관이 대상이며 운영 시간을 두 시간 늘릴 예정입니다. 평일 운영은 유지하고 인력 배치 뒤 시행일을 확정합니다.',layout:'standard'},
+  {name:'비교형 첫 항목 연결',headline:'운영 시간의 변화',answer:'주말 운영 두 시간 확대 계획',detail:'주말: 세 곳의 도서관에서 두 시간 확대할 계획입니다.\n평일: 기존 운영 시간을 유지합니다. 인력 배치 뒤 시행일을 확정할 예정입니다.',layout:'comparison'},
+  {name:'목록형 첫 항목 연결',headline:'운영 변경의 대상과 조건',answer:'도서관 세 곳의 주말 운영 확대 계획',detail:'대상: 중앙·동부·서부 도서관의 주말 시간을 두 시간 늘릴 계획입니다.\n시행: 평일 운영은 유지하고 인력 배치 뒤 시행일을 확정할 예정입니다.',layout:'list'},
+ ];
+ // 각 예시는 같은 합성 원문·배분표를 사용하고 응답 문안만 교체합니다.
+ for(const form of forms){
+  const requests=[];
+  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
+   requests.push(request);
+   const name=request.text.format.name;
+   const value=name.endsWith('_validation')?{issues:[]}:name==='card_news_information_plan'?planFixture():(()=>{
+    const copy=fixture();Object.assign(copy.cards[1].content,form);copy.cards[1].design.layout=form.layout;
+    copy.cards.forEach((card,index)=>{card.content.farewell='';card.covered_point_ids=index===1?['P1']:[];});return copy;
+   })();
+   return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]};
+  }};}
+  const {generateCardNews}=loadWithAI('card-news-generator.js',FakeAI);
+  const result=await generateCardNews({article,selected_keywords:[],requirements:''});
+  assert.equal(result.generation_review.status,'passed',form.name);
+  assert.equal(result.cards[1].content.answer,form.answer,form.name);
+  assert.equal(result.cards[1].content.detail,form.detail,form.name);
+  assert.deepEqual(Array.from(result.cards[1].source_evidence),[article.content],form.name);
+  assert.deepEqual(requests.map(request=>request.text.format.name),['card_news_information_plan','card_news_draft','fact_validation','requirement_validation'],form.name);
+ }
+});
+
+test('질문형 제목 뒤 미답변 질문은 코드 검수에서 차단하고 기존 초안은 유지',()=>{
+ const {extractDraft,checkBasicRules,createQuoteChecker}=require('../draft-validator');
+ const draft=fixture();draft.cards[1].content.answer='언제부터 바뀌나요?';
+ const modern=checkBasicRules('card_news',extractDraft('card_news',draft),getPlatformRules('card_news'),createQuoteChecker(article));
+ assert(modern.requirement.some(issue=>issue.location==='cards[1].content.answer'&&/질문을 연달아/.test(issue.reason)));
+ const old=fixture();old.cards=old.cards.map(card=>({role:card.role,keyword:card.content.keyword,headline:card.content.headline,body:card.content.detail,source_evidence:card.source_evidence}));
+ const legacy=checkBasicRules('card_news',extractDraft('card_news',old),getPlatformRules('card_news'),createQuoteChecker(article));
+ assert(!legacy.requirement.some(issue=>/질문을 연달아/.test(issue.reason)));
+});
+
+test('모의 의미 검수는 답 없는 질문·확정 오인·조건 누락·마지막 카드 신규 정보를 전달',async()=>{
+ const cases=[
+  {name:'답 없는 질문',answer:'언제 시행일이 정해지나요?',detail:'주말 운영을 늘릴 계획입니다.',kind:'requirement',category:'structure_violation',location:'cards[1].content.detail',prompt:/같은 카드의 detail에서 직접 답해야/},
+  {name:'미확인 상태를 단정한 명사형',answer:'주말 운영 두 시간 확대 확정',detail:'서울시는 인력 배치 뒤 시행일을 확정할 예정입니다.',kind:'fact',category:'meaning_distortion',location:'cards[1].content.answer',prompt:/명사형에서도 '확대 계획'/},
+  {name:'필수 조건 누락',answer:'도서관 주말 운영 확대 계획',detail:'중앙·동부·서부 도서관의 주말 운영을 두 시간 늘릴 계획입니다.',kind:'requirement',category:'important_omission',location:'cards[1].content.detail',prompt:/point.summary의 핵심과 필수 조건/},
+  {name:'마지막 카드로 신규 정보 연기',answer:'도서관 주말 운영 확대 계획',detail:'중앙·동부·서부 도서관의 주말 운영을 두 시간 늘릴 계획입니다.',closing:'평일 운영은 유지하고 인력 배치 뒤 시행일을 확정할 예정입니다.',kind:'requirement',category:'important_omission',location:'cards[1].content.detail',prompt:/다음 카드·마지막 카드로 미루면/},
+ ];
+ for(const scenario of cases){
+  const draft=fixture();draft.cards[1].content.headline='도서관 운영 변경';draft.cards[1].content.answer=scenario.answer;draft.cards[1].content.detail=scenario.detail;
+  if(scenario.closing)draft.cards[2].content.detail=scenario.closing;
+  const requests=[];
+  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
+   requests.push(request);
+   const issues=request.text.format.name===`${scenario.kind}_validation`?[{location:scenario.location,category:scenario.category,problematic_text:scenario.location.includes('answer')?scenario.answer:scenario.detail,reason:scenario.name,source_evidence:[article.content],suggestion:'배정된 본문 카드에서 원문에 근거해 바로잡으세요.'}]:[];
+   return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({issues})}]}]};
+  }};}
+  const {validateDraft}=loadWithAI('draft-validator.js',FakeAI);
+  const result=await validateDraft({platform:'card_news',article,selected_keywords:[],draft});
+  assert.equal(result.status,'needs_revision',scenario.name);
+  assert(result[scenario.kind].issues.some(issue=>issue.category===scenario.category&&issue.location===scenario.location),scenario.name);
+  assert.equal(requests.length,2,scenario.name);
+  assert.match(requests.find(request=>request.text.format.name===`${scenario.kind}_validation`).instructions,scenario.prompt,scenario.name);
+ }
+});
+
+test('답 없는 질문의 모의 검수 지적은 같은 카드 수정 요청과 재검수로 이어짐',async()=>{
+ let draftCalls=0,requirementCalls=0,correction;
+ class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
+  const name=request.text.format.name;let value;
+  if(name==='card_news_information_plan')value=planFixture();
+  else if(name==='fact_validation')value={issues:[]};
+  else if(name==='requirement_validation'){
+   requirementCalls++;
+   value={issues:requirementCalls===1?[{location:'cards[1].content.detail',category:'structure_violation',problematic_text:'주말 운영을 늘릴 계획입니다.',reason:'질문의 답인 시행일 확정 조건이 같은 카드에 없습니다.',source_evidence:[article.content],suggestion:'detail에 인력 배치 뒤 시행일을 확정할 예정이라는 답을 쓰세요.'}]:[]};
+  }else{
+   draftCalls++;if(draftCalls===2)correction=request;
+   value=fixture();value.cards.forEach((card,index)=>{card.content.farewell='';card.covered_point_ids=index===1?['P1']:[];});
+   value.cards[1].content.headline='도서관 운영 변경';value.cards[1].content.answer='언제 시행일이 정해지나요?';
+   if(draftCalls===1)value.cards[1].content.detail='주말 운영을 늘릴 계획입니다.';
+  }
+  return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]};
+ }};}
+ const {generateCardNews}=loadWithAI('card-news-generator.js',FakeAI);
+ const result=await generateCardNews({article,selected_keywords:[],requirements:''});
+ assert.equal(draftCalls,2);assert.equal(requirementCalls,2);assert.equal(result.generation_review.status,'passed');
+ assert.match(correction.instructions,/지적된 카드에서 질문의 답/);
+ assert.match(JSON.parse(correction.input).review.requirement.issues[0].reason,/같은 카드/);
+ assert.match(result.cards[1].content.detail,/인력 배치 후 시행일을 확정/);
+});
+test('긴 핵심 문구와 의미 반복을 지적한 모의 검수는 본문 카드만 다시 배분해 교정',async()=>{
+ let draftCalls=0,requirementCalls=0,correction;
+ class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
+  const name=request.text.format.name;let value;
+  if(name==='card_news_information_plan')value=planFixture();
+  else if(name==='fact_validation')value={issues:[]};
+  else if(name==='requirement_validation'){
+   requirementCalls++;
+   value={issues:requirementCalls===1?[{location:'cards[1].content.answer',category:'structure_violation',problematic_text:'서울시는 세 곳의 도서관 주말 운영 시간을 두 시간 늘릴 계획이며 평일은 유지하고 인력 배치 후 시행일을 정할 예정입니다.',reason:'제목의 내용을 길게 되풀이하고 상세 설명도 같은 계획을 다시 말합니다.',source_evidence:[],suggestion:'핵심 문구에는 계획의 중심만 남기고 상세 설명에 대상·기존 운영·시행 조건을 설명하세요.'}]:[]};
+  }else{
+   draftCalls++;if(draftCalls===2)correction=request;
+   value=fixture();value.cards.forEach((card,index)=>{card.content.farewell='';card.covered_point_ids=index===1?['P1']:[];});
+   value.cards[1].content.headline='도서관 주말 운영 확대 계획';
+   value.cards[1].content.answer=draftCalls===1?'서울시는 세 곳의 도서관 주말 운영 시간을 두 시간 늘릴 계획이며 평일은 유지하고 인력 배치 후 시행일을 정할 예정입니다.':'주말 운영 두 시간 확대 계획';
+   value.cards[1].content.detail=draftCalls===1?'서울시는 주말 운영을 두 시간 늘릴 계획입니다. 평일은 유지하며 인력 배치 후 시행일을 정할 예정입니다.':'대상은 중앙·동부·서부 도서관입니다. 평일 운영은 유지하며 인력 배치 후 시행일을 확정할 예정입니다.';
+  }
+  return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(value)}]}]};
+ }};}
+ const {generateCardNews}=loadWithAI('card-news-generator.js',FakeAI);
+ const result=await generateCardNews({article,selected_keywords:[],requirements:''});
+ assert.equal(draftCalls,2);assert.equal(requirementCalls,2);assert.equal(result.generation_review.status,'passed');
+ assert.match(correction.instructions,/핵심 문구와 새 설명으로 역할을 나누세요/);
+ assert.match(JSON.parse(correction.input).review.requirement.issues[0].reason,/길게 되풀이/);
+ assert.equal(result.cards[1].content.answer,'주말 운영 두 시간 확대 계획');
+ assert.match(result.cards[1].content.detail,/인력 배치 후 시행일을 확정/);
 });
 test('배분표의 인용 근거가 본문과 불일치하면 한 번 다시 생성해 계속 진행',async()=>{
  process.env.PLATFORM_LOCAL_STORAGE="1";
@@ -53,6 +205,7 @@ test('배분표의 인용 근거가 본문과 불일치하면 한 번 다시 생
    }else{
     retryRequest=JSON.parse(request.input);
     result=planFixture();
+    result.points[0].source_evidence=[0];
    }
   }else{
    result=fixture();
@@ -64,34 +217,34 @@ test('배분표의 인용 근거가 본문과 불일치하면 한 번 다시 생
  const draft=await generateCardNews({article,selected_keywords:[],requirements:''});
  assert.equal(planCalls,2);
  assert.match(retryRequest.validation_error,/근거가 기사 본문과 일치하지 않습니다/);
- assert.deepEqual(retryRequest.previous_information_plan.points[0].source_evidence,['서울시 도서관 주말 운영 확대']);
+ assert.equal(Object.hasOwn(retryRequest.previous_information_plan.points[0],'source_evidence'),false);
+ assert(Array.isArray(retryRequest.source_excerpt_catalog));
  assert.equal(draft.generation_review.status,'passed');
 });
-test('카드 근거 불일치 교정에는 실패 위치와 원문에 없는 인용을 전달',async()=>{
+test('카드 초안의 가짜 인용은 검증된 배분표 근거로 연결하고 추가 생성 호출을 하지 않음',async()=>{
  process.env.PLATFORM_LOCAL_STORAGE="1";
- let drafts=0,correction;
+ let drafts=0;
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async request=>{
   let result;
   if(request.text.format.name.endsWith('_validation'))result={issues:[]};
   else if(request.text.format.name==='card_news_information_plan')result=planFixture();
   else{
    drafts++;
-   if(drafts===2)correction=JSON.parse(request.input);
    result=fixture();
    result.cards.forEach((card,index)=>{
     card.content.farewell='';
     card.covered_point_ids=index===1?['P1']:[];
    });
    if(drafts===1)result.cards[1].source_evidence=['본문에 없는 근거 문장입니다.'];
+   result.core_text.source_evidence=['본문에 없는 근거 문장입니다.'];
   }
   return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(result)}]}]};
  }};}
  const {generateCardNews}=loadWithAI('card-news-generator.js',FakeAI);
  const draft=await generateCardNews({article,selected_keywords:[],requirements:''});
- assert.equal(drafts,2);
- assert.equal(correction.review.requirement.issues[0].location,'cards[1].source_evidence');
- assert.equal(correction.review.requirement.issues[0].problematic_text,'본문에 없는 근거 문장입니다.');
- assert.match(correction.review.requirement.issues[0].suggestion,/article.title 또는 article.content/);
+ assert.equal(drafts,1);
+ assert.deepEqual(Array.from(draft.core_text.source_evidence),[article.content]);
+ assert.deepEqual(Array.from(draft.cards[1].source_evidence),[article.content]);
  assert.equal(draft.generation_review.status,'passed');
 });
 test('고정 카드 생성은 객체 순서와 무관하게 배분표의 번호·역할·ID를 보존',()=>{
@@ -100,6 +253,8 @@ test('고정 카드 생성은 객체 순서와 무관하게 배분표의 번호�
  assert.deepEqual(schema.properties.cards.required,['page_1','page_2','page_3']);
  assert.deepEqual(schema.properties.cards.properties.page_2.properties.role.enum,['body']);
  assert(!Object.hasOwn(schema.properties.cards.properties.page_2.properties,'covered_point_ids'));
+ assert(!Object.hasOwn(schema.properties.cards.properties.page_2.properties,'source_evidence'));
+ assert(!Object.hasOwn(schema.properties.core_text.properties,'source_evidence'));
  const pages={};for(const index of [2,0,1])pages[`page_${index+1}`]=source.cards[index];
  const generated=readPlannedDraft({...source,cards:pages},plan);
  assert.deepEqual(generated.cards.map(card=>card.role),['cover','body','closing']);
@@ -154,26 +309,26 @@ test('서버가 정보 ID를 연결해도 실제 문장 누락은 의미 검수�
  assert.match(draft.cards[1].content.detail,/평일 운영은 유지/);
  assert.equal(draft.generation_review.status,'passed');
 });
-test('목록형 상세 설명 오류는 교정 요청 후 재검사하고 반환',async()=>{
+test('목록형 상세 설명 오류는 추가 AI 호출 없이 설명형으로 복구하고 반환',async()=>{
  process.env.PLATFORM_LOCAL_STORAGE="1";
- let drafts=0,correction;
+ let drafts=0;
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async r=>{
   let result;
   if(r.text.format.name.endsWith('_validation'))result={issues:[]};
   else if(r.text.format.name==='card_news_information_plan')result=planFixture();
   else{
-   drafts++;if(drafts===2)correction=r;
+   drafts++;
    result=fixture();result.cards.forEach((card,i)=>{card.covered_point_ids=i?['P1']:[];card.content.farewell='';});
    result.cards[1].design.layout='list';
-   result.cards[1].content.detail=drafts===1?'대상은 중앙·동부·서부 도서관입니다.':
-    '대상은 중앙·동부·서부 도서관입니다.\n평일 운영은 유지하며, 인력 배치 후 시행일을 확정할 예정입니다.';
+   result.cards[1].content.detail='대상은 중앙·동부·서부 도서관입니다.';
   }
   return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(result)}]}]};
  }};}
  const {generateCardNews}=loadWithAI('card-news-generator.js',FakeAI);
  const draft=await generateCardNews({article,selected_keywords:['도서관'],requirements:''});
- assert.equal(drafts,2);assert.match(correction.input,/2~4개 항목/);
- assert.equal(draft.cards[1].content.detail.split('\n').length,2);
+ assert.equal(drafts,1);
+ assert.equal(draft.cards[1].design.layout,'standard');
+ assert.equal(draft.cards[1].content.detail,'대상은 중앙·동부·서부 도서관입니다.');
  assert.equal(draft.generation_review.status,'passed');
 });
 test('이전 본문을 재작성하지 않고 새 필드·역할·숨긴 키워드를 보존',()=>{
@@ -183,6 +338,7 @@ test('이전 본문을 재작성하지 않고 새 필드·역할·숨긴 키워�
  const fresh=Model.normalize(fixture().cards[1]);assert.equal(fresh.content_version,2);assert.equal(fresh.answer,fixture().cards[1].content.answer);
  const cover=Model.normalize(fixture().cards[0]);assert.equal(cover.keyword,'도서관');assert(!Template.markup(cover).includes('data-field="keyword"'));assert(!Template.markup(cover).includes('data-field="detail"'));
  assert(Template.markup(fresh).includes('data-field="answer"'));assert(Template.markup(fresh).includes('data-field="detail"'));
+ assert(Template.markup(fresh,true).includes('aria-label="핵심 문구"'));
  assert.equal(Template.markup(JSON.parse(JSON.stringify(fresh))),Template.markup(fresh));
 });
 test('마지막 카드 설정 없이 생성하고 선택 끝인사는 기사 근거와 분리',async()=>{

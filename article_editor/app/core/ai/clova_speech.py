@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from .. import backend_proxy
 from ..errors import RequestError
 
 TIMEOUT = 120  # 음성 분석 대기 최대 2분
@@ -29,9 +30,9 @@ def get_clova_config() -> tuple[str, str]:
 
 
 def is_clova_configured() -> bool:
-    """CLOVA Speech 연동 필수 설정이 완료되었는지 확인합니다."""
+    """CLOVA Speech 를 쓸 수 있는지 — 백엔드(Render)를 거치면 PC 에 키가 없어도 된다."""
     secret_key, invoke_url = get_clova_config()
-    return bool(secret_key and invoke_url)
+    return backend_proxy.enabled() or bool(secret_key and invoke_url)
 
 
 def _build_multipart(fields: dict[str, str], filename: str, audio_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
@@ -245,8 +246,8 @@ def to_clova_dialogues(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return dialogues
 
 
-def recognize_speech(audio_bytes: bytes, filename: str = 'audio.wav', mime_type: str = 'audio/wav') -> dict[str, Any]:
-    """NAVER CLOVA Speech API를 호출하여 장문 음성 인식 및 화자 분리를 수행합니다."""
+def _recognize_direct(audio_bytes: bytes, filename: str, mime_type: str) -> dict[str, Any]:
+    """이 PC 의 .env 키로 CLOVA 를 직접 호출한다(개발·오프라인용). 배포본은 Render 중계를 쓴다."""
     secret_key, invoke_url = get_clova_config()
     if not secret_key or not invoke_url:
         raise RequestError('CLOVA Speech 연동 키(CLOVA_SPEECH_SECRET_KEY, CLOVA_SPEECH_INVOKE_URL)가 설정되지 않았습니다.', 500)
@@ -301,6 +302,25 @@ def recognize_speech(audio_bytes: bytes, filename: str = 'audio.wav', mime_type:
         raise RequestError(f'CLOVA Speech 서버에 연결할 수 없습니다: {error.reason}', 504)
     except Exception as error:
         raise RequestError(f'CLOVA Speech 요청 중 오류가 발생했습니다: {error}', 500)
+    return resp_data
+
+
+def _recognize_via_backend(audio_bytes: bytes, filename: str, mime_type: str) -> dict[str, Any]:
+    """Render 중계 서버(/ai/audio/clova)로 보낸다 — CLOVA 키는 서버에만 있고, 옵션·횟수·동시 처리 수는 서버가 정한다."""
+    reply = backend_proxy.post(
+        '/ai/audio/clova?filename=' + urllib.parse.quote(filename or 'audio'),
+        audio_bytes,
+        timeout=TIMEOUT + 30,
+        content_type=mime_type or 'application/octet-stream',
+    )
+    if not isinstance(reply, dict):
+        raise RequestError('CLOVA 응답을 읽지 못했습니다.', 502)
+    return reply
+
+
+def recognize_speech(audio_bytes: bytes, filename: str = 'audio.wav', mime_type: str = 'audio/wav') -> dict[str, Any]:
+    """NAVER CLOVA Speech API를 호출하여 장문 음성 인식 및 화자 분리를 수행합니다(백엔드가 켜져 있으면 Render 중계 경유)."""
+    resp_data = (_recognize_via_backend if backend_proxy.enabled() else _recognize_direct)(audio_bytes, filename, mime_type)
 
     # 표준 Transcript 구조화
     transcript = normalize_transcript(resp_data, {

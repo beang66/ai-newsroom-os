@@ -7,6 +7,7 @@ import datetime
 import hashlib
 import posixpath
 import re
+import unicodedata
 import uuid
 from urllib.parse import unquote, urlsplit
 
@@ -19,6 +20,22 @@ MAX_IMPORT_FILES = 100
 _FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
 _TOKEN = re.compile(r'!?(?:\[\[([^\]\n]+)\]\]|\[[^\]\n]*\]\((<[^>\n]+>|[^)\n]+)\))')
 _HEADING = re.compile(r'^\s{0,3}#\s+(.+?)\s*#*\s*$')
+# 노트의 역할(분류)은 코어가 정해 저장한다 — 경로에 든 역할 폴더(가장 안쪽 것), 없으면 note(취재 노트)
+ROLE_FOLDERS = {
+    '기사': 'article', 'articles': 'article',
+    '기획': 'plan', '메모': 'plan', 'plan': 'plan', 'plans': 'plan',
+    '원자료': 'data', '자료': 'data', '데이터': 'data', 'data': 'data',
+    '인터뷰': 'interview', '녹취': 'interview', '발언': 'interview', 'interviews': 'interview',
+    '검증': 'verify', '팩트체크': 'verify', 'factcheck': 'verify',
+}
+
+
+def role_from_path(path):
+    for folder in reversed(str(path or '').split('/')[:-1]):
+        role = ROLE_FOLDERS.get(unicodedata.normalize('NFC', folder).lower())
+        if role:
+            return role
+    return 'note'
 
 
 def _now():
@@ -179,12 +196,13 @@ def import_files(payload):
                 state = 'updated' if previous else 'imported'
                 now = _now()
                 if previous:
-                    db.execute('UPDATE knowledge_files SET path = ?, title = ?, content = ?, sha256 = ?, updated_at = ? '
-                               'WHERE id = ?', (path, _title(path, content), content, digest, now, file_id))
+                    db.execute('UPDATE knowledge_files SET path = ?, title = ?, content = ?, sha256 = ?, updated_at = ?, role = ? '
+                               'WHERE id = ?', (path, _title(path, content), content, digest, now, role_from_path(path), file_id))
                     db.execute('DELETE FROM knowledge_links WHERE source_id = ?', (file_id,))
                 else:
-                    db.execute('INSERT INTO knowledge_files VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                               (file_id, vault.WORKSPACE_ID, path, key, _title(path, content), content, digest, now, now))
+                    db.execute('INSERT INTO knowledge_files (id, workspace_id, path, path_key, title, content, sha256, created_at, updated_at, role) '
+                               'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                               (file_id, vault.WORKSPACE_ID, path, key, _title(path, content), content, digest, now, now, role_from_path(path)))
                 db.executemany('INSERT INTO knowledge_links '
                                '(source_id, ordinal, kind, raw_text, target_ref, fragment, target_id, target_key, line, is_embed) '
                                'VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)',
@@ -208,7 +226,7 @@ def _placeholder_id(key):
 
 
 def map_items(db):
-    rows = db.execute('SELECT id, path, title, updated_at FROM knowledge_files ORDER BY path_key').fetchall()
+    rows = db.execute('SELECT id, path, title, updated_at, role FROM knowledge_files ORDER BY path_key').fetchall()
     links = db.execute('SELECT l.source_id, l.ordinal, l.kind, l.raw_text, l.target_ref, l.fragment, '
                        'l.target_id, l.target_key, l.line, l.is_embed FROM knowledge_links l '
                        'ORDER BY l.source_id, l.ordinal').fetchall()
@@ -226,10 +244,16 @@ def map_items(db):
                            'relation': 'links_to', 'kind': kind, 'raw_text': raw,
                            'target_ref': ref, 'fragment': fragment, 'line': line,
                            'is_embed': bool(embed)})
-    files = [{'id': ident, 'path': path, 'title': title, 'updated_at': updated,
+    files = [{'id': ident, 'path': path, 'title': title, 'updated_at': updated, 'role': role,
               'outgoing_count': outgoing.get(ident, 0), 'backlink_count': incoming.get(ident, 0)}
-             for ident, path, title, updated in rows]
+             for ident, path, title, updated, role in rows]
     return files, list(unresolved.values()), file_links
+
+
+def list_files():
+    with vault.connect() as db:
+        files, _, _ = map_items(db)
+    return {'files': files}
 
 
 def get_file(file_id):

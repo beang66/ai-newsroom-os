@@ -31,6 +31,8 @@
 | `SUPABASE_ANON_KEY` | JWT 검증 | anon(publishable) 키 |
 | `AUTH_REQUIRED` | | 기본 `true`. `false`는 개발 전용(토큰 없이 허용) |
 | `RATE_LIMIT_PER_MIN` | | 기본 `120` |
+| `ALLOWED_EMAILS` | 사용 계정 제한 | 쉼표 구분 이메일 또는 `@donga.com` 같은 도메인. 비우면 로그인한 모든 계정(사용자 테스트 기간). 목록 밖 계정은 403 |
+| `CMS_ALLOWED_EMAILS` | CMS 송고 계정 | 같은 형식. **비우면 아무도 송고할 수 없다**(공용 CMS 토큰을 아무 가입자나 쓰지 못하게) |
 | `CMS_PUBLISH_URL` | CMS 송고 | 실제 CMS의 HTTPS 수신 API |
 | `CMS_BEARER_TOKEN` | CMS 인증 | 수신 API가 요구하는 서버 전용 Bearer 토큰 |
 | `BACKUP_MASTER_KEY` | 기사 서버 백업 | 32자 이상 무작위 문자열(예: `python -c "import secrets;print(secrets.token_hex(32))"`). 사용자별 백업 키가 이 값에서 파생된다 — **한 번 정하면 바꾸거나 잃어버리지 말 것**(바뀌면 이미 올라간 백업을 풀 수 없다). 안전한 곳에 따로 보관 |
@@ -59,6 +61,8 @@ AI_BACKEND_URL=https://<render 서비스 주소>
 | POST | `/ai/embeddings` | Cloudflare Workers AI `@cf/qwen/qwen3-embedding-0.6b` (모델은 서버 고정; 본문 그대로 중계) |
 | POST | `/ai/audio/transcriptions` | `{OPENAI_BASE}/audio/transcriptions` (multipart 그대로) |
 | POST | `/cms/publish` | `CMS_PUBLISH_URL` (기사 JSON, 성공 응답을 그대로 반환) |
+| POST | `/ai/share-key` | (자체 응답) 기사 공유본의 키 `{shareId, token?}` → `{key}`. Supabase `article_share_role` 로 권한(소유자·초대·링크)을 확인한 뒤에만 `BACKUP_MASTER_KEY` 에서 공유마다 파생해 준다(없으면 403) |
+| GET | `/s/<링크 토큰>` | (자체 응답, 로그인 없음) 공유 링크 안내 페이지 — 앱의 보관함 → 공유받은 항목에 붙여 넣는 방법만 보여 주고 기사 내용·DB 는 건드리지 않는다 |
 | GET | `/unsplash/search/photos` | `{UNSPLASH_BASE}/search/photos` |
 | GET | `/unsplash/photos/<id>` | `{UNSPLASH_BASE}/photos/<id>` |
 | GET | `/unsplash/download/<...>` | `{UNSPLASH_BASE}/download/<...>` |

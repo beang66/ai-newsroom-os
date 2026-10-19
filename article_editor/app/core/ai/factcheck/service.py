@@ -312,7 +312,7 @@ _EXTERNAL_STATUS = {"SUPPORTED": "SUPPORTED", "CONFLICT": "CONFLICT", "NOT_ENOUG
 
 
 def _external_pass(nodes, chunks, materials, indexes):
-    """로컬 판정기 대신 외부 모델이 모든 문장을 판정한다(설정 localFactcheck=끔). 검색은 그대로 하고, 문장마다 상위 근거
+    """로컬 판정기 대신 외부 모델이 모든 문장을 판정한다(설정 localAi=끔). 검색은 그대로 하고, 문장마다 상위 근거
     최대 5개를 보낸다. → {node_id: (검색 후보 전체, 판정 묶음)}. 외부 호출이 실패하면 오류를 그대로 올린다(조용히 건너뛰지 않는다).
     ponytail: 문장 묶음을 순서대로 보낸다. 느리면 묶음을 병렬로."""
     from .external import MAX_EVIDENCE, RETRY_ADD, judge

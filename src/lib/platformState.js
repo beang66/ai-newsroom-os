@@ -1,10 +1,11 @@
-const excluded = new Set(["validation_status", "evidence_status", "validation_review", "rendered_image", "generation_review", "evidence_valid", "block_evidence_valid"]);
+import {plainContent} from './studioArticle.js';
+const excluded = new Set(["validation_status", "evidence_status", "validation_review", "rendered_image", "render_error", "generation_review", "generation_review_binding", "evidence_valid", "block_evidence_valid", "generation_run"]);
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
   ? Object.fromEntries(Object.keys(value).sort().filter(key => !excluded.has(key)).map(key => [key, canonical(value[key])])) : value;
 export const fingerprint = value => JSON.stringify(canonical(value));
 // 부제·출처가 바뀌어도 기존 플랫폼 결과는 별도로 남고 새 원문의 결과로 재사용하지 않는다.
 export const sourceText = article => JSON.stringify([String(article?.title || "").trim(), String(article?.subtitle || "").trim(),
-  typeof article?.content === "string" ? article.content : "", String(article?.url || "").trim()]);
+  typeof article?.content === "string" ? plainContent(article.content) : "", String(article?.url || "").trim()]);
 export const articleId = article => String(article?.articleId || article?.article_id || article?.id || "");
 // 부제는 화면에서 전달받은 값만 표시한다. 생성 입력에 포함됐다는 의미가 아니다.
 export const subtitleLabel = article => article?.subtitle === undefined ? "부제 전달 미연결"
@@ -20,7 +21,25 @@ export function reviewStatus(draft) {
   return record && record.key === fingerprint(draft) ? record.result.status : draft?.validation_status === "needs_recheck" ? "needs_recheck" : "not_checked";
 }
 export const invalidateDraft = draft => ({...draft, validation_status:"needs_recheck", evidence_status:"needs_recheck"});
-export const selectedCardPhoto = (card, article) => card?.photoId ? (article?.photos || []).find(photo => photo.id === card.photoId) || null : card?.image || null;
+// 저장본을 복구한 뒤에는 이전 런타임의 재사용 표시를 신뢰하지 않는다.
+const reviewSession = {};
+export const reviewContextKey = (platform, draft, article) => JSON.stringify([
+  platform, fingerprint(draft), sourceText(article), fingerprint(article?.photos || [])]);
+export function attachCurrentReview(platform, draft, article, result) {
+  return {...draft, validation_status:result.status, validation_review:{key:fingerprint(draft), result,
+    context:reviewContextKey(platform,draft,article), session:reviewSession}};
+}
+export function reusableReview(platform, draft, article) {
+  const record=draft?.validation_review;
+  return draft?.validation_status !== 'needs_recheck' && record?.session === reviewSession
+    && record.context === reviewContextKey(platform,draft,article) ? record.result : null;
+}
+export const selectedCardPhoto = (card, article) => {
+  if (card?.photoId) return (article?.photos || []).find(photo => photo.id === card.photoId) || null;
+  // 생성기의 빈 image 메타데이터는 실제 사진이 아니다. 주소가 있는 사진의 검증은 API 경계에서 유지한다.
+  const image = card?.image;
+  return image && [image.url, image.data].some(value => typeof value === 'string' && value.trim()) ? image : null;
+};
 // 편집 최신성 비교용 서명. 자산의 기사·고정본 소유권은 Core가 별도로 확인한다.
 // 사진 바이트를 중복 저장하지 않도록 길이와 128비트 체크섬을 보관한다.
 export function renderKey(card, photo, draft) {

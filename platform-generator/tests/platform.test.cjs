@@ -24,7 +24,7 @@ function browserFixture(){
  const file={count:async()=>1,setInputFiles:async files=>{photos=files.map((_,i)=>'blob:fixture-'+i)}};
  const button={count:async()=>1,isVisible:async()=>true,isEnabled:async()=>true,click:async()=>{posted++}};
  const dialog={count:async()=>1,isVisible:async()=>true,waitFor:async()=>{},getByRole:(role,options)=>role==='button'&&options.name instanceof RegExp?button:empty,locator:s=>s.startsWith('[contenteditable')?field:s.startsWith('img[')?images:s==='input[type="file"]'?file:empty};
- const page={isClosed:()=>closed,url:()=> 'https://www.threads.com/',bringToFront:async()=>{},goto:async()=>{},evaluate:async()=> 'fixture_owner',getByRole:role=>role==='dialog'?dialog:empty,getByText:()=>empty,locator:()=>empty,keyboard:{press:async()=>{text+='\n'},insertText:async v=>{text+=v}}};
+ const page={on:()=>{},isClosed:()=>closed,url:()=> 'https://www.threads.com/',bringToFront:async()=>{},goto:async()=>{},evaluate:async()=> 'fixture_owner',getByRole:role=>role==='dialog'?dialog:empty,getByText:()=>empty,locator:()=>empty,keyboard:{press:async()=>{text+='\n'},insertText:async v=>{text+=v}}};
  let onClose;const context={newPage:async()=>page,on:(event,fn)=>{onClose=fn},close:async()=>{closed=true;onClose?.()}};
  return {chromium:{launchPersistentContext:async()=>context},get posted(){return posted;},editText:v=>{text=v;},get text(){return text;},photos:()=>photos};
 }

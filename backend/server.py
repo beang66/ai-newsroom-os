@@ -11,6 +11,8 @@
     SUPABASE_URL          JWT 검증용 (https://<ref>.supabase.co)
     SUPABASE_ANON_KEY     JWT 검증용 apikey
     AUTH_REQUIRED         기본 true. false 는 개발 전용(토큰 없이 허용)
+    ALLOWED_EMAILS        쓸 수 있는 계정(쉼표 구분, '@donga.com' 처럼 도메인도 가능). 비우면 로그인한 모든 계정
+    CMS_ALLOWED_EMAILS    CMS 송고를 할 수 있는 계정(같은 형식). 비우면 아무도 송고할 수 없다
     OPENAI_BASE_URL       기본 https://api.openai.com/v1 (시험용 대체 가능)
     UNSPLASH_BASE_URL     기본 https://api.unsplash.com
     RATE_LIMIT_PER_MIN    기본 120 (사용자별)
@@ -32,6 +34,8 @@
     POST /ai/embeddings                              (Cloudflare Workers AI qwen3-embedding-0.6b 로 본문 그대로 중계)
     POST /cms/publish                                (CMS_PUBLISH_URL 로 기사 송고)
     POST /ai/backup-key                              (로그인한 사용자의 기사 백업 키: 마스터 키에서 사용자별로 파생, 무저장)
+    POST /ai/share-key {shareId, token?}             (기사 공유본의 키: Supabase article_share_role 로 권한을 확인한 뒤 공유마다 파생)
+    GET  /s/<링크 토큰>                               (공유 링크 안내 페이지 — 앱에 붙여 넣는 방법만 보여 준다. 로그인·DB 조회 없음)
     GET  /unsplash/search/photos | /unsplash/photos/<id> | /unsplash/download/<...> | /unsplash/absolute?url=
 
 무저장: 요청·응답 본문을 로그나 디스크에 남기지 않는다(경로·상태·사용자만).
@@ -41,6 +45,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import http.client
 import json
 import os
 import re
@@ -68,7 +73,17 @@ _CLOVA_HITS: dict[str, list[float]] = {}
 # 앱이 보내는 옵션은 받지 않는다 — 결과를 다른 주소로 보내는 callback 같은 옵션을 끼워 넣지 못하게 서버가 고정한다
 CLOVA_PARAMS = {'language': 'ko-KR', 'completion': 'sync', 'wordAlignment': True, 'fullText': True,
                 'diarization': {'enable': True}, 'sed': {'enable': True}}
-MAX_BODY = 40_000_000  # 가장 큰 경로(전사·이미지) 한도. 나머지 경로는 아래에서 더 작게 자른다
+MAX_BODY = 40_000_000  # 가장 큰 경로(전사·이미지) 한도. 아래 경로는 더 작게 자른다
+BODY_LIMITS = {'/cms/publish': 10_000_000, '/ai/embeddings': 2_000_000, '/ai/share-key': 10_000}
+SHARE_ID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+SHARE_TOKEN = re.compile(r'[0-9a-f]{64}')
+SHARE_PAGE = '''<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>AI Newsroom 기사 공유</title>
+<style>body{margin:0;font-family:Pretendard,system-ui,sans-serif;background:#FAF8F5;color:#23211F}main{max-width:520px;margin:12vh auto;padding:0 16px}
+h1{font-size:20px}ol{line-height:1.9;padding-left:20px}code{display:block;margin-top:16px;padding:12px;border-radius:12px;background:#EFECE6;word-break:break-all;font-size:12px}</style>
+</head><body><main><h1>AI Newsroom 기사 공유 링크</h1><ol><li>AI Newsroom 앱을 열고 로그인합니다.</li>
+<li>보관함 → <b>공유받은 항목</b>을 누릅니다.</li><li>이 페이지 주소를 <b>링크로 받기</b> 칸에 붙여 넣습니다.</li></ol>
+<p>기사 내용은 이 페이지에 표시되지 않습니다. 공유한 사람이 허락한 계정만 앱에서 열 수 있습니다.</p><code>{link}</code></main></body></html>'''
 
 _LOCK = threading.Lock()
 _HITS: dict[str, list[float]] = {}
@@ -138,6 +153,30 @@ def _verify_remote(token: str):
         return None
 
 
+def share_role(token: str, share_id: str, link_token: str):
+    """이 사용자(토큰)가 공유에서 가진 권한 — Supabase 함수가 RLS 밖에서 확인한다. owner|importer|viewer|None"""
+    body = json.dumps({'p_share': share_id, 'p_token': link_token or None}).encode()
+    request = urllib.request.Request(
+        SUPABASE_URL + '/rest/v1/rpc/article_share_role', data=body, method='POST',
+        headers={'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            role = json.load(response)
+        return role if role in ('owner', 'importer', 'viewer') else None
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError):
+        return None
+
+
+def email_allowed(email: str, entries: str) -> bool:
+    """entries: 'a@x.com, @donga.com' — 정확한 주소 또는 '@도메인'."""
+    email = (email or '').strip().lower()
+    for entry in (e.strip().lower() for e in entries.split(',')):
+        if entry and email and (email == entry or (entry.startswith('@') and email.endswith(entry))):
+            return True
+    return False
+
+
 def forward(url: str, body, headers: dict, method: str = 'GET'):
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
@@ -146,7 +185,7 @@ def forward(url: str, body, headers: dict, method: str = 'GET'):
     except urllib.error.HTTPError as error:
         mime = error.headers.get_content_type() if error.headers else 'application/json'
         return error.code, mime, error.read()
-    except (urllib.error.URLError, TimeoutError):
+    except (OSError, http.client.HTTPException):  # 응답을 읽는 중 끊겨도(IncompleteRead 등) JSON 으로 답한다
         return 504, 'application/json', json.dumps({'error': '업스트림에 연결하지 못했습니다.'}).encode()
 
 
@@ -174,26 +213,32 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, status, payload):
         self._send(status, json.dumps(payload, ensure_ascii=False).encode())
 
-    def _body(self):
-        size = int(self.headers.get('Content-Length', '0'))
-        if size > MAX_BODY:
-            return None  # 로그인 확인 전이라 읽지 않는다(큰 본문으로 메모리를 채우지 못하게). 응답은 Connection: close
-        return self.rfile.read(size) if size > 0 else b''
+    def _size(self):
+        try:
+            return int(self.headers.get('Content-Length') or 0)
+        except ValueError:
+            return MAX_BODY + 1
 
-    def _user_id(self):
+    def _user(self):
         header = self.headers.get('Authorization', '')
         token = header[7:] if header.lower().startswith('bearer ') else ''
         if not AUTH_REQUIRED:
-            return 'dev'
-        user = verify_user(token)
-        return (user or {}).get('id') or None
+            return {'id': 'dev'}
+        user = verify_user(token) or {}
+        return user if user.get('id') else None
 
-    def _guard(self):
+    def _guard(self, cms=False):
         """통과하면 사용자 id, 아니면 응답을 이미 보내고 None."""
-        user = self._user_id()
+        user = self._user()
         if user is None:
             self._json(401, {'error': '로그인이 필요합니다.'})
             return None
+        allowed = os.environ.get('ALLOWED_EMAILS', '').strip()
+        if AUTH_REQUIRED and ((allowed and not email_allowed(user.get('email'), allowed))
+                              or (cms and not email_allowed(user.get('email'), os.environ.get('CMS_ALLOWED_EMAILS', '')))):
+            self._json(403, {'error': '이 계정은 이 기능을 쓸 수 없습니다. 관리자에게 문의해 주세요.'})
+            return None
+        user = user['id']
         if not rate_ok(user):
             self._json(429, {'error': '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.'})
             return None
@@ -201,6 +246,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlsplit(self.path)
+        if path.path.startswith('/s/'):
+            link_token = path.path[3:]
+            if not SHARE_TOKEN.fullmatch(link_token):
+                return self._json(404, {'error': '지원하지 않는 경로입니다.'})
+            link = 'https://' + (self.headers.get('Host') or '') + path.path
+            return self._send(200, SHARE_PAGE.replace('{link}', link).encode(), 'text/html; charset=utf-8')
         if path.path == '/ai/health':
             return self._json(200, {
                 'ok': True,
@@ -216,7 +267,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.path == '/unsplash/absolute':
             target = (urllib.parse.parse_qs(path.query).get('url') or [''])[0]
-            if urllib.parse.urlsplit(target).hostname != 'api.unsplash.com':
+            parsed = urllib.parse.urlsplit(target)
+            if parsed.scheme != 'https' or parsed.hostname != 'api.unsplash.com':  # http 면 키가 평문으로 나간다
                 return self._json(400, {'error': '허용되지 않은 사진 주소입니다.'})
             status, mime, raw = forward(target, None, {
                 'Authorization': 'Client-ID ' + os.environ.get('UNSPLASH_ACCESS_KEY', ''),  # 키 없이는 Unsplash 가 401 로 거절한다
@@ -235,11 +287,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(status, raw, mime)
         self._json(404, {'error': '지원하지 않는 경로입니다.'})
 
-    def _clova(self, audio):
+    def _clova(self, user, audio):
         """녹음 원본 → CLOVA Speech. 키·옵션은 서버가 정하고, 사용자별 횟수와 동시 처리 수를 제한한다(요금·메모리 보호)."""
-        user = self._guard()
-        if user is None:
-            return
         key = os.environ.get('CLOVA_SPEECH_SECRET_KEY', '').strip()
         invoke = os.environ.get('CLOVA_SPEECH_INVOKE_URL', '').strip().rstrip('/')
         host = urllib.parse.urlsplit(invoke)
@@ -264,17 +313,38 @@ class Handler(BaseHTTPRequestHandler):
             _CLOVA_SLOTS.release()
         return self._send(status, raw, out_mime)
 
+    def _share_key(self, body):
+        """공유본 키 = HMAC-SHA256(마스터, 'article-share:' + 공유 id). 권한(소유자·초대·링크)이 있을 때만 준다."""
+        master = os.environ.get('BACKUP_MASTER_KEY', '')
+        if len(master) < 32:
+            return self._json(503, {'error': '공유 키가 서버에 설정되지 않았습니다.'})
+        try:
+            data = json.loads(body or b'{}')
+        except ValueError:
+            data = None
+        share_id = data.get('shareId') if isinstance(data, dict) else None
+        link_token = data.get('token') if isinstance(data, dict) else None
+        if not isinstance(share_id, str) or not SHARE_ID.fullmatch(share_id) or (
+                link_token is not None and (not isinstance(link_token, str) or not SHARE_TOKEN.fullmatch(link_token))):
+            return self._json(400, {'error': '공유 정보를 확인해 주세요.'})
+        header = self.headers.get('Authorization', '')
+        if share_role(header[7:] if header.lower().startswith('bearer ') else '', share_id, link_token) is None:
+            return self._json(403, {'error': '이 공유를 열 권한이 없어요.'})
+        key = hmac.new(master.encode(), b'article-share:' + share_id.encode(), hashlib.sha256).digest()
+        return self._json(200, {'key': base64.b64encode(key).decode('ascii')})
+
     def do_POST(self):
-        # 본문을 **먼저** 읽는다 — 401/404 로 조기 반환할 때 남은 본문이 다음 요청을 오염시키지 않게.
-        body = self._body()
-        if body is None:
-            return self._json(413, {'error': '요청이 너무 큽니다.'})
+        # 크기와 로그인을 본문보다 먼저 본다 — 로그인 안 한 요청이 큰 본문으로 메모리(무료 플랜 512MB)를 채우지 못하게.
+        # 읽지 않은 본문이 다음 요청을 오염시키지 않는 것은 모든 응답의 Connection: close 가 맡는다.
         path = urllib.parse.urlsplit(self.path).path
+        size = self._size()
+        if size > BODY_LIMITS.get(path, MAX_BODY):
+            return self._json(413, {'error': '요청이 너무 큽니다.'})
+        user = self._guard(cms=path == '/cms/publish')
+        if user is None:
+            return
+        body = self.rfile.read(size) if size > 0 else b''
         if path == '/cms/publish':
-            if self._guard() is None:
-                return
-            if len(body) > 10_000_000:
-                return self._json(413, {'error': '기사 요청이 너무 큽니다.'})
             target = os.environ.get('CMS_PUBLISH_URL', '').strip()
             token = os.environ.get('CMS_BEARER_TOKEN', '').strip()
             parsed = urllib.parse.urlsplit(target)
@@ -286,29 +356,22 @@ class Handler(BaseHTTPRequestHandler):
             status, mime, raw = forward(target, body, headers, method='POST')
             return self._send(status, raw, mime)
         if path == '/ai/audio/clova':
-            return self._clova(body)
+            return self._clova(user, body)
         if path == '/ai/backup-key':
-            user = self._guard()
-            if user is None:
-                return
             master = os.environ.get('BACKUP_MASTER_KEY', '')
             if len(master) < 32:
                 return self._json(503, {'error': '백업 키가 서버에 설정되지 않았습니다.'})
             # 사용자별 키 = HMAC-SHA256(마스터, 'article-backup:' + 사용자 id). 마스터는 서버 밖으로 나가지 않는다.
             key = hmac.new(master.encode(), b'article-backup:' + user.encode(), hashlib.sha256).digest()
             return self._json(200, {'key': base64.b64encode(key).decode('ascii')})
+        if path == '/ai/share-key':
+            return self._share_key(body)
         if not path.startswith('/ai/'):
             return self._json(404, {'error': '지원하지 않는 경로입니다.'})
         sub = path[len('/ai/'):]
         if sub not in ALLOWED_AI:
             return self._json(404, {'error': '지원하지 않는 AI 경로입니다.'})
-        if self._guard() is None:
-            return
-        if len(body) > 40_000_000:
-            return self._json(413, {'error': '요청이 너무 큽니다.'})
         if sub == 'embeddings':
-            if len(body) > 2_000_000:
-                return self._json(413, {'error': '요청이 너무 큽니다.'})
             account = os.environ.get('CF_ACCOUNT_ID', '')
             status, mime, raw = forward(
                 f'{CF_BASE}/accounts/{account}/ai/run/{CF_EMBEDDING_MODEL}', body,

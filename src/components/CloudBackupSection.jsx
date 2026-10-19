@@ -42,7 +42,7 @@ export default function CloudBackupSection({ enabled: savedEnabled, ready, onTog
   const openRestore = () => run(async () => {
     const { backups } = await listBackups();
     setList(backups);
-    setPicked(backups.map((b) => b.articleId));
+    setPicked(backups.filter((b) => !b.damaged).map((b) => b.articleId));
   });
 
   const restore = () => run(async () => {
@@ -81,9 +81,9 @@ export default function CloudBackupSection({ enabled: savedEnabled, ready, onTog
                 {list.map((b) => (
                   <li key={b.articleId}>
                     <label className="flex items-center gap-2 text-xs">
-                      <input type="checkbox" checked={picked.includes(b.articleId)}
+                      <input type="checkbox" checked={picked.includes(b.articleId)} disabled={b.damaged}
                         onChange={(e) => setPicked((prev) => (e.target.checked ? [...prev, b.articleId] : prev.filter((id) => id !== b.articleId)))} />
-                      <span className="font-bold">{b.title || "제목 없음"}</span>
+                      <span className="font-bold">{b.damaged ? "손상된 백업(열 수 없음)" : b.title || "제목 없음"}</span>
                       <span className="text-[#666666]">{when(b.savedAt)}</span>
                     </label>
                   </li>

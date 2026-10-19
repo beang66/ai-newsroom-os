@@ -3,6 +3,8 @@
 import { core } from "./core.js";
 import { claimDetails } from "./claim-details.js";
 import { captionText, photoOfLine, textWithoutPhotos } from "../lib/photoMarks.js";
+import { escapeHtml } from "../lib/studioArticle.js";
+import { normalizeSubtitleCandidate } from "../lib/subtitleCandidates.js";
 
 // 로그인·설치 화면도 같은 코어 계약을 사용한다. 자격 증명은 요청 동안만 전달한다.
 export const signIn = (email, password, remember = false) => core.signIn(email, password, { remember });
@@ -19,8 +21,28 @@ export const downloadTransfer = (code, signal) => core.downloadTransfer(code, si
 export const deleteTransfer = (signal) => core.deleteTransfer(signal);
 export const getBackupKey = (signal) => core.getBackupKey(signal);
 export const getDiagnostics = (signal) => core.getDiagnostics(signal);
+export const getUtEvents = (signal) => core.getUtEvents(signal);
+export const exportUtEvents = (signal) => core.exportUtEvents(signal);
+export const deleteUtEvents = (signal) => core.deleteUtEvents(signal);
 export const getSettings = (signal) => core.getSettings(signal);
 export const saveSettings = (patch, signal) => core.saveSettings(patch, signal);
+
+// 내보내기: 코어가 내 문서\AI Newsroom\내보내기\<종류> 에 쓴다(브라우저 다운로드 폴더로 흩어지지 않게).
+// data: data URL·blob:/http 주소·Blob·base64 글자 중 하나
+async function base64Of(data) {
+  if (typeof data === "string" && data.startsWith("data:")) return data.slice(data.indexOf(",") + 1);
+  const blob = typeof data === "string" && /^(blob:|https?:)/.test(data) ? await (await fetch(data)).blob() : data;
+  if (typeof blob === "string") return blob;
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let text = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(text);
+}
+/** files: [{ data, ext }] → { folder, files } */
+export const exportFiles = async (kind, files, meta) =>
+  core.saveExport(kind, await Promise.all(files.map(async ({ data, ext }) => ({ ext, data: await base64Of(data) }))), meta);
+export const openExportFolder = (kind) => core.openExportFolder(kind);
+export const imageExtension = (data) => (String(data).startsWith("data:image/png") ? "png" : String(data).startsWith("data:image/webp") ? "webp" : "jpg");
 export const modelStatus = (signal) => core.models(signal);
 export const installModels = (modelId, signal) => core.installModels({ modelId }, signal);
 export const cancelModelInstall = (signal) => core.cancelModelInstall(signal);
@@ -34,12 +56,10 @@ export async function suggestHeadlines(body, currentHeadline = "") {
   return clean(values.length ? values : [d.headline]);
 }
 
-/** 부제 후보 — 원격 AI 는 subtitle_candidates, 로컬 모델 경로는 subtitle 한 개.
- *  동아일보 부제는 2~4줄이므로 줄바꿈을 그대로 둔다(부제 칸·미리보기가 줄 단위로 보여 준다). */
+/** 부제 후보는 한 묶음만 보여 준다. AI가 줄 구분자로 쓴 ` / `도 실제 줄바꿈으로 바로잡는다. */
 export async function suggestSubtitles(body, currentHeadline = "") {
   const d = await core.assist({ kind: "metadata", requested: "subheadline", body: textWithoutPhotos(body), current_headline: currentHeadline });
-  return clean([d.subtitle, ...(d.subtitle_candidates || [])].map((v) =>
-    String(v || "").split(/\n+/).map((line) => line.trim()).filter(Boolean).join("\n")));
+  return clean([d.subtitle, ...(d.subtitle_candidates || [])].map(normalizeSubtitleCandidate)).slice(0, 1);
 }
 
 /** 기사에 맞는 사진 검색어(영어 3개) */
@@ -86,9 +106,10 @@ export async function importPhoto(photo) {
   return {
     id: `unsplash-${photo.id}`,
     url,
-    caption: photo.alt_description || photo.description || "",
-    source: `${photo.user?.name || "Unsplash"} / Unsplash`,
-    provider: "Unsplash",
+    caption: "",
+    source: `© ${photo.user?.name || "Unsplash"} / Unsplash`,
+    provider: photo.user?.name || "Unsplash",
+    photographer: photo.user?.name || "Unsplash",
     sourceUrl: photo.links?.html ? `${photo.links.html}?utm_source=article_workspace&utm_medium=referral` : "",
     unsplashId: photo.id,
     ratio: "16:9",
@@ -103,14 +124,31 @@ const readDataUrl = (file) => new Promise((resolve, reject) => {
 });
 
 /** 인터뷰 녹음 파일 전사 — 파일을 data URL 로 읽어 코어로 보낸다(25MB 이하) */
+// 녹음 길이(초) — 브라우저가 파일 머리 정보에서 읽는다. 못 읽으면 null(코어는 월 합계만 본다)
+const audioSeconds = (file) => new Promise((resolve) => {
+  const url = URL.createObjectURL(file);
+  const audio = new Audio();
+  const finish = (value) => { clearTimeout(timer); URL.revokeObjectURL(url); resolve(value); };
+  const timer = setTimeout(() => finish(null), 5000);
+  audio.preload = "metadata";
+  audio.onloadedmetadata = () => finish(Number.isFinite(audio.duration) ? audio.duration : null);
+  audio.onerror = () => finish(null);
+  audio.src = url;
+});
 export async function transcribeAudio(file) {
-  return core.transcribe(file.name, file.type || "application/octet-stream", await readDataUrl(file));
+  // 화자 구분이 되는 CLOVA 만 쓴다. 안 되면 Whisper 로 조용히 넘어가지 않고 오류를 보여 준다.
+  // 녹음 길이를 함께 보내 코어가 요금(분 단위) 한도를 먼저 확인하게 한다.
+  const [data, seconds] = await Promise.all([readDataUrl(file), audioSeconds(file)]);
+  return core.transcribe(file.name, file.type || "application/octet-stream", data, undefined, "clova", seconds);
 }
+/** AI 인터뷰 분석(요약·핵심·키워드) — 코어 assist 를 거쳐 Render 중계 서버로 간다(PC 에 AI 키 불필요) */
+export const analyzeInterview = (body, signal) => core.assist({ kind: "interview_analysis", body }, signal);
 export const listTranscripts = (signal) => core.listTranscripts(signal);
 export async function loadTranscript(id, signal) {
   const [transcript, audio] = await Promise.all([core.getTranscript(id, signal), core.transcriptAudio(id, signal)]);
   return { ...transcript, audioUrl: URL.createObjectURL(audio) };
 }
+export const saveSpeakerEdits = (id, speakerEdits, signal) => core.saveTranscriptSpeakers(id, speakerEdits, signal);
 export const publishCms = (article, signal) => core.publishCms(article, signal);
 export const getTransferFile = (signal) => core.getTransferFile(signal);
 export const makeTransferFile = (code, signal) => core.makeTransferFile(code, signal);
@@ -371,8 +409,6 @@ async function fromMediaRef(value, loaded) {
   }
 }
 
-const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-
 /** 원고(content) → 발행·변환용 HTML. 문단은 빈 줄, 줄바꿈은 <br>, 사진 자리 줄은 v30 과 같은 <figure data-photo-id> */
 export function bodyHtmlOf(content, photos) {
   const out = [];
@@ -394,7 +430,7 @@ export function bodyHtmlOf(content, photos) {
 }
 
 /** 원고 저장. 사진은 코어의 data/original 필드로 보내 암호화 media 저장소에서 중복 없이 보관한다. */
-/** 원고 저장 → articleId. kind: "auto"(자동 임시 저장 — 최근 작업본 한 칸 덮어쓰기, 이력·보관소에 안 보임) | "manual"(저장 버튼 — 새 버전) */
+/** 원고 저장 → articleId. kind: "auto"(자동 임시 저장 — 최근 작업본 한 칸 덮어쓰기, 이력·보관함에 안 보임) | "manual"(저장 버튼 — 새 버전) */
 export async function saveDraft(article, articleId, expectedRevisionNo, replaceLatest = false, kind = "auto") {
   return (await saveDraftResult(article, articleId, { expectedRevisionNo, replaceLatest, kind })).articleId;
 }
@@ -486,13 +522,13 @@ export async function loadLatestArticle(empty) {
   return articleFromResponse(await core.latestArticle(), empty);
 }
 
-/** 보관소 '수정' — 마지막 수동 저장본(version "saved") 또는 발행본("published")을 편집기용 기사 객체로 */
+/** 보관함 '수정' — 마지막 수동 저장본(version "saved") 또는 발행본("published")을 편집기용 기사 객체로 */
 export async function loadArticle(articleId, version, empty) {
   const article = await articleFromResponse(await core.getArticle(articleId, version), empty);
   return article && { ...article, openedFrom: version };
 }
 
-/** 보관소 목록 → [{ articleId, title, subtitle, excerpt, state, published, updatedAt, ... }] */
+/** 보관함 목록 → [{ articleId, title, subtitle, excerpt, state, published, updatedAt, ... }] */
 export async function listArchive(signal) {
   const { articles } = await core.listArticles(signal);
   return (articles || []).map((a) => ({
@@ -507,7 +543,7 @@ async function articleFromResponse(response, empty) {
   return hydrateArticle(response, empty);
 }
 
-/** 보관소·데스크에서 고른 기사(그 기사의 최신 원고)를 편집기용 기사 객체로 */
+/** 보관함·데스크에서 고른 기사(그 기사의 최신 원고)를 편집기용 기사 객체로 */
 export async function loadStoredArticle(articleId, empty, signal) {
   const response = await core.getArticle(articleId, undefined, signal);
   if (!response?.draft) throw Error("기사가 삭제되었거나 조회되지 않습니다.");
@@ -523,7 +559,7 @@ async function hydrateArticle({ draft, revisionKind, lastManual, published, edit
     data: await fromMediaRef(photo.data, loaded),
     original: await fromMediaRef(photo.original, loaded),
   })));
-  // 아래 값들은 화면 전용(저장되지 않음): 마지막 수동 저장본(보관소 '원고'), 그 뒤 임시 저장본인지, 송고본 정보, 송고 뒤 고쳤는지
+  // 아래 값들은 화면 전용(저장되지 않음): 마지막 수동 저장본(보관함의 기사), 그 뒤 임시 저장본인지, 송고본 정보, 송고 뒤 고쳤는지
   return { ...articleFromDraft({ ...draft, photos }, empty), lastManual: lastManual || null, unsavedOnOpen: revisionKind === "auto",
     published: published || null, editedAfterPublish: !!editedAfterPublish, firstSavedAt: firstSavedAt || null };
 }

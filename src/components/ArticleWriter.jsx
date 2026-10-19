@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
 import { useFactCheck } from "./EditorialAssist";
-import { toStudioArticle, plainContent } from "../lib/studioArticle.js";
-import { paint, clearPaint, hitTest } from "../lib/factHighlights.js";
+import { toStudioArticle, plainContent, escapeHtml } from "../lib/studioArticle.js";
+import { paint, clearPaint, hitTest, locate } from "../lib/factHighlights.js";
 import { suggestHeadlines, suggestSubtitles } from "../services/assistService";
 import FlowSummaryButton from "./FlowSummaryButton";
 import { textWithoutPhotos } from "../lib/photoMarks.js";
@@ -12,8 +12,10 @@ import SourceSearch from "./SourceSearch";
 import ArticleCheckModal from "./ArticleCheckModal";
 import VersionHistoryModal from "./VersionHistoryModal";
 import DongaPreview from "./DongaPreview.jsx";
-import { SECTIONS, subsOf } from "../data/sections.js";
+import { SECTIONS } from "../data/sections.js";
+import { trackPhotoDownload } from "../api/editorial";
 import "./articleWriterFont.css";
+import SaveBar from "./SaveBar.jsx";
 import {
   Sparkles,
   Search,
@@ -62,8 +64,10 @@ export default function ArticleWriter({
   factCheckRequest = 0,
   onPublish,
   onModels,
+  flush,
   isSidebarCollapsed = true,
   onConnectSource,
+  onSave,
   isReaderPreview,
   setIsReaderPreview,
   isPhotoEditing,
@@ -97,10 +101,43 @@ export default function ArticleWriter({
   // 저장 이력 및 복원 모달 열림 상태
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
+  // 팩트체크 패널과 에디터 간 분할 비율 (기본 1:1 = 50%)
+  const [factCheckSplitRatio, setFactCheckSplitRatio] = useState(50);
+  const isResizingFactCheck = useRef(false);
+  const mainLayoutRef = useRef(null);
+
+  const handleSplitMouseDown = (e) => {
+    e.preventDefault();
+    isResizingFactCheck.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMouseMove = (moveEvent) => {
+      if (!isResizingFactCheck.current || !mainLayoutRef.current) return;
+      const rect = mainLayoutRef.current.getBoundingClientRect();
+      const availableWidth = rect.width - 250;
+      if (availableWidth <= 0) return;
+      const relativeX = moveEvent.clientX - rect.left;
+      const newRatio = (relativeX / availableWidth) * 100;
+      setFactCheckSplitRatio(Math.min(70, Math.max(30, newRatio)));
+    };
+
+    const onMouseUp = () => {
+      isResizingFactCheck.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
   // 팩트체크(main 흐름): 취재자료를 기사에 등록하면, 글이 멈출 때마다 문장별로 자동 검증한다.
   // main 엔진은 content 를 일반 텍스트로 보므로 어댑터를 거친다(내 에디터 HTML 은 그대로).
   const studioArticle = useMemo(() => toStudioArticle(article), [article]);
-  const factCheck = useFactCheck(studioArticle);
+  const factCheck = useFactCheck(studioArticle, flush);
   const FACT_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족" };
   // 본문 강조·호버 팝업이 쓰는 문제 문장 목록(일치한 문장은 제외)
   const factCheckIssues = useMemo(() => factCheck.results
@@ -146,6 +183,7 @@ export default function ArticleWriter({
   useEffect(() => {
     if (factCheckRequest) {
       setActiveSidePanel("factcheck");
+      setShowFactMarks(true);
     }
   }, [factCheckRequest]);
 
@@ -192,6 +230,7 @@ export default function ArticleWriter({
   // 이미지 편집 모달 상태
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false);
   const [editingPhoto, setEditingPhoto] = useState(null);
+  const [pendingPhoto, setPendingPhoto] = useState(null); // 사진 편집 화면의 "본문에 넣기" — 작성 화면이 다시 열리면 본문에 반영한다
 
   // 4. CMS 발행 이관 상태
   const [isCmsExporting, setIsCmsExporting] = useState(false);
@@ -375,20 +414,41 @@ export default function ArticleWriter({
   // 팩트체크 결과 표시: 본문 DOM 은 건드리지 않고 글자 구간에만 색을 입힌다(src/lib/factHighlights.js).
   // 결과가 바뀌거나 본문이 바뀌면 다시 칠하고, 오래된 표시는 남기지 않는다.
   const located = useRef([]);
+  const [flashId, setFlashId] = useState(null); // 서랍 카드를 눌러 이동한 문장을 잠시 진하게 표시
+  const flashTimer = useRef(null);
+  const handleDrawerCardClick = (event) => {
+    if (event.target.closest("button, a, input, textarea, select, summary")) return; // 카드 안의 버튼·링크는 원래 동작대로
+    const card = event.target.closest("div.rounded-2xl");
+    const root = bodyInputRef.current;
+    if (!card || !root) return;
+    const text = card.innerText || "";
+    const item = factCheck.results.find((r) => r.claimText && text.includes(r.claimText))
+      || factCheck.results.find((r) => r.claimText && text.includes(r.claimText.slice(0, 40)));
+    if (!item) return;
+    const entry = locate(root, [item], { focusId: item.id })[0];
+    if (!entry) return; // 본문에서 그 문장을 찾지 못하면(고치는 중) 움직이지 않는다
+    setFlashId(item.id);
+    if (item.verdict === "SUPPORTED") factCheck.setFocus(item.id); // 팩트 일치는 평소 칠하지 않으므로 초록으로 보여 준다(서랍에서 마우스를 올릴 때와 같은 표시)
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => { setFlashId(null); factCheck.setFocus(null); }, 3500);
+    entry.sentence.startContainer.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  const [showFactMarks, setShowFactMarks] = useState(true); // 서랍을 닫으면 본문 표시·상태 문구를 숨긴다(결과 계산은 main 그대로)
   useEffect(() => {
     const root = bodyInputRef.current;
-    if (!root) {
+    if (!root || !showFactMarks) {
       located.current = [];
+      clearPaint();
       return undefined;
     }
     const frame = requestAnimationFrame(() => {
       located.current = paint(root, factCheck.results, {
         focusId: factCheck.focus,
-        activeId: review && currentIssue ? currentIssue.id : null,
+        activeId: flashId || (review && currentIssue ? currentIssue.id : null),
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [factCheck.results, factCheck.focus, article.content, review, currentIssue?.id, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [factCheck.results, factCheck.focus, article.content, review, currentIssue?.id, viewMode, showFactMarks, flashId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => clearPaint(), []);
 
   // 에디터 마우스 움직임 감지: 칠해진 문제 문장 위에 마우스가 있으면 사유 팝업을 띄운다
@@ -440,6 +500,32 @@ export default function ArticleWriter({
     setTimeout(() => setToastMessage(""), 3500);
   };
 
+  // 사진 편집 화면에서 "본문에 넣기"를 누른 뒤 작성 화면이 다시 열리면: 본문에 이미 있는 사진이면 편집본으로 바꾸고, 없으면 새로 넣는다
+  useEffect(() => {
+    if (!pendingPhoto || isImageEditorOpen || isPhotoEditing || !bodyInputRef.current) return;
+    const photo = pendingPhoto;
+    setPendingPhoto(null);
+    // 편집 화면이 열려 있는 동안 에디터가 없었으므로 다시 열린 에디터는 비어 있다 — 기사 본문을 먼저 되돌린 뒤에 사진을 넣는다
+    if (bodyInputRef.current.innerHTML !== (article.content || "")) bodyInputRef.current.innerHTML = article.content || "";
+    // 새로 넣는 사진은 본문이 끝나는 지점에 놓는다(이전 캐럿 위치는 에디터가 다시 만들어지며 사라졌다)
+    if (!bodyInputRef.current.querySelector(`[data-photo-id="${photo.id}"]`)) {
+      const range = document.createRange();
+      range.selectNodeContents(bodyInputRef.current);
+      range.collapse(false);
+      lastCaretRangeRef.current = range;
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+    if (bodyInputRef.current.querySelector(`[data-photo-id="${photo.id}"]`)) handleSaveEditedPhoto(photo);
+    else {
+      handleInsertPhotoToContent(photo);
+      setToastMessage(`"${photo.caption || "사진"}" 사진이 본문에 들어갔습니다.`);
+      setTimeout(() => setToastMessage(""), 2500);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPhoto, isImageEditorOpen, isPhotoEditing]);
+
   // 외부에서 article.content 변경 시 contentEditable 동기화 (초안 생성 등)
   useEffect(() => {
     if (bodyInputRef.current && bodyInputRef.current.innerHTML !== (article.content || "")) {
@@ -473,11 +559,11 @@ export default function ArticleWriter({
           const parentFigure = overlay.closest('.article-photo-container');
           const photoId = parentFigure?.dataset.photoId || `photo-${Date.now()}`;
           overlay.className = "photo-action-overlay absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-30";
-          overlay.innerHTML = `<button type="button" data-action="change-photo" data-photo-id="${photoId}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="사진 변경하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">↻</span></button><button type="button" data-action="edit-photo" data-photo-id="${photoId}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="편집하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">✎</span></button><button type="button" data-action="delete-photo" data-photo-id="${photoId}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-rose-50 text-slate-800 hover:text-rose-600 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="삭제하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700 hover:text-rose-600">✕</span></button>`;
+          overlay.innerHTML = `<button type="button" data-action="change-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="사진 변경하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">↻</span></button><button type="button" data-action="edit-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="편집하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">✎</span></button><button type="button" data-action="delete-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-rose-50 text-slate-800 hover:text-rose-600 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="삭제하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700 hover:text-rose-600">✕</span></button>`;
         }
       });
     }
-  }, [article.content, activeSidePanel]);
+  }, [article.content, activeSidePanel, isImageEditorOpen, isPhotoEditing, viewMode]);
 
   // 텍스트 드래그 선택 서식 툴바 감지 (contentEditable Selection 감지)
   const handleSelection = () => {
@@ -626,7 +712,7 @@ export default function ArticleWriter({
           const newPhoto = {
             id: `photo-${Date.now()}`,
             url: uploadEvt.target.result,
-            caption: newCaption || file.name,
+            caption: newCaption || "",
             source: newSource || "동아일보 DB",
             provider: newProvider || "기자",
             ratio: newRatio
@@ -643,8 +729,8 @@ export default function ArticleWriter({
   };
 
   // 텍스트 편집 바(플로팅 툴바) 전용 이미지 파일 첨부 핸들러
-  const handleToolbarImageSelect = (e) => {
-    const file = e.target.files?.[0];
+  const handleToolbarImageSelect = (fileOrEvent) => {
+    const file = fileOrEvent?.name ? fileOrEvent : fileOrEvent.target.files?.[0];
     if (!file) return; // 파일 선택 취소 시 기존 작성 내용 유지
 
     const reader = new FileReader();
@@ -653,7 +739,7 @@ export default function ArticleWriter({
         const newPhoto = {
           id: `photo-${Date.now()}`,
           url: uploadEvt.target.result,
-          caption: file.name.replace(/\.[^/.]+$/, ""),
+          caption: "",
           source: "직접 첨부",
           provider: "김동아 기자",
           ratio: "16:9"
@@ -662,7 +748,7 @@ export default function ArticleWriter({
         setPhotos(updatedPhotos);
 
         // 본문 에디터에 사진 렌더링 블록 삽입
-        const photoHtml = `<figure style="margin: 20px 0; text-align: center;" contenteditable="false"><img src="${uploadEvt.target.result}" alt="${file.name}" style="max-width: 100%; margin: 0 auto; display: block;" /><figcaption style="font-size: 11px; color: #64748b; margin-top: 8px; font-weight: 500;">▲ ${newPhoto.caption} (출처: 직접 첨부)</figcaption></figure><p><br></p>`;
+        const photoHtml = `<figure style="margin: 20px 0; text-align: center;" contenteditable="false"><img src="${escapeHtml(uploadEvt.target.result)}" alt="${escapeHtml(file.name)}" style="max-width: 100%; margin: 0 auto; display: block;" /><figcaption style="font-size: 11px; color: #64748b; margin-top: 8px; font-weight: 500;">(출처: 직접 첨부)</figcaption></figure><p><br></p>`;
 
         if (bodyInputRef.current) {
           bodyInputRef.current.focus();
@@ -681,7 +767,7 @@ export default function ArticleWriter({
       }
     };
     reader.readAsDataURL(file);
-    e.target.value = ""; // 동일 파일 재선택 가능하도록 리셋
+    if (fileOrEvent?.target) fileOrEvent.target.value = ""; // 동일 파일 재선택 가능하도록 리셋
   };
 
   // 이미지 편집 완료 후 저장 및 기사 본문 실시간 반영
@@ -703,7 +789,9 @@ export default function ArticleWriter({
         }
         const figcaption = photoEl.querySelector("figcaption");
         if (figcaption) {
-          figcaption.innerText = `▲ ${updatedPhoto.caption} (출처: ${updatedPhoto.source})`;
+          const caption = String(updatedPhoto.caption || "").trim();
+          const source = String(updatedPhoto.source || "").trim();
+          figcaption.innerText = [caption ? `▲ ${caption}` : "", source ? `(출처: ${source})` : ""].filter(Boolean).join(" ");
         }
         setArticle((prev) => ({
           ...prev,
@@ -723,7 +811,10 @@ export default function ArticleWriter({
     }
 
     const photoId = photo.id || `photo-${Date.now()}`;
-    const photoHtml = `<figure class="article-photo-container group relative my-6 select-none cursor-grab active:cursor-grabbing transition-all" data-photo-id="${photoId}" draggable="true" contenteditable="false"><div class="relative overflow-hidden"><div class="absolute top-2.5 left-2.5 z-20 px-2.5 py-1 rounded-md bg-black/65 backdrop-blur-md text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 pointer-events-none shadow-xs"><span>⠿ 드래그하여 텍스트 끝나는 지점으로 이동</span></div><img src="${photo.url}" alt="${photo.caption || ''}" class="w-full max-h-[520px] object-cover block pointer-events-none" style="${photo.filterStyle ? `filter: ${photo.filterStyle};` : ''} ${photo.rotation ? `transform: rotate(${photo.rotation}deg);` : ''}" /><div class="photo-action-overlay absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-30"><button type="button" data-action="change-photo" data-photo-id="${photoId}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="사진 변경하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">↻</span></button><button type="button" data-action="edit-photo" data-photo-id="${photoId}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="편집하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">✎</span></button><button type="button" data-action="delete-photo" data-photo-id="${photoId}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-rose-50 text-slate-800 hover:text-rose-600 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="삭제하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700 hover:text-rose-600">✕</span></button></div></div><figcaption class="text-center text-xs text-slate-500 mt-2 font-medium">▲ ${photo.caption || '보도 사진'} (출처: ${photo.source || '동아일보 DB'})</figcaption></figure><p><br></p>`;
+    const caption = String(photo.caption || "").trim();
+    const source = String(photo.source || "").trim();
+    const credit = [caption ? `▲ ${caption}` : "", source ? `(출처: ${source})` : ""].filter(Boolean).join(" ");
+    const photoHtml = `<figure class="article-photo-container group relative my-6 select-none cursor-grab active:cursor-grabbing transition-all" data-photo-id="${escapeHtml(photoId)}" draggable="true" contenteditable="false"><div class="relative overflow-hidden"><div class="absolute top-2.5 left-2.5 z-20 px-2.5 py-1 rounded-md bg-black/65 backdrop-blur-md text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 pointer-events-none shadow-xs"><span>⠿ 드래그하여 원하는 위치로 이동</span></div><img src="${escapeHtml(photo.url)}" alt="${escapeHtml(caption)}" class="w-full max-h-[520px] object-cover block pointer-events-none" style="${photo.filterStyle ? `filter: ${photo.filterStyle};` : ''} ${photo.rotation ? `transform: rotate(${photo.rotation}deg);` : ''}" /><div class="photo-action-overlay absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-30"><button type="button" data-action="change-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="사진 변경하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">↻</span></button><button type="button" data-action="edit-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="편집하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">✎</span></button><button type="button" data-action="delete-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-rose-50 text-slate-800 hover:text-rose-600 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="삭제하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700 hover:text-rose-600">✕</span></button></div></div>${credit ? `<figcaption class="text-center text-xs text-slate-500 mt-2 font-medium">${escapeHtml(credit)}</figcaption>` : ""}</figure><p><br></p>`;
 
     if (bodyInputRef.current) {
       bodyInputRef.current.focus();
@@ -925,8 +1016,10 @@ export default function ArticleWriter({
 
       let targetChild = null;
       let insertAfter = false;
+      const editorBox = bodyInputRef.current.getBoundingClientRect();
+      const placeAtStart = e.clientY <= editorBox.top + 16;
 
-      for (let i = 0; i < children.length; i++) {
+      for (let i = 0; !placeAtStart && i < children.length; i++) {
         const child = children[i];
         const box = child.getBoundingClientRect();
         const midY = box.top + box.height / 2;
@@ -942,7 +1035,7 @@ export default function ArticleWriter({
         }
       }
 
-      if (!targetChild) {
+      if (!targetChild && !placeAtStart) {
         targetChild = children[children.length - 1];
         insertAfter = true;
       }
@@ -957,7 +1050,9 @@ export default function ArticleWriter({
           '<span class="px-2.5 py-0.5 rounded-full bg-stone-900 text-white text-[9px] font-bold shadow-sm border border-stone-600/40">📍 텍스트 끝 지점에 사진 배치</span>';
       }
 
-      if (insertAfter) {
+      if (placeAtStart) {
+        bodyInputRef.current.insertBefore(indicator, bodyInputRef.current.firstChild);
+      } else if (insertAfter) {
         if (targetChild.nextSibling !== indicator) {
           bodyInputRef.current.insertBefore(indicator, targetChild.nextSibling);
         }
@@ -1002,43 +1097,59 @@ export default function ArticleWriter({
   const handleEditorDrop = (e) => {
     e.preventDefault();
 
-    // 모든 인디케이터 정리
+    // 사진 드롭 표시선은 실제 삽입 위치이므로 사진을 옮긴 뒤 제거한다.
     const photoIndicator = bodyInputRef.current?.querySelector(".photo-drop-indicator");
-    if (photoIndicator) photoIndicator.remove();
     const textIndicator = document.getElementById("sentence-drop-caret-indicator");
     if (textIndicator) textIndicator.remove();
+
+    const droppedImage = Array.from(e.dataTransfer.files || []).find((file) => file.type.startsWith("image/"));
+    if (droppedImage) {
+      handleToolbarImageSelect(droppedImage);
+      return;
+    }
 
     const photoId = e.dataTransfer.getData("photoId");
     if (photoId) {
       if (!bodyInputRef.current) return;
       const photoCard = bodyInputRef.current.querySelector(`[data-photo-id="${photoId}"]`);
-      if (!photoCard) return;
+      if (!photoCard) {
+        photoIndicator?.remove();
+        return;
+      }
 
       photoCard.classList.remove("opacity-40", "ring-2", "ring-black/80", "shadow-md");
 
-      let range = getCaretRangeFromPoint(e.clientX, e.clientY);
-      if (range && bodyInputRef.current.contains(range.startContainer)) {
-        let targetNode = range.startContainer;
-        while (targetNode && targetNode.parentNode !== bodyInputRef.current && targetNode !== bodyInputRef.current) {
-          targetNode = targetNode.parentNode;
-        }
-        if (targetNode && targetNode !== bodyInputRef.current) {
-          bodyInputRef.current.insertBefore(photoCard, targetNode.nextSibling || targetNode);
+      if (photoIndicator?.parentNode === bodyInputRef.current) {
+        bodyInputRef.current.insertBefore(photoCard, photoIndicator);
+      } else {
+        const range = getCaretRangeFromPoint(e.clientX, e.clientY);
+        if (range && bodyInputRef.current.contains(range.startContainer)) {
+          let targetNode = range.startContainer;
+          while (targetNode && targetNode.parentNode !== bodyInputRef.current && targetNode !== bodyInputRef.current) {
+            targetNode = targetNode.parentNode;
+          }
+          if (targetNode && targetNode !== bodyInputRef.current) {
+            const box = targetNode.getBoundingClientRect();
+            bodyInputRef.current.insertBefore(photoCard, e.clientY < box.top + box.height / 2 ? targetNode : targetNode.nextSibling);
+          } else {
+            bodyInputRef.current.appendChild(photoCard);
+          }
         } else {
           bodyInputRef.current.appendChild(photoCard);
         }
-      } else {
-        bodyInputRef.current.appendChild(photoCard);
       }
+      photoIndicator?.remove();
 
       setArticle((prev) => ({
         ...prev,
         content: bodyInputRef.current.innerHTML
       }));
-      setToastMessage("사진이 텍스트가 끝나는 지점으로 이동되었습니다.");
+      setToastMessage("사진이 선택한 위치로 이동되었습니다.");
       setTimeout(() => setToastMessage(""), 2000);
       return;
     }
+
+    photoIndicator?.remove();
 
     // 텍스트/문장 드롭 처리 (Cut & Move)
     const textToInsert =
@@ -1097,21 +1208,12 @@ export default function ArticleWriter({
         }
       }
 
-      // 5. article.content 데이터에 즉시 반영 및 저장
+      // 5. article.content 에 반영(저장은 자동 저장이 암호화 저장소로 한다 — 평문 localStorage 에 원고를 두지 않는다)
       const updatedContent = bodyInputRef.current.innerHTML;
       setArticle((prev) => ({
         ...prev,
         content: updatedContent
       }));
-
-      // 로컬 스토리지 드래프트 즉시 저장 동기화
-      try {
-        const saved = localStorage.getItem("team01_article_draft_v1");
-        const parsed = saved ? JSON.parse(saved) : {};
-        localStorage.setItem("team01_article_draft_v1", JSON.stringify({ ...parsed, content: updatedContent }));
-      } catch {
-        // ignore
-      }
 
       setToastMessage("✨ 문장이 새 위치로 이동되었습니다.");
       setTimeout(() => setToastMessage(""), 2000);
@@ -1247,8 +1349,12 @@ export default function ArticleWriter({
           setIsImageEditorOpen(false);
           if (setIsPhotoEditing) setIsPhotoEditing(false);
         }}
+        onTrackDownload={trackPhotoDownload}
+        onError={(message) => { setToastMessage(message); setTimeout(() => setToastMessage(""), 3500); }}
         onApplyToArticle={(updatedPhoto) => {
-          handleSaveEditedPhoto(updatedPhoto);
+          // 작성 화면의 에디터는 편집 화면이 열려 있는 동안 없으므로, 닫은 뒤(아래 효과)에 본문에 넣는다
+          setPhotos((prev) => (prev.some((p) => p.id === updatedPhoto.id) ? prev.map((p) => (p.id === updatedPhoto.id ? updatedPhoto : p)) : [updatedPhoto, ...prev]));
+          setPendingPhoto(updatedPhoto);
           setIsImageEditorOpen(false);
           if (setIsPhotoEditing) setIsPhotoEditing(false);
         }}
@@ -1266,15 +1372,21 @@ export default function ArticleWriter({
       )}
 
       {/* 메인 좌우 레이아웃: 기존 위치에서 우측으로 부드럽게 펼쳐지는 사이드 박스 */}
-      <div className="w-full flex items-start justify-center min-w-0 gap-3.5 md:gap-4 transition-all duration-300 ease-out">
+      <div
+        ref={mainLayoutRef}
+        className="w-full flex flex-col lg:flex-row items-start justify-center min-w-0 gap-3.5 md:gap-4 transition-all duration-300 ease-out max-w-full"
+      >
         {/* 1. 중앙/좌측 메인 작업 영역: [에디터] / [나란히 보기] */}
         <div
+          style={activeSidePanel === "factcheck" && typeof window !== "undefined" && window.innerWidth >= 1024 ? { width: `calc((${factCheckSplitRatio} * (100% - 250px)) / 100)`, maxWidth: "none", flex: "none" } : undefined}
           className={`min-w-0 space-y-5 transition-all duration-300 ease-out ${!isSidePanelOpen
-            ? "w-full max-w-4xl"
-            : `flex-1 min-w-[460px] ${!isSidebarCollapsed
-              ? "max-w-2xl xl:max-w-3xl"
-              : "max-w-3xl xl:max-w-4xl"
-            }`
+            ? "w-full max-w-[880px]"
+            : activeSidePanel === "factcheck"
+              ? "min-w-[280px]"
+              : `flex-1 min-w-[380px] ${!isSidebarCollapsed
+                ? "max-w-xl xl:max-w-2xl"
+                : "max-w-2xl xl:max-w-3xl"
+              }`
             }`}
         >
 
@@ -1336,18 +1448,6 @@ export default function ArticleWriter({
                         </div>
                       )}
                     </div>
-                    {article.category && subsOf(article.category).length > 0 && (
-                      <select
-                        aria-label="세부 분류"
-                        data-testid="article-subcategory"
-                        value={article.subcategory || ""}
-                        onChange={(e) => setArticle((prev) => ({ ...prev, subcategory: e.target.value }))}
-                        className="ml-2 px-2.5 py-1 rounded-full bg-white/80 text-slate-800 text-xs font-bold border-0 outline-none cursor-pointer"
-                      >
-                        <option value="">세부 분류(선택)</option>
-                        {subsOf(article.category).map((sub) => <option key={sub} value={sub}>{sub}</option>)}
-                      </select>
-                    )}
                     </div>
 
                     {/* 저장 이력 및 자동 저장 상태 버튼 (data-testid="save-status") */}
@@ -1455,17 +1555,18 @@ export default function ArticleWriter({
 
                   {/* 첨부 이미지 스타일의 통 부제목 영역 (좌측 굵은 검정 바 & 통 부제목 텍스트 블록) */}
                   <div className="border-l-[3.5px] border-slate-950 pl-3.5 py-0.5 space-y-1.5 my-2">
-                    {subtitles.map((sub, idx) => (
-                      <div key={sub.id || idx}>
-                        <input
-                          type="text"
-                          value={sub.text}
-                          onChange={(e) => handleSubtitleChange(idx, e.target.value)}
-                          placeholder={`부제목 ${idx + 1}`}
-                          className="w-full text-base md:text-lg font-bold text-slate-950 tracking-tight leading-snug bg-transparent outline-none border-none p-0 focus:ring-0 placeholder:text-slate-300"
-                        />
-                      </div>
-                    ))}
+                    {/* 부제는 줄바꿈으로 2~4줄을 쓰는 하나의 텍스트칸이다 */}
+                    <textarea
+                      data-testid="subtitle-input"
+                      value={article.subtitle || ""}
+                      rows={Math.min(6, Math.max(2, (article.subtitle || "").split("\n").length))}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setArticle((prev) => ({ ...prev, subtitle: value }));
+                      }}
+                      placeholder="부제목을 입력하세요 (줄바꿈으로 2~4줄)"
+                      className="w-full resize-none text-base md:text-lg font-bold text-slate-950 tracking-tight leading-snug bg-transparent outline-none border-none p-0 placeholder:text-slate-300"
+                    />
                   </div>
 
                   {/* 부제목 하단 글래스모피즘 세로형 AI 추천 패널 (단일 큰 박스) */}
@@ -1474,7 +1575,7 @@ export default function ArticleWriter({
                       <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1 border-b border-slate-200/60 pb-2">
                         <span className="flex items-center gap-1.5">
                           <Bot className="w-3.5 h-3.5 text-slate-700" />
-                          AI 추천 통 부제목
+                          AI 추천 부제목
                         </span>
                         <button
                           type="button"
@@ -1505,20 +1606,21 @@ export default function ArticleWriter({
                             setShowSubtitleAiMenu(false);
                           };
                           return (
-                            <div
+                            <button
+                              type="button"
                               key={candidateIndex}
                               onClick={applyBundle}
-                              className="p-2.5 rounded-xl hover:bg-slate-100/70 transition cursor-pointer group"
+                              className="block w-full text-left p-2.5 rounded-xl hover:bg-slate-100/70 transition cursor-pointer group"
                               title="클릭하여 적용"
                             >
-                              <div className="border-l-[3.5px] border-slate-950 pl-3.5 space-y-1.5">
+                              <span className="block border-l-[3.5px] border-slate-950 pl-3.5 space-y-1.5">
                                 {lines.map((text, idx) => (
-                                  <div key={idx} className="text-xs md:text-sm font-bold text-slate-900 leading-snug">
+                                  <span key={idx} className="block text-xs md:text-sm font-bold text-slate-900 leading-snug">
                                     {text}
-                                  </div>
+                                  </span>
                                 ))}
-                              </div>
-                            </div>
+                              </span>
+                            </button>
                           );
                         })}
                       </div>
@@ -1555,7 +1657,7 @@ export default function ArticleWriter({
                   <div className="flex items-center justify-between text-xs text-slate-400 font-semibold mb-2">
                     <span>본문 작성 영역 (자유 작성 및 서식 적용)</span>
                     <div className="flex items-center gap-3">
-                      {(factCheck.busy || factCheck.results.length > 0) && (
+                      {showFactMarks && (factCheck.busy || factCheck.results.length > 0) && (
                         <span data-testid="factcheck-status" className={`text-[11px] font-bold ${factIssueCount ? "text-rose-600" : "text-emerald-600"}`}>
                           {factCheck.busy ? "팩트체크 중…" : factIssueCount ? `확인 필요 ${factIssueCount}문장` : "팩트체크 통과"}
                         </span>
@@ -1769,6 +1871,8 @@ export default function ArticleWriter({
                   />
                 </div>
 
+                {onSave && <SaveBar onSave={onSave} testId="writer-save" />}
+
               </div>
             )}
 
@@ -1936,39 +2040,51 @@ export default function ArticleWriter({
           </div>
         )}
 
+        {/* 기사 작성 화면과 팩트체크 박스 사이 크기 조절 | 핸들 (메인 화면 중앙에 작은 사이즈로 배치) */}
         {viewMode !== "preview" && activeSidePanel === "factcheck" && (
-          <div className="flex items-start gap-4 flex-shrink-0 z-20">
-            {/* 1. 기사 검증률 팝업 박스 (오른쪽 사이드 박스와 동시에 나란히 배치) */}
-            {showCheckModal && (
-              <ArticleCheckModal
-                isOpen={true}
-                isSideBySide={true}
-                article={article}
-                summary={factCheckSummary}
-                onClose={() => setShowCheckModal(false)}
-                onStartCheck={startFullCheck}
-              />
-            )}
+          <div
+            className="hidden lg:flex flex-shrink-0 relative z-30 select-none items-center justify-center w-4 self-stretch"
+            title="좌우 크기 조절 (드래그)"
+          >
+            <button
+              type="button"
+              onMouseDown={handleSplitMouseDown}
+              className="sticky top-1/2 -translate-y-1/2 flex items-center justify-center w-4 h-10 rounded-full bg-white border border-slate-300 shadow-sm hover:border-blue-500 hover:shadow-md cursor-col-resize transition-all group active:scale-95 text-[11px] font-mono font-bold text-slate-500 hover:text-blue-600"
+            >
+              |
+            </button>
+          </div>
+        )}
 
-            {/* 2. 팩트체크 & 근거자료 검증 사이드 박스 (main 의 패널) */}
+        {viewMode !== "preview" && activeSidePanel === "factcheck" && (
+          <div
+            style={typeof window !== "undefined" && window.innerWidth >= 1024 ? { width: `calc((${100 - factCheckSplitRatio} * (100% - 250px)) / 100)`, flex: "none" } : undefined}
+            className="w-full lg:w-auto min-w-0 lg:min-w-[280px] flex-shrink-0 z-20 sticky top-6 self-start max-w-full"
+            onClick={handleDrawerCardClick}
+          >
             <FactCheckDrawer
+              className="w-full"
               onClose={() => {
                 setActiveSidePanel(null);
                 setShowCheckModal(false);
                 setHighlightedClaim(null);
                 setHoveredIssue(null);
+                setReview(false); // 닫으면 순서형 검사도 끝낸다(카드와 진한 밑줄이 남지 않게)
+                setReviewIdx(0);
+                setShowFactMarks(false); // 본문 표시와 헤더 상태 문구도 함께 숨긴다
               }}
               article={article}
               setArticle={setArticle}
               factCheck={factCheck}
               onModels={onModels}
+              onStartCheck={startFullCheck}
             />
           </div>
         )}
 
         {/* 기사 작성 화면 메인 박스 오른쪽 상단 바로 옆에 위치한 일관된 캡슐형 Hover 확장 사이드바 (미리보기 화면에서는 숨김) */}
         {viewMode !== "preview" && (
-          <aside className="sticky top-6 flex-shrink-0 z-30 select-none">
+          <aside className="sticky top-6 flex-shrink-0 z-30 select-none pr-36">
             <div className="flex flex-col items-start gap-2">
               {/* 1. 사진 첨부 */}
               <div className="relative w-10 h-10 group">
@@ -2074,6 +2190,9 @@ export default function ArticleWriter({
               <div className="relative w-10 h-10 group">
                 <button
                   type="button"
+                  data-testid="factcheck-toggle"
+                  aria-label="기사 팩트체크 & 근거자료"
+                  aria-pressed={activeSidePanel === "factcheck"}
                   onClick={() => {
                     if (activeSidePanel === "factcheck") {
                       setActiveSidePanel(null);
@@ -2081,6 +2200,7 @@ export default function ArticleWriter({
                       setReview(false);
                     } else {
                       setActiveSidePanel("factcheck");
+                      setShowFactMarks(true);
                       setShowCheckModal(true);
                       setReview(true);
                       setReviewIdx(0);
@@ -2122,7 +2242,6 @@ export default function ArticleWriter({
 
         {/* 메인 flex 컨테이너 닫기 */}
       </div>
-
       {/* ──────────────────────────────────────────
           4. CMS 최종 발행 성공 알림 모달
          ────────────────────────────────────────── */}
@@ -2235,6 +2354,7 @@ export default function ArticleWriter({
           onStartCheck={() => {
             setShowCheckModal(false);
             setActiveSidePanel("factcheck");
+            setShowFactMarks(true);
             startFullCheck();
           }}
         />

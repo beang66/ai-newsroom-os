@@ -2,7 +2,7 @@
 
 기사 작성, 취재자료, 팩트체크, DataMap, 플랫폼 변환을 제공하는 로컬 뉴스룸 앱입니다.
 
-메인 UI 소스는 루트 `src/` 하나입니다. 이전 `article_editor/web/src`의 최신 UI와 DataMap을 이곳으로 이동했습니다. `pilot/`은 별도 프로토타입입니다. Python 코어는 `article_editor/app/core/`, 플랫폼 변환기의 공용 런타임은 `platform-generator/lib/`에 있습니다.
+메인 UI 소스는 루트 `src/` 하나입니다(옛 `article_editor/web/`과 프로토타입 `pilot/`은 2026-10-18 정리). Python 코어는 `article_editor/app/core/`, 플랫폼 변환기의 공용 런타임은 `platform-generator/lib/`에 있습니다.
 
 인터페이스는 프로토타입의 6개 작업 흐름을 사용합니다: 오늘의 데스크, 기사 작성, 인터뷰·녹취, 변환·배포, 데이터맵, 보관함. 기존 디자인 시스템을 유지하며 데이터맵과 보관함은 별도 화면입니다. 새 기사와 저장 원고를 열 때는 현재 저장이 끝난 뒤 전환합니다.
 
@@ -49,11 +49,15 @@ npm run test:ui
 
 화면 테스트는 Edge와 가짜 백엔드, 임시 저장소를 사용합니다. AI 기능에는 별도의 로그인·모델·서버 설정이 필요합니다. EXE 배포 준비는 `article_editor/packaging/README.md`를 참고하세요.
 
-실제 CMS 송고를 쓰려면 백엔드에 `CMS_PUBLISH_URL`과 필요 시 `CMS_BEARER_TOKEN`을 설정합니다. 비밀 토큰은 앱이나 저장소에 넣지 않습니다.
+실제 CMS 송고를 쓰려면 백엔드에 `CMS_PUBLISH_URL`, 필요 시 `CMS_BEARER_TOKEN`, 그리고 송고할 계정 `CMS_ALLOWED_EMAILS`를 설정합니다. 비밀 토큰은 앱이나 저장소에 넣지 않습니다.
 
-## DataMap 테스트 자료와 복구점
+AI 엔진은 **환경 설정 > AI 엔진** 토글로 고릅니다. 기본은 OpenAI(백엔드 경유)이고, 켜면 팩트체크 판정·제목/부제 초안·흐름 요약 초안을 이 PC의 로컬 모델이 만듭니다.
 
-`sample-data/datamap/`의 마크다운 5개는 내부 링크, 백링크, 미해결 링크를 검증합니다. `sample-data/datamap/projects/`에는 오늘의 데스크 6개 프로젝트(폭염·가계부채·집중호우·영화제·국정감사·반도체)의 간략한 근거·취재 자료, 데스크 편성표, 오늘 출고한 기사 10건이 역할 폴더(`기획`·`원자료`·`인터뷰`·`검증`·`취재노트`·`기사`)별로 들어 있습니다(데모용 가상 자료). 데이터맵의 **폴더 추가**로 `sample-data/datamap/` 폴더를 고르면 전체 45개를 한 번에 넣을 수 있습니다.
+로컬 저장 위치 규칙과 보관함·데이터맵 저장 체계는 [저장 설계](docs/STORAGE_DESIGN.md)를 참고하세요.
+
+## DataMap 시험 자료와 복구점
+
+`article_editor/dev/tests/fixtures/datamap/`의 마크다운 5개는 내부 링크, 백링크, 미해결 링크 시험용입니다(앱에 포함되지 않음).
 
 GitHub `origin/main` 이력을 연결했으며, UI 정리 직전 로컬 DataMap 변경은 `backup/local-before-ui-consolidation` 브랜치에 보존했습니다. 구형 UI는 이 브랜치에서 확인할 수 있습니다. 로컬 커밋은 별도 요청 전에는 GitHub로 push하지 않습니다.
 

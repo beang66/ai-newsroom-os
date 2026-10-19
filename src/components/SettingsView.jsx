@@ -12,29 +12,18 @@ import {
   Download,
   Sparkles
 } from "lucide-react";
-import { modelStatus, installModels, cancelModelInstall } from "../api/editorial";
+import { modelStatus, installModels, cancelModelInstall, exportFiles, openExportFolder } from "../api/editorial";
 import { core } from "../api/core.js";
 import SettingsDialog from "./SettingsDialog";
+import AiEngineSection from "./AiEngineSection";
+import UtMeasurementSection from "./UtMeasurementSection";
+import ExportNotice from "./ExportNotice";
 import TransferWizard from "./TransferWizard";
 import { restoreTransferFile } from "../lib/vaultTransfer";
 import { beginRestore, endRestore } from "../restoreState";
+import { droppedFiles, hasDroppedFiles } from "../lib/fileDrop.js";
 
 const MIN_BACKUP_PASSWORD = 12; // Core 가 요구하는 최소 길이와 같다
-
-// Core 가 base64 로 돌려준 백업을 파일로 내려받게 한다.
-function downloadBase64File(filename, base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 // 화면의 단계 카드 id → Core(models_manifest.json) 모델 id
 const CORE_MODEL_ID = {
@@ -162,8 +151,10 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
   const [backupPassword, setBackupPassword] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [backupBusy, setBackupBusy] = useState(false);
+  const [backupExport, setBackupExport] = useState(null); // 마지막 백업 저장 위치(내 문서\AI Newsroom\내보내기\백업)
   const [dialog, setDialog] = useState(null); // null | "settings" | "transfer"  (main 의 설정·이전 창)
   const restoreFileInput = useRef(null);
+  const [restoreDragging, setRestoreDragging] = useState(false);
 
   const showFeedback = (msg) => {
     setFeedbackMessage(msg);
@@ -179,9 +170,9 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
     }
     setBackupBusy(true);
     try {
-      const { filename, data } = await core.exportVault(backupPassword);
-      downloadBase64File(filename || "ai-newsroom-backup.db", data);
-      showFeedback("사용자 자료를 암호화한 백업 파일을 내려받았습니다. 암호를 안전하게 보관하세요.");
+      const { data } = await core.exportVault(backupPassword);
+      setBackupExport(await exportFiles("backup", [{ data, ext: "db" }]));
+      showFeedback("사용자 자료를 암호화한 백업 파일을 저장했습니다. 암호를 안전하게 보관하세요.");
     } catch (error) {
       showFeedback(error?.message || String(error));
     } finally {
@@ -190,10 +181,12 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
   };
 
   // 백업 복구: 파일을 고르면 암호를 확인하고 현재 계정의 자료를 그 백업으로 교체한다(교체 전 안전 복사본은 Core 가 남긴다).
-  const handleRestoreFile = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
+  const restoreBackupFile = async (file) => {
     if (!file || backupBusy) return;
+    if (!file.name.toLowerCase().endsWith(".db")) {
+      showFeedback("DB 백업 파일(.db)만 업로드할 수 있습니다.");
+      return;
+    }
     if (backupPassword.length < MIN_BACKUP_PASSWORD) {
       showFeedback("백업을 만들 때 쓴 암호(12자 이상)를 먼저 입력해주세요.");
       return;
@@ -209,6 +202,12 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
       showFeedback(error?.message || String(error));
       setBackupBusy(false);
     }
+  };
+
+  const handleRestoreFile = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    void restoreBackupFile(file);
   };
 
   // 활성 단계가 뷰포트 세로 중앙에 오도록 오프셋 계산
@@ -854,6 +853,32 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
                 <span>{backupBusy ? "처리 중…" : "암호화 백업 받기"}</span>
               </button>
 
+              <div
+                data-testid="backup-restore-dropzone"
+                className={`rounded-2xl border-2 border-dashed px-5 py-2.5 text-xs font-bold transition ${restoreDragging ? "border-sky-500 bg-sky-50 text-sky-800" : "border-stone-200 bg-white text-stone-500"}`}
+                onDragEnter={(event) => {
+                  if (!hasDroppedFiles(event)) return;
+                  event.preventDefault();
+                  setRestoreDragging(true);
+                }}
+                onDragOver={(event) => {
+                  if (!hasDroppedFiles(event)) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                  setRestoreDragging(true);
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) setRestoreDragging(false);
+                }}
+                onDrop={async (event) => {
+                  event.preventDefault();
+                  setRestoreDragging(false);
+                  const [file] = await droppedFiles(event.dataTransfer);
+                  void restoreBackupFile(file);
+                }}
+              >
+                .db 백업 파일 끌어놓기
+              </div>
               <input ref={restoreFileInput} type="file" accept=".db" className="hidden" data-testid="backup-restore-input" onChange={handleRestoreFile} />
               <button
                 type="button"
@@ -866,6 +891,7 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
                 <span>백업에서 복구</span>
               </button>
             </div>
+            <ExportNotice result={backupExport} kind="backup" className="text-xs text-stone-600" />
           </div>
         </section>
 
@@ -876,7 +902,7 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
           <div className="space-y-1">
             <h2 className="text-lg font-black text-stone-950 tracking-tight">계정·클라우드·이전</h2>
             <p className="text-xs text-stone-500 font-medium">
-              로그인 유지, 작성 중 기사의 클라우드 백업, 다른 PC로 이전, 진단 정보 복사를 한곳에서 설정합니다.
+              로그인 유지, 작성 중 기사의 클라우드 백업, 다른 PC로 이전, 진단 정보 복사, 사용자 테스트 기록을 한곳에서 설정합니다.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -896,8 +922,19 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
             >
               다른 PC로 이전
             </button>
+            <button
+              type="button"
+              data-testid="open-export-folder"
+              onClick={() => openExportFolder().catch((error) => showFeedback(error?.message || String(error)))}
+              className="px-5 py-2.5 rounded-2xl bg-white hover:bg-stone-100 text-stone-800 text-xs font-bold border border-stone-200/90 transition cursor-pointer shadow-2xs active:scale-95"
+            >
+              내보내기 폴더 열기
+            </button>
           </div>
+          <p className="text-xs text-stone-500">백업·카드뉴스·사진·녹취를 내보내면 내 문서\AI Newsroom\내보내기\종류별 폴더에 저장됩니다.</p>
+          <UtMeasurementSection />
         </section>
+        <AiEngineSection />
       </div>
 
       {dialog === "settings" && (

@@ -1,16 +1,26 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Search, Calendar, Link2, Check, Filter, X } from "lucide-react";
-import { mockSources } from "../data/mockData";
+import { listStoredSources } from "../api/editorial";
 
 export default function SourceSearch({ onConnectToArticle, isModal = false, isSidePanel = false, onClose }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("전체");
-  const [selectedSource, setSelectedSource] = useState(mockSources[0]);
+  const [sources, setSources] = useState([]); // 코어 암호화 저장소에 보관한 취재자료
+  const [loadError, setLoadError] = useState("");
+  const [selectedSource, setSelectedSource] = useState(null);
   const [connectedIds, setConnectedIds] = useState([]);
 
-  const categories = ["전체", "공식문서", "통계", "회의록", "취재자료"];
+  useEffect(() => {
+    const request = new AbortController();
+    listStoredSources(request.signal)
+      .then((items) => { setSources(items); setSelectedSource((current) => current || items[0] || null); })
+      .catch((error) => { if (!request.signal.aborted) setLoadError(`취재자료를 불러오지 못했습니다: ${error.message}`); });
+    return () => request.abort();
+  }, []);
 
-  const filteredSources = mockSources.filter((item) => {
+  const categories = ["전체", ...new Set(sources.map((item) => item.category))]; // 분류 = 파일 형식(PDF·TXT 등)
+
+  const filteredSources = sources.filter((item) => {
     const matchesSearch =
       item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.snippet.toLowerCase().includes(searchTerm.toLowerCase());
@@ -91,7 +101,7 @@ export default function SourceSearch({ onConnectToArticle, isModal = false, isSi
         {/* 스크롤 가능한 자료 리스트 및 상세 연결 */}
         <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
           {filteredSources.length === 0 ? (
-            <div className="p-8 text-center text-slate-400 text-xs font-medium">검색 결과가 없습니다.</div>
+            <div className="p-8 text-center text-slate-400 text-xs font-medium">{loadError || "검색 결과가 없습니다."}</div>
           ) : (
             filteredSources.map((item) => {
               const isSelected = selectedSource?.id === item.id;
@@ -220,7 +230,7 @@ export default function SourceSearch({ onConnectToArticle, isModal = false, isSi
           {/* Result List */}
           <div className="md:col-span-5 space-y-3 max-h-[440px] overflow-y-auto pr-1">
             {filteredSources.length === 0 ? (
-              <div className="p-8 text-center text-[#8E8982] text-xs">검색 결과가 없습니다.</div>
+              <div className="p-8 text-center text-[#8E8982] text-xs">{loadError || "검색 결과가 없습니다."}</div>
             ) : (
               filteredSources.map((item) => {
                 const isSelected = selectedSource?.id === item.id;

@@ -19,6 +19,8 @@ REAL_DEVICE_KEY = vault._device_key  # setUp 이 덮어쓰기 전의 원본
 class VaultTests(unittest.TestCase):
     def setUp(self):
         self.root = use_temp_vault(self)
+        REAL_DEVICE_KEY.cache_clear()
+        self.addCleanup(REAL_DEVICE_KEY.cache_clear)
 
     def disk_bytes(self):
         return b''.join(p.read_bytes() for p in self.root.glob('vault.db*'))
@@ -58,6 +60,17 @@ class VaultTests(unittest.TestCase):
             key = REAL_DEVICE_KEY()
         self.assertEqual(len(key), 64)
         set_password.assert_called_once_with(vault.SERVICE, vault.ACCOUNT, key)
+
+    def test_key_is_read_once_and_missing_key_is_not_cached(self):
+        with mock.patch.object(vault.keyring, 'get_password', return_value='ab' * 32) as get_password:
+            self.assertEqual((REAL_DEVICE_KEY(), REAL_DEVICE_KEY()), ('ab' * 32, 'ab' * 32))
+        get_password.assert_called_once()  # 두 번째는 기억한 키
+        REAL_DEVICE_KEY.cache_clear()
+        storage.save_article({'draft': {'bodyHtml': '<p>a</p>'}})
+        with mock.patch.object(vault.keyring, 'get_password', return_value=None), mock.patch.object(vault.keyring, 'set_password'):
+            for _ in range(2):  # 실패는 기억하지 않는다 — 매번 다시 확인하고 매번 거절한다
+                with self.assertRaises(RequestError):
+                    REAL_DEVICE_KEY()
 
     def test_unavailable_key_store_fails_closed(self):
         with mock.patch.object(vault.keyring, 'get_password', side_effect=RuntimeError('no backend')):

@@ -1,4 +1,4 @@
-"""2026-10-10 수동 저장: 저장 버튼(manual)만 저장 이력·보관소에 남고, 자동 저장(auto)은 작업본 한 칸을 덮어쓴다."""
+"""2026-10-10 수동 저장: 저장 버튼(manual)만 저장 이력·보관함에 남고, 자동 저장(auto)은 작업본 한 칸을 덮어쓴다."""
 import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 import unittest
@@ -34,6 +34,16 @@ class ManualSaveTests(unittest.TestCase):
         self.assertEqual(rows(aid), [(1, 'auto')])
         self.assertEqual(storage.list_revisions(aid)['revisions'], [])  # 저장 이력에는 안 보임
 
+    def test_reopened_article_reports_newest_revision_so_next_save_does_not_conflict(self):
+        """보관함에서 다시 열 때(get_article) 연 판은 마지막 수동 저장본이지만, 저장 충돌 검사에 쓰는 revisionNo 는 가장 최신 이력 번호여야 한다."""
+        aid = save('manual', content='1차 저장')['articleId']
+        newest = save('auto', aid, content='1차 뒤 고침')['revisionNo']
+        opened = storage.get_article(aid)
+        self.assertEqual(opened['draft']['content'], '1차 저장')   # 본문은 마지막 수동 저장본
+        self.assertEqual(opened['revisionNo'], newest)             # 번호는 최신 이력
+        self.assertEqual(opened['draft']['revisionNo'], newest)
+        storage.save_article({'draft': dict(opened['draft'], content='이어서 씀'), 'expectedRevisionNo': opened['revisionNo'], 'kind': 'manual'})  # 충돌 없이 저장된다
+
     def test_manual_save_becomes_history_and_archive(self):
         aid = save('auto', content='쓰는 중', title='임시 제목')['articleId']
         save('manual', aid, content='1차 저장', title='제목 1')
@@ -41,7 +51,7 @@ class ManualSaveTests(unittest.TestCase):
         self.assertEqual(rows(aid), [(1, 'manual'), (2, 'auto')])
         self.assertEqual([r['title'] for r in storage.list_revisions(aid)['revisions']], ['제목 1'])
         listed = read_models.list_articles()['articles'][0]
-        self.assertEqual(listed['title'], '제목 1')                 # 보관소 = 마지막 수동 저장본
+        self.assertEqual(listed['title'], '제목 1')                 # 보관함 = 마지막 수동 저장본
         self.assertTrue(listed['unsaved_changes'])                 # 그 뒤 임시 저장이 있음
         latest = storage.latest_article()
         self.assertEqual(latest['draft']['title'], '제목 1-수정')  # 앱을 다시 열면 작업본으로 이어서

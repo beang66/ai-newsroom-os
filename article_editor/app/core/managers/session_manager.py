@@ -183,7 +183,7 @@ class SessionManager:
     @staticmethod
     def _after_login(user_id: str) -> None:
         """로그인할 때 그 계정의 저장소를 준비한다: 계정 도입 전 저장소 이전(처음 로그인한 계정이 받는다), 예전 평문 가져오기,
-        중단된 작업 정리. 실패해도 로그인은 막지 않는다."""
+        중단된 작업 정리, 휴지통 비우기(30일). 실패해도 로그인은 막지 않는다."""
         try:  # Supabase 의 사용자 id 는 UUID 다. 아니면(시험의 가짜 계정 등) 저장소를 건드리지 않는다 — 실제 자료를 엉뚱한 계정에 넘기지 않으려는 안전장치
             uuid.UUID(user_id)
         except (ValueError, AttributeError, TypeError):
@@ -195,6 +195,11 @@ class SessionManager:
             storage.pack_existing_photos()
             storage.import_legacy_embedding_cache()
             jobs.recover_interrupted_jobs()
+            from .platform_manager import PlatformManager
+            PlatformManager().resume_runs()
+            purged = storage.purge_trash()  # 휴지통에서 30일 지난 기사 영구 삭제 + 쓰지 않는 사진 정리
+            if purged:
+                print(f'휴지통 영구 삭제: {len(purged)}건', flush=True)
             if moved['articles'] or moved['sources'] or moved['failed']:
                 print(f'예전 저장물 가져오기: {moved}', flush=True)
         except Exception as error:

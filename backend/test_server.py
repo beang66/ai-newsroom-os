@@ -19,6 +19,9 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parent
 SEEN: list[tuple] = []
 CLOVA_SEEN: list[dict] = []
+SHARE_OK = '11111111-2222-3333-4444-555555555555'
+SHARE_OTHER = '99999999-2222-3333-4444-555555555555'
+LINK_OK = 'ab' * 32
 
 
 class Stub(BaseHTTPRequestHandler):
@@ -47,6 +50,11 @@ class Stub(BaseHTTPRequestHandler):
         size = int(self.headers.get('Content-Length', '0'))
         raw = self.rfile.read(size) if size else b'{}'
         SEEN.append(('POST', self.path, self.headers.get('Authorization')))
+        if self.path == '/rest/v1/rpc/article_share_role':  # 공유 권한: 초대된 공유(SHARE_OK)이거나 링크 토큰(LINK_OK)이 맞을 때만
+            args = json.loads(raw or b'{}')
+            allowed = self.headers.get('Authorization') == 'Bearer good-token' and (
+                args.get('p_share') == SHARE_OK or args.get('p_token') == LINK_OK)
+            return self._send('viewer' if allowed else None)
         if self.path.endswith('/clova/recognizer/upload'):  # CLOVA Speech — 받은 키 헤더와 본문을 기록하고 변환 결과를 돌려준다
             CLOVA_SEEN.append({'key': self.headers.get('X-CLOVASPEECH-API-KEY'), 'type': self.headers.get('Content-Type'), 'raw': raw})
             return self._send({'text': '스텁 전사', 'segments': [{'start': 0, 'end': 1000, 'text': '스텁 전사'}], 'duration': 1000})
@@ -78,6 +86,7 @@ def load_proxy(upstream_base: str):
             'RATE_LIMIT_PER_MIN': '1000',
             'CMS_PUBLISH_URL': upstream_base + '/cms-target',
             'CMS_BEARER_TOKEN': 'cms-secret',
+            'CMS_ALLOWED_EMAILS': '@example.com',
             'BACKUP_MASTER_KEY': 'test-master-key-0123456789abcdef0123456789',
             'CLOVA_SPEECH_SECRET_KEY': 'clova-secret-key',
             'CLOVA_SPEECH_INVOKE_URL': upstream_base + '/clova',
@@ -174,6 +183,28 @@ class ProxyTests(unittest.TestCase):
         finally:
             os.environ['BACKUP_MASTER_KEY'] = saved
 
+    def test_share_key_needs_share_permission(self):
+        import base64
+        import hashlib
+        import hmac
+        self.assertEqual(self.call('/ai/share-key', {'shareId': SHARE_OK})[0], 401)
+        status, payload = self.call('/ai/share-key', {'shareId': SHARE_OK}, token='good-token')
+        self.assertEqual(status, 200)
+        expected = hmac.new(b'test-master-key-0123456789abcdef0123456789', b'article-share:' + SHARE_OK.encode(), hashlib.sha256).digest()
+        self.assertEqual(base64.b64decode(payload['key']), expected, '마스터 키에서 공유 id 로 파생한 키')
+        self.assertEqual(self.call('/ai/share-key', {'shareId': SHARE_OTHER}, token='good-token')[0], 403, '권한 없는 공유')
+        self.assertEqual(self.call('/ai/share-key', {'shareId': SHARE_OTHER, 'token': LINK_OK}, token='good-token')[0], 200, '링크 토큰으로 열 수 있음')
+        self.assertEqual(self.call('/ai/share-key', {'shareId': 'not-a-uuid'}, token='good-token')[0], 400)
+        self.assertEqual(self.call('/ai/share-key', {'shareId': SHARE_OK, 'token': '../x'}, token='good-token')[0], 400)
+
+    def test_share_link_page_needs_no_login_and_shows_no_content(self):
+        with urllib.request.urlopen(self.base + '/s/' + LINK_OK) as response:
+            page = response.read().decode()
+            self.assertEqual(response.headers.get_content_type(), 'text/html')
+        self.assertIn('링크로 받기', page)
+        self.assertIn(LINK_OK, page)
+        self.assertEqual(self.call('/s/not-a-token')[0], 404)
+
     def test_verified_token_is_cached_for_a_minute(self):
         self.call('/ai/embeddings', {'text': ['a']}, token='good-token')
         before = sum(1 for m, path, _ in SEEN if path.startswith('/auth/v1/user'))
@@ -198,6 +229,43 @@ class ProxyTests(unittest.TestCase):
         self.assertEqual((status, payload['path']), (200, '/cms-target'))
         self.assertEqual(SEEN[-1], ('POST', '/cms-target', 'Bearer cms-secret'))
 
+    def test_cms_publish_needs_allow_listed_account(self):
+        saved = os.environ['CMS_ALLOWED_EMAILS']
+        self.addCleanup(os.environ.__setitem__, 'CMS_ALLOWED_EMAILS', saved)
+        os.environ['CMS_ALLOWED_EMAILS'] = 'editor@example.com, @donga.com'
+        self.assertEqual(self.call('/cms/publish', {'article': {'title': 'x'}}, token='good-token')[0], 403)
+        os.environ['CMS_ALLOWED_EMAILS'] = ''                                   # 비우면 아무도 송고할 수 없다
+        self.assertEqual(self.call('/cms/publish', {'article': {'title': 'x'}}, token='good-token')[0], 403)
+
+    def test_allowed_emails_limits_every_feature(self):
+        self.addCleanup(os.environ.pop, 'ALLOWED_EMAILS', None)
+        os.environ['ALLOWED_EMAILS'] = '@donga.com'
+        self.assertEqual(self.call('/ai/responses', {'model': 'x'}, token='good-token')[0], 403)
+        os.environ['ALLOWED_EMAILS'] = 'Writer@Example.com'                     # 대소문자는 가리지 않는다
+        self.assertEqual(self.call('/ai/responses', {'model': 'x'}, token='good-token')[0], 200)
+
+    def test_email_allowed_rules(self):
+        allowed = self.proxy_module.email_allowed
+        self.assertTrue(allowed('a@donga.com', '@donga.com'))
+        self.assertFalse(allowed('a@notdonga.com.evil', '@donga.com'))
+        self.assertFalse(allowed('', '@donga.com'))
+        self.assertFalse(allowed('a@donga.com', ''))
+
+    def test_unauthorized_post_is_refused_before_reading_the_body(self):
+        """로그인 전에는 본문을 읽지 않는다 — 헤더만 보내도(본문 미전송) 바로 401 이어야 한다."""
+        import socket
+        with socket.create_connection(('127.0.0.1', self.proxy.server_port), timeout=5) as sock:
+            sock.sendall(b'POST /ai/responses HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n'
+                         b'Content-Length: 30000000\r\n\r\n')
+            self.assertIn(b'401', sock.recv(4096).split(b'\r\n')[0])
+
+    def test_upstream_dropping_mid_response_is_json_504(self):
+        import http.client
+        from unittest import mock
+        with mock.patch.object(urllib.request, 'urlopen', side_effect=http.client.IncompleteRead(b'')):
+            status, _, raw = self.proxy_module.forward('http://x', None, {})
+        self.assertEqual((status, 'error' in json.loads(raw)), (504, True))
+
     def test_unsplash_search_forwards(self):
         status, payload = self.call('/unsplash/search/photos?query=sea&per_page=3', token='good-token')
         self.assertEqual(status, 200)
@@ -210,6 +278,7 @@ class ProxyTests(unittest.TestCase):
         self.assertEqual(
             self.call('/unsplash/absolute?url=https://evil.example/a.jpg', token='good-token')[0], 400
         )
+        self.assertEqual(self.call('/unsplash/absolute?url=http://api.unsplash.com/x', token='good-token')[0], 400)
 
     def test_unauthorized_post_closes_connection(self):
         """401 로 답할 때 연결을 닫아야 한다 — 남은 본문이 다음 요청으로 파싱되면 501/400 이 난다."""

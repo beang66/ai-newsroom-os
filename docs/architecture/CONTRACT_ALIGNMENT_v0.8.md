@@ -15,7 +15,7 @@
 | UI 호출 | `createAppApi()` → `core-api.js` named methods → (창) IPC 브리지 / (브라우저·시험) HTTP `/api/*` → Python `Handler`/managers. 같은 `Handler`를 거쳐 두 전송의 응답·오류가 같다 | 호출 이름은 계약 operationId 와 통일(2026-10-12). 경로·본문은 앱 구현이 정본 |
 | 로컬 저장 | **계정별** SQLCipher 파일(`vault-<계정 id>.db`): 기사·수정 이력(UUID id)·고정본(Snapshot)·자료·SourceChunk·색인 상태·미디어 자산·작업·녹취·팩트체크 기록. 기기 키는 OS 보안 저장소 | 다중 작업공간·접근 권한은 없음(계정 안에서 작업공간 하나) |
 | EXE/IPC | `desktop/ipc_bridge.py`(`core`/`coreBytes`)를 pywebview `js_api`로 연결. EXE 빌드(IPC·HTTP 두 변형)와 실제 창 스모크 통과 | 팀 브랜치 병합 뒤 통합 점검에서 HTTP/IPC 동일 응답 재확인 |
-| 클라우드/외부 기능 | Supabase 는 **인증(회원가입·로그인·갱신 토큰)** 만. 기사·자료는 서버에 저장하지 않음. AI·임베딩은 백엔드(Render) 프록시 경유(무저장) | 서버 저장·공유(S1)는 미구현. "클라우드 백업" 설정은 값만 저장 |
+| 클라우드/외부 기능 | Supabase 인증과 암호화된 작성 중 기사 백업. 자료는 로컬 전용. AI·임베딩은 백엔드(Render) 프록시 경유(무저장) | 자료·팀 공유(S1)는 미구현 |
 
 기사 본문과 자료 원본은 로그인한 계정의 로컬 암호화 DB에 저장된다. OpenAPI의 `/api/core/v0.8/*` 경로는 다중 작업공간을 도입할 때의 목표 형태이며 지금 호출하는 경로는 `/api/*` 이다(각 operation 의 `x-implementation` 참조). 상세 호출과 누락·중복 점검은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md)을 따른다.
 

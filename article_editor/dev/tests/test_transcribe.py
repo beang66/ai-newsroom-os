@@ -94,6 +94,18 @@ class TranscribeTests(unittest.TestCase):
             self.assertEqual(len(out['dialogues']), 2)
             self.assertEqual(out['dialogues'][0]['speakerName'], '화자 1')
 
+    def test_explicit_clova_never_falls_back_to_whisper(self):
+        """화면은 engine=clova 로 요청한다 — CLOVA 가 실패하거나 키가 없으면 Whisper 로 조용히 넘어가지 않고 오류를 올린다."""
+        payload = {'data': base64.b64encode(b'AUDIO').decode(), 'engine': 'clova'}
+        with mock.patch.object(tr.clova_speech, 'recognize_speech', side_effect=tr.RequestError('CLOVA 점검 중', 502)),              mock.patch.object(tr.providers, 'call') as whisper:
+            with self.assertRaises(tr.RequestError):
+                tr.transcribe(payload)
+            whisper.assert_not_called()
+        with mock.patch.object(tr.clova_speech, 'get_clova_config', return_value=('', '')),              mock.patch.object(tr.providers, 'call') as whisper:  # 키가 없는 PC
+            with self.assertRaises(tr.RequestError):
+                tr.transcribe(payload)
+            whisper.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

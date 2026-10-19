@@ -15,6 +15,9 @@ export const ROUTES = Object.freeze({
   sessionAuto: "/api/session/auto",
   settings: "/api/settings",
   diagnostics: "/api/diagnostics",
+  utEvents: "/api/ut-events",
+  utEventsExport: "/api/ut-events/export",
+  utEventsDelete: "/api/ut-events/delete",
   backupKey: "/api/backup-key",
   backup: "/api/backup",
   backupList: "/api/backup/list",
@@ -47,6 +50,10 @@ export const ROUTES = Object.freeze({
   articleRevisions: (id) => "/api/articles/" + encodeURIComponent(id) + "/revisions",
   articleRevision: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no),
   articleDelete: (id) => "/api/articles/" + encodeURIComponent(id.replaceAll("-", "")) + "/delete",
+  articleUndelete: (id) => "/api/articles/" + encodeURIComponent(id.replaceAll("-", "")) + "/undelete",
+  trash: "/api/trash",
+  exports: "/api/exports",
+  exportsOpen: "/api/exports/open",
   articlePruneLegacy: (id) => "/api/articles/" + encodeURIComponent(id) + "/revisions/prune-legacy",
   articleRestore: (id, no) => "/api/articles/" + encodeURIComponent(id) + "/revisions/" + encodeURIComponent(no) + "/restore",
   factcheckStatus: "/api/factcheck/status",
@@ -57,6 +64,7 @@ export const ROUTES = Object.freeze({
   transcripts: "/api/transcripts",
   transcript: (id) => "/api/transcripts/" + encodeURIComponent(id),
   transcriptAudio: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/audio",
+  transcriptSpeakers: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/speakers",
   cmsPublish: "/api/cms/publish",
   vaultExport: "/api/vault/export",
   vaultRestore: "/api/vault/restore",
@@ -65,6 +73,8 @@ export const ROUTES = Object.freeze({
   source: (id) => "/api/sources/" + encodeURIComponent(id),
   sourceDelete: (id) => "/api/sources/" + encodeURIComponent(id) + "/delete",
   knowledgeMap: "/api/knowledge-map",
+  library: "/api/library",
+  knowledgeFiles: "/api/knowledge-files",
   knowledgeFilesImport: "/api/knowledge-files/import",
   knowledgeFile: (id) => "/api/knowledge-files/" + encodeURIComponent(id),
   knowledgeFileDelete: (id) => "/api/knowledge-files/" + encodeURIComponent(id) + "/delete",
@@ -77,9 +87,16 @@ export const ROUTES = Object.freeze({
   dongaPhoto: (id) => "/api/donga/photo/" + encodeURIComponent(id),
   platformKeywords: "/api/platform/keywords",
   platformGenerate: "/api/platform/generate",
+  platformRuns: "/api/platform/runs",
+  platformRun: (id) => "/api/platform/runs/" + encodeURIComponent(id),
   platformRender: "/api/platform/render",
   platformValidate: "/api/platform/validate",
   platformSns: "/api/platform/sns",
+  shareArticle: (id) => "/api/shares/articles/" + encodeURIComponent(id.replaceAll("-", "")),
+  shareArticleStop: (id) => "/api/shares/articles/" + encodeURIComponent(id.replaceAll("-", "")) + "/stop",
+  sharesReceived: "/api/shares/received",
+  shareOpen: "/api/shares/open",
+  shareImport: "/api/shares/import",
 });
 
 /**
@@ -132,6 +149,12 @@ export function createCoreApi(transport) {
     getBackupKey: (signal) => transport.json(ROUTES.backupKey, null, signal),
     /** 문제 보고용 진단 정보(앱 버전·모델 설치 상태·설정 요약). 원고·자료·이메일은 없다 */
     getDiagnostics: (signal) => transport.json(ROUTES.diagnostics, null, signal),
+    /** 동의 기반 사용자 테스트 기록의 개수·기간·필드 미리보기. 원고 내용은 없다 */
+    getUtEvents: (signal) => transport.json(ROUTES.utEvents, null, signal),
+    /** 사용자가 미리보기 뒤 확인했을 때만 로컬 JSONL 파일을 만든다 */
+    exportUtEvents: (signal) => transport.json(ROUTES.utEventsExport, {}, signal),
+    /** 사용자 테스트 기록만 지운다. 기사·자료는 유지된다 */
+    deleteUtEvents: (signal) => transport.json(ROUTES.utEventsDelete, {}, signal),
     /** 환경 설정(이 PC) → { cloudBackup }. 모델 설치와는 별개 */
     getSettings: (signal) => transport.json(ROUTES.settings, null, signal),
     /** 환경 설정 변경. 준 항목만 바뀐다 → 바뀐 뒤의 설정 전체 */
@@ -158,12 +181,15 @@ export function createCoreApi(transport) {
     /** 의미 단위 청킹: source = frontend | opendart */
     semanticParse: (text, source = "frontend", signal) =>
       transport.json(ROUTES.semanticParse, { text, source }, signal),
-    /** 인터뷰 녹음 전사(Whisper) → { dialogues:[{id,speaker,speakerName,timestamp,text}], text, duration } */
-    transcribe: (filename, mimeType, data, signal) =>
-      transport.json(ROUTES.transcribe, { filename, mimeType, data }, signal),
+    /** 인터뷰 녹음 전사 → { dialogues:[{id,speaker,speakerName,timestamp,text}], text, duration }
+     *  engine: "clova" 면 CLOVA 만 쓴다(안 되면 Whisper 로 넘어가지 않고 오류). 없으면 코어가 고른다(CLOVA 설정이 있으면 CLOVA, 없으면 Whisper) */
+    transcribe: (filename, mimeType, data, signal, engine, durationSec) =>
+      transport.json(ROUTES.transcribe, { filename, mimeType, data, ...(engine ? { engine } : {}), ...(durationSec > 0 ? { durationSec } : {}) }, signal),
     listTranscripts: (signal) => transport.json(ROUTES.transcripts, null, signal),
     getTranscript: (id, signal) => transport.json(ROUTES.transcript(id), null, signal),
     transcriptAudio: (id, signal) => transport.bytes(ROUTES.transcriptAudio(id), signal),
+    /** 화자 수정(이름 바꾸기·합치기·구간 지정)을 저장한다. 발언 원본은 바뀌지 않는다. */
+    saveTranscriptSpeakers: (id, speakerEdits, signal) => transport.json(ROUTES.transcriptSpeakers(id), { speakerEdits }, signal),
     publishCms: (article, signal) => transport.json(ROUTES.cmsPublish, { article }, signal),
     exportVault: (password, signal) => transport.json(ROUTES.vaultExport, { password }, signal),
     restoreVault: (password, data, signal) => transport.json(ROUTES.vaultRestore, { password, data }, signal),
@@ -179,6 +205,10 @@ export function createCoreApi(transport) {
       transport.json(ROUTES.sourceDelete(sourceId), force ? { force: true } : {}, signal),
     /** 기사·자료·고정본과 실제 연결(읽기 모델) → { articles, sources, snapshots, entities, edges:[{source,target,relation}] } */
     getKnowledgeMap: (signal) => transport.json(ROUTES.knowledgeMap, null, signal),
+    /** 보관함의 폴더·태그·즐겨찾기·이름·휴지통 상태. */
+    getLibraryState: (signal) => transport.json(ROUTES.library, null, signal),
+    saveLibraryState: (state, signal) => transport.json(ROUTES.library, { state }, signal),
+    listKnowledgeFiles: (signal) => transport.json(ROUTES.knowledgeFiles, null, signal),
     /** Markdown 파일을 앱 관리 저장소로 가져오고 링크·백링크를 다시 색인한다. */
     importKnowledgeFiles: (payload, signal) => transport.json(ROUTES.knowledgeFilesImport, payload, signal),
     /** Markdown 파일 본문과 링크·백링크를 읽는다. */
@@ -209,8 +239,28 @@ export function createCoreApi(transport) {
     listRevisions: (articleId, signal) => transport.json(ROUTES.articleRevisions(articleId), null, signal),
     /** 저장 이력 한 건의 미리보기(읽기 전용) → { title, subtitle, content, ... } */
     getRevision: (articleId, revisionNo, signal) => transport.json(ROUTES.articleRevision(articleId, revisionNo), null, signal),
-    /** 보관소에서 기사 지우기(보관소·이어서 작업에서 빠지고 더 저장되지 않는다) → { deleted, articleId } */
+    /** 보관함에서 기사 지우기 = 휴지통(30일 뒤 영구 삭제) → { deleted, articleId, purgeAt } */
     deleteArticle: (articleId, signal) => transport.json(ROUTES.articleDelete(articleId), {}, signal),
+    /** 휴지통 → { articles: [{ articleId, title, deletedAt, purgeAt }] } */
+    listTrash: (signal) => transport.json(ROUTES.trash, null, signal),
+    /** 휴지통에서 되살리기 → { restored, articleId } */
+    restoreDeleted: (articleId, signal) => transport.json(ROUTES.articleUndelete(articleId), {}, signal),
+    /** 내 문서\AI Newsroom\내보내기\<종류> 에 저장. kind: backup|cards|photos|transcripts, files: [{data(base64), ext}] → { folder, files } */
+    saveExport: (kind, files, { title, label } = {}, signal) => transport.json(ROUTES.exports, { kind, files, title, label }, signal),
+    /** 내보내기 폴더를 파일 탐색기로 연다(kind 없으면 내보내기 전체) → { opened, folder } */
+    openExportFolder: (kind, signal) => transport.json(ROUTES.exportsOpen, kind ? { kind } : {}, signal),
+    /** 이 기사의 공유 설정 → { shared:false } | { shared, shareId, link, generalAccess, linkRole, expiresAt, members:[{email, role}] } */
+    getArticleShare: (articleId, signal) => transport.json(ROUTES.shareArticle(articleId), null, signal),
+    /** 공유 만들기·설정 바꾸기. { generalAccess: restricted|link, linkRole/members[].role: viewer|importer, expiresInDays?: null|1|7|30, refresh?: 최신 저장본으로 다시 올리기 } */
+    saveArticleShare: (articleId, settings, signal) => transport.json(ROUTES.shareArticle(articleId), settings, signal),
+    /** 공유 중지(이미 가져간 복사본은 받는 사람에게 남는다) */
+    stopArticleShare: (articleId, signal) => transport.json(ROUTES.shareArticleStop(articleId), {}, signal),
+    /** 내 이메일로 초대된 공유 → { shares: [{ shareId, title, ownerEmail, role, updatedAt, expiresAt }] } */
+    listReceivedShares: (signal) => transport.json(ROUTES.sharesReceived, null, signal),
+    /** 공유 열기(읽기 전용). target: { shareId } | { link } → { share, article: { title, subtitle, bodyHtml } } */
+    openShare: (target, signal) => transport.json(ROUTES.shareOpen, target, signal),
+    /** 가져오기 권한이 있으면 내 보관함에 새 기사로 복사 → { articleId, title } */
+    importShare: (target, signal) => transport.json(ROUTES.shareImport, target, signal),
     /** 수동 저장 도입 전의 옛 자동 저장 이력 정리 → { deleted } */
     pruneLegacyRevisions: (articleId, signal) => transport.json(ROUTES.articlePruneLegacy(articleId), {}, signal),
     /** 옛 저장본을 새 최신 저장본으로 복원(이력은 지우지 않음) → { draft, revisionNo, fromRevision } */
@@ -247,6 +297,9 @@ export function createCoreApi(transport) {
     /** platform-generator 실제 생성 엔진 호출 */
     generatePlatform: (platform, payload, snapshotId, signal) =>
       transport.json(ROUTES.platformGenerate, snapshotId ? { platform, payload, snapshotId } : { platform, payload }, signal),
+    startPlatformRun: (payload, signal) => transport.json(ROUTES.platformRuns, payload, signal),
+    listPlatformRuns: (articleId, signal) => transport.json(ROUTES.platformRuns + '?articleId=' + encodeURIComponent(articleId), null, signal),
+    getPlatformRun: (id, signal) => transport.json(ROUTES.platformRun(id), null, signal),
     validatePlatform: (payload, snapshotId, signal) =>
       transport.json(ROUTES.platformValidate, { payload, ...(snapshotId ? { snapshotId } : {}) }, signal),
     platformSns: (platform, action, payload, articleId, snapshotId, signal) =>

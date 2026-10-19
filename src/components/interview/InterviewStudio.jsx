@@ -1,6 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript } from "../../services/sttService";
-import { mergeBySpeaker, speakerText, plainText } from "../../lib/transcriptText.js";
+import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript, saveSpeakerEdits } from "../../services/sttService";
+import { SpeakerEditBar, SpeakerHeaderActions, SpeakerProfileMenu } from "./SpeakerProfiles.jsx";
+import { BoxText, SelectionToolbar } from "./BoxTools.jsx";
+import { readBoxSelection } from "../../lib/boxSelection.js";
+import { exportFiles } from "../../api/editorial";
+import ExportNotice from "../ExportNotice.jsx";
+import SaveBar from "../SaveBar.jsx";
+import { MARK_COLORS, addMark, applySpeakerEdits, assignByName, assignDialogues, buildBoxes, emptyEdits, isEdited, removeMarks, renameSpeakerSmart, resetSpeakers, sanitizeEdits, segmentsOf, setBoxText, speakerIndex, speakerList, speakerRoster } from "../../lib/speakerEdits.js";
 import {
   Upload,
   Play,
@@ -35,7 +41,7 @@ const WAVEFORM_BARS = [
   35, 60, 90, 45, 70, 85, 30, 65, 50, 80, 40, 75, 90, 55, 65, 40, 70, 85, 35, 60
 ];
 
-export default function InterviewStudio({ onReturnToArticle }) {
+export default function InterviewStudio({ onReturnToArticle, onSave }) {
   // 1. 녹음 파일 및 인터뷰 상태
   const [audioUrl, setAudioUrl] = useState(null);
   // 저장된 전사를 다시 연 경우(원본 오디오 없음). 목록은 처음 펼칠 때 불러온다.
@@ -43,7 +49,25 @@ export default function InterviewStudio({ onReturnToArticle }) {
   const [storedMenu, setStoredMenu] = useState({ open: false, status: "idle", items: [], error: "" });
   const [fileName, setFileName] = useState("");
   const [fileSize, setFileSize] = useState(0);
-  const [dialogues, setDialogues] = useState([]);
+  // CLOVA 가 준 발언 원본. 화면에 쓰는 dialogues 는 여기에 사용자의 화자 수정(이름 바꾸기·합치기·구간 지정)을 덧씌운 것이다.
+  const [baseDialogues, setBaseDialogues] = useState([]);
+  const [speakerEdits, setSpeakerEdits] = useState(emptyEdits);
+  const [transcriptId, setTranscriptId] = useState(null);
+  const [speakerSave, setSpeakerSave] = useState("");
+  const [pickedIds, setPickedIds] = useState([]);
+  const [editMode, setEditMode] = useState(false); // 화자 수정하기: 재생을 멈추고 여러 단락을 골라 한 번에 바꾼다
+  const [openParagraphId, setOpenParagraphId] = useState(null); // 프로필을 눌러 이름 입력칸이 열린 단락
+  const [selection, setSelection] = useState(null); // 박스 글을 드래그해 선택한 곳(텍스트 수정바 위치)
+  const [editingBoxId, setEditingBoxId] = useState(null); // 글 수정칸이 열린 박스
+  const [editSelection, setEditSelection] = useState(null); // 수정칸을 열 때 미리 선택해 둘 글자 범위
+  const dialogues = useMemo(() => applySpeakerEdits(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
+  const speakers = useMemo(() => speakerList(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
+  // 화자 고르기 목록: 고친 이름과 처음 CLOVA 가 붙인 이름이 함께 남는다
+  const roster = useMemo(() => speakerRoster(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
+  // 화면의 화자 박스: CLOVA 가 나눈 박스(원래 화자가 같은 연속 발언)에 고친 이름·글·형광펜을 덧씌운 것.
+  // 이름을 고치거나 같은 이름으로 바꿔도 박스는 그대로이고 이름만 바뀐다.
+  const allBoxes = useMemo(() => buildBoxes(baseDialogues, speakerEdits), [baseDialogues, speakerEdits]);
+  const boxesPlainText = () => allBoxes.map((box) => box.text.trim()).filter(Boolean).join(" ");
   const [sttStatus, setSttStatus] = useState("대기 중");
   const [currentTranscript, setCurrentTranscript] = useState(null);
 
@@ -63,8 +87,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
   // 4. 복사 피드백 및 드래그 상태
   const [copiedId, setCopiedId] = useState(null);
   const [isAllCopied, setIsAllCopied] = useState(false);
-  // 통합 텍스트 형태: "speaker" 화자·단락 구분 | "plain" 통글
-  const [textMode, setTextMode] = useState("speaker");
   const [isDragging, setIsDragging] = useState(false);
 
   // 5. AI 요약 상태
@@ -72,6 +94,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
   const [isSummaryCopied, setIsSummaryCopied] = useState(false);
+  const [txtExport, setTxtExport] = useState(null); // { folder, files } | { error }
 
   // 6. 핵심요약 텍스트 드래그(선택) 기반 녹취 근거 하이라이트 상태
   const [evidenceQuery, setEvidenceQuery] = useState("");
@@ -127,7 +150,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // AI 요약 생성 함수
   const handleGenerateSummary = (transcriptObj) => {
-    const target = transcriptObj || currentTranscript;
+    const target = transcriptObj || (currentTranscript ? { ...currentTranscript, text: boxesPlainText() || currentTranscript.text } : null); // 재분석은 고친 글로
     if (!target) return;
     setIsAnalyzing(true);
     setAnalysisError("");
@@ -154,7 +177,15 @@ export default function InterviewStudio({ onReturnToArticle }) {
     setCurrentTime(0);
     setIsPlaying(false);
 
-    setDialogues([]);
+    setBaseDialogues([]);
+    setSpeakerEdits(emptyEdits());
+    setTranscriptId(null);
+    setSpeakerSave("");
+    setPickedIds([]);
+    setEditMode(false);
+    setOpenParagraphId(null);
+    setEditingBoxId(null);
+    setSelection(null);
     setAiSummary(null);
     setAnalysisError("");
     setEvidenceQuery("");
@@ -163,7 +194,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
     requestSTT(file)
       .then((result) => {
         if (result.dialogues && result.dialogues.length > 0) {
-          setDialogues(result.dialogues);
+          setBaseDialogues(result.dialogues);
+          setTranscriptId(result.transcriptId || null);
           setSelectedDialogueId(result.dialogues[0].id);
           setSttStatus("전사 완료 100%");
           if (result.transcript) {
@@ -179,7 +211,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
       });
   };
 
-  // 저장된 전사 목록(독립 STT 서버의 JSON 저장소)
+  // 저장된 전사 목록(코어 암호화 저장소)
   const toggleStoredMenu = async () => {
     const open = !storedMenu.open;
     setStoredMenu((prev) => ({ ...prev, open }));
@@ -198,7 +230,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
     setSttStatus("저장된 전사를 여는 중…");
     try {
       const result = await loadStoredTranscript(item.id);
-      setAudioUrl(null);
+      setAudioUrl(result.audioUrl);
       setStoredSource(item);
       setFileName(item.filename || "저장된 전사");
       setFileSize(0);
@@ -208,7 +240,15 @@ export default function InterviewStudio({ onReturnToArticle }) {
       setAiSummary(null);
       setAnalysisError("");
       setEvidenceQuery("");
-      setDialogues(result.dialogues);
+      setBaseDialogues(result.dialogues);
+      setSpeakerEdits(sanitizeEdits(result.speakerEdits));
+      setTranscriptId(result.id || item.id);
+      setSpeakerSave("");
+      setPickedIds([]);
+      setEditMode(false);
+      setOpenParagraphId(null);
+      setEditingBoxId(null);
+      setSelection(null);
       setSelectedDialogueId(result.dialogues[0]?.id ?? null);
       setCurrentTranscript(result.transcript);
       setSttStatus(result.dialogues.length > 0 ? "저장된 전사 불러옴" : "저장된 전사 (발언 없음)");
@@ -255,7 +295,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
 
   // 통 텍스트 전체 복사
   const handleCopyAllText = () => {
-    const fullText = textMode === "plain" ? plainText(dialogues) : speakerText(dialogues, formatDuration);
+    const fullText = boxesPlainText();
     navigator.clipboard.writeText(fullText);
     setIsAllCopied(true);
     setTimeout(() => setIsAllCopied(false), 2000);
@@ -279,18 +319,15 @@ export default function InterviewStudio({ onReturnToArticle }) {
     setTimeout(() => setIsSummaryCopied(false), 2000);
   };
 
-  // TXT 파일 다운로드
-  const handleDownloadTxt = () => {
-    const content = textMode === "plain" ? plainText(dialogues) : speakerText(dialogues, formatDuration);
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${fileName ? fileName.replace(/\.[^/.]+$/, "") : "interview"}_${textMode === "plain" ? "plain" : "speakers"}_transcript.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  // TXT 내보내기 → 내 문서\AI Newsroom\내보내기\녹취\YYYYMMDD_<녹음 파일 이름>_전사.txt
+  const handleDownloadTxt = async () => {
+    try {
+      const blob = new Blob([boxesPlainText()], { type: "text/plain;charset=utf-8" });
+      const label = `${fileName ? fileName.replace(/\.[^/.]+$/, "") : "interview"}_전사`;
+      setTxtExport(await exportFiles("transcripts", [{ data: blob, ext: "txt" }], { label }));
+    } catch (error) {
+      setTxtExport({ error: error?.message || String(error) });
+    }
   };
 
   // 재생/일시정지
@@ -320,6 +357,22 @@ export default function InterviewStudio({ onReturnToArticle }) {
     if (audioRef.current && audioUrl) {
       audioRef.current.currentTime = val;
     }
+  };
+
+  // 파형을 누르거나 끌면 그 위치로 이동한다(재생 중이면 그대로 이어서 재생, 멈춰 있으면 위치만 옮긴다)
+  const seekToFraction = (fraction) => {
+    if (!(duration > 0)) return;
+    const target = Math.max(0, Math.min(1, fraction)) * duration;
+    setCurrentTime(target);
+    if (audioRef.current && audioUrl) {
+      audioRef.current.currentTime = target;
+    }
+  };
+  const seekFromPointer = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pad = 16; // 파형 좌우 여백(px-4)
+    const width = rect.width - pad * 2;
+    if (width > 0) seekToFraction((e.clientX - rect.left - pad) / width);
   };
 
   const handleSpeedChange = (speed) => {
@@ -352,8 +405,8 @@ export default function InterviewStudio({ onReturnToArticle }) {
     const selectedText = selection?.toString()?.trim();
     if (selectedText && selectedText.length >= 2) {
       setEvidenceQuery(selectedText);
-      const matched = dialogues.find((d) =>
-        d.text.toLowerCase().includes(selectedText.toLowerCase())
+      const matched = allBoxes.find((box) =>
+        box.text.toLowerCase().includes(selectedText.toLowerCase())
       );
       if (matched) {
         setSelectedDialogueId(matched.id);
@@ -376,50 +429,110 @@ export default function InterviewStudio({ onReturnToArticle }) {
   }, [currentTime, dialogues]);
 
   // 검색 필터 적용된 발언 목록
-  const filteredDialogues = useMemo(() => {
-    if (!searchKeyword.trim()) return dialogues;
-    const query = searchKeyword.toLowerCase();
-    return dialogues.filter((item) => {
-      return (
-        item.text.toLowerCase().includes(query) ||
-        item.speakerName.toLowerCase().includes(query)
-      );
-    });
-  }, [dialogues, searchKeyword]);
+  // 검색은 박스 글과 화자 이름으로 거른다.
+  const paragraphs = useMemo(() => {
+    const query = searchKeyword.trim().toLowerCase();
+    if (!query) return allBoxes;
+    return allBoxes.filter((box) => box.text.toLowerCase().includes(query) || box.speakerName.toLowerCase().includes(query));
+  }, [allBoxes, searchKeyword]);
 
-  // 같은 화자의 연속 발언을 한 단락으로 묶은 목록(화자·단락 구분 표시용)
-  const paragraphs = useMemo(() => mergeBySpeaker(filteredDialogues), [filteredDialogues]);
+  // 화자 수정: 화면에 바로 반영하고, 저장된 녹취면 코어 암호화 저장소에도 보낸다(발언 원본은 그대로 둔다)
+  const commitSpeakerEdits = (next) => {
+    setSpeakerEdits(next);
+    if (!transcriptId) return;
+    setSpeakerSave("saving");
+    saveSpeakerEdits(transcriptId, next)
+      .then(() => setSpeakerSave("saved"))
+      .catch(() => setSpeakerSave("error"));
+  };
+  const pickedDialogueIds = paragraphs.filter((paragraph) => pickedIds.includes(paragraph.id)).flatMap((paragraph) => paragraph.ids);
+  const togglePicked = (id) => setPickedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+  const startSpeakerEdit = () => {
+    if (audioRef.current) audioRef.current.pause();
+    setIsPlaying(false);
+    setOpenParagraphId(null);
+    setPickedIds([]);
+    setEditMode(true);
+  };
+  const endSpeakerEdit = () => {
+    setEditMode(false);
+    setPickedIds([]);
+  };
+  const applyNameToPicked = (name) => {
+    commitSpeakerEdits(assignByName(speakerEdits, speakers, pickedDialogueIds, name));
+    setPickedIds([]);
+  };
+  const renameWholeSpeaker = (key, name) => {
+    commitSpeakerEdits(renameSpeakerSmart(speakerEdits, speakers, key, name));
+    setOpenParagraphId(null);
+  };
+  const pickSpeakerForParagraph = (ids, key) => {
+    commitSpeakerEdits(assignDialogues(speakerEdits, ids, key));
+    setOpenParagraphId(null);
+  };
+
+  // 텍스트 수정바: 왼쪽 박스의 글을 드래그하면 선택 위치 위에 형광펜·수정 막대가 뜬다
+  useEffect(() => {
+    const hide = () => setSelection(null);
+    const onSelectionChange = () => {
+      const current = window.getSelection();
+      if (!current || current.isCollapsed) hide();
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      document.removeEventListener("selectionchange", onSelectionChange);
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
+  }, []);
+  const refreshSelection = () => setSelection(editMode ? null : readBoxSelection());
+  const clearSelection = () => {
+    window.getSelection()?.removeAllRanges();
+    setSelection(null);
+  };
+  const selectedBox = selection ? allBoxes.find((box) => box.id === selection.boxId) : null;
+  const markSelection = (color) => {
+    if (!selectedBox) return;
+    commitSpeakerEdits(addMark(speakerEdits, selectedBox.id, selection.start, selection.end, color, selectedBox.text.length));
+    clearSelection();
+  };
+  const unmarkSelection = () => {
+    if (!selectedBox) return;
+    commitSpeakerEdits(removeMarks(speakerEdits, selectedBox.id, selection.start, selection.end));
+    clearSelection();
+  };
+  const startTextEdit = () => {
+    if (!selectedBox) return;
+    setEditSelection({ start: selection.start, end: selection.end });
+    setEditingBoxId(selectedBox.id);
+    clearSelection();
+  };
+  const saveBoxText = (box, value) => {
+    commitSpeakerEdits(setBoxText(speakerEdits, box.id, value, box.originalText));
+    setEditingBoxId(null);
+  };
 
   // 핵심요약에서 드래그된 근거 매칭 세그먼트 ID Set
   const evidenceMatchedIds = useMemo(() => {
     if (!evidenceQuery.trim()) return new Set();
     const q = evidenceQuery.toLowerCase();
     const matched = new Set();
-    dialogues.forEach((d) => {
-      if (d.text.toLowerCase().includes(q)) {
-        matched.add(d.id);
+    allBoxes.forEach((box) => {
+      if (box.text.toLowerCase().includes(q)) {
+        matched.add(box.id);
       }
     });
     return matched;
-  }, [dialogues, evidenceQuery]);
-
-  // 화자 태그별 차분한 색상 매핑 (접근성 높은 단색/파스텔톤)
-  const getSpeakerBadgeStyle = (speakerName) => {
-    if (speakerName.includes("1") || speakerName.includes("기자") || speakerName.includes("A")) {
-      return "bg-slate-100 text-slate-800 border-slate-300";
-    }
-    if (speakerName.includes("2") || speakerName.includes("취재") || speakerName.includes("B")) {
-      return "bg-blue-50 text-blue-800 border-blue-200";
-    }
-    return "bg-zinc-100 text-zinc-800 border-zinc-200";
-  };
+  }, [allBoxes, evidenceQuery]);
 
   // STT 처리 완료 여부 (하단 큰 결과 박스 표시 조건)
   const hasSource = Boolean(audioUrl || storedSource);
   const isSTTCompleted = hasSource && dialogues.length > 0;
 
   return (
-    <div className="w-full max-w-[1720px] mx-auto pb-16 font-sans text-slate-800">
+    <div className="w-full max-w-[1720px] mx-auto pb-16 font-sans text-slate-800" data-testid="interview-studio">
       {/* 실제 HTML5 오디오 요소 */}
       {audioUrl && (
         <audio
@@ -470,7 +583,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
                         {new Date(item.createdAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500 truncate">{item.preview || "(내용 없음)"}</p>
                     <p className="text-[10px] text-slate-400">발언 {item.segmentCount}개 · {formatDuration(item.durationSec)}</p>
                   </button>
                 ))}
@@ -486,11 +598,11 @@ export default function InterviewStudio({ onReturnToArticle }) {
               if (aiSummary?.summary) {
                 exportParts.push(`[AI 핵심 요약]\n${aiSummary.summary}`);
               }
-              const exportText = dialogues.map((d) => d.text).join("\n\n");
+              const exportText = allBoxes.map((box) => box.text).join("\n\n");
               if (exportText) {
                 exportParts.push(`[통합 전사 전문]\n${exportText}`);
               }
-              onReturnToArticle(exportParts.join("\n\n---\n\n"), { id: storedSource?.id || currentTranscript?.id, filename: fileName });
+              onReturnToArticle(exportParts.join("\n\n---\n\n"), { id: transcriptId || storedSource?.id, filename: fileName });
             }}
             className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs active:scale-95"
             title="기사 작성기로 내보내기"
@@ -597,7 +709,29 @@ export default function InterviewStudio({ onReturnToArticle }) {
               </div>
 
               {/* 절제된 파형 미리보기 (Waveform bars) */}
-              <div className="w-full h-12 bg-slate-50 border border-slate-100 rounded-xl px-4 flex items-center justify-between gap-1 overflow-hidden">
+              <div
+                role="slider"
+                tabIndex={0}
+                aria-label="재생 위치"
+                aria-valuemin={0}
+                aria-valuemax={Math.round(duration) || 0}
+                aria-valuenow={Math.round(currentTime)}
+                data-testid="audio-waveform"
+                onPointerDown={(e) => {
+                  e.currentTarget.setPointerCapture?.(e.pointerId);
+                  seekFromPointer(e);
+                }}
+                onPointerMove={(e) => {
+                  if (e.buttons === 1) seekFromPointer(e);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                    e.preventDefault();
+                    handleSeekOffset(e.key === "ArrowLeft" ? -5 : 5);
+                  }
+                }}
+                className="w-full h-12 bg-slate-50 border border-slate-100 rounded-xl px-4 flex items-center justify-between gap-1 overflow-hidden cursor-pointer touch-none"
+              >
                 {WAVEFORM_BARS.map((heightPercent, idx) => {
                   const barProgress = idx / WAVEFORM_BARS.length;
                   const currentProgress = duration > 0 ? currentTime / duration : 0;
@@ -909,10 +1043,27 @@ export default function InterviewStudio({ onReturnToArticle }) {
                       ({paragraphs.length}개 단락)
                     </span>
                   </div>
+                  <SpeakerHeaderActions editMode={editMode} edited={isEdited(speakerEdits)} saveState={speakerSave} onStart={startSpeakerEdit} onReset={() => commitSpeakerEdits(resetSpeakers(speakerEdits))} />
                 </div>
 
+                {/* 화자 수정하기: 재생을 멈추고 단락 박스를 여러 개 골라 화자 이름을 한 번에 바꾼다 */}
+                {editMode && (
+                  <SpeakerEditBar
+                    pickedCount={pickedIds.length}
+                    totalCount={paragraphs.length}
+                    roster={roster}
+                    onSelectAll={() => setPickedIds(paragraphs.map((paragraph) => paragraph.id))}
+                    onClear={() => setPickedIds([])}
+                    onApply={applyNameToPicked}
+                    onDone={endSpeakerEdit}
+                  />
+                )}
+
+                {/* 텍스트 수정바: 글을 드래그하면 선택 위치 위에 뜬다 */}
+                {selection && !editMode && <SelectionToolbar selection={selection} onMark={markSelection} onClear={unmarkSelection} onEdit={startTextEdit} />}
+
                 {/* 화자별 세그먼트 대화 목록 */}
-                <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-[580px] overflow-y-auto pr-1" onMouseUp={() => setTimeout(refreshSelection, 0)} onKeyUp={refreshSelection}>
                   {paragraphs.map((item) => {
                     const isSelected = item.ids.includes(selectedDialogueId);
                     const isCurrentActive = item.ids.includes(activeDialogueId);
@@ -921,8 +1072,12 @@ export default function InterviewStudio({ onReturnToArticle }) {
                     return (
                       <div
                         key={`speaker_segment_${item.id}`}
-                        onClick={() => handleSelectDialogue(item.timestamp, item.id)}
-                        className={`group p-3 rounded-xl transition cursor-pointer ${
+                        onClick={() => {
+                          if (editMode) return togglePicked(item.id);
+                          if (editingBoxId === item.id || window.getSelection()?.toString()) return; // 글을 드래그했거나 고치는 중에는 이동·재생하지 않는다
+                          return handleSelectDialogue(item.timestamp, item.id);
+                        }}
+                        className={`group p-3 rounded-xl transition cursor-pointer ${editMode && pickedIds.includes(item.id) ? "ring-2 ring-slate-900 " : ""}${
                           isCurrentActive
                             ? "bg-white border-2 border-slate-900 shadow-sm ring-2 ring-slate-900/10"
                             : isSelected
@@ -935,13 +1090,34 @@ export default function InterviewStudio({ onReturnToArticle }) {
                         {/* 세그먼트 상단: 화자명 태그 + 타임스탬프 */}
                         <div className="flex items-center justify-between gap-2 mb-1.5">
                           <div className="flex items-center gap-2">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[11px] font-bold border ${getSpeakerBadgeStyle(
-                                item.speakerName
-                              )}`}
-                            >
-                              {item.speakerName}
-                            </span>
+                            {editMode && (
+                              <input
+                                type="checkbox"
+                                checked={pickedIds.includes(item.id)}
+                                onChange={() => togglePicked(item.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label={`${item.speakerName} 단락 선택`}
+                                data-testid={`speaker-pick-${item.id}`}
+                                className="w-3.5 h-3.5 accent-slate-900 cursor-pointer"
+                              />
+                            )}
+                            <SpeakerProfileMenu
+                              index={speakerIndex(speakers, item.speaker)}
+                              name={item.speakerName}
+                              open={openParagraphId === item.id}
+                              disabled={editMode}
+                              testId={`speaker-badge-${item.id}`}
+                              nameTestId={`speaker-name-${item.id}`}
+                              roster={roster}
+                              currentKey={item.speaker}
+                              onToggle={(e) => {
+                                e.stopPropagation();
+                                setOpenParagraphId((prev) => (prev === item.id ? null : item.id));
+                              }}
+                              onClose={() => setOpenParagraphId((prev) => (prev === item.id ? null : prev))}
+                              onPick={(key) => pickSpeakerForParagraph(item.ids, key)}
+                              onRename={(name) => renameWholeSpeaker(item.speaker, name)}
+                            />
                             <span className="font-mono text-[11px] text-slate-400">
                               {formatDuration(item.timestamp)}
                             </span>
@@ -973,9 +1149,13 @@ export default function InterviewStudio({ onReturnToArticle }) {
                         </div>
 
                         {/* 발화 텍스트 */}
-                        <p className="text-xs text-slate-700 leading-relaxed font-sans pl-1">
-                          {item.text}
-                        </p>
+                        <BoxText
+                          box={item}
+                          editing={editingBoxId === item.id}
+                          selection={editSelection}
+                          onSave={(value) => saveBoxText(item, value)}
+                          onCancel={() => setEditingBoxId(null)}
+                        />
                       </div>
                     );
                   })}
@@ -992,22 +1172,6 @@ export default function InterviewStudio({ onReturnToArticle }) {
                     <h3 className="text-sm font-bold text-slate-900">
                       통합 텍스트
                     </h3>
-                    <div className="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5" role="group" aria-label="통합 텍스트 형태">
-                      {[["speaker", "화자·단락 구분"], ["plain", "통글"]].map(([mode, label]) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          aria-pressed={textMode === mode}
-                          data-testid={`text-mode-${mode}`}
-                          onClick={() => setTextMode(mode)}
-                          className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer ${
-                            textMode === mode ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
                   </div>
 
                   <div className="flex items-center gap-1.5">
@@ -1037,57 +1201,52 @@ export default function InterviewStudio({ onReturnToArticle }) {
                     <button
                       onClick={handleDownloadTxt}
                       className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95"
-                      title="TXT 다운로드"
+                      title="TXT 내보내기"
                     >
                       <Download className="w-3 h-3 text-slate-500" />
-                      <span>다운로드</span>
+                      <span>TXT 저장</span>
                     </button>
                   </div>
                 </div>
+                {txtExport?.error ? <p role="alert" className="text-xs text-rose-700">{txtExport.error}</p>
+                  : <ExportNotice result={txtExport} kind="transcripts" className="text-xs text-slate-600" />}
 
-                {/* 통합 텍스트: 화자·단락 구분(같은 화자 발언을 한 단락으로) 또는 통글(이어진 한 덩어리 글) */}
-                <div className="max-h-[580px] overflow-y-auto pr-2 space-y-3.5 text-xs md:text-sm leading-relaxed select-text font-sans scrollbar-thin" data-testid="unified-text" data-mode={textMode}>
+                {/* 통합 텍스트: 통글(이어진 한 덩어리 글) 하나로 고정 */}
+                <div className="max-h-[580px] overflow-y-auto pr-2 space-y-3.5 text-xs md:text-sm leading-relaxed select-text font-sans scrollbar-thin" data-testid="unified-text">
                   {(() => {
-                    // 발언 하나의 글자(검색어·요약 근거 강조 포함). 눌러서 그 시점으로 이동하는 동작은 그대로 둔다.
+                    // 화자 박스 하나의 글(검색어·요약 근거·형광펜 표시 포함). 눌러서 이동·재생하지 않는다 — 다시듣기는 왼쪽 박스와 위쪽 파형에서 한다.
                     const segmentSpan = (item) => {
-                      const isSelected = selectedDialogueId === item.id;
+                      const isSelected = item.ids.includes(selectedDialogueId);
                       const isEvidence = evidenceMatchedIds.has(item.id);
                       const isMatchKeyword = searchKeyword.trim() && item.text.toLowerCase().includes(searchKeyword.toLowerCase());
-                      const mark = (query) => item.text.split(new RegExp(`(${query})`, "gi")).map((part, i) =>
-                        part.toLowerCase() === query.toLowerCase() ? (
-                          <mark key={i} className="bg-amber-200 text-slate-950 font-bold px-0.5 rounded">{part}</mark>
-                        ) : part
-                      );
+                      const query = isMatchKeyword ? searchKeyword.trim() : isEvidence && evidenceQuery ? evidenceQuery.trim() : "";
+                      const queryMarks = (value) => {
+                        if (!query) return value;
+                        const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                        return value.split(new RegExp(`(${escaped})`, "gi")).map((part, i) =>
+                          part.toLowerCase() === query.toLowerCase() ? (
+                            <mark key={i} className="bg-amber-200 text-slate-950 font-bold px-0.5 rounded">{part}</mark>
+                          ) : part
+                        );
+                      };
                       return (
                         <span
                           key={`unified_text_${item.id}`}
                           id={`unified_text_${item.id}`}
-                          onClick={() => {
-                            setSelectedDialogueId(item.id);
-                            if (audioRef.current && audioUrl) {
-                              setCurrentTime(item.timestamp);
-                              audioRef.current.currentTime = item.timestamp;
-                            }
-                          }}
-                          className={`cursor-pointer transition-colors ${isSelected ? "text-slate-950 font-medium" : "text-slate-700 hover:text-slate-900"}`}
+                          className={`transition-colors ${isSelected ? "text-slate-950 font-medium" : "text-slate-700"}`}
                         >
-                          {isMatchKeyword ? mark(searchKeyword) : isEvidence && evidenceQuery ? mark(evidenceQuery) : item.text}
+                          {segmentsOf(item.text, item.marks).map((part) =>
+                            part.color ? (
+                              <mark key={part.start} style={{ background: MARK_COLORS[part.color].bg }} className="rounded-sm text-slate-900">{queryMarks(part.text)}</mark>
+                            ) : (
+                              <React.Fragment key={part.start}>{queryMarks(part.text)}</React.Fragment>
+                            )
+                          )}
                         </span>
                       );
                     };
                     const spaced = (items) => items.flatMap((item, index) => (index ? [" ", segmentSpan(item)] : [segmentSpan(item)]));
-                    if (textMode === "plain") {
-                      return <p className="leading-relaxed">{spaced(filteredDialogues)}</p>;
-                    }
-                    return paragraphs.map((paragraph) => (
-                      <div key={`unified_paragraph_${paragraph.id}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${getSpeakerBadgeStyle(paragraph.speakerName)}`}>{paragraph.speakerName}</span>
-                          <span className="font-mono text-[11px] text-slate-400">{formatDuration(paragraph.timestamp)}</span>
-                        </div>
-                        <p className="leading-relaxed">{spaced(paragraph.items)}</p>
-                      </div>
-                    ));
+                    return <p className="leading-relaxed">{spaced(paragraphs)}</p>;
                   })()}
                 </div>
               </div>
@@ -1099,6 +1258,7 @@ export default function InterviewStudio({ onReturnToArticle }) {
           <div className="w-full h-16 bg-gradient-to-b from-white via-white/60 to-transparent pointer-events-none rounded-b-2xl border-b border-transparent" />
         </div>
       )}
+      {onSave && <SaveBar onSave={() => onSave({ id: transcriptId || storedSource?.id, filename: fileName })} testId="interview-save" />}
     </div>
   );
 }

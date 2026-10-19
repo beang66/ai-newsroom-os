@@ -22,7 +22,8 @@ export function plainContent(html) {
     .trim();
 }
 
-const escapeHtml = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/** HTML 글자·속성 값에 넣을 문자열의 특수 문자를 바꾼다(외부 사진 설명 등이 태그로 실행되지 않게). */
+export const escapeHtml = (text) => String(text ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 const FACT_MARKS = ".fact-flaw-target, .fact-fixed-success, .fluorescent-highlight";
 

@@ -119,7 +119,7 @@ def _source_span(t,s,cursor):
         if j==len(s): return a,b
     return None
 
-@lru_cache(maxsize=256)  # ponytail: 검증 요청마다 같은 자료를 다시 청킹하므로 본문 단위 캐시
+@lru_cache(maxsize=256)  # 검증 요청마다 같은 자료를 다시 청킹하므로 본문 단위로 캐시한다
 def _narrative_texts(t):
     out=[]; cursor=0
     for u in packed_units(t,boundary=_boundary()).units:

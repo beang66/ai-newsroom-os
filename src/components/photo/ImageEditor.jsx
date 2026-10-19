@@ -2,6 +2,8 @@
 //  - 사진 위의 표시 범위: 모서리를 끌어 크기(선택한 비율 유지), 안쪽을 끌어 위치 이동
 //  - 모자이크(가우시안 흐림): 브러시로 칠하기·지우개·흐림 영역 끌어 옮기기·Backspace/Delete 삭제·되돌리기
 //  - 원본은 그대로 두고 편집본(url)을 따로 만든다. 계산은 lib/imageEditor.js(v30 과 같음)
+import { exportFiles, imageExtension } from "../../api/editorial";
+import ExportNotice from "../ExportNotice.jsx";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -10,13 +12,6 @@ import {
 
 const RATIOS = [["원본", 0], ["16:9", 16 / 9], ["4:3", 4 / 3], ["1:1", 1], ["3:2", 1.5]];
 
-function download(href, name) {
-  const a = document.createElement("a");
-  a.href = href;
-  a.download = name;
-  a.click();
-}
-const extension = (data) => (data.startsWith("data:image/png") ? "png" : data.startsWith("data:image/webp") ? "webp" : "jpg");
 
 function Slider({ label, min, max, value, onChange, suffix = "" }) {
   return (
@@ -37,6 +32,7 @@ export default function ImageEditor({ photo, onCancel, onApply, onTrackDownload,
   const canvasRef = useRef(null);
   const st = useRef(null); // 캔버스 조작 상태(그림 그릴 때마다 React 를 다시 그리지 않도록 ref 에 둔다)
   const [ready, setReady] = useState(false);
+  const [exported, setExported] = useState(null); // 마지막 저장 위치(내 문서\AI Newsroom\내보내기\사진)
   const [ratio, setRatio] = useState(photo.ratio ?? (photo.crop ? photo.crop.w / photo.crop.h : 0));
   const [tool, setTool] = useState(null); // null | "paint" | "erase"
   const [brush, setBrush] = useState(48);
@@ -252,7 +248,6 @@ export default function ImageEditor({ photo, onCancel, onApply, onTrackDownload,
     const finished = s.drag.kind === "brush" || s.drag.kind === "erase";
     if (finished) s.drag.stroke.points.push(p);
     s.drag = null;
-    if (finished) setTool(null); // v30: 한 번 칠하면 도구가 풀린다
     paint();
     cursor(p);
   };
@@ -381,12 +376,13 @@ export default function ImageEditor({ photo, onCancel, onApply, onTrackDownload,
             </label>
             <div className="mt-auto grid grid-cols-2 gap-1.5 pt-1">
               <button type="button" disabled={!ready} className={chip(false)}
-                onClick={safely(async () => { await track(); const o = photo.original || photo.url; download(o, `original-photo.${extension(o)}`); })}>원본 다운로드</button>
+                onClick={safely(async () => { await track(); const o = photo.original || photo.url; setExported(await exportFiles("photos", [{ data: o, ext: imageExtension(o) }], { label: "원본사진" })); })}>원본 저장</button>
               <button type="button" disabled={!ready} className={chip(false)}
-                onClick={safely(async () => { await track(); download(derivative(), "article-photo.jpg"); })}>편집본 다운로드</button>
+                onClick={safely(async () => { await track(); setExported(await exportFiles("photos", [{ data: derivative(), ext: "jpg" }], { label: "편집사진" })); })}>편집본 저장</button>
               <button type="button" disabled={!ready} onClick={apply} data-testid="image-apply"
                 className="col-span-2 px-4 py-2.5 rounded-full text-sm font-black bg-[#23211F] text-white hover:bg-[#38332E] cursor-pointer disabled:opacity-50">본문에 넣기</button>
             </div>
+            <ExportNotice result={exported} kind="photos" className="text-[11px] text-slate-600" />
           </div>
         </div>
       </div>

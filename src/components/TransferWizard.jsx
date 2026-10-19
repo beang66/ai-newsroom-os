@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import AppDialog from "./AppDialog";
 import { beginRestore, endRestore } from "../restoreState";
+import { clearBackup } from "../lib/draftBackup.js";
 import { getTransfer, uploadTransfer, downloadTransfer, deleteTransfer, getTransferFile, makeTransferFile, deleteTransferFile } from "../api/editorial";
 import { generateTransferCode, normalizeTransferCode, restoreTransferFile } from "../lib/vaultTransfer";
+import { droppedFiles, hasDroppedFiles } from "../lib/fileDrop.js";
 
 const size = (bytes) => (bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)}MB` : `${Math.max(1, Math.round(bytes / 1024))}KB`);
 const CODE_HELP = "이전 코드 형식을 확인해 주세요(영문 대문자와 숫자 20자, 예: ABCDE-FGHJK-LMNPQ-RSTUV).";
@@ -20,6 +22,8 @@ export default function TransferWizard({ onClose, onBeforeRestore }) {
   const [codeInput, setCodeInput] = useState(""); // 가져오기: 입력한 코드
   const [serverInfo, setServerInfo] = useState(null); // 가져오기: 서버 상태 { exists, bytes, updatedAt } | { error }
   const fileInput = useRef(null);
+  const [transferFile, setTransferFile] = useState(null);
+  const [transferDragging, setTransferDragging] = useState(false);
   const [localFile, setLocalFile] = useState(null); // 이 PC 에 만들어 둔 이전 복제본 { exists, path, bytes }
 
   useEffect(() => {
@@ -85,13 +89,14 @@ export default function TransferWizard({ onClose, onBeforeRestore }) {
 
   const importFrom = async (source) => {
     const normalized = normalizeTransferCode(codeInput);
-    const file = fileInput.current?.files?.[0];
+    const file = transferFile || fileInput.current?.files?.[0];
     if (!normalized) { setError(CODE_HELP); return; }
     if (source === "file" && !file) { setError("이전 파일을 선택해 주세요."); return; }
     if (!confirmReplace()) return;
     setPending(true); setError("");
     try {
       await onBeforeRestore?.();
+      await clearBackup();
       beginRestore();
       await (source === "server" ? downloadTransfer(normalized) : restoreTransferFile(normalized, file));
       window.location.reload();
@@ -162,10 +167,40 @@ export default function TransferWizard({ onClose, onBeforeRestore }) {
           </button>
           <details className="rounded-xl border border-[#DDD6CB] p-3">
             <summary className="cursor-pointer text-xs font-bold">이전 파일로 가져오기 (서버를 쓰지 않았을 때)</summary>
-            <div className="mt-3 space-y-3">
+            <div
+              data-testid="transfer-file-dropzone"
+              className={`mt-3 space-y-3 rounded-xl border-2 border-dashed p-3 transition ${transferDragging ? "border-sky-500 bg-sky-50" : "border-[#DDD6CB] bg-white"}`}
+              onDragEnter={(event) => {
+                if (!hasDroppedFiles(event)) return;
+                event.preventDefault();
+                setTransferDragging(true);
+              }}
+              onDragOver={(event) => {
+                if (!hasDroppedFiles(event)) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+                setTransferDragging(true);
+              }}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setTransferDragging(false);
+              }}
+              onDrop={async (event) => {
+                event.preventDefault();
+                setTransferDragging(false);
+                const [file] = await droppedFiles(event.dataTransfer);
+                if (!file) return;
+                if (!file.name.toLowerCase().endsWith(".db")) {
+                  setError("DB 이전 파일(.db)만 업로드할 수 있습니다.");
+                  return;
+                }
+                setError("");
+                setTransferFile(file);
+              }}
+            >
               <label className="block text-xs font-bold">이전 파일
-                <input ref={fileInput} type="file" accept=".db,application/octet-stream" data-testid="transfer-file" disabled={pending} className="mt-1 block w-full text-xs" />
+                <input ref={fileInput} type="file" accept=".db,application/octet-stream" data-testid="transfer-file" disabled={pending} className="mt-1 block w-full text-xs" onChange={(event) => setTransferFile(event.target.files?.[0] || null)} />
               </label>
+              <p className="text-[11px] text-[#666666]">{transferFile ? `선택됨: ${transferFile.name}` : "DB 이전 파일을 이 영역에 끌어놓을 수 있습니다."}</p>
               <button type="button" data-testid="transfer-import-file" onClick={() => importFrom("file")} disabled={pending} className={secondary}>파일로 가져오기</button>
             </div>
           </details>

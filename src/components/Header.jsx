@@ -45,7 +45,9 @@ export default function Header({
     return () => clearTimeout(timer);
   }, [activeBubble]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    const saved = await onSave?.();
+    if (saved === false) return;
     const now = new Date();
     const timeStr = now.toLocaleTimeString("ko-KR", {
       hour: "2-digit",
@@ -54,7 +56,6 @@ export default function Header({
       hour12: true,
     });
     setLastSavedTime(timeStr);
-    onSave?.();
   };
 
   const handleArchive = async () => {
@@ -70,8 +71,6 @@ export default function Header({
         {/* 1. Left Brand */}
         <div className="flex items-center gap-2.5">
           <div className="bg-white/85 backdrop-blur-md border border-black/5 rounded-full px-4 py-2 flex items-center gap-2.5 shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
-            {/* 로고 옆 첨부 이미지 기반 아이스블루-화이트 크리스탈 반짝임 원형 포인트 */}
-            <img src="./favicon.svg" alt="" aria-hidden="true" className="h-7 w-7 rounded-md [image-rendering:pixelated]" />
             <h1 
               className="text-base font-extrabold text-[#292929] tracking-tight"
               style={{ fontFamily: "'Plus Jakarta Sans', 'Pretendard', sans-serif" }}
@@ -231,6 +230,7 @@ export default function Header({
                   </button>
                   <button
                     type="button"
+                    data-testid="logout-button"
                     onClick={() => {
                       setShowUserDropdown(false);
                       if (onLogout) onLogout();

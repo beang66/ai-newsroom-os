@@ -10,7 +10,7 @@ ponytail: 전부 한 번에 읽는다(기사·자료 수백 건 규모까지). �
 import datetime
 import json
 
-from . import ids, knowledge_files, sources, storage, vault
+from . import ids, knowledge_files, library_state, sources, storage, vault
 
 
 def _uuid(value):
@@ -42,20 +42,21 @@ def _articles(db):
     counts = dict(db.execute("SELECT article_id, count(*) FROM article_revisions WHERE kind = 'manual' GROUP BY article_id").fetchall())
     unsaved = {row[0] for row in db.execute("SELECT article_id FROM article_revisions r WHERE kind = 'auto' AND revision_no = "
                '(SELECT max(revision_no) FROM article_revisions WHERE article_id = r.article_id)').fetchall()}
+    snapshots = dict(db.execute('SELECT article_id, count(*) FROM article_snapshots GROUP BY article_id').fetchall())
     out = []
-    # 보관소에는 마지막 수동 저장본을 보인다(수동 저장 전인 기사는 임시 저장본, unsaved_changes 로 표시)
+    # 보관함에는 마지막 수동 저장본을 보인다(수동 저장 전인 기사는 임시 저장본, unsaved_changes 로 표시)
     for article_id, created, updated, revision_no, body in storage.latest_revisions(db, manual=True):
         draft = json.loads(body)
         count = counts.get(article_id, 0)
         source_ids = storage.draft_source_ids(draft)
         published = storage.published_info(db, article_id)
-        # state: draft(발행 전) | published(발행본과 마지막 저장본이 같음) | editing(발행 뒤 고쳐 저장함 — 발행본은 그대로)
-        state = 'draft' if not published else 'editing' if storage.edited_after_publish(db, article_id) else 'published'
+        state = storage.article_state(db, article_id)  # 상태는 이것 하나(원고 JSON 에는 저장하지 않는다)
         out.append({'id': _uuid(article_id), 'title': draft.get('title') or '', 'subtitle': draft.get('subtitle') or '',
-                    'status': draft.get('status') or '', 'created_at': created, 'updated_at': updated,
+                    'created_at': created, 'updated_at': updated,
                     'excerpt': storage._plain(draft)[:120], 'photo_count': len(draft.get('photos') or []),
                     'interviews': _interviews(draft), 'state': state, 'published': published, 'article_id': article_id,  # article_id: 편집기로 열 때 쓰는 32자 id
                     'revision_no': revision_no, 'revision_count': count, 'unsaved_changes': article_id in unsaved,
+                    'snapshot_count': snapshots.get(article_id, 0),  # 고정본 = 검증·변환에 넘긴 판
                     'source_ids': sorted(_uuid(i) for i in source_ids)})
     return out
 
@@ -73,7 +74,18 @@ def knowledge_map():
         source_rows = db.execute(sources._SELECT + ' ORDER BY created_at DESC, id').fetchall()
         snapshot_rows = db.execute('SELECT id, article_id, revision_id, revision_no, content_hash, created_at '
                                    'FROM article_snapshots ORDER BY created_at DESC, id').fetchall()
+        transcript_rows = db.execute('SELECT id, filename, duration, created_at FROM transcripts ORDER BY created_at DESC').fetchall()
         files, unresolved, file_links = knowledge_files.map_items(db)
+        library = library_state.read(db)
+        trashed = set(library['trashed'])
+    articles = [item for item in articles if f"article:{item['article_id']}" not in trashed]
+    source_rows = [row for row in source_rows if f'source:{row[0]}' not in trashed]
+    transcript_rows = [row for row in transcript_rows if f'audio:{row[0]}' not in trashed]
+    removed_file_ids = {item['id'] for item in files if f"note:{item['id']}" in trashed}
+    files = [item for item in files if item['id'] not in removed_file_ids]
+    file_links = [link for link in file_links if link['source'] not in removed_file_ids and link['target'] not in removed_file_ids]
+    visible_placeholder_ids = {link['target'] for link in file_links if not link['resolved']}
+    unresolved = [item for item in unresolved if item['id'] in visible_placeholder_ids]
     known = {a['id'] for a in articles}
     source_items = [sources._item(row, used) for row in source_rows]
     snapshots = [{'id': row[0], 'article_id': _uuid(row[1]), 'revision_id': row[2], 'revision_no': row[3],
@@ -86,10 +98,24 @@ def knowledge_map():
     edges = [e for e in edges if e['relation'] != 'uses_source' or e['target'] in present]  # 지운 자료를 가리키는 선은 뺀다
     file_edges = sorted({(link['source'], link['target']) for link in file_links if link['resolved']})
     edges += [{'source': source, 'target': target, 'relation': 'links_to'} for source, target in file_edges]
+    # 기사에 연결한 녹취(원고의 linkedInterviews) — 저장소에 실제로 있는 녹취만 잇는다
+    linked = {}
+    for article in articles:
+        for item in article['interviews']:
+            linked.setdefault(item['id'], []).append(article['id'])
+    interviews = [{'id': tid, 'filename': name, 'duration': duration, 'created_at': created, 'used_by': linked[tid]}
+                  for tid, name, duration, created in transcript_rows if tid in linked]
+    edges += [{'source': a, 'target': i['id'], 'relation': 'uses_interview'} for i in interviews for a in i['used_by']]
+    source_list = [{'id': _uuid(item['id']), 'name': item['name'], 'format': item['format'], 'size': item['size'],
+                    'chars': item['chars'], 'created_at': item['createdAt'], 'role': 'data',
+                    'used_by': [_uuid(u['articleId']) for u in item['usedBy']]} for item in source_items]
+    # 자료 하나의 목록: 업로드한 파일(kind=file, 역할 원자료)과 가져온 Markdown 노트(kind=note, 역할은 코어가 저장한 값)
+    resources = sorted([{'id': s['id'], 'kind': 'file', 'role': 'data', 'name': s['name'], 'format': s['format'],
+                         'updated_at': s['created_at'], 'used_by': s['used_by']} for s in source_list]
+                       + [{'id': f['id'], 'kind': 'note', 'role': f['role'], 'name': f['title'] or f['path'], 'format': 'md',
+                           'updated_at': f['updated_at'], 'path': f['path']} for f in files],
+                       key=lambda r: r['updated_at'] or '', reverse=True)
     return {'workspace_id': vault.WORKSPACE_ID, 'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'articles': articles,
-            'sources': [{'id': _uuid(item['id']), 'name': item['name'], 'format': item['format'], 'size': item['size'],
-                         'chars': item['chars'], 'created_at': item['createdAt'],
-                         'used_by': [_uuid(u['articleId']) for u in item['usedBy']]} for item in source_items],
+            'articles': articles, 'sources': source_list, 'interviews': interviews, 'resources': resources,
             'snapshots': snapshots, 'entities': [], 'edges': edges,
-            'files': files, 'unresolved': unresolved, 'file_links': file_links}
+            'files': files, 'unresolved': unresolved, 'file_links': file_links, 'library': library}

@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import { photoKeywords } from "../services/assistService";
 import { searchDongaPhotos, dongaPhotoData } from "../api/editorial";
-import { searchUnsplash } from "../services/photoSearch";
+import { searchUnsplashWithQuery } from "../services/photoSearch";
+import { droppedFiles, hasDroppedFiles } from "../lib/fileDrop.js";
 
 // 언스플래시 프리셋 고화질 보도사진 데이터
 const UNSPLASH_PHOTOS = [
@@ -131,6 +132,7 @@ export default function PhotoSideDrawer({
   // PC 파일 업로드
   const fileInputRef = useRef(null);
   const [uploadPreview, setUploadPreview] = useState(null);
+  const [uploadDragging, setUploadDragging] = useState(false);
   const [uploadCaption, setUploadCaption] = useState("");
   const [uploadSource, setUploadSource] = useState("동아일보 DB");
   const [uploadRatio, setUploadRatio] = useState("16:9 (대표)");
@@ -209,6 +211,7 @@ export default function PhotoSideDrawer({
   // 검색 처리: Core(/api/unsplash/search)가 Unsplash에서 찾는다. 빈 검색어면 기본 목록으로 돌아간다.
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [searchedAs, setSearchedAs] = useState(null); // 한글 검색어를 영어로 바꿔 찾았을 때 안내
   const runSearch = async (rawQuery) => {
     const q = (rawQuery ?? searchQuery).trim();
     setSearchError("");
@@ -218,7 +221,8 @@ export default function PhotoSideDrawer({
     }
     setSearching(true);
     try {
-      const found = await searchUnsplash(q);
+      const { photos: found, searched } = await searchUnsplashWithQuery(q);
+      setSearchedAs(searched && searched !== q ? { query: q, searched } : null);
       if (found.length === 0) setSearchError(`'${q}'에 맞는 사진을 찾지 못했습니다.`);
       else setSearchResults(found);
     } catch (error) {
@@ -234,14 +238,6 @@ export default function PhotoSideDrawer({
 
   // 기사 본문을 읽고 사진 검색어를 추천한다(Core /api/assist, kind=photo_keywords).
   const [keywordState, setKeywordState] = useState({ status: "idle", data: [], error: "" });
-  const recommendKeywords = async () => {
-    setKeywordState({ status: "loading", data: [], error: "" });
-    try {
-      setKeywordState({ status: "done", data: await photoKeywords(articleContent), error: "" });
-    } catch (error) {
-      setKeywordState({ status: "error", data: [], error: error.message });
-    }
-  };
   // 사진 창이 열리면 기사 본문을 바탕으로 검색어를 자동 추천한다(main 과 같은 기준: 본문 80자 이상)
   useEffect(() => {
     const text = String(articleContent || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").trim();
@@ -261,21 +257,21 @@ export default function PhotoSideDrawer({
   };
 
   // PC 파일 선택
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
+  const loadUploadFile = (file) => {
     if (file) {
+      if (!file.type.startsWith("image/")) {
+        showToast("JPG, PNG, WebP 사진 파일을 선택해 주세요.");
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (evt) => {
         if (evt.target?.result) {
           setUploadPreview(evt.target.result);
-          if (!uploadCaption) {
-            setUploadCaption(file.name.replace(/\.[^/.]+$/, ""));
-          }
           // 즉시 선택 사진으로 활성화
           const newPhoto = {
             id: `pc-${Date.now()}`,
             url: evt.target.result,
-            caption: file.name.replace(/\.[^/.]+$/, ""),
+            caption: uploadCaption,
             source: uploadSource,
             provider: "김동아 기자",
             ratio: uploadRatio
@@ -285,6 +281,10 @@ export default function PhotoSideDrawer({
       };
       reader.readAsDataURL(file);
     }
+  };
+  const handleFileChange = (e) => {
+    loadUploadFile(e.target.files?.[0]);
+    e.target.value = "";
   };
 
   // 사진 삽입하기 버튼 핸들러
@@ -479,19 +479,11 @@ export default function PhotoSideDrawer({
                   </button>
                 </form>
 
-                {/* 기사 본문 기반 검색어 추천 */}
+                {/* 기사 본문 기반 검색어 추천(5~6개) — 사진 창을 열면 자동으로 받고, 누르면 그 검색어로 찾는다 */}
                 <div className="space-y-2">
-                  <button
-                    type="button"
-                    data-testid="photo-keyword-recommend"
-                    onClick={recommendKeywords}
-                    disabled={keywordState.status === "loading"}
-                    className="w-full px-3 py-2 bg-white hover:bg-slate-50 disabled:opacity-60 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl transition cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
-                    title="기사 본문을 읽고 어울리는 사진 검색어를 추천합니다"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-slate-700" />
-                    {keywordState.status === "loading" ? "본문을 읽는 중…" : "기사에 맞는 검색어 추천"}
-                  </button>
+                  {keywordState.status === "loading" && (
+                    <p role="status" className="text-[11px] text-slate-500 px-0.5">본문을 읽고 검색어를 추천하는 중입니다…</p>
+                  )}
                   {keywordState.status === "error" && (
                     <p role="alert" className="text-[11px] text-rose-600 px-0.5">{keywordState.error}</p>
                   )}
@@ -511,6 +503,10 @@ export default function PhotoSideDrawer({
                     </div>
                   )}
                 </div>
+
+                {searchedAs && (
+                  <p data-testid="photo-searched" className="text-[11px] text-slate-500 px-0.5">‘{searchedAs.query}’ → ‘{searchedAs.searched}’(으)로 찾았습니다.</p>
+                )}
 
                 {/* 시각적 배지 & 메타 정보 */}
                 <div className="flex items-center justify-between text-[11px] text-slate-500 px-0.5">
@@ -607,7 +603,7 @@ export default function PhotoSideDrawer({
                           </p>
                           <p className="text-[10px] text-slate-400 mt-0.5">
                             {photo.source}
-                            {photo.photographer || photo.provider
+                            {(photo.photographer || photo.provider) && !photo.source?.includes(photo.photographer || photo.provider)
                               ? ` · ${photo.photographer || photo.provider}`
                               : ""}
                           </p>
@@ -814,13 +810,22 @@ export default function PhotoSideDrawer({
                 {/* 파일 드래그 앤 드롭 업로드 영역 */}
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-300 hover:border-slate-800 rounded-2xl p-5 text-center bg-slate-50/70 hover:bg-slate-50 transition cursor-pointer group"
+                  onDragEnter={(event) => { if (hasDroppedFiles(event)) { event.preventDefault(); setUploadDragging(true); } }}
+                  onDragOver={(event) => { if (hasDroppedFiles(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
+                  onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setUploadDragging(false); }}
+                  onDrop={async (event) => {
+                    event.preventDefault();
+                    setUploadDragging(false);
+                    loadUploadFile((await droppedFiles(event.dataTransfer))[0]);
+                  }}
+                  data-testid="photo-upload-dropzone"
+                  className={`border-2 border-dashed rounded-2xl p-5 text-center transition cursor-pointer group ${uploadDragging ? "border-slate-900 bg-slate-100 ring-2 ring-slate-300" : "border-slate-300 hover:border-slate-800 bg-slate-50/70 hover:bg-slate-50"}`}
                 >
                   <div className="w-10 h-10 rounded-2xl bg-white shadow-xs border border-slate-200 mx-auto flex items-center justify-center mb-2 group-hover:scale-105 transition">
                     <Upload className="w-5 h-5 text-slate-700" />
                   </div>
                   <p className="text-xs font-bold text-slate-800">
-                    내 PC에서 사진 파일 선택
+                    사진을 끌어놓거나 내 PC에서 선택
                   </p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     JPG, PNG, WebP 고화질 보도사진 지원
@@ -856,7 +861,7 @@ export default function PhotoSideDrawer({
                             const p = selectedPhoto || {
                               id: `pc-${Date.now()}`,
                               url: uploadPreview,
-                              caption: uploadCaption || "업로드 사진",
+                              caption: uploadCaption,
                               source: uploadSource,
                               provider: "김동아 기자",
                               ratio: uploadRatio
@@ -881,7 +886,7 @@ export default function PhotoSideDrawer({
                             const p = selectedPhoto || {
                               id: `pc-${Date.now()}`,
                               url: uploadPreview,
-                              caption: uploadCaption || "업로드 사진",
+                              caption: uploadCaption,
                               source: uploadSource,
                               provider: "김동아 기자",
                               ratio: uploadRatio
@@ -904,7 +909,7 @@ export default function PhotoSideDrawer({
                             const p = selectedPhoto || {
                               id: `pc-${Date.now()}`,
                               url: uploadPreview,
-                              caption: uploadCaption || "업로드 사진",
+                              caption: uploadCaption,
                               source: uploadSource,
                               provider: "김동아 기자",
                               ratio: uploadRatio
@@ -1041,7 +1046,7 @@ export default function PhotoSideDrawer({
                         </p>
                         <p className="text-[10px] text-slate-400 mt-0.5">
                           {photo.source}
-                          {photo.provider ? ` · ${photo.provider}` : ""}
+                          {photo.provider && !photo.source?.includes(photo.provider) ? ` · ${photo.provider}` : ""}
                         </p>
                       </div>
                     </div>

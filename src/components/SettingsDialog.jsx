@@ -27,7 +27,7 @@ export default function SettingsDialog({ onClose, session, onSession, onTransfer
         `파이프라인: ${d.pipelineVersion}`,
         `연결 방식: ${window.pywebview?.api?.core ? "IPC" : "HTTP"} · ${d.frozen ? "배포본(EXE)" : "개발 실행"}`,
         `OS: ${d.os}`,
-        `팩트체크: ${d.factcheckMode === "local" ? "로컬 모델" : "외부 모델"}`,
+        `AI 엔진: ${d.factcheckMode === "local" ? "로컬 AI" : "OpenAI"}`,
         `모델: ${d.models.map((m) => `${m.id} ${m.installed ? "설치됨" : `미설치(${m.files})`}`).join(", ") || "없음"}`,
         `로그인: ${d.signedIn ? "예" : "아니오"} · 로그인 유지: ${d.keepLogin ? "켜짐" : "꺼짐"}`,
         `설정: ${JSON.stringify(d.settings)}`,
@@ -51,7 +51,7 @@ export default function SettingsDialog({ onClose, session, onSession, onTransfer
     const before = settings;
     setSettingsError("");
     setSettings({ ...settings, ...patch }); // 바로 반영하고, 저장에 실패하면 되돌린다
-    try { setSettings(await saveSettings(patch)); }
+    try { const updated = await saveSettings(patch); setSettings(updated); return updated; }
     catch (e) { setSettings(before); setSettingsError(e?.message || String(e)); }
   };
 
@@ -69,16 +69,6 @@ export default function SettingsDialog({ onClose, session, onSession, onTransfer
           이 PC에서 로그인 유지
         </label>
         <p className="text-xs text-[#666666] leading-relaxed">켜면 다음에 앱을 열 때 바로 로그인된 상태로 시작해요. 비밀번호는 저장하지 않고, 로그인 유지용 토큰만 이 PC의 Windows 자격 증명 관리자에 보관합니다. 로그아웃하면 자동으로 꺼집니다. 공용 PC에서는 켜지 마세요.</p>
-      </section>
-      <hr className="border-[#DDD6CB]" />
-      <section className="space-y-3" aria-labelledby="local-factcheck-title">
-        <h3 id="local-factcheck-title" className="font-black">팩트체크 판정 방식</h3>
-        <label className="flex items-center gap-2 text-sm font-bold">
-          <input type="checkbox" data-testid="settings-local-factcheck" checked={settings?.localFactcheck ?? true} disabled={!settings}
-            onChange={(event) => change({ localFactcheck: event.target.checked })} />
-          팩트체크에 로컬 모델 사용
-        </label>
-        <p className="text-xs text-[#666666] leading-relaxed">켜면 이 PC의 판정 모델이 문장을 판정하고, 확정하지 못한 문장만 직접 골라 외부 모델에 재검토를 요청해요(토큰 절약). 끄면 모든 문장을 외부 모델(API)이 판정해요(성능 우선, 토큰 사용 증가). 끄면 로컬 판정 모델을 설치하지 않아도 되지만 로그인과 인터넷 연결이 필요해요. 문장과 근거 조각 일부가 외부 서비스로 전송됩니다.</p>
       </section>
       <hr className="border-[#DDD6CB]" />
       <section className="space-y-3" aria-labelledby="diagnostics-title">

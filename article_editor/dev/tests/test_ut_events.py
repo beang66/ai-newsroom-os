@@ -74,7 +74,7 @@ class UtEventTests(unittest.TestCase):
 
     def test_diagnostics_folder_opens_but_rejects_screen_files(self):
         with tempfile.TemporaryDirectory() as temp, mock.patch.object(exports, 'EXPORT_DIR', Path(temp)), \
-                mock.patch.object(exports.os, 'startfile', create=True) as opened:
+                mock.patch.object(exports.subprocess, 'Popen') as opened:
             self.assertEqual(Path(exports.open_folder({'kind': 'diagnostics'})['folder']).name, '진단')
             opened.assert_called_once()
             with self.assertRaises(RequestError):

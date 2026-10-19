@@ -302,7 +302,7 @@ def _append_revision(db, identifier, body, now, kind='manual'):
     """이력에 저장본을 더한다. → 최신 revision 번호
     - manual(수동 저장): 저장 이력에 남는 버전. 바로 앞 줄이 자동 임시 저장이면 그 줄을 이 버전으로 올린다.
     - auto(자동 임시 저장): 이력을 늘리지 않고 '마지막 수동 저장 뒤의 한 칸'을 계속 덮어쓴다 — 앱이 갑자기 꺼져도
-      이어서 작업할 수 있게 하는 작업본이다. 저장 이력·보관소에는 보이지 않는다.
+      이어서 작업할 수 있게 하는 작업본이다. 저장 이력·보관함에는 보이지 않는다.
     마지막 줄과 내용이 같으면 아무것도 늘리지 않는다."""
     last = db.execute('SELECT revision_no, draft_json, kind, id FROM article_revisions WHERE article_id = ? '
                       'ORDER BY revision_no DESC LIMIT 1', (identifier,)).fetchone()
@@ -345,10 +345,10 @@ def _check_draft(data):
 
 
 def _save_in(db, draft, identifier, expected, kind, now, replace_latest=False):
-    """한 트랜잭션 안에서 원고를 저장한다 → (revision_no, 저장한 draft_json). 보관소에서 지운 기사에는 저장하지 않는다.
+    """한 트랜잭션 안에서 원고를 저장한다 → (revision_no, 저장한 draft_json). 보관함에서 지운 기사에는 저장하지 않는다.
     replace_latest=True 면 같은 편집 세션의 최신 이력 줄을 새 줄 없이 덮어쓴다(스냅샷이 가리키는 줄은 절대 덮어쓰지 않는다)."""
     if is_deleted(db, identifier):
-        raise RequestError('보관소에서 삭제한 기사입니다. 새 기사로 작성해 주세요.', 409, code='ARTICLE_DELETED')
+        raise RequestError('보관함에서 삭제한 기사입니다. 새 기사로 작성해 주세요.', 409, code='ARTICLE_DELETED')
     if expected is not None:
         current = db.execute('SELECT max(revision_no) FROM article_revisions WHERE article_id = ?', (identifier,)).fetchone()[0] or 0
         if current != expected:
@@ -428,7 +428,7 @@ def _manual_summary(manual):
 
 
 def edited_after_publish(db, article_id):
-    """발행한 뒤 수동 저장한 내용이 발행본과 다른가(보관소 '발행 후 수정 중')."""
+    """발행한 뒤 수동 저장한 내용이 발행본과 다른가(보관함 '발행 후 수정 중')."""
     row = _published_row(db, article_id)
     manual = _last_manual(db, article_id)
     return bool(row and manual and manual[2] != row[4])
@@ -470,8 +470,8 @@ ARTICLE_VERSIONS = ('saved', 'published')
 
 
 def get_article(article_id, version='saved', photo_refs=False):
-    """보관소에서 '수정'을 누른 기사를 편집기로 연다(읽기만 하고 아무것도 바꾸지 않는다).
-    - saved: 마지막 수동 저장본(보관소 '작성 중'에 보이는 판). 수동 저장이 없으면 최신 임시 저장본
+    """보관함에서 '수정'을 누른 기사를 편집기로 연다(읽기만 하고 아무것도 바꾸지 않는다).
+    - saved: 마지막 수동 저장본(보관함 '작성 중'에 보이는 판). 수동 저장이 없으면 최신 임시 저장본
     - published: 발행본
     응답 모양은 latest_article 과 같다."""
     article_id = _article_id(article_id)
@@ -479,7 +479,7 @@ def get_article(article_id, version='saved', photo_refs=False):
         raise RequestError("version 은 'saved' 또는 'published' 입니다.")
     with vault.connect() as db:
         if is_deleted(db, article_id):
-            raise _not_found('보관소에서 삭제한 기사입니다.')
+            raise _not_found('보관함에서 삭제한 기사입니다.')
         manual = _last_manual(db, article_id)
         pub = _published_row(db, article_id)
         if version == 'published':
@@ -516,8 +516,8 @@ def _purge_at(deleted_at):
 
 
 def delete_article(article_id):
-    """보관소에서 기사 지우기 = 휴지통으로 옮기기 → {deleted, articleId, purgeAt}.
-    보관소·이어서 작업·자료 사용처에서 빠지고 더 저장되지 않는다. TRASH_DAYS 동안 되살릴 수 있고, 지나면 purge_trash 가 영구 삭제한다."""
+    """보관함에서 기사 지우기 = 휴지통으로 옮기기 → {deleted, articleId, purgeAt}.
+    보관함·이어서 작업·자료 사용처에서 빠지고 더 저장되지 않는다. TRASH_DAYS 동안 되살릴 수 있고, 지나면 purge_trash 가 영구 삭제한다."""
     article_id = _article_id(article_id)
     with SAVE_LOCK, vault.connect() as db:
         if not db.execute('SELECT 1 FROM articles WHERE id = ?', (article_id,)).fetchone():
@@ -584,13 +584,13 @@ def drop_unused_media(db):
 def latest_revisions(db, limit=None, manual=False, article_id=None):
     """기사마다 **최신 저장본** 한 줄 (article_id, created_at, updated_at, revision_no, draft_json) — 최근 수정순.
     "기사가 지금 무엇을 쓰는가"(자료 사용처·읽기 모델·이어서 작업)는 모두 이 한 곳에서 읽는다.
-    manual=True 면 마지막 **수동 저장본**(보관소 '작성 중'에 보이는 판). 수동 저장이 아직 없는 기사는 최신 임시 저장본."""
+    manual=True 면 마지막 **수동 저장본**(보관함 '작성 중'에 보이는 판). 수동 저장이 아직 없는 기사는 최신 임시 저장본."""
     pick = ('(SELECT revision_no FROM article_revisions WHERE article_id = a.id '
             "ORDER BY kind = 'manual' DESC, revision_no DESC LIMIT 1)") if manual else \
         '(SELECT max(revision_no) FROM article_revisions WHERE article_id = a.id)'
     sql = ('SELECT a.id, a.created_at, a.updated_at, r.revision_no, r.draft_json FROM articles a '
            'JOIN article_revisions r ON r.article_id = a.id AND r.revision_no = ' + pick
-           + ' WHERE a.id NOT IN (SELECT article_id FROM article_deleted)')  # 보관소에서 지운 기사는 어디에도 보이지 않는다
+           + ' WHERE a.id NOT IN (SELECT article_id FROM article_deleted)')  # 보관함에서 지운 기사는 어디에도 보이지 않는다
     params = []
     if article_id is not None:
         sql += ' AND a.id = ?'

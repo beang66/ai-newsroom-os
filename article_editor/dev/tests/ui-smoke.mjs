@@ -230,7 +230,7 @@ try {
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
   // 사이드바 버튼 title(내 사이드바)과 화면 제목(page-heading, 데이터 navigation.js)은 이름이 다르다.
   // 기사 작성·인터뷰 화면은 상단 제목 대신 자체 작업 화면(저장 상태 표시 / 녹취 화면)이 열린다.
-  const NAV_BUTTON = { "오늘의 데스크": "오늘의 데스크", "기사 작성": "기사 작성", "녹음 파일": "인터뷰 & 오디오", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터 맵", "보관함": "기사 보관함" };
+  const NAV_BUTTON = { "오늘의 데스크": "오늘의 데스크", "기사 작성": "기사 작성", "녹음 파일": "인터뷰 & 오디오", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터 맵", "보관함": "보관함" };
   const NAV_HEADING = { "오늘의 데스크": "오늘의 업무", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터맵", "보관함": "보관함" };
   const READY = '[data-testid="page-heading"], [data-testid="save-status"], [data-testid="interview-studio"], .writer-workspace, [data-testid="backup-export"]';
   const go = async (title) => {
@@ -976,9 +976,9 @@ try {
   await page.getByText("• 자료.txt").waitFor();
   await snapshot('prototype-ux-archive');
   // 휴지통(코어 /api/trash): 지운 기사가 없으면 비어 있다고 보이고, 다시 누르면 목록으로 돌아온다
-  await page.getByTestId("archive-trash").click();
+  await page.getByTestId("archive-scope").selectOption("trash");
   await page.getByTestId("trash-list").getByText("휴지통이 비어 있습니다.").waitFor();
-  await page.getByTestId("archive-trash").click();
+  await page.getByTestId("archive-scope").selectOption("all");
   await page.getByTestId("trash-list").waitFor({ state: "detached" });
   assert.equal(await page.getByTestId("data-map").count(), 0, "보관함에는 데이터맵을 중복 렌더링하지 않는다");
   await go("데이터맵");
@@ -1096,7 +1096,7 @@ try {
   await page.unroute('**/api/articles/save');
   await go('기사 작성');
   assert.ok(((await body.innerText()).trim()).includes('저장 실패 시 보존 문장'));
-  // 보관소 × 로 기사 삭제(지금 쓰는 기사가 아닌 것) → 목록에서 사라지고 코어 목록에서도 빠진다
+  // 보관함 × 로 기사 삭제(지금 쓰는 기사가 아닌 것) → 목록에서 사라지고 코어 목록에서도 빠진다
   await go('보관함');
   const archive = page.getByTestId('archive-view');
   await archive.getByRole('button', { name: '전환 검증 두 번째 기사 삭제' }).click();

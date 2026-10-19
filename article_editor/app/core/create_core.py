@@ -10,6 +10,7 @@ from .managers.model_manager import ModelManager
 from .managers.platform_manager import PlatformManager
 from .managers.session_manager import SessionManager
 from .managers.settings_manager import SettingsManager
+from .managers.share_manager import ShareManager
 from .managers.storage_manager import StorageManager
 from .managers.transfer_manager import TransferManager
 from .managers.ut_event_manager import UtEventManager
@@ -25,6 +26,7 @@ class Core:
         self.ai = AIManager()
         self.models = ModelManager()
         self.transfer = TransferManager(self.session)
+        self.shares = ShareManager(self.session, self.storage)
         self.platform = PlatformManager()
         self.jobs = JobManager()
         try:

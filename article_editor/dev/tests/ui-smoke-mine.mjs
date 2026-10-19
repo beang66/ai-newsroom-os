@@ -87,7 +87,10 @@ try {
   const context = await browser.newContext({ viewport: { width: 1500, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
   const page = await context.newPage();
   pageErrors = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("pageerror", (error) => {
+    pageErrors.push(error.message);
+    console.error("  browser pageerror:", error.message);
+  });
   page.on("dialog", (dialog) => dialog.accept());
   page.setDefaultTimeout(15_000);
 
@@ -126,7 +129,7 @@ try {
   await page.route(`**/api/transcripts/${TRANSCRIPT_ID}/audio`, (route) => route.fulfill({ status: 200, contentType: "audio/mp4", body: Buffer.from([0, 0, 0, 0]) }));
 
   const step = (name) => console.log(`  ✓ ${name}`);
-  const nav = async (title) => page.locator(`button[title="${title}"]`).first().click();
+  const nav = async (title) => page.getByRole("button", { name: title, exact: true }).first().click();
   const heading = (text) => page.getByTestId("page-heading").filter({ hasText: text }).waitFor();
 
   // 1. 첫 화면은 오늘의 데스크
@@ -138,7 +141,7 @@ try {
   // 2. 화면 이동: 제목이 맞는지
   await nav("콘텐츠 변환"); await heading("콘텐츠 변환");
   await nav("데이터 맵"); await heading("데이터맵");
-  await nav("기사 보관함"); await heading("보관함");
+  await nav("보관함"); await heading("보관함");
   await page.getByTestId("archive-view").waitFor();
   await nav("인터뷰 & 오디오");
   await page.getByText("저장된 전사 불러오기").waitFor();
@@ -169,6 +172,20 @@ try {
   await page.keyboard.press("Control+s");
   await page.waitForFunction(() => /저장됨 · \d+번째 이력/.test(document.body.innerText), null, { timeout: 15_000 });
   assert.match(await saveText.textContent(), /저장됨/);
+  await page.getByTestId("save-notice").waitFor();
+  await page.getByTestId("save-notice").waitFor({ state: "detached", timeout: 5_000 });
+  const writerSave = page.getByTestId("writer-save");
+  assert.equal(await writerSave.evaluate((button) => {
+    const editor = document.querySelector('.writer-workspace [contenteditable="true"]');
+    let canvas = editor?.parentElement;
+    while (canvas && !String(canvas.className).includes("min-h-[640px]")) canvas = canvas.parentElement;
+    return Boolean(canvas?.contains(button));
+  }), true, "저장하기 버튼은 기사 작성 카드 안에 있다");
+  await writerSave.click();
+  await page.getByTestId("save-notice").getByText("데이터맵과 보관함에 저장되었습니다.").waitFor();
+  await page.getByTestId("save-notice").waitFor({ state: "detached", timeout: 5_000 });
+  const knowledgeAfterSave = await (await page.request.get(`${BASE}/api/knowledge-map`)).json();
+  assert.ok(knowledgeAfterSave.articles.some((item) => item.title === "스모크 테스트 기사"), "저장한 기사가 데이터맵 저장소에 있다");
   step("AI 부제 한 묶음·슬래시→줄바꿈, 분류 선택(세부 분류칸 없음), 자동 저장, Ctrl+S 수동 저장(이력 번호)");
 
   // 4. 기사 미리보기(main 의 DongaPreview)
@@ -183,7 +200,8 @@ try {
   step("미리보기: 제목·분류(사회) 표시, 돌아온 뒤 본문 유지");
 
   // 5. 사진 첨부: 열면 검색어 자동 추천, Unsplash 는 검색·키워드를 눌러야 표시
-  await page.getByRole("button", { name: /사진 첨부/ }).click();
+  if (!process.env.UI_SMOKE_ARCHIVE_ONLY) {
+    await page.getByRole("button", { name: /사진 첨부/ }).click();
   await page.getByTestId("photo-keyword-chips").waitFor();
   assert.ok(assistCalls.includes("photo_keywords"), "열면 검색어 추천이 자동으로 요청된다");
   assert.equal(await page.locator("img[src^='https://images.unsplash']").count(), 0, "처음에는 Unsplash 사진이 없다");
@@ -222,17 +240,29 @@ try {
   await page.getByRole("button", { name: "동아일보DB" }).click();
   for (const label of ["전체", "최신순", "오래된순"]) await page.getByRole("button", { name: label, exact: true }).waitFor();
   step("사진 첨부: 자동 추천 → 키워드 클릭 시 검색, 사진 편집(표시 범위·모자이크 유지·편집본 파일·본문 삽입), 사진을 본문 맨 위로 이동, 동아일보 DB 정렬");
+  }
 
   // 6. 보관함: 저장한 기사가 보이고 삭제
-  await nav("기사 보관함");
+  await nav("보관함");
   await page.getByTestId("archive-view").waitFor();
   const savedArchiveItem = page.locator(".archive-item", { hasText: "스모크 테스트 기사" }).first();
   await savedArchiveItem.waitFor();
   assert.equal(await savedArchiveItem.locator("button").first().evaluate((element) => getComputedStyle(element).textAlign), "left", "최근 기사 번호·제목·날짜는 왼쪽 정렬이다");
-  assert.equal(await savedArchiveItem.getByTestId("archive-delete").count(), 1, "저장된 기사마다 오른쪽 위 삭제 아이콘이 있다");
-  await page.getByTestId("archive-delete").first().click();
+  // 기사별 휴지통 아이콘은 두지 않는다(2026-10-19 결정) — 기사를 골라 미리보기의 '삭제'로 지운다
+  await savedArchiveItem.click();
+  await page.locator(".archive-preview").getByTestId("archive-delete").click();
   await page.waitForFunction(() => !document.body.innerText.includes("스모크 테스트 기사"), null, { timeout: 15_000 });
-  step("보관함: 저장한 기사 표시, 삭제(×)");
+  await page.getByTestId("archive-view").waitFor();
+  await page.getByTestId("archive-view").waitFor();
+  assert.equal(await page.getByText("스모크 테스트 기사", { exact: true }).count(), 0, "삭제한 기사가 보관함에 남지 않는다");
+  assert.deepEqual(pageErrors, [], `기사 삭제 후 브라우저 오류: ${pageErrors.join(" | ")}`);
+  step("보관함: 저장한 기사 표시, 미리보기에서 삭제");
+  if (process.env.UI_SMOKE_ARCHIVE_ONLY) {
+    console.log("PASS ui-smoke-mine: 빈 보관함·마지막 저장 기사 삭제 후 화면 유지");
+    await browser.close();
+    stopCore();
+    process.exit(0);
+  }
 
   // 7. 인터뷰 STT: 저장된 전사 → 왼쪽은 화자 박스, 오른쪽 통합 텍스트는 통글 하나, 복사
   await nav("인터뷰 & 오디오");

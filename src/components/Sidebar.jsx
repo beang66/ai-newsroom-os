@@ -51,7 +51,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
     { id: "interview", label: "인터뷰 & 오디오", icon: Mic, isTab: true },
     { id: "convert", label: "콘텐츠 변환", icon: Send, isTab: true },
     { id: "map", label: "데이터 맵", icon: Network, isTab: true },
-    { id: "archive", label: "기사 보관함", icon: FolderArchive, isTab: true },
+    { id: "archive", label: "보관함", icon: FolderArchive, isTab: true },
   ];
 
   // 활성 탭 식별 함수

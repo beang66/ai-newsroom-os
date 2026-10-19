@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Save } from "lucide-react";
 
-// 화면 하단 '저장하기' — 지금 기사(원고·연결한 자료·녹취·변환본)를 수동 저장해 보관함·데이터맵에 남긴다. 결과는 상단 저장 상태에 표시된다.
+// 작업 영역 하단 '저장하기' — 지금 기사(원고·연결한 자료·녹취·변환본)를 수동 저장해 보관함·데이터맵에 남긴다.
 export default function SaveBar({ onSave, testId = "screen-save" }) {
   const [saving, setSaving] = useState(false);
   const save = async () => {

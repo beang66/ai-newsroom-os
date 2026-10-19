@@ -147,7 +147,7 @@ export async function renderStoredCard(card, article, draft) {
 async function assetBytes(rendered) {
   const asset=rendered.object_ref?rendered:await core.getMediaAsset(rendered.id);
   const media=/^media:([a-f0-9]{32})$/.exec(asset?.object_ref||'');
-  if(!media)throw Error('암호화 보관소의 이미지 참조를 확인하지 못했습니다. 다시 렌더해 주세요.');
+  if(!media)throw Error('암호화 저장소의 이미지 참조를 확인하지 못했습니다. 다시 렌더해 주세요.');
   return core.mediaBytes(media[1]);
 }
 export async function storedJpg(rendered) {

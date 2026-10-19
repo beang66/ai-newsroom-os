@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { dataMapApi } from "../../api/datamap.js";
 import { CATEGORIES } from "./constants.js";
-import CategoryMark from "./components/CategoryMark.jsx";
 import { FILE_KINDS } from "./domain/files.js";
 import {
   filterNodes,
@@ -27,6 +26,7 @@ import ContextPanel from "./components/ContextPanel.jsx";
 import ResourceTable from "./components/ResourceTable.jsx";
 import ResourceReader from "./components/ResourceReader.jsx";
 import MapViews from "./components/MapViews.jsx";
+import { droppedFiles, hasDroppedFiles } from "../../lib/fileDrop.js";
 import "./data-map.css";
 
 // Data Map — 보관함 화면의 data-map-slot 안에 들어가는 기능 화면.
@@ -55,7 +55,8 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
     [error, setError] = useState(""),
     [attempt, setAttempt] = useState(0);
   const [importing, setImporting] = useState(false),
-    [importNotice, setImportNotice] = useState("");
+    [importNotice, setImportNotice] = useState(""),
+    [importDragging, setImportDragging] = useState(false);
   const [view, setView] = useState("map"),
     [query, setQuery] = useState(""),
     [project, setProject] = useState("all"),
@@ -129,7 +130,7 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
     try {
       const files = await Promise.all(
         selectedFiles.map(async (file) => ({
-          path: (file.webkitRelativePath || file.name).replaceAll("\\", "/"),
+          path: (file.dropRelativePath || file.webkitRelativePath || file.name).replaceAll("\\", "/"),
           content: await file.text(),
         })),
       );
@@ -147,7 +148,18 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
     }
   };
   const importButtons = (
-    <div className="dm-import">
+    <div
+      className={`dm-import ${importDragging ? "is-dragging" : ""}`}
+      data-testid="datamap-dropzone"
+      onDragEnter={(event) => { if (hasDroppedFiles(event)) { event.preventDefault(); setImportDragging(true); } }}
+      onDragOver={(event) => { if (hasDroppedFiles(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
+      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setImportDragging(false); }}
+      onDrop={async (event) => {
+        event.preventDefault();
+        setImportDragging(false);
+        if (!importing) await importMarkdown(await droppedFiles(event.dataTransfer));
+      }}
+    >
       <label className="dm-button">
         <Upload size={14} />
         {importing ? "가져오는 중" : "Markdown 추가"}
@@ -160,6 +172,7 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
         <input className="sr-only" type="file" accept=".md,text/markdown" multiple webkitdirectory="" directory="" disabled={importing}
           onChange={(event) => { importMarkdown(event.target.files); event.target.value = ""; }} />
       </label>
+      <span className="dm-drop-hint">Markdown 파일이나 폴더를 끌어놓기</span>
     </div>
   );
   if (!graph || !graph.nodes.length)
@@ -223,36 +236,29 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
             )}
             <kbd>/</kbd>
           </label>
-          <MapViews view={view} onView={navigate} />
-          {importButtons}
-        </div>
-        <div className="filterbar">
-          <div className="type-filters" role="group" aria-label="분류 필터">
-            <button className={kind === "all" ? "active" : ""} aria-pressed={kind === "all"} onClick={() => setKind("all")}>
-              전체 <small>{graph.nodes.length}</small>
-            </button>
-            {Object.entries(CATEGORIES).map(([id, { label, description }]) => (
-              <button
-                key={id}
-                className={kind === id ? "active" : ""}
-                aria-pressed={kind === id}
-                title={description}
-                disabled={!categoryCounts[id]}
-                onClick={() => setKind(id)}
-              >
-                <CategoryMark category={id} />
-                {label} <small>{categoryCounts[id] || 0}</small>
-              </button>
-            ))}
-          </div>
-          <div className="filter-actions">
+          <div className="dm-toolbar-actions">{importButtons}</div>
+          <div className="dm-view-tools">
+            <MapViews view={view} onView={navigate} />
+            <select
+              className="dm-filter-select"
+              aria-label="분류 필터"
+              value={kind}
+              onChange={(event) => setKind(event.target.value)}
+            >
+              <option value="all">전체 ({graph.nodes.length})</option>
+              {Object.entries(CATEGORIES).map(([id, { label }]) => (
+                <option key={id} value={id} disabled={!categoryCounts[id]}>
+                  {label} ({categoryCounts[id] || 0})
+                </option>
+              ))}
+            </select>
             {hasFilter && (
               <button className="text-button" onClick={resetFilters}>
                 필터 초기화
                 <X size={12} />
               </button>
             )}
-            <span>{visible.length}개 노드</span>
+            <span className="dm-result-count">{visible.length}개 노드</span>
           </div>
         </div>
         <div

@@ -53,7 +53,7 @@ def _unsplash_photo(photo_id, track):
 def _article(m, q):  # ?version=saved|published → 보관함 '수정'(그 판을 편집기로), 없으면 최신 작업본
     version=q.get('version',[''])[0]
     if version in ('saved','published'):return CORE.storage.get_article(m[1],version,photo_refs=q.get('photos')==['ref'])
-    return CORE.storage.get_article(m[1],photo_refs=True)
+    return CORE.storage.get_article(m[1],photo_refs=True,record=q.get('purpose')!=['preview'])  # 보관함 미리보기는 '다시 열기'가 아니다
 
 def _export(data):
     started=time.monotonic();result=exports.save(data)

@@ -40,6 +40,7 @@ export const ROUTES = Object.freeze({
   // version 없음 = 그 기사의 최신 원고 | "saved"(마지막 수동 저장본) | "published"(송고본, 사진은 참조로)
   article: (id, version) => "/api/articles/" + encodeURIComponent(id.replaceAll("-", ""))
     + (version ? "?version=" + encodeURIComponent(version) + "&photos=ref" : ""),
+  articlePreview: (id) => "/api/articles/" + encodeURIComponent(id.replaceAll("-", "")) + "?purpose=preview", // 보관함 미리보기 — '다시 열기'로 기록하지 않음
   articlesLatest: "/api/articles/latest?photos=ref", // 사진은 'media:<id>' 참조로 받고 바이트는 mediaBytes 로 따로
   media: (id) => "/api/media/" + encodeURIComponent(id),
   mediaAssets: "/api/media-assets",
@@ -235,6 +236,8 @@ export function createCoreApi(transport) {
     listArticles: (signal) => transport.json(ROUTES.articles, null, signal),
     /** 기사 하나 — version 없음(최신 원고) | "saved" | "published" → latestArticle 과 같은 모양 */
     getArticle: (id, version, signal) => transport.json(ROUTES.article(id, version), null, signal),
+    /** 보관함 미리보기용으로 최신 원고 읽기(getArticle 과 같은 모양). 사용자 테스트 기록의 '다시 열기'로 세지 않는다 */
+    previewArticle: (id, signal) => transport.json(ROUTES.articlePreview(id), null, signal),
     /** 원고의 저장 이력 목록(최신이 위) → { revisions: [{ revisionNo, id, createdAt, title, excerpt, chars, ... }] } */
     listRevisions: (articleId, signal) => transport.json(ROUTES.articleRevisions(articleId), null, signal),
     /** 저장 이력 한 건의 미리보기(읽기 전용) → { title, subtitle, content, ... } */

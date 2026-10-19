@@ -216,12 +216,13 @@ export default function ArchiveView({ article, articles, onOpen, onMap, onDelete
         setLibraryError(error.message);
       });
   }, [meta, metaLoaded, remoteLibraryAvailable]);
+  useEffect(() => { setDrafts((previous) => ({ ...previous, [currentId]: article })); }, [article, currentId]);
+  // 다른 기사 본문은 기사 목록(id)이 바뀔 때만 미리보기용으로 읽는다 — 편집 중 article 이 바뀔 때마다 모두 다시 읽지 않게
+  const otherArticleIds = articles.map((item) => normalizedId(item.id)).filter((id) => id !== currentId).join(",");
   useEffect(() => {
     let active = true;
-    const initial = { [currentId]: article };
-    setDrafts((previous) => ({ ...previous, ...initial }));
-    Promise.all(articles.filter((item) => normalizedId(item.id) !== currentId).map(async (item) => {
-      try { return [normalizedId(item.id), (await core.getArticle(item.id)).draft]; } catch { return [normalizedId(item.id), null]; }
+    Promise.all(otherArticleIds.split(",").filter(Boolean).map(async (id) => {
+      try { return [id, (await core.previewArticle(id)).draft]; } catch { return [id, null]; }
     })).then((entries) => {
       if (!active) return;
       setDrafts((previous) => ({ ...previous, ...Object.fromEntries(entries.filter(([, value]) => value)) }));
@@ -241,7 +242,7 @@ export default function ArchiveView({ article, articles, onOpen, onMap, onDelete
       if (active) setStoredTranscripts(detailed);
     }).catch(() => active && setStoredTranscripts([]));
     return () => { active = false; };
-  }, [articles, article, currentId]);
+  }, [otherArticleIds]);
 
   const allItems = useMemo(() => createLibraryItems(articles, drafts, article, storedSources, storedTranscripts, storedKnowledge).map((item) => ({
     ...item,

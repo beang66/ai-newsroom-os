@@ -31,3 +31,9 @@ test('플랫폼 검수·SNS 준비가 실제 기사·고정본 ID와 동작을 �
  assert.equal(sent[1][1].articleId,'article-1');assert.equal(sent[1][1].snapshotId,'snapshot-1');
  assert.equal(sent[1][1].payload.text,'첫 문단\n\n다음 문단');
 });
+
+test("보관함 미리보기는 '다시 열기'로 세지 않는 경로로 읽는다", async () => {
+  calls.length = 0;
+  await api.previewArticle("aaaa-bbbb"); await api.getArticle("aaaa-bbbb");
+  assert.deepEqual(calls.map((c) => c[0]), ["/api/articles/aaaabbbb?purpose=preview", "/api/articles/aaaabbbb"]);
+});

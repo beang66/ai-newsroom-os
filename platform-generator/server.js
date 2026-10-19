@@ -5,9 +5,6 @@ const { suggestKeywords } = require("./ai-client");
 function createApp({instagramService,threadsService,storageOptions={}}={}) {
 const app = express();
 
-// DNS 리바인딩 방지: 다른 사이트 주소(Host)로 들어온 요청은 AI 키·렌더러를 쓰지 못하게 막는다(코어 api.py 의 allowed() 와 같은 규칙).
-app.use((req,res,next)=>/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(req.headers.host||'')?next():res.status(403).json({success:false,error:'로컬 주소로 접속해 주세요.'}));
-
 // 로컬 게시 경로는 자체 JSON 크기 제한과 출처 검사를 먼저 적용합니다.
 const instagram=require("./instagram-local-routes")(app,instagramService);
 const threads=require("./threads-local-routes")(app,threadsService);
@@ -31,11 +28,8 @@ require("./validation-routes")(app);
 
 const OUTPUT_DIR = path.join(__dirname, "output");
 
-fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-// 렌더 결과는 응답 직후 화면이 내려받거나 내 문서로 복사한다 — 하루 지난 JPG 는 시작할 때 지워 무한히 쌓이지 않게 한다.
-for (const name of fs.readdirSync(OUTPUT_DIR)) {
-  const file = path.join(OUTPUT_DIR, name);
-  if (name.endsWith('.jpg') && Date.now() - fs.statSync(file).mtimeMs > 86_400_000) fs.rmSync(file, { force: true });
+if (!fs.existsSync(OUTPUT_DIR)) {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 }
 
 app.use("/output", express.static(OUTPUT_DIR));

@@ -185,6 +185,7 @@ def print_diagnostics(url, server):
 def main():
     args = sys.argv[1:]
     log = prepare_output()
+    deferred_shutdown = False
     try:
         if '--smoke' in args:
             from desktop import smoke
@@ -227,17 +228,27 @@ def main():
                     quit_once = threading.Lock()
 
                     def quit_now(*_):
+                        nonlocal deferred_shutdown
                         if not quit_once.acquire(blocking=False):
                             return
-                        watchdog = threading.Timer(8, lambda: os._exit(0))  # 정리가 멈춰도 8초 뒤에는 끝낸다
-                        watchdog.daemon = True
-                        watchdog.start()
-                        try:
-                            server.stop()
-                        finally:
-                            if log is not None:
-                                log.close()
-                            os._exit(0)
+                        def finish():
+                            from core import platform_runs
+                            platform_runs.wait_for_active_runs()
+                            watchdog = threading.Timer(8, lambda: os._exit(0))
+                            watchdog.daemon = True
+                            watchdog.start()
+                            try:
+                                server.stop()
+                            finally:
+                                if log is not None:
+                                    log.close()
+                                os._exit(0)
+                        from core import platform_runs
+                        if platform_runs.has_active_runs():
+                            deferred_shutdown = True
+                            threading.Thread(target=finish, name='platform-shutdown', daemon=False).start()
+                        else:
+                            finish()
 
                     shell.run_window(url, debug='--debug' in args, on_closed=quit_now)
                     quit_now()
@@ -245,7 +256,8 @@ def main():
             webbrowser.open(url)
             server.serve_forever()
         finally:
-            server.stop()
+            if not deferred_shutdown:
+                server.stop()
         return 0
     except KeyboardInterrupt:
         return 0
@@ -253,7 +265,7 @@ def main():
         fatal(str(error))
         return 1
     finally:
-        if log is not None:
+        if log is not None and not deferred_shutdown:
             log.close()
 
 

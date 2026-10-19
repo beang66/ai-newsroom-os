@@ -14,6 +14,10 @@ const cleanArticle = (article = {}) => ({
   content: typeof article.content === "string" ? article.content : "",
 });
 
+export const startPlatformRun = payload => core.startPlatformRun(payload);
+export const listPlatformRuns = articleIdValue => core.listPlatformRuns(articleIdValue);
+export const getPlatformRun = runId => core.getPlatformRun(runId);
+
 // 편집실 목록·미리보기: 기존 Core API와 공개된 팀 본문/사진 복원기를 재사용한다.
 export async function listStudioArticles(signal) {
   const result=await core.listArticles(signal);

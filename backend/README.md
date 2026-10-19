@@ -61,6 +61,8 @@ AI_BACKEND_URL=https://<render 서비스 주소>
 | POST | `/ai/embeddings` | Cloudflare Workers AI `@cf/qwen/qwen3-embedding-0.6b` (모델은 서버 고정; 본문 그대로 중계) |
 | POST | `/ai/audio/transcriptions` | `{OPENAI_BASE}/audio/transcriptions` (multipart 그대로) |
 | POST | `/cms/publish` | `CMS_PUBLISH_URL` (기사 JSON, 성공 응답을 그대로 반환) |
+| POST | `/ai/share-key` | (자체 응답) 기사 공유본의 키 `{shareId, token?}` → `{key}`. Supabase `article_share_role` 로 권한(소유자·초대·링크)을 확인한 뒤에만 `BACKUP_MASTER_KEY` 에서 공유마다 파생해 준다(없으면 403) |
+| GET | `/s/<링크 토큰>` | (자체 응답, 로그인 없음) 공유 링크 안내 페이지 — 앱의 보관함 → 공유받은 항목에 붙여 넣는 방법만 보여 주고 기사 내용·DB 는 건드리지 않는다 |
 | GET | `/unsplash/search/photos` | `{UNSPLASH_BASE}/search/photos` |
 | GET | `/unsplash/photos/<id>` | `{UNSPLASH_BASE}/photos/<id>` |
 | GET | `/unsplash/download/<...>` | `{UNSPLASH_BASE}/download/<...>` |

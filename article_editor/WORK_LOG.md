@@ -7,6 +7,7 @@ GPT(Codex)로 작업하다 토큰 한도로 2026-09-30부터 Claude로 이어서
 
 - 예상과 다른 수정·추가 작업이 생기면 바로 멈추고 사용자에게 보고한 뒤, 진행 방법을 설명하고 사용자가 정하면 진행한다.
 - 결과는 VS Code가 아니라 채팅창(내장 브라우저 미리보기, 스크린샷)으로 바로 보여준다.
+- 오류 수정·검증 공유는 `docs/ERROR_TEST_REPORT_TEMPLATE.md` 형식을 사용한다. 각 항목에 `[TEST]`, `PASS/FAIL/BLOCKED`, `P0~P3`, `현상`, 단계별 `재현`, `기대`, `환경`을 빠짐없이 기록한다.
 
 ## 현재 상태 (2026-09-30 기준)
 
@@ -31,6 +32,11 @@ GPT(Codex)로 작업하다 토큰 한도로 2026-09-30부터 Claude로 이어서
 
 | 날짜 시각 | 작업자 | 내용 | 수정 파일 |
 |---|---|---|---|
+| 2026-10-19 | Codex | main 병합 후 다른 담당자의 변경을 다시 합칠 때 기사 편집 안정화 수정이 덮어써지지 않도록 팀원용 복사 프롬프트 작성. 보호 대상 동작·충돌 파일·재빌드·최소 회귀 테스트·비개발자용 오류 설명 형식을 명시. | docs/TEAM_POST_MERGE_PROTECTION_PROMPT.md, docs/2026-10-19_UI_RELIABILITY_FIXES.md, WORK_LOG.md |
+| 2026-10-19 | Codex | 사용자 지정 오류 공유 형식을 표준화. 이후 오류·검증 기록은 `[TEST] 항목명 \| 상태 \| 우선순위`와 현상·재현·기대·환경 구조로 작성하고, 미실행 외부 연동은 PASS가 아닌 BLOCKED로 구분하도록 규칙과 템플릿을 추가. | docs/ERROR_TEST_REPORT_TEMPLATE.md, WORK_LOG.md |
+| 2026-10-19 | Codex | AI 부제 추천을 완성형 묶음 1개로 제한. 원격 AI 요청 스키마도 후보 1개로 변경하고, AI가 ` / `를 줄 구분자로 반환하면 서버와 프런트 양쪽에서 실제 줄바꿈으로 교정. 중복되어 있던 실제 기사 작성용 `assistService` 경로까지 수정하고, 구형 3개 응답도 화면에서는 첫 묶음만 표시하도록 방어. Python 부제 테스트 11개, Node 73개, production build, 실제 Edge UI의 “3개 응답 → 1개 표시·3줄 적용” 회귀 테스트 통과. | app/core/ai/{router,subtitle_editorial}.py, src/lib/subtitleCandidates.js, src/services/assistService.js, src/api/editorial.js, dev/tests/{test_subtitle_style.py,ui-smoke-mine.mjs}, app/frontend/* |
+| 2026-10-19 | Codex | 최초 데스크톱 빈 화면 원인을 오래되거나 손상된 WebView2 사용자 프로필로 확인. 기존 프로필은 `%LOCALAPPDATA%\AI Newsroom\webview-backup-20261019-blank-screen-part1/2`로 보존하고 새 프로필로 셸 스모크 8개 통과 후 재실행. | 로컬 WebView2 사용자 데이터(저장소 코드 변경 없음) |
+| 2026-10-19 | Codex | 기사 작성 안정화: AI 추천 부제목 문구 수정, 최종 AI 교열이 52자를 넘을 때 검증된 부제 초안으로 복구, 미리보기 복귀 후 본문 복원, 사진을 맨 위·표시선 위치로 정확히 이동, 모자이크 도구 활성 유지(편집기 2경로), Unsplash `© 작가 / Unsplash` 복원, 영문 설명·파일명 자동 캡션 제거, 보관함 왼쪽 정렬·개별 삭제 아이콘. UI 테스트 중 빈 보관함의 `null.draft` 전체 빈 화면도 발견·수정. lint 0, 부제 테스트 9, Node 테스트 73, production build, 실제 Edge UI 전체 흐름 통과. 상세 기록: `docs/2026-10-19_UI_RELIABILITY_FIXES.md` | src/components/ArticleWriter.jsx, ArchiveView.jsx, PhotoEditorView.jsx, PhotoSideDrawer.jsx, photo/*, src/api/editorial.js, src/services/photoSearch.js, src/lib/photoMarks.js, src/workspace.css, app/core/ai/subtitle_editorial.py, dev/tests/*, app/frontend/* |
 | 2026-09-30 ~17:20 | GPT | KeT5+KoBART+OpenAI 제목·부제 생성 구현, 테스트 기록 작성 | server.py, index.html, model_tests/, HUGGINGFACE_HEADLINE_GUIDE.md |
 | 2026-09-30 | Claude | 프로젝트 현황 파악, 이 기록 파일 작성 (코드 수정 없음) | WORK_LOG.md |
 | 2026-09-30 | Claude | 확인: 8765 포트에 server.py가 3개 동시에 실행 중(16:31, 17:16, 17:20 시작). 오래된 서버가 요청을 받으면 최신 코드가 반영되지 않을 수 있음 → 사용자에게 보고 | - |

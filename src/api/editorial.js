@@ -4,6 +4,7 @@ import { core } from "./core.js";
 import { claimDetails } from "./claim-details.js";
 import { captionText, photoOfLine, textWithoutPhotos } from "../lib/photoMarks.js";
 import { escapeHtml } from "../lib/studioArticle.js";
+import { normalizeSubtitleCandidate } from "../lib/subtitleCandidates.js";
 
 // 로그인·설치 화면도 같은 코어 계약을 사용한다. 자격 증명은 요청 동안만 전달한다.
 export const signIn = (email, password, remember = false) => core.signIn(email, password, { remember });
@@ -55,12 +56,10 @@ export async function suggestHeadlines(body, currentHeadline = "") {
   return clean(values.length ? values : [d.headline]);
 }
 
-/** 부제 후보 — 원격 AI 는 subtitle_candidates, 로컬 모델 경로는 subtitle 한 개.
- *  동아일보 부제는 2~4줄이므로 줄바꿈을 그대로 둔다(부제 칸·미리보기가 줄 단위로 보여 준다). */
+/** 부제 후보는 한 묶음만 보여 준다. AI가 줄 구분자로 쓴 ` / `도 실제 줄바꿈으로 바로잡는다. */
 export async function suggestSubtitles(body, currentHeadline = "") {
   const d = await core.assist({ kind: "metadata", requested: "subheadline", body: textWithoutPhotos(body), current_headline: currentHeadline });
-  return clean([d.subtitle, ...(d.subtitle_candidates || [])].map((v) =>
-    String(v || "").split(/\n+/).map((line) => line.trim()).filter(Boolean).join("\n")));
+  return clean([d.subtitle, ...(d.subtitle_candidates || [])].map(normalizeSubtitleCandidate)).slice(0, 1);
 }
 
 /** 기사에 맞는 사진 검색어(영어 3개) */
@@ -107,9 +106,10 @@ export async function importPhoto(photo) {
   return {
     id: `unsplash-${photo.id}`,
     url,
-    caption: photo.alt_description || photo.description || "",
-    source: `${photo.user?.name || "Unsplash"} / Unsplash`,
-    provider: "Unsplash",
+    caption: "",
+    source: `© ${photo.user?.name || "Unsplash"} / Unsplash`,
+    provider: photo.user?.name || "Unsplash",
+    photographer: photo.user?.name || "Unsplash",
     sourceUrl: photo.links?.html ? `${photo.links.html}?utm_source=article_workspace&utm_medium=referral` : "",
     unsplashId: photo.id,
     ratio: "16:9",

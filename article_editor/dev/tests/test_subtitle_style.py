@@ -33,6 +33,21 @@ class SubtitleStyle(unittest.TestCase):
         self.assertEqual(out,['고사목 제거-나무예방주사 실시\nQR코드로 그루터기 추적 관리\n9·19 합의 이후 감시 강화\n청정지역 지정 목표'])
         with patch.object(server,'structured_call',return_value={'subtitle_1':four+'\n다섯째 줄'}):
             with self.assertRaises(server.RequestError):server.polish_subtitle_lines(['초안'],'9·19 합의 원문','제목',multiline=True)
+    def test_single_line_final_editor_overflow_keeps_verified_draft(self):
+        draft='검증된 사실을 간결하게 정리한 부제'
+        overflow='최종 교열기가 불필요하게 문장을 길게 늘려서 쉰두 자 제한을 훨씬 넘겨 버린 부제 문장입니다 다시 더 길게 씁니다'
+        with patch.object(server,'structured_call',return_value={'subtitle_1':overflow}):
+            self.assertEqual(server.polish_subtitle_lines([draft],'검증된 사실을 간결하게 정리한 부제 근거','제목'),[draft])
+    def test_slash_line_delimiters_become_real_line_breaks(self):
+        slash='청년층 생성형 AI 활용 경험 확인 / 학력별 활용률 차이 뚜렷 / 검색-문서 업무에 주로 활용'
+        with patch.object(server,'structured_call',return_value={'subtitle_1':slash}):
+            self.assertEqual(server.polish_subtitle_lines(['초안'],'원문','제목',multiline=True),[
+                '청년층 생성형 AI 활용 경험 확인\n학력별 활용률 차이 뚜렷\n검색-문서 업무에 주로 활용'])
+    def test_openai_single_bundle_is_supported(self):
+        candidate='청년층 생성형 AI 활용 경험 확인\n학력별 활용률 차이 뚜렷\n검색-문서 업무에 주로 활용'
+        with patch.object(server,'structured_call',return_value={'subtitle_1':candidate}):
+            result=server.finalize_openai_subtitles({'subtitle_candidates':[candidate]},'원문','제목')
+        self.assertEqual(result['subtitle_candidates'],[candidate])
     def test_openai_repair(self):
         bad={'subtitle_candidates':['전용 프로그램 확인 가능한 워터마크 도입함','탐지율 92%에서','원문 기반 추가 정보']}
         good={'subtitle_candidates':['전용 프로그램으로 식별하는 워터마크 도입','단어 수정에 따른 탐지 성능 변화','원문 기반 추가 정보']}

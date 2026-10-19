@@ -85,6 +85,8 @@ export const ROUTES = Object.freeze({
   dongaPhoto: (id) => "/api/donga/photo/" + encodeURIComponent(id),
   platformKeywords: "/api/platform/keywords",
   platformGenerate: "/api/platform/generate",
+  platformRuns: "/api/platform/runs",
+  platformRun: (id) => "/api/platform/runs/" + encodeURIComponent(id),
   platformRender: "/api/platform/render",
   platformValidate: "/api/platform/validate",
   platformSns: "/api/platform/sns",
@@ -272,6 +274,9 @@ export function createCoreApi(transport) {
     /** platform-generator 실제 생성 엔진 호출 */
     generatePlatform: (platform, payload, snapshotId, signal) =>
       transport.json(ROUTES.platformGenerate, snapshotId ? { platform, payload, snapshotId } : { platform, payload }, signal),
+    startPlatformRun: (payload, signal) => transport.json(ROUTES.platformRuns, payload, signal),
+    listPlatformRuns: (articleId, signal) => transport.json(ROUTES.platformRuns + '?articleId=' + encodeURIComponent(articleId), null, signal),
+    getPlatformRun: (id, signal) => transport.json(ROUTES.platformRun(id), null, signal),
     validatePlatform: (payload, snapshotId, signal) =>
       transport.json(ROUTES.platformValidate, { payload, ...(snapshotId ? { snapshotId } : {}) }, signal),
     platformSns: (platform, action, payload, articleId, snapshotId, signal) =>

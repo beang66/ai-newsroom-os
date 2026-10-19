@@ -8,8 +8,10 @@ function repairGeneratedLayouts(draft) {
  if(!Array.isArray(draft?.cards))return draft;
  return {...draft,cards:draft.cards.map((card,index)=>{
   const detail=card.content?.detail;
-  if(index===0||index===draft.cards.length-1||card.role!=='body'||card.design?.layout!=='comparison'||typeof detail!=='string'||!detail.trim())return card;
-  if(detail.split('\n').filter(line=>line.trim()).length===2)return card;
+  const layout=card.design?.layout;
+  if(index===0||index===draft.cards.length-1||card.role!=='body'||!['comparison','list','steps'].includes(layout)||typeof detail!=='string')return card;
+  const count=detail.split('\n').filter(line=>line.trim()).length;
+  if(layout==='comparison'?count===2:count>=2&&count<=4)return card;
   return {...card,design:{...card.design,layout:'standard'}};
  })};
 }

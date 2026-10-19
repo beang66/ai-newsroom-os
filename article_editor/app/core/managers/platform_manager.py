@@ -29,6 +29,26 @@ _WITHHELD_ENV = ("OPENAI_API_KEY", "GEMINI_API_KEY", "AI_PROVIDER", "OPENAI_MODE
 
 
 class PlatformManager:
+    def start_run(self, data):
+        from .. import platform_runs
+        return platform_runs.start_run(data, self)
+
+    @staticmethod
+    def get_run(run_id):
+        from .. import platform_runs
+        return platform_runs.get_run(run_id)
+
+    def list_runs(self, article_id):
+        from .. import platform_runs
+        listed = platform_runs.list_runs(article_id)
+        if any(run['status'] in ('queued', 'running') for run in listed['runs']):
+            platform_runs.resume_runs(self, article_id)
+        return listed
+
+    def resume_runs(self):
+        from .. import platform_runs
+        return platform_runs.resume_runs(self)
+
     @staticmethod
     def _render_origin_key(asset_id, article_id, snapshot_id, render_key):
         origin=json.dumps([article_id,snapshot_id,render_key],ensure_ascii=False,separators=(',',':'))

@@ -195,6 +195,8 @@ class SessionManager:
             storage.pack_existing_photos()
             storage.import_legacy_embedding_cache()
             jobs.recover_interrupted_jobs()
+            from .platform_manager import PlatformManager
+            PlatformManager().resume_runs()
             purged = storage.purge_trash()  # 휴지통에서 30일 지난 기사 영구 삭제 + 쓰지 않는 사진 정리
             if purged:
                 print(f'휴지통 영구 삭제: {len(purged)}건', flush=True)

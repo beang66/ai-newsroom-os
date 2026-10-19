@@ -729,8 +729,8 @@ export default function ArticleWriter({
   };
 
   // 텍스트 편집 바(플로팅 툴바) 전용 이미지 파일 첨부 핸들러
-  const handleToolbarImageSelect = (e) => {
-    const file = e.target.files?.[0];
+  const handleToolbarImageSelect = (fileOrEvent) => {
+    const file = fileOrEvent?.name ? fileOrEvent : fileOrEvent.target.files?.[0];
     if (!file) return; // 파일 선택 취소 시 기존 작성 내용 유지
 
     const reader = new FileReader();
@@ -767,7 +767,7 @@ export default function ArticleWriter({
       }
     };
     reader.readAsDataURL(file);
-    e.target.value = ""; // 동일 파일 재선택 가능하도록 리셋
+    if (fileOrEvent?.target) fileOrEvent.target.value = ""; // 동일 파일 재선택 가능하도록 리셋
   };
 
   // 이미지 편집 완료 후 저장 및 기사 본문 실시간 반영
@@ -1101,6 +1101,12 @@ export default function ArticleWriter({
     const photoIndicator = bodyInputRef.current?.querySelector(".photo-drop-indicator");
     const textIndicator = document.getElementById("sentence-drop-caret-indicator");
     if (textIndicator) textIndicator.remove();
+
+    const droppedImage = Array.from(e.dataTransfer.files || []).find((file) => file.type.startsWith("image/"));
+    if (droppedImage) {
+      handleToolbarImageSelect(droppedImage);
+      return;
+    }
 
     const photoId = e.dataTransfer.getData("photoId");
     if (photoId) {
@@ -1865,6 +1871,8 @@ export default function ArticleWriter({
                   />
                 </div>
 
+                {onSave && <SaveBar onSave={onSave} testId="writer-save" />}
+
               </div>
             )}
 
@@ -2234,8 +2242,6 @@ export default function ArticleWriter({
 
         {/* 메인 flex 컨테이너 닫기 */}
       </div>
-      {onSave && !isReaderPreview && <SaveBar onSave={onSave} testId="writer-save" />}
-
       {/* ──────────────────────────────────────────
           4. CMS 최종 발행 성공 알림 모달
          ────────────────────────────────────────── */}

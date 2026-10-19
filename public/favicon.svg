@@ -1,15 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" role="img" aria-labelledby="title">
   <title id="title">AI Newsroom Dino</title>
-  <rect width="30" height="30" rx="6" fill="#102a43"/>
-  <g fill="#dbe8ee" shape-rendering="crispEdges">
+  <style>
+    .dino { fill: #102a43; }
+    .detail { fill: #dbe8ee; }
+    @media (prefers-color-scheme: dark) {
+      .dino { fill: #dbe8ee; }
+      .detail { fill: #102a43; }
+    }
+  </style>
+  <g class="dino" shape-rendering="crispEdges">
     <path d="M18 4h2v2h-2zm0 2h1v1h-1zm-4 1h11v6H14zm0 6h8v1h-8zM9 14h10v3H9zm-3 3h13v1H6zM4 18h15v1H4zM2 19h17v1H2zm7 1h9v1H9zm1 1h7v1h-7z"/>
     <path d="M10 22h2v2h-2zm4 0h2v2h-2zm-4 2h3v1h-3zm4 0h3v1h-3z"/>
     <path d="M19 16h2v1h-2zm1 1h1v1h-1z"/>
     <path d="M25 12h2v1h-2zm2-1h1v2h-1zm1 2h1v1h-1zm1-1h1v1h-1z"/>
   </g>
-  <g fill="#102a43" shape-rendering="crispEdges">
+  <g class="detail" shape-rendering="crispEdges">
     <path d="M17 8h2v2h-2zm4 0h2v2h-2zM21 12h4v1h-4z"/>
     <path d="M12 16h3v3h-3z"/>
   </g>
-  <rect x="13" y="17" width="1" height="1" fill="#dbe8ee" shape-rendering="crispEdges"/>
+  <rect class="dino" x="13" y="17" width="1" height="1" shape-rendering="crispEdges"/>
 </svg>

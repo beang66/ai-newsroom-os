@@ -34,6 +34,8 @@
     POST /ai/embeddings                              (Cloudflare Workers AI qwen3-embedding-0.6b 로 본문 그대로 중계)
     POST /cms/publish                                (CMS_PUBLISH_URL 로 기사 송고)
     POST /ai/backup-key                              (로그인한 사용자의 기사 백업 키: 마스터 키에서 사용자별로 파생, 무저장)
+    POST /ai/share-key {shareId, token?}             (기사 공유본의 키: Supabase article_share_role 로 권한을 확인한 뒤 공유마다 파생)
+    GET  /s/<링크 토큰>                               (공유 링크 안내 페이지 — 앱에 붙여 넣는 방법만 보여 준다. 로그인·DB 조회 없음)
     GET  /unsplash/search/photos | /unsplash/photos/<id> | /unsplash/download/<...> | /unsplash/absolute?url=
 
 무저장: 요청·응답 본문을 로그나 디스크에 남기지 않는다(경로·상태·사용자만).
@@ -72,7 +74,16 @@ _CLOVA_HITS: dict[str, list[float]] = {}
 CLOVA_PARAMS = {'language': 'ko-KR', 'completion': 'sync', 'wordAlignment': True, 'fullText': True,
                 'diarization': {'enable': True}, 'sed': {'enable': True}}
 MAX_BODY = 40_000_000  # 가장 큰 경로(전사·이미지) 한도. 아래 경로는 더 작게 자른다
-BODY_LIMITS = {'/cms/publish': 10_000_000, '/ai/embeddings': 2_000_000}
+BODY_LIMITS = {'/cms/publish': 10_000_000, '/ai/embeddings': 2_000_000, '/ai/share-key': 10_000}
+SHARE_ID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+SHARE_TOKEN = re.compile(r'[0-9a-f]{64}')
+SHARE_PAGE = '''<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>AI Newsroom 기사 공유</title>
+<style>body{margin:0;font-family:Pretendard,system-ui,sans-serif;background:#FAF8F5;color:#23211F}main{max-width:520px;margin:12vh auto;padding:0 16px}
+h1{font-size:20px}ol{line-height:1.9;padding-left:20px}code{display:block;margin-top:16px;padding:12px;border-radius:12px;background:#EFECE6;word-break:break-all;font-size:12px}</style>
+</head><body><main><h1>AI Newsroom 기사 공유 링크</h1><ol><li>AI Newsroom 앱을 열고 로그인합니다.</li>
+<li>보관함 → <b>공유받은 항목</b>을 누릅니다.</li><li>이 페이지 주소를 <b>링크로 받기</b> 칸에 붙여 넣습니다.</li></ol>
+<p>기사 내용은 이 페이지에 표시되지 않습니다. 공유한 사람이 허락한 계정만 앱에서 열 수 있습니다.</p><code>{link}</code></main></body></html>'''
 
 _LOCK = threading.Lock()
 _HITS: dict[str, list[float]] = {}
@@ -138,6 +149,21 @@ def _verify_remote(token: str):
         with urllib.request.urlopen(request, timeout=15) as response:
             data = json.load(response)
         return data if isinstance(data, dict) else None
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError):
+        return None
+
+
+def share_role(token: str, share_id: str, link_token: str):
+    """이 사용자(토큰)가 공유에서 가진 권한 — Supabase 함수가 RLS 밖에서 확인한다. owner|importer|viewer|None"""
+    body = json.dumps({'p_share': share_id, 'p_token': link_token or None}).encode()
+    request = urllib.request.Request(
+        SUPABASE_URL + '/rest/v1/rpc/article_share_role', data=body, method='POST',
+        headers={'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            role = json.load(response)
+        return role if role in ('owner', 'importer', 'viewer') else None
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError):
         return None
 
@@ -220,6 +246,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlsplit(self.path)
+        if path.path.startswith('/s/'):
+            link_token = path.path[3:]
+            if not SHARE_TOKEN.fullmatch(link_token):
+                return self._json(404, {'error': '지원하지 않는 경로입니다.'})
+            link = 'https://' + (self.headers.get('Host') or '') + path.path
+            return self._send(200, SHARE_PAGE.replace('{link}', link).encode(), 'text/html; charset=utf-8')
         if path.path == '/ai/health':
             return self._json(200, {
                 'ok': True,
@@ -281,6 +313,26 @@ class Handler(BaseHTTPRequestHandler):
             _CLOVA_SLOTS.release()
         return self._send(status, raw, out_mime)
 
+    def _share_key(self, body):
+        """공유본 키 = HMAC-SHA256(마스터, 'article-share:' + 공유 id). 권한(소유자·초대·링크)이 있을 때만 준다."""
+        master = os.environ.get('BACKUP_MASTER_KEY', '')
+        if len(master) < 32:
+            return self._json(503, {'error': '공유 키가 서버에 설정되지 않았습니다.'})
+        try:
+            data = json.loads(body or b'{}')
+        except ValueError:
+            data = None
+        share_id = data.get('shareId') if isinstance(data, dict) else None
+        link_token = data.get('token') if isinstance(data, dict) else None
+        if not isinstance(share_id, str) or not SHARE_ID.fullmatch(share_id) or (
+                link_token is not None and (not isinstance(link_token, str) or not SHARE_TOKEN.fullmatch(link_token))):
+            return self._json(400, {'error': '공유 정보를 확인해 주세요.'})
+        header = self.headers.get('Authorization', '')
+        if share_role(header[7:] if header.lower().startswith('bearer ') else '', share_id, link_token) is None:
+            return self._json(403, {'error': '이 공유를 열 권한이 없어요.'})
+        key = hmac.new(master.encode(), b'article-share:' + share_id.encode(), hashlib.sha256).digest()
+        return self._json(200, {'key': base64.b64encode(key).decode('ascii')})
+
     def do_POST(self):
         # 크기와 로그인을 본문보다 먼저 본다 — 로그인 안 한 요청이 큰 본문으로 메모리(무료 플랜 512MB)를 채우지 못하게.
         # 읽지 않은 본문이 다음 요청을 오염시키지 않는 것은 모든 응답의 Connection: close 가 맡는다.
@@ -312,6 +364,8 @@ class Handler(BaseHTTPRequestHandler):
             # 사용자별 키 = HMAC-SHA256(마스터, 'article-backup:' + 사용자 id). 마스터는 서버 밖으로 나가지 않는다.
             key = hmac.new(master.encode(), b'article-backup:' + user.encode(), hashlib.sha256).digest()
             return self._json(200, {'key': base64.b64encode(key).decode('ascii')})
+        if path == '/ai/share-key':
+            return self._share_key(body)
         if not path.startswith('/ai/'):
             return self._json(404, {'error': '지원하지 않는 경로입니다.'})
         sub = path[len('/ai/'):]

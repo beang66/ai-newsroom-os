@@ -106,6 +106,17 @@ test("empty vault yields an empty map; malformed responses are rejected", () => 
     assert.throws(() => projectKnowledgeMap(bad), /knowledge-map/);
 });
 
+test("library trash removes files and their graph connections", () => {
+  const map = projectKnowledgeMap({
+    ...payload,
+    library: { trashed: [`article:${articleHex}`, `source:${legacySource}`, `note:${noteA}`] },
+  });
+  assert.equal(map.nodes.some((item) => item.id === articleId), false);
+  assert.equal(map.nodes.some((item) => item.id === legacySource), false);
+  assert.equal(map.nodes.some((item) => item.id === noteA), false);
+  assert.equal(map.edges.some((edge) => [articleId, legacySource, noteA].includes(edge.source) || [articleId, legacySource, noteA].includes(edge.target)), false);
+});
+
 test("articleUuid matches the core read model id format", () => {
   assert.equal(articleUuid("ABCDEF0123456789abcdef0123456789"), "abcdef01-2345-6789-abcd-ef0123456789");
   assert.equal(articleUuid(articleId), articleId);

@@ -430,7 +430,7 @@ export function bodyHtmlOf(content, photos) {
 }
 
 /** 원고 저장. 사진은 코어의 data/original 필드로 보내 암호화 media 저장소에서 중복 없이 보관한다. */
-/** 원고 저장 → articleId. kind: "auto"(자동 임시 저장 — 최근 작업본 한 칸 덮어쓰기, 이력·보관소에 안 보임) | "manual"(저장 버튼 — 새 버전) */
+/** 원고 저장 → articleId. kind: "auto"(자동 임시 저장 — 최근 작업본 한 칸 덮어쓰기, 이력·보관함에 안 보임) | "manual"(저장 버튼 — 새 버전) */
 export async function saveDraft(article, articleId, expectedRevisionNo, replaceLatest = false, kind = "auto") {
   return (await saveDraftResult(article, articleId, { expectedRevisionNo, replaceLatest, kind })).articleId;
 }
@@ -522,13 +522,13 @@ export async function loadLatestArticle(empty) {
   return articleFromResponse(await core.latestArticle(), empty);
 }
 
-/** 보관소 '수정' — 마지막 수동 저장본(version "saved") 또는 발행본("published")을 편집기용 기사 객체로 */
+/** 보관함 '수정' — 마지막 수동 저장본(version "saved") 또는 발행본("published")을 편집기용 기사 객체로 */
 export async function loadArticle(articleId, version, empty) {
   const article = await articleFromResponse(await core.getArticle(articleId, version), empty);
   return article && { ...article, openedFrom: version };
 }
 
-/** 보관소 목록 → [{ articleId, title, subtitle, excerpt, state, published, updatedAt, ... }] */
+/** 보관함 목록 → [{ articleId, title, subtitle, excerpt, state, published, updatedAt, ... }] */
 export async function listArchive(signal) {
   const { articles } = await core.listArticles(signal);
   return (articles || []).map((a) => ({
@@ -543,7 +543,7 @@ async function articleFromResponse(response, empty) {
   return hydrateArticle(response, empty);
 }
 
-/** 보관소·데스크에서 고른 기사(그 기사의 최신 원고)를 편집기용 기사 객체로 */
+/** 보관함·데스크에서 고른 기사(그 기사의 최신 원고)를 편집기용 기사 객체로 */
 export async function loadStoredArticle(articleId, empty, signal) {
   const response = await core.getArticle(articleId, undefined, signal);
   if (!response?.draft) throw Error("기사가 삭제되었거나 조회되지 않습니다.");
@@ -559,7 +559,7 @@ async function hydrateArticle({ draft, revisionKind, lastManual, published, edit
     data: await fromMediaRef(photo.data, loaded),
     original: await fromMediaRef(photo.original, loaded),
   })));
-  // 아래 값들은 화면 전용(저장되지 않음): 마지막 수동 저장본(보관소 '원고'), 그 뒤 임시 저장본인지, 송고본 정보, 송고 뒤 고쳤는지
+  // 아래 값들은 화면 전용(저장되지 않음): 마지막 수동 저장본(보관함의 기사), 그 뒤 임시 저장본인지, 송고본 정보, 송고 뒤 고쳤는지
   return { ...articleFromDraft({ ...draft, photos }, empty), lastManual: lastManual || null, unsavedOnOpen: revisionKind === "auto",
     published: published || null, editedAfterPublish: !!editedAfterPublish, firstSavedAt: firstSavedAt || null };
 }

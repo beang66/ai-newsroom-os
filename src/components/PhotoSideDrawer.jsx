@@ -21,6 +21,7 @@ import {
 import { photoKeywords } from "../services/assistService";
 import { searchDongaPhotos, dongaPhotoData } from "../api/editorial";
 import { searchUnsplashWithQuery } from "../services/photoSearch";
+import { droppedFiles, hasDroppedFiles } from "../lib/fileDrop.js";
 
 // 언스플래시 프리셋 고화질 보도사진 데이터
 const UNSPLASH_PHOTOS = [
@@ -131,6 +132,7 @@ export default function PhotoSideDrawer({
   // PC 파일 업로드
   const fileInputRef = useRef(null);
   const [uploadPreview, setUploadPreview] = useState(null);
+  const [uploadDragging, setUploadDragging] = useState(false);
   const [uploadCaption, setUploadCaption] = useState("");
   const [uploadSource, setUploadSource] = useState("동아일보 DB");
   const [uploadRatio, setUploadRatio] = useState("16:9 (대표)");
@@ -255,9 +257,12 @@ export default function PhotoSideDrawer({
   };
 
   // PC 파일 선택
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
+  const loadUploadFile = (file) => {
     if (file) {
+      if (!file.type.startsWith("image/")) {
+        showToast("JPG, PNG, WebP 사진 파일을 선택해 주세요.");
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (evt) => {
         if (evt.target?.result) {
@@ -276,6 +281,10 @@ export default function PhotoSideDrawer({
       };
       reader.readAsDataURL(file);
     }
+  };
+  const handleFileChange = (e) => {
+    loadUploadFile(e.target.files?.[0]);
+    e.target.value = "";
   };
 
   // 사진 삽입하기 버튼 핸들러
@@ -801,13 +810,22 @@ export default function PhotoSideDrawer({
                 {/* 파일 드래그 앤 드롭 업로드 영역 */}
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-300 hover:border-slate-800 rounded-2xl p-5 text-center bg-slate-50/70 hover:bg-slate-50 transition cursor-pointer group"
+                  onDragEnter={(event) => { if (hasDroppedFiles(event)) { event.preventDefault(); setUploadDragging(true); } }}
+                  onDragOver={(event) => { if (hasDroppedFiles(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
+                  onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setUploadDragging(false); }}
+                  onDrop={async (event) => {
+                    event.preventDefault();
+                    setUploadDragging(false);
+                    loadUploadFile((await droppedFiles(event.dataTransfer))[0]);
+                  }}
+                  data-testid="photo-upload-dropzone"
+                  className={`border-2 border-dashed rounded-2xl p-5 text-center transition cursor-pointer group ${uploadDragging ? "border-slate-900 bg-slate-100 ring-2 ring-slate-300" : "border-slate-300 hover:border-slate-800 bg-slate-50/70 hover:bg-slate-50"}`}
                 >
                   <div className="w-10 h-10 rounded-2xl bg-white shadow-xs border border-slate-200 mx-auto flex items-center justify-center mb-2 group-hover:scale-105 transition">
                     <Upload className="w-5 h-5 text-slate-700" />
                   </div>
                   <p className="text-xs font-bold text-slate-800">
-                    내 PC에서 사진 파일 선택
+                    사진을 끌어놓거나 내 PC에서 선택
                   </p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     JPG, PNG, WebP 고화질 보도사진 지원

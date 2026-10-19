@@ -250,6 +250,12 @@ def map_items(db):
     return files, list(unresolved.values()), file_links
 
 
+def list_files():
+    with vault.connect() as db:
+        files, _, _ = map_items(db)
+    return {'files': files}
+
+
 def get_file(file_id):
     file_id = _file_id(file_id)
     with vault.connect() as db:

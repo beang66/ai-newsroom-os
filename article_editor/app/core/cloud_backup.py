@@ -84,7 +84,7 @@ def open_sealed(key, raw):
 
 # ---- 백업 내용 ----
 def build_payload(article_id):
-    """한 기사의 백업 내용(bytes) = 최신 작업본 + 마지막 수동 저장본. 기사가 없거나 보관소에서 지웠으면 None.
+    """한 기사의 백업 내용(bytes) = 최신 작업본 + 마지막 수동 저장본. 기사가 없거나 보관함에서 지웠으면 None.
     사진·취재자료는 넣지 않는다(기사 본문의 'media:<id>' 참조만 남음)."""
     with vault.connect() as db:
         if storage.is_deleted(db, article_id):
@@ -104,7 +104,7 @@ def build_payload(article_id):
 
 def restore_payload(raw):
     """백업 내용을 이 PC 의 저장소에 되돌린다 → 새 이력 번호. 최신 작업본을 수동 저장으로 추가한다
-    (기존 이력은 지우지 않고 새 저장본으로 쌓는다). 보관소에서 지운 기사는 ARTICLE_DELETED 로 거절된다."""
+    (기존 이력은 지우지 않고 새 저장본으로 쌓는다). 보관함에서 지운 기사는 ARTICLE_DELETED 로 거절된다."""
     payload = json.loads(raw.decode('utf-8'))
     source = payload.get('working') or payload.get('manual')
     if not source or not isinstance(source.get('draft'), dict):

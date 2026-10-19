@@ -95,7 +95,7 @@ export default memo(function KnowledgeGraph({
   return (
     <section className="graph-panel" aria-label="취재 자료 관계망">
       <div className="graph-heading">
-        <div>
+        <div className="graph-title-row">
           <h2>{selected ? "선택한 자료의 연결" : "관계망"}</h2>
           <p>
             {selected

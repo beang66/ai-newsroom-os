@@ -118,9 +118,19 @@ export default function App() {
   const savedIdRef = useRef(null); // 가장 최근에 Core 에 저장된 기사 ID(렌더를 기다리지 않고 바로 읽는다)
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
+  const [saveNotice, setSaveNotice] = useState("");
+  const saveNoticeTimer = useRef(null);
   // 최근 원고를 불러오지 못했을 때(로그인 문제 제외): 빈 원고를 보여 저장하지 않고, 오류와 '다시 불러오기'를 보인다(main 과 같음)
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
+
+  const showSaveNotice = useCallback(() => {
+    clearTimeout(saveNoticeTimer.current);
+    setSaveNotice("데이터맵과 보관함에 저장되었습니다.");
+    saveNoticeTimer.current = setTimeout(() => setSaveNotice(""), 2800);
+  }, []);
+
+  useEffect(() => () => clearTimeout(saveNoticeTimer.current), []);
 
   useEffect(() => {
     let active = true;
@@ -256,12 +266,13 @@ export default function App() {
       if (caughtUp) void clearBackup();
       setArticle((current) => ({ ...current, id: saved.articleId, articleId: saved.articleId, revisionNo: saved.revisionNo }));
       setStorageStatus(`저장됨 · ${saved.revisionNo}번째 이력`);
+      showSaveNotice();
       return true;
     } catch (error) {
       setStorageStatus(`저장 실패: ${error.message}`);
       return false;
     }
-  }, [article]);
+  }, [article, showSaveNotice]);
 
   // Ctrl+S(Mac 은 Cmd+S): 브라우저 저장 창 대신 저장 버튼과 같은 수동 저장(새 버전)
   const persistRef = useRef(persistArticle);
@@ -361,11 +372,11 @@ export default function App() {
   const blankDraft = !article.title?.trim() && !article.content?.trim();
   const archiveArticles = storedCurrent ? storedArticles.map((item) => item.id === currentId ? currentSummary : item)
     : blankDraft ? storedArticles : [currentSummary, ...storedArticles];
-  // 보관소의 휴지통 버튼·선택 삭제 — 기사를 지운다. 지금 쓰던 기사면 새 기사로 바꾼다(남은 백업도 지운다)
+  // 보관함의 휴지통 버튼·선택 삭제 — 기사를 지운다. 지금 쓰던 기사면 새 기사로 바꾼다(남은 백업도 지운다)
   const deleteArticles = async (ids) => {
     const target = archiveArticles.find((item) => item.id === ids[0]);
     const name = ids.length === 1 ? `'${target?.title || "제목 없는 기사"}' 기사를` : `선택한 기사 ${ids.length}건을`;
-    if (!window.confirm(`${name} 보관소에서 삭제할까요?
+    if (!window.confirm(`${name} 보관함에서 삭제할까요?
 휴지통으로 옮기고 30일 뒤 이력·송고본·고정본까지 영구 삭제합니다. 그 전에는 보관함 > 휴지통에서 되살릴 수 있습니다.`)) return [];
     setSwitchError("");
     const deleted = [];
@@ -634,7 +645,7 @@ export default function App() {
           setIsLoggedIn={setIsLoggedIn}
           onOpenAuth={openAuth}
           onLogout={handleLogout}
-          onSave={() => { void persistArticle(); }}
+          onSave={() => persistArticle()}
           onArchive={async () => {
             const saved = await persistArticle();
             if (saved) setActiveTab("archive");
@@ -759,6 +770,16 @@ export default function App() {
       {gateOpen && !loginPage && (
         <div className="login-overlay fixed inset-0 z-[100] flex items-center justify-center p-6 overflow-auto bg-slate-900/30 backdrop-blur-sm">
           <LoginScreen initialMode="login" required={!session?.signedIn} onClose={() => closeGate(false)} onLoginSuccess={handleLoginSuccess} />
+        </div>
+      )}
+
+      {saveNotice && (
+        <div
+          role="status"
+          data-testid="save-notice"
+          className="fixed bottom-6 left-1/2 z-[110] -translate-x-1/2 rounded-full border border-emerald-200 bg-white/95 px-5 py-2.5 text-xs font-bold text-emerald-800 shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-200"
+        >
+          {saveNotice}
         </div>
       )}
 

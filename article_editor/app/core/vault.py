@@ -199,7 +199,7 @@ def _migrate(db):
         db.execute('UPDATE article_revisions SET id = ? WHERE article_id = ? AND revision_no = ?',
                    (revision_uuid(article_id, revision_no), article_id, revision_no))
     db.execute('CREATE UNIQUE INDEX IF NOT EXISTS article_revisions_id ON article_revisions(id)')
-    # 2026-10-10 저장 종류: 'manual'(수동 저장 = 저장 이력·보관소) | 'auto'(자동 임시 저장 — 한 칸을 덮어씀).
+    # 2026-10-10 저장 종류: 'manual'(수동 저장 = 저장 이력·보관함) | 'auto'(자동 임시 저장 — 한 칸을 덮어씀).
     # 옛 이력은 'manual' 로 둔다(예전에는 저장마다 이력이었으므로 그대로 보이게).
     added = not any(row[1] == 'kind' for row in db.execute('PRAGMA table_info(article_revisions)'))
     if added:

@@ -508,19 +508,15 @@ export default function ArchiveView({ article, articles, onOpen, onMap, onDelete
         event.preventDefault(); if (!active) setSelectedKeys([item.key]); setContextMenu({ x: event.clientX, y: event.clientY, item });
       }
     };
-    // 저장된 기사마다 오른쪽 위 휴지통 아이콘(PR #67 동작 7 — ui-smoke-mine 이 확인한다)
-    const trash = item.type === "article" && item.deletable && !item.deleted && onDelete && <button type="button" className="archive-delete" data-testid="archive-delete"
-      disabled={busy} aria-label={`${item.title} 삭제`} title="휴지통으로 옮기기(30일 뒤 영구 삭제)"
-      onClick={(event) => { event.stopPropagation(); void removeItems([item]); }} onDoubleClick={(event) => event.stopPropagation()}><Trash2 size={15} aria-hidden="true" /></button>;
     if (preferences.view === "details") return <tr key={item.key} {...common} className={active ? "selected" : ""}>
       <td className="archive-item"><input type="checkbox" data-testid="archive-check" checked={active} onClick={(event) => event.stopPropagation()} onChange={() => toggleItem(item.key)} aria-label={`${item.title} 선택`} />
-        <button type="button" className="archive-item-name"><Icon size={17} /><span><strong>{item.title}</strong><small>{item.subtitle || item.articleTitles?.join(", ")}</small></span></button>{trash}</td>
+        <button type="button" className="archive-item-name"><Icon size={17} /><span><strong>{item.title}</strong><small>{item.subtitle || item.articleTitles?.join(", ")}</small></span></button></td>
       <td>{TYPE_LABEL[item.type]}</td><td>{item.owner}</td><td>{formatArticleTime(item.updatedAt)}</td><td><span className="archive-state">{item.status}</span></td><td>{item.type === "article" ? item.relationCount : item.articleIds?.length || 0}</td><td>{item.tags.join(", ") || "—"}</td>
     </tr>;
-    return <div key={item.key} className="archive-file-cell"><button type="button" {...common} className={`archive-file ${active ? "selected" : ""}`}>
+    return <button type="button" key={item.key} {...common} className={`archive-file archive-item ${active ? "selected" : ""}`}>
       {item.thumbnail ? <img src={item.thumbnail} alt="" /> : <Icon className="archive-file-icon" />}
       <strong>{item.title}</strong><small>{TYPE_LABEL[item.type]} · {formatArticleTime(item.updatedAt)}</small>
-    </button>{trash}</div>;
+    </button>;
   };
 
   return <div className="archive-explorer" data-testid="archive-view" ref={explorerRef} tabIndex={-1} onKeyDown={handleKeyDown} onClick={() => { if (contextMenu) setContextMenu(null); if (tagMenuOpen) setTagMenuOpen(false); }}>

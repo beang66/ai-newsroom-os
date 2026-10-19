@@ -248,14 +248,15 @@ try {
   const savedArchiveItem = page.locator(".archive-item", { hasText: "스모크 테스트 기사" }).first();
   await savedArchiveItem.waitFor();
   assert.equal(await savedArchiveItem.locator("button").first().evaluate((element) => getComputedStyle(element).textAlign), "left", "최근 기사 번호·제목·날짜는 왼쪽 정렬이다");
-  assert.equal(await savedArchiveItem.getByTestId("archive-delete").count(), 1, "저장된 기사마다 오른쪽 위 삭제 아이콘이 있다");
-  await page.getByTestId("archive-delete").first().click();
+  // 기사별 휴지통 아이콘은 두지 않는다(2026-10-19 결정) — 기사를 골라 미리보기의 '삭제'로 지운다
+  await savedArchiveItem.click();
+  await page.locator(".archive-preview").getByTestId("archive-delete").click();
   await page.waitForFunction(() => !document.body.innerText.includes("스모크 테스트 기사"), null, { timeout: 15_000 });
   await page.getByTestId("archive-view").waitFor();
   await page.getByTestId("archive-view").waitFor();
   assert.equal(await page.getByText("스모크 테스트 기사", { exact: true }).count(), 0, "삭제한 기사가 보관함에 남지 않는다");
   assert.deepEqual(pageErrors, [], `기사 삭제 후 브라우저 오류: ${pageErrors.join(" | ")}`);
-  step("보관함: 저장한 기사 표시, 삭제(×)");
+  step("보관함: 저장한 기사 표시, 미리보기에서 삭제");
   if (process.env.UI_SMOKE_ARCHIVE_ONLY) {
     console.log("PASS ui-smoke-mine: 빈 보관함·마지막 저장 기사 삭제 후 화면 유지");
     await browser.close();

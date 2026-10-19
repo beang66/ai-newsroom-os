@@ -28,8 +28,8 @@ export default function ArchiveView({ article, articles, onOpen, onMap, onDelete
       .catch((e) => alive && setDetail({ id: selectedKey, error: e.message }));
     return () => { alive = false; };
   }, [selectedKey, isCurrent]);
-  const content = isCurrent ? article : detail?.id === selectedKey ? detail.draft : null;
-  const error = !isCurrent && detail?.id === selectedKey ? detail.error || "" : "";
+  const content = isCurrent ? article : detail?.id === selectedKey ? detail?.draft : null;
+  const error = !isCurrent && detail?.id === selectedKey ? detail?.error || "" : "";
   const visible = articles.filter((item) => FILTERS[filter](item)
     && `${item.title} ${item.subtitle}`.toLowerCase().includes(query.trim().toLowerCase()));
   // 저장한 적 있는 기사만 지울 수 있다(아직 저장 전인 지금 원고는 지울 것이 없다)

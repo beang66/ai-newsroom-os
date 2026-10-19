@@ -10,21 +10,27 @@ export async function searchUnsplashWithQuery(query, page = 1) {
   const searched = translated.get(key) ?? (await photoSearchQuery(key));
   translated.set(key, searched);
   const { photos = [] } = await core.searchPhotos(searched, page);
-  return { searched, photos: toPhotos(photos, key) };
+  return { searched, photos: toPhotos(photos) };
 }
 
 export async function searchUnsplash(query, page = 1) {
   return (await searchUnsplashWithQuery(query, page)).photos;
 }
 
-function toPhotos(photos, query) {
-  return photos.map((photo) => ({
-    id: `unsplash-${photo.id}`,
-    unsplashId: photo.id,
-    url: photo.urls?.regular || photo.urls?.small || "",
-    caption: photo.alt_description || photo.description || `'${query}' 관련 사진`,
-    source: "Unsplash",
-    provider: photo.user?.name || "Unsplash",
-    ratio: "16:9 (대표)",
-  })).filter((photo) => photo.url);
+function toPhotos(photos) {
+  return photos.map((photo) => {
+    const photographer = photo.user?.name || "Unsplash";
+    return {
+      id: `unsplash-${photo.id}`,
+      unsplashId: photo.id,
+      url: photo.urls?.regular || photo.urls?.small || "",
+      // 검색 서비스의 영문 alt 문구는 기사 사진 설명이 아니다. 기자가 직접 쓰도록 비워 둔다.
+      caption: "",
+      source: `© ${photographer} / Unsplash`,
+      provider: photographer,
+      photographer,
+      sourceUrl: photo.links?.html || photo.user?.links?.html || "",
+      ratio: "16:9 (대표)",
+    };
+  }).filter((photo) => photo.url);
 }

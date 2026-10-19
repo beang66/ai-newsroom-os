@@ -563,7 +563,7 @@ export default function ArticleWriter({
         }
       });
     }
-  }, [article.content, activeSidePanel, isImageEditorOpen, isPhotoEditing]);
+  }, [article.content, activeSidePanel, isImageEditorOpen, isPhotoEditing, viewMode]);
 
   // 텍스트 드래그 선택 서식 툴바 감지 (contentEditable Selection 감지)
   const handleSelection = () => {
@@ -712,7 +712,7 @@ export default function ArticleWriter({
           const newPhoto = {
             id: `photo-${Date.now()}`,
             url: uploadEvt.target.result,
-            caption: newCaption || file.name,
+            caption: newCaption || "",
             source: newSource || "동아일보 DB",
             provider: newProvider || "기자",
             ratio: newRatio
@@ -739,7 +739,7 @@ export default function ArticleWriter({
         const newPhoto = {
           id: `photo-${Date.now()}`,
           url: uploadEvt.target.result,
-          caption: file.name.replace(/\.[^/.]+$/, ""),
+          caption: "",
           source: "직접 첨부",
           provider: "김동아 기자",
           ratio: "16:9"
@@ -748,7 +748,7 @@ export default function ArticleWriter({
         setPhotos(updatedPhotos);
 
         // 본문 에디터에 사진 렌더링 블록 삽입
-        const photoHtml = `<figure style="margin: 20px 0; text-align: center;" contenteditable="false"><img src="${escapeHtml(uploadEvt.target.result)}" alt="${escapeHtml(file.name)}" style="max-width: 100%; margin: 0 auto; display: block;" /><figcaption style="font-size: 11px; color: #64748b; margin-top: 8px; font-weight: 500;">▲ ${escapeHtml(newPhoto.caption)} (출처: 직접 첨부)</figcaption></figure><p><br></p>`;
+        const photoHtml = `<figure style="margin: 20px 0; text-align: center;" contenteditable="false"><img src="${escapeHtml(uploadEvt.target.result)}" alt="${escapeHtml(file.name)}" style="max-width: 100%; margin: 0 auto; display: block;" /><figcaption style="font-size: 11px; color: #64748b; margin-top: 8px; font-weight: 500;">(출처: 직접 첨부)</figcaption></figure><p><br></p>`;
 
         if (bodyInputRef.current) {
           bodyInputRef.current.focus();
@@ -789,7 +789,9 @@ export default function ArticleWriter({
         }
         const figcaption = photoEl.querySelector("figcaption");
         if (figcaption) {
-          figcaption.innerText = `▲ ${updatedPhoto.caption} (출처: ${updatedPhoto.source})`;
+          const caption = String(updatedPhoto.caption || "").trim();
+          const source = String(updatedPhoto.source || "").trim();
+          figcaption.innerText = [caption ? `▲ ${caption}` : "", source ? `(출처: ${source})` : ""].filter(Boolean).join(" ");
         }
         setArticle((prev) => ({
           ...prev,
@@ -809,7 +811,10 @@ export default function ArticleWriter({
     }
 
     const photoId = photo.id || `photo-${Date.now()}`;
-    const photoHtml = `<figure class="article-photo-container group relative my-6 select-none cursor-grab active:cursor-grabbing transition-all" data-photo-id="${escapeHtml(photoId)}" draggable="true" contenteditable="false"><div class="relative overflow-hidden"><div class="absolute top-2.5 left-2.5 z-20 px-2.5 py-1 rounded-md bg-black/65 backdrop-blur-md text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 pointer-events-none shadow-xs"><span>⠿ 드래그하여 텍스트 끝나는 지점으로 이동</span></div><img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.caption || '')}" class="w-full max-h-[520px] object-cover block pointer-events-none" style="${photo.filterStyle ? `filter: ${photo.filterStyle};` : ''} ${photo.rotation ? `transform: rotate(${photo.rotation}deg);` : ''}" /><div class="photo-action-overlay absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-30"><button type="button" data-action="change-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="사진 변경하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">↻</span></button><button type="button" data-action="edit-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="편집하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">✎</span></button><button type="button" data-action="delete-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-rose-50 text-slate-800 hover:text-rose-600 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="삭제하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700 hover:text-rose-600">✕</span></button></div></div><figcaption class="text-center text-xs text-slate-500 mt-2 font-medium">▲ ${escapeHtml(photo.caption || '보도 사진')} (출처: ${escapeHtml(photo.source || '동아일보 DB')})</figcaption></figure><p><br></p>`;
+    const caption = String(photo.caption || "").trim();
+    const source = String(photo.source || "").trim();
+    const credit = [caption ? `▲ ${caption}` : "", source ? `(출처: ${source})` : ""].filter(Boolean).join(" ");
+    const photoHtml = `<figure class="article-photo-container group relative my-6 select-none cursor-grab active:cursor-grabbing transition-all" data-photo-id="${escapeHtml(photoId)}" draggable="true" contenteditable="false"><div class="relative overflow-hidden"><div class="absolute top-2.5 left-2.5 z-20 px-2.5 py-1 rounded-md bg-black/65 backdrop-blur-md text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 pointer-events-none shadow-xs"><span>⠿ 드래그하여 원하는 위치로 이동</span></div><img src="${escapeHtml(photo.url)}" alt="${escapeHtml(caption)}" class="w-full max-h-[520px] object-cover block pointer-events-none" style="${photo.filterStyle ? `filter: ${photo.filterStyle};` : ''} ${photo.rotation ? `transform: rotate(${photo.rotation}deg);` : ''}" /><div class="photo-action-overlay absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-30"><button type="button" data-action="change-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="사진 변경하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">↻</span></button><button type="button" data-action="edit-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-white text-slate-800 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="편집하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700">✎</span></button><button type="button" data-action="delete-photo" data-photo-id="${escapeHtml(photoId)}" class="w-8 h-8 rounded-full bg-white/95 hover:bg-rose-50 text-slate-800 hover:text-rose-600 shadow-sm border border-stone-200 flex items-center justify-center transition cursor-pointer active:scale-95" title="삭제하기"><span class="text-sm font-bold leading-none select-none pointer-events-none text-slate-700 hover:text-rose-600">✕</span></button></div></div>${credit ? `<figcaption class="text-center text-xs text-slate-500 mt-2 font-medium">${escapeHtml(credit)}</figcaption>` : ""}</figure><p><br></p>`;
 
     if (bodyInputRef.current) {
       bodyInputRef.current.focus();
@@ -1011,8 +1016,10 @@ export default function ArticleWriter({
 
       let targetChild = null;
       let insertAfter = false;
+      const editorBox = bodyInputRef.current.getBoundingClientRect();
+      const placeAtStart = e.clientY <= editorBox.top + 16;
 
-      for (let i = 0; i < children.length; i++) {
+      for (let i = 0; !placeAtStart && i < children.length; i++) {
         const child = children[i];
         const box = child.getBoundingClientRect();
         const midY = box.top + box.height / 2;
@@ -1028,7 +1035,7 @@ export default function ArticleWriter({
         }
       }
 
-      if (!targetChild) {
+      if (!targetChild && !placeAtStart) {
         targetChild = children[children.length - 1];
         insertAfter = true;
       }
@@ -1043,7 +1050,9 @@ export default function ArticleWriter({
           '<span class="px-2.5 py-0.5 rounded-full bg-stone-900 text-white text-[9px] font-bold shadow-sm border border-stone-600/40">📍 텍스트 끝 지점에 사진 배치</span>';
       }
 
-      if (insertAfter) {
+      if (placeAtStart) {
+        bodyInputRef.current.insertBefore(indicator, bodyInputRef.current.firstChild);
+      } else if (insertAfter) {
         if (targetChild.nextSibling !== indicator) {
           bodyInputRef.current.insertBefore(indicator, targetChild.nextSibling);
         }
@@ -1088,9 +1097,8 @@ export default function ArticleWriter({
   const handleEditorDrop = (e) => {
     e.preventDefault();
 
-    // 모든 인디케이터 정리
+    // 사진 드롭 표시선은 실제 삽입 위치이므로 사진을 옮긴 뒤 제거한다.
     const photoIndicator = bodyInputRef.current?.querySelector(".photo-drop-indicator");
-    if (photoIndicator) photoIndicator.remove();
     const textIndicator = document.getElementById("sentence-drop-caret-indicator");
     if (textIndicator) textIndicator.remove();
 
@@ -1098,33 +1106,44 @@ export default function ArticleWriter({
     if (photoId) {
       if (!bodyInputRef.current) return;
       const photoCard = bodyInputRef.current.querySelector(`[data-photo-id="${photoId}"]`);
-      if (!photoCard) return;
+      if (!photoCard) {
+        photoIndicator?.remove();
+        return;
+      }
 
       photoCard.classList.remove("opacity-40", "ring-2", "ring-black/80", "shadow-md");
 
-      let range = getCaretRangeFromPoint(e.clientX, e.clientY);
-      if (range && bodyInputRef.current.contains(range.startContainer)) {
-        let targetNode = range.startContainer;
-        while (targetNode && targetNode.parentNode !== bodyInputRef.current && targetNode !== bodyInputRef.current) {
-          targetNode = targetNode.parentNode;
-        }
-        if (targetNode && targetNode !== bodyInputRef.current) {
-          bodyInputRef.current.insertBefore(photoCard, targetNode.nextSibling || targetNode);
+      if (photoIndicator?.parentNode === bodyInputRef.current) {
+        bodyInputRef.current.insertBefore(photoCard, photoIndicator);
+      } else {
+        const range = getCaretRangeFromPoint(e.clientX, e.clientY);
+        if (range && bodyInputRef.current.contains(range.startContainer)) {
+          let targetNode = range.startContainer;
+          while (targetNode && targetNode.parentNode !== bodyInputRef.current && targetNode !== bodyInputRef.current) {
+            targetNode = targetNode.parentNode;
+          }
+          if (targetNode && targetNode !== bodyInputRef.current) {
+            const box = targetNode.getBoundingClientRect();
+            bodyInputRef.current.insertBefore(photoCard, e.clientY < box.top + box.height / 2 ? targetNode : targetNode.nextSibling);
+          } else {
+            bodyInputRef.current.appendChild(photoCard);
+          }
         } else {
           bodyInputRef.current.appendChild(photoCard);
         }
-      } else {
-        bodyInputRef.current.appendChild(photoCard);
       }
+      photoIndicator?.remove();
 
       setArticle((prev) => ({
         ...prev,
         content: bodyInputRef.current.innerHTML
       }));
-      setToastMessage("사진이 텍스트가 끝나는 지점으로 이동되었습니다.");
+      setToastMessage("사진이 선택한 위치로 이동되었습니다.");
       setTimeout(() => setToastMessage(""), 2000);
       return;
     }
+
+    photoIndicator?.remove();
 
     // 텍스트/문장 드롭 처리 (Cut & Move)
     const textToInsert =
@@ -1550,7 +1569,7 @@ export default function ArticleWriter({
                       <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1 border-b border-slate-200/60 pb-2">
                         <span className="flex items-center gap-1.5">
                           <Bot className="w-3.5 h-3.5 text-slate-700" />
-                          AI 추천 통 부제목
+                          AI 추천 부제목
                         </span>
                         <button
                           type="button"

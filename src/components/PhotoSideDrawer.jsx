@@ -262,14 +262,11 @@ export default function PhotoSideDrawer({
       reader.onload = (evt) => {
         if (evt.target?.result) {
           setUploadPreview(evt.target.result);
-          if (!uploadCaption) {
-            setUploadCaption(file.name.replace(/\.[^/.]+$/, ""));
-          }
           // 즉시 선택 사진으로 활성화
           const newPhoto = {
             id: `pc-${Date.now()}`,
             url: evt.target.result,
-            caption: file.name.replace(/\.[^/.]+$/, ""),
+            caption: uploadCaption,
             source: uploadSource,
             provider: "김동아 기자",
             ratio: uploadRatio
@@ -597,7 +594,7 @@ export default function PhotoSideDrawer({
                           </p>
                           <p className="text-[10px] text-slate-400 mt-0.5">
                             {photo.source}
-                            {photo.photographer || photo.provider
+                            {(photo.photographer || photo.provider) && !photo.source?.includes(photo.photographer || photo.provider)
                               ? ` · ${photo.photographer || photo.provider}`
                               : ""}
                           </p>
@@ -846,7 +843,7 @@ export default function PhotoSideDrawer({
                             const p = selectedPhoto || {
                               id: `pc-${Date.now()}`,
                               url: uploadPreview,
-                              caption: uploadCaption || "업로드 사진",
+                              caption: uploadCaption,
                               source: uploadSource,
                               provider: "김동아 기자",
                               ratio: uploadRatio
@@ -871,7 +868,7 @@ export default function PhotoSideDrawer({
                             const p = selectedPhoto || {
                               id: `pc-${Date.now()}`,
                               url: uploadPreview,
-                              caption: uploadCaption || "업로드 사진",
+                              caption: uploadCaption,
                               source: uploadSource,
                               provider: "김동아 기자",
                               ratio: uploadRatio
@@ -894,7 +891,7 @@ export default function PhotoSideDrawer({
                             const p = selectedPhoto || {
                               id: `pc-${Date.now()}`,
                               url: uploadPreview,
-                              caption: uploadCaption || "업로드 사진",
+                              caption: uploadCaption,
                               source: uploadSource,
                               provider: "김동아 기자",
                               ratio: uploadRatio
@@ -1031,7 +1028,7 @@ export default function PhotoSideDrawer({
                         </p>
                         <p className="text-[10px] text-slate-400 mt-0.5">
                           {photo.source}
-                          {photo.provider ? ` · ${photo.provider}` : ""}
+                          {photo.provider && !photo.source?.includes(photo.provider) ? ` · ${photo.provider}` : ""}
                         </p>
                       </div>
                     </div>

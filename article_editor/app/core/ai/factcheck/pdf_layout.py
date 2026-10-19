@@ -66,6 +66,12 @@ def merge_cols(vals, tol=3.0):
     return [sum(g) / len(g) for g in out]
 
 
+def num_cell(c):
+    """칸 안이 숫자 토큰만으로 되어 있는가(칸 경계가 하위 열을 합쳐 '20,457 38 0.2' 처럼 숫자 여러 개가 든 칸 포함)."""
+    toks = c.split()
+    return bool(toks) and all(NUM.match(t) for t in toks)
+
+
 def rows_from_words(words, cuts):
     rows = []
     for L in lines_of(words, 0.6):
@@ -78,7 +84,7 @@ def rows_from_words(words, cuts):
     out = []
     for r in rows:
         cont = (out and not r[0] and any(r) and all((not c) or out[-1][i] for i, c in enumerate(r))
-                and not any(NUM.match(c) and not c.startswith('(') for c in r if c))
+                and not any(num_cell(c) and not c.startswith('(') for c in r if c))  # 숫자 칸이 있으면 이어진 줄이 아니라 새 행
         if cont:
             out[-1] = [(a + ' ' + b).strip() for a, b in zip(out[-1], r)]
         else:
@@ -86,7 +92,7 @@ def rows_from_words(words, cuts):
     # 4) 행 이름만 있는 줄(값 칸이 모두 빔): 바로 앞뒤에 행 이름이 빈 값 행이 있으면 그 행들의 행 이름으로 붙이고 줄은 지움
     res, i = [], 0
     label_only = lambda r: bool(r[0]) and not any(r[1:])
-    empty_label = lambda r: not r[0] and sum(bool(NUM.match(c.replace(' ', ''))) for c in r[1:] if c) >= 1
+    empty_label = lambda r: not r[0] and sum(num_cell(c) for c in r[1:] if c) >= 1
     for k, r in enumerate(out):
         if label_only(r) and len(r) > 2:
             nb = [j for j in (k - 1, k + 1) if 0 <= j < len(out) and empty_label(out[j])]

@@ -13,10 +13,12 @@ from ..read_models import knowledge_map as _knowledge_map, list_articles as _lis
 from ..sources import delete_source as _delete_source, get_source as _get_source, list_sources as _list_sources
 from ..storage import (create_snapshot as _create_snapshot, get_revision as _get_revision, get_snapshot as _get_snapshot,
                        get_transcript as _get_transcript, list_transcripts as _list_transcripts,
+                       delete_transcript as _delete_transcript, rename_transcript as _rename_transcript,
                        latest_article as _latest_article, get_article as _get_article, publish_article as _publish_article, media_file as _media_file, list_revisions as _list_revisions, list_snapshots as _list_snapshots,
                        open_source as _open_source, restore_revision as _restore_revision, prune_legacy_revisions as _prune_legacy_revisions, save_article as _save_article, delete_article as _delete_article,
                        list_trash as _list_trash, restore_deleted as _restore_deleted,
-                       source_file as _source_file, transcript_audio as _transcript_audio, save_speaker_edits as _save_speaker_edits)
+                       source_file as _source_file, transcript_audio as _transcript_audio, save_speaker_edits as _save_speaker_edits,
+                       save_transcript_notes as _save_transcript_notes)
 from .. import vault
 
 
@@ -182,6 +184,15 @@ class StorageManager:
 
     def save_speaker_edits(self, transcript_id, edits):
         return _save_speaker_edits(transcript_id, edits)
+
+    def save_transcript_notes(self, transcript_id, notes):
+        return _save_transcript_notes(transcript_id, notes)
+
+    def delete_transcript(self, transcript_id):
+        return _delete_transcript(transcript_id)
+
+    def rename_transcript(self, transcript_id, filename):
+        return _rename_transcript(transcript_id, filename)
 
     def export_backup(self, data):
         import base64

@@ -65,6 +65,9 @@ export const ROUTES = Object.freeze({
   transcript: (id) => "/api/transcripts/" + encodeURIComponent(id),
   transcriptAudio: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/audio",
   transcriptSpeakers: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/speakers",
+  transcriptNotes: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/notes",
+  transcriptDelete: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/delete",
+  transcriptRename: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/rename",
   cmsPublish: "/api/cms/publish",
   vaultExport: "/api/vault/export",
   vaultRestore: "/api/vault/restore",
@@ -179,8 +182,12 @@ export function createCoreApi(transport) {
     listTranscripts: (signal) => transport.json(ROUTES.transcripts, null, signal),
     getTranscript: (id, signal) => transport.json(ROUTES.transcript(id), null, signal),
     transcriptAudio: (id, signal) => transport.bytes(ROUTES.transcriptAudio(id), signal),
+    deleteTranscript: (id, signal) => transport.json(ROUTES.transcriptDelete(id), {}, signal),
+    renameTranscript: (id, filename, signal) => transport.json(ROUTES.transcriptRename(id), { filename }, signal),
     /** 화자 수정(이름 바꾸기·합치기·구간 지정)을 저장한다. 발언 원본은 바뀌지 않는다. */
     saveTranscriptSpeakers: (id, speakerEdits, signal) => transport.json(ROUTES.transcriptSpeakers(id), { speakerEdits }, signal),
+    /** 녹취 하나의 전체 메모·AI 요약·발언 메모를 통째로 저장한다(이 PC 의 암호화 저장소에만). */
+    saveTranscriptNotes: (id, notes, signal) => transport.json(ROUTES.transcriptNotes(id), { notes }, signal),
     publishCms: (article, signal) => transport.json(ROUTES.cmsPublish, { article }, signal),
     exportVault: (password, signal) => transport.json(ROUTES.vaultExport, { password }, signal),
     restoreVault: (password, data, signal) => transport.json(ROUTES.vaultRestore, { password, data }, signal),

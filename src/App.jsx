@@ -12,7 +12,6 @@ import "./workspace.css";
 import "./deskGlass.css";
 import "./pageTitle.css";
 import LoginScreen from "./components/LoginScreen";
-import AutoLoginToggle from "./components/AutoLoginToggle";
 import SettingsView from "./components/SettingsView";
 
 import { createEmptyArticle } from "./data/article";
@@ -90,6 +89,13 @@ const readRoute = () => routeFromHash(globalThis.location?.hash, readTab());
 
 export default function App() {
   const [activeTab, setActiveTabState] = useState(() => readRoute().page);
+  // STT 인터뷰 화면 방문 여부 (다른 메뉴를 다녀와도 작업 상태가 리셋되지 않도록 마운트 유지)
+  const [hasVisitedInterview, setHasVisitedInterview] = useState(() => readRoute().page === "interview");
+  useEffect(() => {
+    if (activeTab === "interview") {
+      setHasVisitedInterview(true);
+    }
+  }, [activeTab]);
   const setActiveTab = useCallback((target) => {
     if (routeFromHash(`#${target}`, "").page !== target) return;
     setActiveTabState(target);
@@ -118,9 +124,9 @@ export default function App() {
   const savedIdRef = useRef(null); // 가장 최근에 Core 에 저장된 기사 ID(렌더를 기다리지 않고 바로 읽는다)
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
-  // 최근 원고를 불러오지 못했을 때(로그인 문제 제외): 빈 원고를 보여 저장하지 않고, 오류와 '다시 불러오기'를 보인다(main 과 같음)
   const [loadError, setLoadError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
+
 
   useEffect(() => {
     let active = true;
@@ -235,7 +241,7 @@ export default function App() {
   }, [unsynced, flush]);
 
   // update: 저장 직전에 원고를 고친다(인터뷰 화면의 '저장하기'가 녹취를 이 기사에 연결하고 바로 저장)
-  const persistArticle = useCallback(async (update) => {
+  const persistArticle = useCallback(async (update, options = {}) => {
     if (isRestoring()) return false;
     if (!loaded.current) {
       setStorageStatus("Core 연결이 준비된 뒤 저장할 수 있습니다.");
@@ -255,7 +261,12 @@ export default function App() {
       setUnsynced(!caughtUp);
       if (caughtUp) void clearBackup();
       setArticle((current) => ({ ...current, id: saved.articleId, articleId: saved.articleId, revisionNo: saved.revisionNo }));
-      setStorageStatus(`저장됨 · ${saved.revisionNo}번째 이력`);
+      const interviewName = options?.source?.filename || (typeof options === "string" ? options : null);
+      if (interviewName) {
+        setStorageStatus(`저장됨 · 녹취 [${interviewName}] (${saved.revisionNo}번째 이력)`);
+      } else {
+        setStorageStatus(`저장됨 · ${saved.revisionNo}번째 이력`);
+      }
       return true;
     } catch (error) {
       setStorageStatus(`저장 실패: ${error.message}`);
@@ -542,9 +553,8 @@ export default function App() {
   const handleLoginSuccess = (session) => {
     applySession(session);
     setAuthView(null);
-    if (globalThis.location?.hash === "#login" || globalThis.location?.hash === "#signup") {
-      globalThis.history?.replaceState({ newsroomRoute: activeTab }, "", `#${activeTab}`);
-    }
+    setActiveTab("desk");
+    globalThis.history?.replaceState({ newsroomRoute: "desk" }, "", "#desk");
     closeGate(true);
   };
   const handleLogout = async () => {
@@ -624,8 +634,8 @@ export default function App() {
         }}
       />
 
-      {/* 1. Top Header (사진 편집 모드 시에만 숨김 처리) */}
-      {!isPhotoEditing && (
+      {/* 1. Top Header (사진 편집 모드 및 로그인 화면 시에만 숨김 처리) */}
+      {!isPhotoEditing && !loginPage && (
         <Header
           currentArticleTitle={article.title}
           status={article.status}
@@ -640,6 +650,10 @@ export default function App() {
             if (saved) setActiveTab("archive");
             return saved;
           }}
+          storageStatus={storageStatus}
+          switching={switching}
+          session={session}
+          applySession={applySession}
         />
       )}
 
@@ -667,57 +681,56 @@ export default function App() {
 
           {/* Main Content Workspace (우측 여백 없이 전체 너비 자연스럽게 채움) */}
           <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 z-20 relative mr-0 ${activeTab === "map" ? "h-[calc(100vh-90px)] min-h-0" : ""}`}>
-            {!isPhotoEditing && (
-              <div className="flex items-center gap-2 px-3 pb-1">
-                <p className="text-[11px] text-slate-500" role="status">
-                  {switching ? "현재 원고를 저장하고 작업을 전환합니다…" : storageStatus}
-                </p>
-                {/* 개발 실행 + 공용 테스트 계정이 있을 때만 보인다. 끄면 로그아웃되어 로그인 창이 뜬다 */}
-                <AutoLoginToggle session={session} onSession={applySession} />
-              </div>
-            )}
+
             {!isLoaded && loadError ? (
               <div role="alert" className="py-24 text-center text-sm text-red-700">
                 <p>{loadError}</p>
                 <button type="button" onClick={() => { setLoadError(""); setLoadAttempt((attempt) => attempt + 1); }} className="mt-4 rounded-full border px-4 py-2 cursor-pointer">다시 불러오기</button>
               </div>
-            ) : activeTab === "writer" || activeTab === "publish" || activeTab === "factcheck" ? (
-              <ArticleWriter
-                article={article}
-                setArticle={setArticle}
-                onOpenSearch={() => setShowSearchModal(true)}
-                onRunFactCheck={handleRunFactCheck}
-                factCheckRequest={factCheckRequest}
-                onPublish={handlePublish}
-                onModels={() => setActiveTab("settings")}
-                flush={flushForStudio}
-                isToolsCollapsed={isToolsCollapsed}
-                setIsToolsCollapsed={setIsToolsCollapsed}
-                isSidebarCollapsed={isSidebarCollapsed}
-                onConnectSource={handleConnectSource}
-                onSave={() => persistArticle()}
-                isReaderPreview={isReaderPreview}
-                setIsReaderPreview={setIsReaderPreview}
-                isPhotoEditing={isPhotoEditing}
-                setIsPhotoEditing={setIsPhotoEditing}
-              />
-            ) : activeTab === "interview" ? (
-              <main className="flex-1 py-7 px-5 md:px-10 min-w-0 transition-all z-20">
-                <InterviewStudio onReturnToArticle={handleReturnFromInterview}
-                  onSave={(source) => persistArticle((prev) => linkInterview(prev, source))} />
-              </main>
-            ) : activeTab === "desk" ? (
-              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
-                {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
-                <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} onOpen={handleDeskOpen} onNewArticle={startNewArticle} busy={switching} />
-              </main>
+            ) : (
+              <>
+                {/* STT 인터뷰 전사 & AI 요약: 다른 메뉴를 다녀와도 작업 상태(음성, 전사, 메모, 검색 등) 보존 */}
+                {(hasVisitedInterview || activeTab === "interview") && (
+                  <main className={`flex-1 pt-0 pb-7 px-5 md:px-10 min-w-0 transition-all z-20 ${activeTab === "interview" ? "" : "hidden"}`}>
+                    <InterviewStudio
+                      onReturnToArticle={handleReturnFromInterview}
+                      onSave={(source) => persistArticle((prev) => linkInterview(prev, source), { source })}
+                    />
+                  </main>
+                )}
+
+                {activeTab === "writer" || activeTab === "publish" || activeTab === "factcheck" ? (
+                  <ArticleWriter
+                    article={article}
+                    setArticle={setArticle}
+                    onOpenSearch={() => setShowSearchModal(true)}
+                    onRunFactCheck={handleRunFactCheck}
+                    factCheckRequest={factCheckRequest}
+                    onPublish={handlePublish}
+                    onModels={() => setActiveTab("settings")}
+                    flush={flushForStudio}
+                    isToolsCollapsed={isToolsCollapsed}
+                    setIsToolsCollapsed={setIsToolsCollapsed}
+                    isSidebarCollapsed={isSidebarCollapsed}
+                    onConnectSource={handleConnectSource}
+                    onSave={() => persistArticle()}
+                    isReaderPreview={isReaderPreview}
+                    setIsReaderPreview={setIsReaderPreview}
+                    isPhotoEditing={isPhotoEditing}
+                    setIsPhotoEditing={setIsPhotoEditing}
+                  />
+                ) : activeTab === "interview" ? null : activeTab === "desk" ? (
+                  <main className="flex-1 min-w-0 transition-all z-20 pt-0 pb-6 px-5 md:px-10">
+                    {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
+                    <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} onOpen={handleDeskOpen} onNewArticle={startNewArticle} busy={switching} />
+                  </main>
             ) : activeTab === "map" ? (
-              <main className="flex min-h-0 flex-1 min-w-0 flex-col transition-all z-20 pt-6 pb-0 px-5 md:px-10">
+              <main className="flex min-h-0 flex-1 min-w-0 flex-col transition-all z-20 pt-0 pb-0 px-5 md:px-10">
                 <PageHeader page="map" />
                 <DataMapView articleId={mapArticleId || article.articleId} />
               </main>
             ) : activeTab === "archive" ? (
-              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
+              <main className="flex-1 min-w-0 transition-all z-20 pt-0 pb-6 px-5 md:px-10">
                 <PageHeader page="archive" />
                 {listError && <div role="alert" className="workspace-global-error">저장된 기사 목록을 불러오지 못했습니다. {listError}</div>}
                 {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
@@ -725,11 +738,11 @@ export default function App() {
                   onMap={(id) => { setActiveTab("map"); setMapArticleId(id === currentId ? null : id); }} busy={switching} />
               </main>
             ) : activeTab === "settings" ? (
-              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-4 md:px-8">
+              <main className="flex-1 min-w-0 transition-all z-20 pt-0 pb-6 px-4 md:px-8">
                 <SettingsView onReturnToArticle={() => setActiveTab("writer")} session={session} onSession={applySession} />
               </main>
             ) : activeTab === "convert" ? (
-              <main className="flex-1 min-w-0 transition-all z-20 py-6 px-5 md:px-10">
+              <main className="flex-1 min-w-0 transition-all z-20 pt-0 pb-6 px-5 md:px-10">
                 <PageHeader page="convert" />
                 <PlatformStudio
                   key={article.articleId || "unsaved"}
@@ -745,11 +758,13 @@ export default function App() {
                 />
               </main>
             ) : (
-              <main className="main-warm-container flex-1 py-7 px-5 md:px-10 min-w-0 transition-all z-20">
+              <main className="main-warm-container flex-1 pt-0 pb-7 px-5 md:px-10 min-w-0 transition-all z-20">
                 {activeTab === "search" && (
                   <SourceSearch onConnectToArticle={handleConnectSource} />
                 )}
               </main>
+            )}
+              </>
             )}
           </div>
         </div>

@@ -4,9 +4,23 @@
  * 데스크톱 앱에서도 같은 경로로 동작하고, 녹음·발언은 코어 암호화 저장소에만 남는다.
  */
 import { createTranscriptModel } from "../models/transcriptModel";
-import { transcribeAudio, analyzeInterview, listTranscripts, loadTranscript, saveSpeakerEdits } from "../api/editorial.js";
+import { transcribeAudio, analyzeInterview, listTranscripts, loadTranscript, saveSpeakerEdits, saveTranscriptNotes, deleteTranscript, renameTranscript } from "../api/editorial.js";
 
-export { saveSpeakerEdits };
+export { saveSpeakerEdits, saveTranscriptNotes, deleteTranscript, renameTranscript };
+
+/**
+ * 코어 암호화 저장소에 보관된 녹취를 삭제한다.
+ */
+export async function deleteStoredTranscript(id) {
+  return deleteTranscript(id);
+}
+
+/**
+ * 코어 암호화 저장소에 보관된 녹취의 제목(파일명)을 변경한다.
+ */
+export async function renameStoredTranscript(id, filename) {
+  return renameTranscript(id, filename);
+}
 
 const MAX_AUDIO_BYTES = 40_000_000; // 코어 전사 한도(core/ai/transcribe.py MAX_AUDIO)와 같게 — 올리기 전에 알려 준다
 
@@ -78,6 +92,7 @@ export async function loadStoredTranscript(id) {
   return {
     id: result.id || id,
     speakerEdits: result.speakerEdits || {},
+    notes: result.notes || null,
     dialogues,
     text: transcript.text,
     duration: result.duration || 0,

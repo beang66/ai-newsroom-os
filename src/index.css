@@ -563,6 +563,7 @@ body { background: #edf2f7; }
 .writer-workspace input[type="text"] { color: var(--ink) !important; }
 
 .writer-workspace input[class*="text-2xl"] {
+  color: #000000 !important;
   border-bottom: 2px solid #bcccdc !important;
   font-family: "Nanum Myeongjo", serif !important;
   font-weight: 800 !important;

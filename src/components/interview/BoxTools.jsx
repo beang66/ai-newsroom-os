@@ -17,6 +17,8 @@ const place = (selection) => {
   };
 };
 
+const TOOLBAR_COLORS = ["yellow", "green", "pink"];
+
 /** 텍스트 수정바 */
 export function SelectionToolbar({ selection, onMark, onClear, onEdit }) {
   return (
@@ -28,18 +30,22 @@ export function SelectionToolbar({ selection, onMark, onClear, onEdit }) {
       style={place(selection)}
       className="z-50 flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-1.5 shadow-lg"
     >
-      {Object.entries(MARK_COLORS).map(([key, color]) => (
-        <button
-          key={key}
-          type="button"
-          title={`${color.label} 형광펜`}
-          aria-label={`${color.label} 형광펜`}
-          data-testid={`mark-${key}`}
-          onClick={() => onMark(key)}
-          style={{ background: color.bg }}
-          className="w-5 h-5 rounded-full border border-black/10 cursor-pointer hover:scale-110 transition"
-        />
-      ))}
+      {TOOLBAR_COLORS.map((key) => {
+        const color = MARK_COLORS[key];
+        if (!color) return null;
+        return (
+          <button
+            key={key}
+            type="button"
+            title={`${color.label} 형광펜`}
+            aria-label={`${color.label} 형광펜`}
+            data-testid={`mark-${key}`}
+            onClick={() => onMark(key)}
+            style={{ background: color.bg }}
+            className="w-5 h-5 rounded-full border border-black/10 cursor-pointer hover:scale-110 transition"
+          />
+        );
+      })}
       <button type="button" title="형광펜 지우기" aria-label="형광펜 지우기" data-testid="mark-clear" onClick={onClear} className="p-1 rounded-md text-slate-500 hover:bg-slate-100 cursor-pointer">
         <Eraser className="w-3.5 h-3.5" aria-hidden="true" />
       </button>
@@ -99,16 +105,45 @@ function BoxEditor({ value, original, selection, onSave, onCancel }) {
   );
 }
 
+/** 검색어 강조 렌더링: 일치하는 단어에 밝은 회색빛 형태의 밑줄 적용 */
+function highlightSearch(text, searchKeyword) {
+  const query = searchKeyword ? searchKeyword.trim() : "";
+  if (!query) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(${escaped})`, "gi");
+  const parts = text.split(regex);
+  if (parts.length <= 1) return text;
+  return parts.map((part, index) =>
+    part.toLowerCase() === query.toLowerCase() ? (
+      <span
+        key={index}
+        style={{
+          backgroundImage: "repeating-linear-gradient(45deg, rgba(14, 165, 233, 0.3), rgba(14, 165, 233, 0.3) 2px, transparent 2px, transparent 6px)",
+        }}
+        className="text-slate-950 font-bold px-0.5 rounded-xs"
+      >
+        {part}
+      </span>
+    ) : (
+      part
+    )
+  );
+}
+
 /** 박스 안의 글: 형광펜이 칠해진 부분을 보여 주고, 수정 중이면 글 수정칸으로 바뀐다. */
-export function BoxText({ box, editing, selection, onSave, onCancel }) {
+export function BoxText({ box, editing, selection, onSave, onCancel, searchKeyword = "" }) {
   if (editing) return <BoxEditor value={box.text} original={box.originalText} selection={selection} onSave={onSave} onCancel={onCancel} />;
   return (
     <p className="text-xs text-slate-700 leading-relaxed font-sans pl-1 select-text" data-box-text={box.id} data-testid={`box-text-${box.id}`}>
       {segmentsOf(box.text, box.marks).map((part) =>
         part.color ? (
-          <mark key={part.start} style={{ background: MARK_COLORS[part.color].bg }} className="rounded-sm text-slate-900">{part.text}</mark>
+          <mark key={part.start} style={{ background: MARK_COLORS[part.color].bg }} className="rounded-sm text-slate-900">
+            {highlightSearch(part.text, searchKeyword)}
+          </mark>
         ) : (
-          <React.Fragment key={part.start}>{part.text}</React.Fragment>
+          <React.Fragment key={part.start}>
+            {highlightSearch(part.text, searchKeyword)}
+          </React.Fragment>
         )
       )}
     </p>

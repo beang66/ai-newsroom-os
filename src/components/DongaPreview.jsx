@@ -47,7 +47,7 @@ const stamp = (value) => {
 // - 송고 후: 입력 = 처음 송고 시각, 업데이트 = 송고본 최종 저장 시각(다시 송고하면 바뀐다. 송고 뒤 저장만 해서는 안 바뀜)
 // - 송고 전: 입력 = 처음 수동 저장 시각, 업데이트 = 마지막 수동 저장 시각(처음 저장 직후엔 입력과 같다)
 // - 한 번도 저장하지 않았으면 '저장 전'
-function dongaPreviewDocument(article, photos = [], published = null, saveTimes = null) {
+export function dongaPreviewDocument(article, photos = [], published = null, saveTimes = null) {
   const entered = published?.firstPublishedAt || saveTimes?.firstSavedAt;
   const updated = published?.publishedAt || saveTimes?.lastSavedAt || entered;
   const base = new URL("assets/donga/", document.baseURI);
@@ -59,7 +59,7 @@ function dongaPreviewDocument(article, photos = [], published = null, saveTimes 
     .join("<br>");
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
     + `<link rel="stylesheet" href="${new URL("donga-fonts.css", base)}"><link rel="stylesheet" href="${new URL("donga-preview.css", base)}">`
-    + `<style>@media print{html,body{margin:0}.article{margin:0 auto}figure{break-inside:avoid}h1{break-after:avoid}}</style></head>`
+    + `<style>@media print{html,body{margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.article{margin:0 auto;width:684px;max-width:100%}.preview-head,.preview-body{margin:0!important;width:100%!important;text-align:left!important}.title{font-size:34px;line-height:47.6px;text-align:left!important}.subtitle{position:relative!important;text-align:left!important;border-left:4px solid #111!important;padding-left:12px!important;margin:0 0 28px 0!important;font-size:18px!important;line-height:32.4px!important;font-weight:700!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.subtitle:before{display:none!important}figure{break-inside:avoid}h1{break-after:avoid}}</style></head>`
     + `<body><article class="article"><header class="preview-head"><div class="category">${esc([article.category, article.subcategory].filter(Boolean).join(" > ")) || "&nbsp;"}</div>`
     + `<h1 class="title">${esc(article.title || "")}</h1>`
     + `<div class="meta"><span>입력 ${entered ? esc(stamp(entered)) : "저장 전"}</span><span>업데이트 ${updated ? esc(stamp(updated)) : "저장 전"}</span></div></header>`

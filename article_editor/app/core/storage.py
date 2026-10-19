@@ -79,13 +79,16 @@ def get_transcript(identifier):
         row = db.execute('SELECT filename, mime_type, dialogues_json, duration, created_at FROM transcripts WHERE id = ?',
                          (identifier,)).fetchone()
         edits = db.execute('SELECT value FROM app_meta WHERE key = ?', (SPEAKER_EDITS_PREFIX + identifier,)).fetchone() if row else None
+        notes = db.execute('SELECT value FROM app_meta WHERE key = ?', (NOTES_PREFIX + identifier,)).fetchone() if row else None
     if not row:
         raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
     return {'id': identifier, 'filename': row[0], 'mimeType': row[1], 'dialogues': json.loads(row[2]),
-            'duration': row[3], 'createdAt': row[4], 'speakerEdits': json.loads(edits[0]) if edits else {}}
+            'duration': row[3], 'createdAt': row[4], 'speakerEdits': json.loads(edits[0]) if edits else {},
+            'notes': json.loads(notes[0]) if notes else _empty_notes()}
 
 
 MARK_COLORS = {'yellow', 'orange', 'green', 'blue', 'pink'}  # 형광펜 색(화면 src/lib/speakerEdits.js 와 같게)
+NOTES_PREFIX = 'transcript_notes:'  # app_meta 키 — 녹취마다 전체 메모·AI 요약·발언별 메모를 이 PC 의 암호화 저장소에만 둔다(서버로 보내지 않는다)
 SPEAKER_EDITS_PREFIX = 'speaker_edits:'  # app_meta 키 — 발언 원본(transcripts.dialogues_json)은 바꾸지 않고 사용자의 화자 수정만 따로 둔다
 
 
@@ -126,6 +129,65 @@ def _clean_speaker_edits(edits):
     return clean
 
 
+def _empty_notes():
+    return {'memo': '', 'summary': None, 'speakerNotes': {}}
+
+
+def _note_text(value, limit, label):
+    if value is None:
+        return ''
+    if not isinstance(value, str) or len(value) > limit:
+        raise RequestError(f'{label} 형식을 확인해 주세요.')
+    return value
+
+
+def _note_list(value, count, limit, label):
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > count:
+        raise RequestError(f'{label} 형식을 확인해 주세요.')
+    return [_note_text(item, limit, label) for item in value]
+
+
+def _clean_notes(notes):
+    """화면이 보낸 메모·요약을 검사해 정해진 모양으로만 저장한다(모르는 필드는 버린다)."""
+    if notes is None:
+        notes = {}
+    if not isinstance(notes, dict):
+        raise RequestError('메모 형식을 확인해 주세요.')
+    summary = notes.get('summary')
+    if summary is not None:
+        if not isinstance(summary, dict):
+            raise RequestError('AI 요약 형식을 확인해 주세요.')
+        summary = {'summary': _note_text(summary.get('summary'), 20_000, 'AI 요약'),
+                   'keyPoints': _note_list(summary.get('keyPoints'), 50, 2_000, 'AI 요약'),
+                   'keywords': _note_list(summary.get('keywords'), 50, 200, 'AI 요약')}
+    speaker_notes = notes.get('speakerNotes') or {}
+    if not isinstance(speaker_notes, dict) or len(speaker_notes) > 5_000:
+        raise RequestError('발언 메모 형식을 확인해 주세요.')
+    cleaned = {}
+    for key, text in speaker_notes.items():
+        if not isinstance(key, str) or not 0 < len(key) <= 64:
+            raise RequestError('발언 메모 형식을 확인해 주세요.')
+        text = _note_text(text, 5_000, '발언 메모')
+        if text.strip():
+            cleaned[key] = text
+    return {'memo': _note_text(notes.get('memo'), 200_000, '전체 메모'), 'summary': summary, 'speakerNotes': cleaned}
+
+
+def save_transcript_notes(identifier, notes):
+    """녹취 하나의 전체 메모·AI 요약·발언별 메모를 통째로 바꿔 저장한다(이 PC 의 계정 저장소 app_meta)."""
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    clean = _clean_notes(notes)
+    with vault.connect() as db:
+        if not db.execute('SELECT 1 FROM transcripts WHERE id = ?', (identifier,)).fetchone():
+            raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+        db.execute('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)',
+                   (NOTES_PREFIX + identifier, json.dumps(clean, ensure_ascii=False)))
+    return {'id': identifier, 'notes': clean}
+
+
 def save_speaker_edits(identifier, edits):
     if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
         raise RequestError('잘못된 녹취 ID입니다.')
@@ -136,6 +198,31 @@ def save_speaker_edits(identifier, edits):
         db.execute('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)',
                    (SPEAKER_EDITS_PREFIX + identifier, json.dumps(clean, ensure_ascii=False)))
     return {'id': identifier, 'speakerEdits': clean}
+
+
+def delete_transcript(identifier):
+    """저장된 전사 녹취를 삭제한다 (transcripts 행 및 app_meta 화자 수정·메모·요약 데이터)."""
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    with vault.connect() as db:
+        db.execute('DELETE FROM transcripts WHERE id = ?', (identifier,))
+        db.execute('DELETE FROM app_meta WHERE key = ?', (SPEAKER_EDITS_PREFIX + identifier,))
+        db.execute('DELETE FROM app_meta WHERE key = ?', (NOTES_PREFIX + identifier,))
+    return {'ok': True, 'id': identifier}
+
+
+def rename_transcript(identifier, filename):
+    """저장된 전사의 제목(파일명)을 변경한다."""
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    if not isinstance(filename, str) or not filename.strip():
+        raise RequestError('변경할 제목을 입력해 주세요.')
+    new_name = filename.strip()
+    with vault.connect() as db:
+        if not db.execute('SELECT 1 FROM transcripts WHERE id = ?', (identifier,)).fetchone():
+            raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+        db.execute('UPDATE transcripts SET filename = ? WHERE id = ?', (new_name, identifier))
+    return {'ok': True, 'id': identifier, 'filename': new_name}
 
 
 def transcript_audio(identifier):

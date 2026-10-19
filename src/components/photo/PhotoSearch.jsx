@@ -171,7 +171,7 @@ export default function PhotoSearch({ body, card, onClose, onChoose }) {
                   <img src={p.urls?.small} alt={p.alt_description || "검색 사진"} className="w-full aspect-[4/3] object-cover rounded-xl border border-slate-200" />
                 </button>
                 <a href={(p.user?.links?.html || "https://unsplash.com") + UTM} target="_blank" rel="noopener noreferrer" className="block text-[11px] text-slate-500 truncate hover:underline">
-                  {p.user?.name} / Unsplash
+                  © {p.user?.name || "Unsplash"} / Unsplash
                 </a>
                 <div className="flex flex-wrap gap-1">
                   <button type="button" disabled={!!working} onClick={() => choose(p, "insert")} className={btn}>{working === p.id + "insert" ? "넣는 중…" : "본문에 넣기"}</button>

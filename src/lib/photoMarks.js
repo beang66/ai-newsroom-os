@@ -25,5 +25,11 @@ export function textWithoutPhotos(content) {
     .join("\n");
 }
 
-/** 사진 설명 표시 문구 — v30 과 같은 "설명 ⓒ 출처" */
-export const captionText = (photo) => `${photo?.caption || ""}${photo?.source ? " ⓒ " + photo.source : ""}`;
+/** 사진 설명 표시 문구. Unsplash처럼 출처 자체에 ©가 있으면 중복해서 붙이지 않는다. */
+export const captionText = (photo) => {
+  const caption = String(photo?.caption || "").trim();
+  const source = String(photo?.source || "").trim();
+  if (!source) return caption;
+  const credit = /^[©ⓒ]/.test(source) ? source : `ⓒ ${source}`;
+  return [caption, credit].filter(Boolean).join(" ");
+};

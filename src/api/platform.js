@@ -28,7 +28,7 @@ export async function listStudioArticles(signal) {
   });
 }
 export async function getStudioArticle(id, signal) {
-  const response=await core.getArticle(id,undefined,signal);
+  const response=await core.previewArticle(id,signal);
   const raw=response?.draft;
   if(!raw||typeof raw.articleId!=="string")throw Error("기사가 삭제되었거나 조회되지 않습니다.");
   const loaded=await loadStoredArticle(id,{},signal);

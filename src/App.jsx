@@ -725,6 +725,11 @@ export default function App() {
                     isSidebarCollapsed={isSidebarCollapsed}
                     onConnectSource={handleConnectSource}
                     onSave={() => persistArticle()}
+                    onArchive={async () => {
+                      const saved = await persistArticle();
+                      if (saved) setActiveTab("archive");
+                      return saved;
+                    }}
                     isReaderPreview={isReaderPreview}
                     setIsReaderPreview={setIsReaderPreview}
                     isPhotoEditing={isPhotoEditing}

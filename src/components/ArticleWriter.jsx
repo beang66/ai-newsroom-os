@@ -49,7 +49,7 @@ import {
   MessageSquare,
   Heart,
   Volume2,
-  History
+  History, Save, Archive
 } from "lucide-react";
 
 function formatPreviewData(article, photos = []) {
@@ -90,6 +90,7 @@ export default function ArticleWriter({
   isSidebarCollapsed = true,
   onConnectSource,
   onSave,
+  onArchive,
   isReaderPreview,
   setIsReaderPreview,
   isPhotoEditing,
@@ -122,6 +123,26 @@ export default function ArticleWriter({
 
   // 저장 이력 및 복원 모달 열림 상태
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  // 오른쪽 위 저장하기·보관(예전에는 헤더에 있었다): 저장하고, 보관은 저장이 성공했을 때만 보관함으로 보낸다
+  const [topBusy, setTopBusy] = useState(false);
+  const handleTopSave = async () => {
+    setTopBusy(true);
+    try {
+      await onSave?.();
+    } finally {
+      setTopBusy(false);
+    }
+  };
+  const handleTopArchive = async () => {
+    setTopBusy(true);
+    try {
+      // 저장 결과를 기다려, 실패했을 때는 보관되었다고 알리지 않는다(화면 하단 상태줄에 사유가 표시됨).
+      const archived = await onArchive?.();
+      if (archived !== false) alert("기사가 보관되었습니다.");
+    } finally {
+      setTopBusy(false);
+    }
+  };
 
   // 팩트체크 패널과 에디터 간 분할 비율 (기본 1:1 = 50%)
   const [factCheckSplitRatio, setFactCheckSplitRatio] = useState(50);
@@ -1481,17 +1502,43 @@ export default function ArticleWriter({
                     </div>
                     </div>
 
-                    {/* 저장 이력 및 자동 저장 상태 버튼 (data-testid="save-status") */}
-                    <button
-                      type="button"
-                      onClick={() => setShowHistoryModal(true)}
-                      data-testid="save-status"
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium text-stone-500 hover:text-stone-900 hover:bg-stone-100/70 transition cursor-pointer select-none"
-                      title="저장 이력 확인 및 이전 저장본 복원"
-                    >
-                      <History className="w-3.5 h-3.5 text-stone-500" />
-                      <span>자동 저장됨 · 이력</span>
-                    </button>
+                    {/* 저장 이력(아이콘만, data-testid="save-status") · 보관 · 저장하기 */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowHistoryModal(true)}
+                        data-testid="save-status"
+                        aria-label="저장 이력"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-stone-500 hover:text-stone-900 hover:bg-stone-100/70 transition cursor-pointer select-none"
+                        title="저장 이력 확인 및 이전 저장본 복원"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+                      {onArchive && (
+                        <button
+                          type="button"
+                          onClick={handleTopArchive}
+                          disabled={topBusy}
+                          data-testid="writer-archive"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-50 transition cursor-pointer disabled:opacity-50"
+                        >
+                          <Archive className="w-3.5 h-3.5" aria-hidden="true" />
+                          보관
+                        </button>
+                      )}
+                      {onSave && (
+                        <button
+                          type="button"
+                          onClick={handleTopSave}
+                          disabled={topBusy}
+                          data-testid="writer-save-top"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-[#101010] px-3 py-1 text-[11px] font-bold text-white transition cursor-pointer hover:bg-black disabled:opacity-60"
+                        >
+                          <Save className="w-3.5 h-3.5" aria-hidden="true" />
+                          {topBusy ? "저장 중…" : "저장하기"}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* 기사 제목 라벨 및 AI 버튼 */}

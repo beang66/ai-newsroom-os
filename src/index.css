@@ -596,6 +596,14 @@ body { background: #edf2f7; }
 }
 
 /* 미니멀 스크롤바: 얇고 둥근 막대만, 평소에는 거의 보이지 않고 올려 두면 진해진다 */
+/* 카드 편집 팝업(사진 교체·정보 배치): 왼쪽(버튼 쪽)은 고정하고 오른쪽으로 퍼지며 열린다 */
+@keyframes photo-popover-in {
+  from { clip-path: inset(0 100% 0 0 round 24px); opacity: 0.5; }
+  to { clip-path: inset(0 0 0 0 round 24px); opacity: 1; }
+}
+.photo-popover { animation: photo-popover-in 0.46s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+@media (prefers-reduced-motion: reduce) { .photo-popover { animation: none; } }
+
 .minimal-scroll { scrollbar-width: thin; scrollbar-color: rgba(113, 113, 122, 0.28) transparent; }
 .minimal-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
 .minimal-scroll::-webkit-scrollbar-track { background: transparent; }

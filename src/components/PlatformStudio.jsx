@@ -39,23 +39,6 @@ const VIEW_LABELS = {
   card_news: "카드뉴스",
 };
 
-function Evidence({ quotes, valid }) {
-  const list = Array.isArray(quotes) ? quotes.filter(Boolean) : [];
-  if (!list.length) return null;
-  return (
-    <details className="mt-2 rounded-xl border border-[#DDD6CB] bg-[#FAF8F5] px-3 py-2 text-[11px] text-[#6F685F]">
-      <summary className="cursor-pointer font-bold text-[#57514A]">
-        원문 근거 {valid === false ? "· 확인 필요" : ""}
-      </summary>
-      <ul className="mt-2 space-y-1.5 list-disc pl-4">
-        {list.map((quote, index) => (
-          <li key={index} className="leading-relaxed">{quote}</li>
-        ))}
-      </ul>
-    </details>
-  );
-}
-
 function draftToText(platform, draft) {
   if (!draft) return "";
   if (platform === "instagram") {
@@ -82,9 +65,6 @@ function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
         <p className="text-sm font-bold text-[#57514A]">
           아직 {VIEW_LABELS[platform]} 원고가 없습니다.
         </p>
-        <p className="mt-1 text-xs text-[#8E8982]">
-          기사를 적용하고 생성할 항목을 선택하면, 원문의 흐름과 핵심 내용을 읽어 정리합니다.
-        </p>
       </div>
     );
   }
@@ -98,11 +78,11 @@ function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
   };
 
   if (platform === "instagram") {
-    return <InstagramEditor draft={draft} changed={changed} Evidence={Evidence} cards={cards} article={article} />;
+    return <InstagramEditor draft={draft} changed={changed} cards={cards} article={article} />;
   }
 
   if (platform === "threads") {
-    return <ThreadsEditor draft={draft} changed={changed} Evidence={Evidence} cards={cards} article={article} />;
+    return <ThreadsEditor draft={draft} changed={changed} cards={cards} article={article} />;
   }
 
   return null;
@@ -677,55 +657,33 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                 <h2 className="truncate text-[17px] font-bold tracking-tight text-zinc-900">
                   {leftPanelTab === "settings"
                     ? "원고 & 배포 설정"
-                    : leftPanelTab === "review"
-                    ? "원고 검수 · 이전 결과"
                     : "로컬 앱 연결"}
                 </h2>
-                <p className="mt-0.5 truncate text-[11px] text-zinc-400">
-                  {leftPanelTab === "settings"
-                  ? "변환 원문 및 발행 채널 옵션"
-                  : leftPanelTab === "review"
-                  ? "원문 근거 일치성 검수 및 이전 원문 결과"
-                  : "Instagram 로컬 전송 및 앱 연동"}
-                </p>
               </div>
             </div>
-            <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-bold tracking-wide ${ready ? "bg-lime-100 text-lime-800" : "bg-zinc-100 text-zinc-500"}`}>
-              {ready ? "준비 완료" : "원문 확인"}
-            </span>
           </div>
 
           {/* 상단 탭 전환 세그먼트 버튼 ([원고 & 설정] / [원고 검수 · 결과] / [로컬 앱 연결]) */}
-          <div className="flex rounded-full bg-zinc-100 p-1 text-[11px] font-bold">
+          <div className="flex items-center text-[11px] font-bold">
             <button
               type="button"
               onClick={() => setLeftPanelTab("settings")}
               className={`flex-1 rounded-full py-1.5 transition text-center ${
                 leftPanelTab === "settings"
-                  ? "bg-[#18181B] text-white shadow-[0_2px_6px_rgba(24,24,27,0.25)]"
-                  : "text-zinc-500 hover:text-zinc-900"
+                  ? "border border-slate-900/[0.08] bg-slate-900/[0.08] text-slate-800 shadow-[0_2px_10px_rgba(0,0,0,0.04),inset_0_1px_1.5px_rgba(255,255,255,0.8)]"
+                  : "border border-transparent text-slate-500 hover:text-slate-800"
               }`}
             >
               원고 & 설정
             </button>
-            <button
-              type="button"
-              onClick={() => setLeftPanelTab("review")}
-              className={`flex-1 rounded-full py-1.5 transition text-center ${
-                leftPanelTab === "review"
-                  ? "bg-[#18181B] text-white shadow-[0_2px_6px_rgba(24,24,27,0.25)]"
-                  : "text-zinc-500 hover:text-zinc-900"
-              }`}
-            >
-              원고 검수 · 결과
-            </button>
+            <span className="h-3 w-px shrink-0 bg-zinc-200" aria-hidden="true" />
             <button
               type="button"
               onClick={() => setLeftPanelTab("delivery")}
               className={`flex-1 rounded-full py-1.5 transition text-center ${
                 leftPanelTab === "delivery"
-                  ? "bg-[#18181B] text-white shadow-[0_2px_6px_rgba(24,24,27,0.25)]"
-                  : "text-zinc-500 hover:text-zinc-900"
+                  ? "border border-slate-900/[0.08] bg-slate-900/[0.08] text-slate-800 shadow-[0_2px_10px_rgba(0,0,0,0.04),inset_0_1px_1.5px_rgba(255,255,255,0.8)]"
+                  : "border border-transparent text-slate-500 hover:text-slate-800"
               }`}
             >
               로컬 앱 연결
@@ -735,42 +693,37 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
           {leftPanelTab === "settings" ? (
             <>
 
-          {/* 1. 불러온 기사 */}
+          {/* 1. 기사 정보 및 선택 */}
           <section className="space-y-3 border-b border-zinc-100 pb-4">
-            <div className="flex items-start gap-3">
-              <FileText className="mt-0.5 h-4 w-4 text-[#8E8982]" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-black">불러온 기사</h3>
-                  <button type="button" data-testid="choose-studio-article" disabled={applying||sourceLoading} onClick={()=>setPickerOpen(true)} className="rounded-xl border border-[#DDD6CB] bg-white px-2.5 py-1 text-[11px] font-bold text-[#292929] hover:bg-[#F2EFE9] transition">저장 기사에서 선택</button>
-                </div>
-                {previewLoading||sourceLoading ? <p role="status" className="mt-2 text-xs">기사 불러오는 중…</p> : <div data-testid="loaded-article" className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                  <span className="mt-3 block text-[10px] font-bold text-[#756F67]">기사 제목</span>
-                  <p data-testid="loaded-title" className="mt-0.5 text-sm font-black leading-6 text-[#292929]">{preview?.article.title || "기사 미선택"}</p>
-                  <span className="mt-2 block text-[10px] font-bold text-[#756F67]">부제목</span>
-                  <p data-testid="loaded-subtitle" className="mt-0.5 text-xs leading-5 text-[#57514A]">{subtitleLabel({subtitle:preview?.subtitle})}</p>
-                  <p className="mt-1.5 text-[10px] leading-4 text-[#8E8982]">부제는 기사 화면의 표시 정보입니다. 생성 입력의 부제 전달은 미연결입니다.</p>
+            <div>
+              {previewLoading||sourceLoading ? <p role="status" className="mt-2 text-xs">기사 불러오는 중…</p> : <div data-testid="loaded-article" className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                  <p data-testid="loaded-title" className="text-[17px] font-black leading-7 tracking-[-0.01em] text-[#1F1F1F]">{preview?.article.title || "기사 미선택"}</p>
+                  <p data-testid="loaded-subtitle" className="mt-2.5 border-l-2 border-[#292929] pl-3 text-[13px] font-medium leading-5 text-[#57514A]">{subtitleLabel({subtitle:preview?.subtitle})}</p>
                   {!preview?.article.content?.trim() && <p role="status" className="mt-2 text-xs text-amber-800">{preview?.article.title ? "기사 본문 없음 · 기사 편집 화면에서 확인해 주세요." : "DB 기사를 선택해 주세요."}</p>}
                   {/^https?:\/\//iu.test(preview?.article.url || "") && <a href={preview.article.url} target="_blank" rel="noreferrer" className="mt-2 block text-xs underline text-[#292929]">원문 출처 링크</a>}
-                  <span className="mt-2 block text-[10px] text-[#8E8982]">본문 {(preview?.article.content || '').length.toLocaleString()}자</span>
                 </div>}
                 {previewError&&<p role="alert" className="mt-2 text-xs text-red-700">기사 조회 실패: {previewError}</p>}
-                <button type="button" data-testid="apply-studio-article" disabled={applying||previewLoading||sourceLoading||!preview?.article.articleId||!preview.article.content?.trim()} onClick={applyPreview} className="mt-3 w-full rounded-xl bg-[#292929] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#403B35] disabled:opacity-50">{applying?'기사 적용 중…':'이 기사로 콘텐츠 제작'}</button>
+            <div className="mt-3 flex items-center">
+              <button
+                type="button"
+                data-testid="choose-studio-article"
+                disabled={applying || sourceLoading}
+                onClick={() => setPickerOpen(true)}
+                className="rounded-xl border border-[#DDD6CB] bg-white px-2.5 py-1 text-[11px] font-bold text-[#292929] hover:bg-[#F2EFE9] transition"
+              >
+                {Boolean(preview?.article?.articleId && preview?.article?.title?.trim() && preview.article.title !== "기사 미선택")
+                  ? "다른 기사 불러오기"
+                  : "저장 기사에서 선택"}
+              </button>
+            </div>
+                <button type="button" data-testid="apply-studio-article" disabled={applying||previewLoading||sourceLoading||!preview?.article.articleId||!preview.article.content?.trim()} onClick={applyPreview} className="mt-3 w-full rounded-xl bg-[#292929] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#403B35] disabled:opacity-50">{applying?'기사 적용 중…':'콘텐츠 생성'}</button>
                 {applyError&&<p role="alert" className="mt-2 text-xs text-red-700">적용 실패: {applyError}</p>}
-                <p role="status" data-testid="applied-source" className="mt-2.5 whitespace-pre-wrap break-words text-[11px] leading-5 text-[#756F67]">
-                  {ready?`적용 완료 · ${applied.title}`:applied?'원문이 변경됐습니다. 재적용이 필요합니다.':'생성 원문 미적용 · 기사를 확인한 뒤 이 기사로 콘텐츠 제작을 눌러 주세요.'}
+                <p role="status" data-testid="applied-source" className="sr-only">
+                  {ready?`적용 완료 · ${applied.title}`:applied?'원문이 변경됐습니다. 재적용이 필요합니다.':'생성 원문 미적용 · 기사를 확인한 뒤 콘텐츠 생성을 눌러 주세요.'}
                   {preview&&ready&&articleId(preview.article)!==applied.id&&<><br/>미리보기 기사와 적용 기사가 다릅니다. 생성은 적용 기사로 진행합니다.</>}
                 </p>
                 {sourceError && <p role="alert" className="mt-2 text-xs text-red-700">{sourceError}</p>}
-                <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                  {onEditArticle && <button onClick={onEditArticle} className="underline text-[#57514A] hover:text-[#292929]">기사 편집</button>}
-                  {onOpenArticles && <button onClick={onOpenArticles} className="underline text-[#57514A] hover:text-[#292929]">저장 기사 목록</button>}
-                </div>
-                {requestSource && <div role="status" data-testid="request-source" className="mt-2.5 whitespace-pre-wrap break-words text-[11px] leading-5 text-[#756F67]">
-                  처리 기준 기사: {requestSource.title}<br />{requestSource.snapshotId ? "Core 고정본의 제목·본문으로 처리 중" : "저장·고정본 확인 중"}
-                </div>}
               </div>
-            </div>
           </section>
 
           {/* 2. 배포 플랫폼 선택 */}
@@ -787,20 +740,16 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                     key={platform.id}
                     type="button"
                     onClick={() => togglePlatform(platform.id)}
+                    aria-label={`${platform.label} ${platform.badge}`}
                     className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition ${
                       selected
-                        ? "border border-zinc-900 bg-zinc-900 text-white shadow-xs"
+                        ? "border border-slate-900/[0.08] bg-slate-900/[0.08] text-slate-800 shadow-xs"
                         : "border border-zinc-200/70 bg-zinc-50/50 text-zinc-800 hover:bg-zinc-100/70"
                     }`}
                   >
-                    <div>
-                      <div className="text-xs font-extrabold">{platform.label}</div>
-                      <div className={`text-[10px] ${selected ? "text-zinc-300" : "text-zinc-400"}`}>
-                        {platform.badge}
-                      </div>
-                    </div>
+                    <div className="text-xs font-extrabold">{platform.label}</div>
                     <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${
-                      selected ? "border-white bg-white text-zinc-900" : "border-zinc-300 bg-white"
+                      selected ? "border-slate-400 bg-white text-zinc-900" : "border-zinc-300 bg-white"
                     }`}>
                       {selected && <Check className="h-3.5 w-3.5 stroke-[3]" />}
                     </span>
@@ -809,7 +758,11 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
               })}
             </div>
 
-            <label className="flex cursor-pointer items-start gap-2.5 rounded-xl bg-zinc-50/60 p-2.5 hover:bg-zinc-100/60 transition">
+            <label className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-left transition ${
+              includeCardNews
+                ? "border border-slate-900/[0.08] bg-slate-900/[0.08] text-slate-800 shadow-xs"
+                : "border border-zinc-200/70 bg-zinc-50/50 text-zinc-800 hover:bg-zinc-100/70"
+            }`}>
               <input
                 type="checkbox"
                 checked={includeCardNews}
@@ -819,13 +772,13 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                   if (checked && !selectedPlatforms.length) setActiveView("card_news");
                   persist(drafts,cardNews,{includeCardNews:checked});
                 }}
-                className="mt-0.5"
+                className="sr-only"
               />
-              <span>
-                <strong className="block text-xs">카드뉴스도 생성</strong>
-                <span className="text-[10px] leading-4 text-[#8E8982]">
-                  배포 플랫폼이 아닌 별도 제작 결과물
-                </span>
+              <span className="text-xs font-extrabold">카드뉴스도 생성</span>
+              <span className={`flex h-5 w-5 items-center justify-center rounded-md border ${
+                includeCardNews ? "border-slate-400 bg-white text-zinc-900" : "border-zinc-300 bg-white"
+              }`}>
+                {includeCardNews && <Check className="h-3.5 w-3.5 stroke-[3]" />}
               </span>
             </label>
 
@@ -833,10 +786,16 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
               type="button"
               onClick={() => runGeneration()}
               disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
-              className="mt-2 flex w-full min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#292929] px-5 py-2.5 text-xs font-extrabold text-white transition hover:bg-[#403B35] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-2 flex w-full min-h-11 items-center justify-center gap-2 rounded-2xl border border-white/80 bg-slate-200/45 px-5 py-2.5 text-xs font-extrabold text-slate-800 backdrop-blur-md transition hover:bg-slate-200/70 shadow-[0_6px_20px_rgba(15,23,42,0.08),inset_0_1px_1.5px_rgba(255,255,255,0.9)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {generating ? "선택 항목 생성 중" : "선택 항목 생성"}
+              {generating ? (() => {
+                // 지금 생성 중인 대상만 표시 — 없으면(준비·대기) 아직 끝나지 않은 첫 대상
+                const ids = Object.keys(progress);
+                const running = ids.filter((id) => /^(생성 중|JPG 준비 중)/.test(progress[id]));
+                const shown = running.length ? running : ids.filter((id) => !/^(완료|실패|원고 완료)/.test(progress[id])).slice(0, 1);
+                return shown.length ? shown.map((id) => `${VIEW_LABELS[id]} 생성 중`).join(" / ") : "선택 항목 생성 중";
+              })() : "선택 항목 생성"}
             </button>
           </section>
 
@@ -847,7 +806,6 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                 편집 방향 추가 <span className="font-normal text-[#8E8982]">(선택)</span>
                 {hasConditions({selectedKeywords,requirements})&&<span className="ml-2 text-[10px] font-medium text-[#756F67]">다음 생성에 반영</span>}
               </summary>
-              <p className="mt-2 text-[11px] leading-5 text-[#8E8982]">비워 두면 원문을 기준으로 정리합니다. 별도로 강조하거나 남기고 싶은 내용이 있을 때만 덧붙이세요.</p>
               <div className="mt-4 space-y-4">
                 <div>
                   <label htmlFor="platform-editorial-direction" className="mb-1.5 block text-xs font-bold">덧붙일 편집 방향 (선택)</label>
@@ -863,7 +821,6 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                   {requirements.trim()&&<div role="status" className="mt-2 space-y-1 text-[11px] leading-5 text-[#756F67]">
                     <p className="font-bold">다음 생성에 반영할 문체</p>
                     {supportedPlatforms(selectedPlatforms).map(platform=><p key={platform}>{EditorialDirection.summary(platform,requirements)}</p>)}
-                    <p>명시한 문체만 변경하며, 사실·근거와 중요한 조건은 유지합니다. 기존 결과는 다시 생성해야 반영됩니다.</p>
                   </div>}
                   <button type="button" title="선택한 Instagram·Threads 원고를 다시 생성합니다. 기존 원고와 수정 내용은 새 결과로 바뀝니다." disabled={!requirements.trim()||!ready||applying||generating||keywordLoading||sourceLoading||!article.title?.trim()||!article.content?.trim()||!selectedPlatforms.length} onClick={()=>runGeneration(supportedPlatforms(selectedPlatforms))} className="mt-3 w-full rounded-xl bg-[#292929] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#403B35] disabled:opacity-50">편집 방향 반영해 다시 생성</button>
                 </div>
@@ -927,11 +884,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                           );
                         })}
                       </div>
-                    ) : (
-                      <p className="rounded-xl bg-[#FAF8F5] p-3 text-[10px] leading-4 text-[#8E8982]">
-                        필요할 때만 ‘추천’으로 강조할 주제 후보를 확인하세요. 선택하지 않아도 생성할 수 있습니다.
-                      </p>
-                    )}
+                    ) : null}
 
                     <label className="block text-xs" htmlFor="platform-keyword">사용자 키워드 (선택)</label>
                     <div className="flex gap-2">
@@ -959,102 +912,20 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
             </details>
           </section>
 
-          {/* 4. 작업 진행 현황 및 고정본 기록 */}
-          {(Object.keys(progress).length > 0 || message || runHistory.length>0) && (
-            <section className="rounded-2xl border border-zinc-200/80 bg-zinc-50/70 p-3.5 text-[11px]">
-              {lastRun&&<p data-testid="generation-run" className="mb-2">이번 생성 시도 · {lastRun.id.slice(0,8)} · 저장 {lastRun.revision_no}번 고정본 기준</p>}
-              {Object.entries(progress).map(([id, status]) => (
-                <div key={id} className="flex justify-between gap-3 py-1">
-                  <span className="font-bold">{VIEW_LABELS[id]}</span>
-                  <span className={status.startsWith("실패") ? "text-red-600" : "text-[#756F67]"}>
-                    {status}
-                  </span>
-                </div>
-              ))}
-              {cardNews&&progress.card_news?.startsWith('실패')&&<p role="status" className="mt-2 text-amber-700">현재 보이는 카드뉴스와 JPG 준비 수는 이번 생성 결과가 아닌 이전 성공 결과입니다.</p>}
-              {message && <p className="mt-2 border-t border-[#DDD6CB] pt-2 leading-5 text-[#57514A]">{message}</p>}
-              {storedRun?.targets?.some(target=>storedRun.results?.[target]?.draft)&&<details className="mt-2 border-t border-[#DDD6CB] pt-2">
-                <summary className="cursor-pointer font-bold">고정본에 보관된 생성 결과 보기</summary>
-                <p className="mt-2">기사 {storedRun.article_id.slice(0,8)} · 저장 {storedRun.revision_no}번 고정본</p>
-                {storedRun.targets.map(target=>{
-                  const draft=storedRun.results?.[target]?.draft;
-                  if(!draft)return null;
-                  const value=target==='card_news'?(draft.cards||[]).map(card=>[card.content?.keyword,card.content?.headline,card.content?.body].filter(Boolean).join(' · ')).join('\n\n'):draftToText(target,draft);
-                  return <div key={target} className="mt-3"><p className="font-bold">{VIEW_LABELS[target]}</p><pre className="mt-1 max-h-48 minimal-scroll overflow-auto whitespace-pre-wrap break-words">{value}</pre></div>;
-                })}
-              </details>}
-              {runHistory.length>0&&<details data-testid="generation-history" className="mt-2 border-t pt-2"><summary>최근 작업 기록 · 원문과 AI 응답은 기록하지 않음</summary>{runHistory.map((entry,index)=><p key={index}>
-                {entry.id.slice(0,8)} · {entry.source_version===sourceVersion(article)?'현재 원문':'이전 원문'} · {VIEW_LABELS[entry.platform]||entry.platform} · {entry.stage} · {entry.code||entry.status} · {entry.at}
-              </p>)}</details>}
-            </section>
-          )}
+          {/* 4. 생성 실패한 항목만 한 줄로 표시 (진행 현황·고정본 기록 상자는 제거) */}
+          {Object.entries(progress).filter(([, status]) => status.startsWith("실패")).map(([id]) => (
+            <p key={id} role="status" className="text-xs font-bold text-red-600">{VIEW_LABELS[id]} 생성 실패</p>
+          ))}
             </>
-          ) : leftPanelTab === "review" ? (
-            /* 원고 검수 · 이전 원문 결과 탭 화면 */
-            <div className="space-y-4">
-              {currentDraft && (
-                <div role={currentResult ? "status" : "alert"} data-testid="draft-origin-status" className={`rounded-2xl border p-4 text-xs leading-5 ${currentResult ? "border-[#DDD6CB] bg-[#FAF8F5] text-slate-700" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
-                  <div className="font-extrabold text-[12px] mb-1">
-                    {currentResult ? "현재 원문 결과" : "이전 원문 결과 · SNS 준비에서 제외"}
-                  </div>
-                  <div>기준 원문: {currentDraft.generation_input?.article?.title || "연결 확인 필요"}</div>
-                  {currentDraft.generation_run?.revision_no != null && (
-                    <div className="text-[11px] text-slate-500">저장 {currentDraft.generation_run.revision_no}번 고정본 기준</div>
-                  )}
-                  {!currentResult && (
-                    <div className="mt-1 text-[11px] text-amber-700">새 생성이 실패해도 이 보존본은 삭제하지 않습니다.</div>
-                  )}
-                </div>
-              )}
-
-              {/* 플랫폼 원고 검수 UI */}
-              <section className="space-y-3 pt-1">
-                <div className="mb-3 flex items-center justify-between border-b border-zinc-100 pb-2">
-                  <h3 className="text-xs font-black">플랫폼 원고 검수</h3>
-                  <span className="rounded-full bg-[#292929] px-2 py-0.5 text-[10px] font-bold text-white">
-                    {VIEW_LABELS[activeView] || activeView}
-                  </span>
-                </div>
-                {activeView === "card_news" ? (
-                  <PlatformReview platform={activeView} draft={cardNews} article={article} onChange={updateCardNews}/>
-                ) : (
-                  <PlatformReview key={"panel-review:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} article={article} onChange={change=>updateDraft(activeView,change)}/>
-                )}
-              </section>
-
-              {/* 고정본 기록 및 작업 진행 이력 */}
-              {(Object.keys(progress).length > 0 || message || runHistory.length > 0) && (
-                <section className="rounded-2xl border border-[#DDD6CB] bg-[#FAF8F5] p-3.5 text-[11px]">
-                  {lastRun && <p data-testid="generation-run" className="mb-2 font-bold">이번 생성 시도 · {lastRun.id.slice(0,8)} · 저장 {lastRun.revision_no}번 고정본 기준</p>}
-                  {Object.entries(progress).map(([id, status]) => (
-                    <div key={id} className="flex justify-between gap-3 py-1">
-                      <span className="font-bold">{VIEW_LABELS[id]}</span>
-                      <span className={status.startsWith("실패") ? "text-red-600" : "text-[#756F67]"}>
-                        {status}
-                      </span>
-                    </div>
-                  ))}
-                  {cardNews && progress.card_news?.startsWith('실패') && <p role="status" className="mt-2 text-amber-700">현재 보이는 카드뉴스와 JPG 준비 수는 이번 생성 결과가 아닌 이전 성공 결과입니다.</p>}
-                  {message && <p className="mt-2 border-t border-[#DDD6CB] pt-2 leading-5 text-[#57514A]">{message}</p>}
-                  {storedRun?.targets?.some(target=>storedRun.results?.[target]?.draft)&&<details className="mt-2 border-t border-[#DDD6CB] pt-2">
-                    <summary className="cursor-pointer font-bold">고정본에 보관된 생성 결과 보기</summary>
-                    <p className="mt-2">기사 {storedRun.article_id.slice(0,8)} · 저장 {storedRun.revision_no}번 고정본</p>
-                    {storedRun.targets.map(target=>{
-                      const draft=storedRun.results?.[target]?.draft;
-                      if(!draft)return null;
-                      const value=target==='card_news'?(draft.cards||[]).map(card=>[card.content?.keyword,card.content?.headline,card.content?.body].filter(Boolean).join(' · ')).join('\n\n'):draftToText(target,draft);
-                      return <div key={target} className="mt-3"><p className="font-bold">{VIEW_LABELS[target]}</p><pre className="mt-1 max-h-48 minimal-scroll overflow-auto whitespace-pre-wrap break-words">{value}</pre></div>;
-                    })}
-                  </details>}
-                  {runHistory.length>0&&<details data-testid="generation-history" className="mt-2 border-t pt-2"><summary>최근 작업 기록 · 원문과 AI 응답은 기록하지 않음</summary>{runHistory.map((entry,index)=><p key={index}>
-                    {entry.id.slice(0,8)} · {entry.source_version===sourceVersion(article)?'현재 원문':'이전 원문'} · {VIEW_LABELS[entry.platform]||entry.platform} · {entry.stage} · {entry.code||entry.status} · {entry.at}
-                  </p>)}</details>}
-                </section>
-              )}
-            </div>
           ) : (
             /* 로컬 앱 연결 탭 화면 (PlatformDelivery 컴포넌트) */
             <div className="space-y-4">
+              {/* 플랫폼 원고 검수: 이 탭을 여는 즉시 실행하고 결과를 한 줄로 표시 */}
+              {activeView === "card_news" ? (
+                <PlatformReview compact platform={activeView} draft={cardNews} article={article} onChange={updateCardNews}/>
+              ) : (
+                <PlatformReview compact key={"panel-review:"+activeView+articleId(article)} platform={activeView} draft={currentDraft} article={article} onChange={change=>updateDraft(activeView,change)}/>
+              )}
               {activeView === "card_news" ? (
                 <PlatformDelivery
                   platform={activeView}
@@ -1091,8 +962,8 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                 onClick={() => setActiveView(platform.id)}
                 className={`rounded-full px-4 py-2 text-xs font-extrabold transition ${
                   activeView === platform.id
-                    ? "bg-[#292929] text-white"
-                    : "bg-[#EFECE6] text-[#57514A]"
+                    ? "border border-slate-900/[0.08] bg-slate-900/[0.08] text-slate-800 shadow-[0_2px_10px_rgba(0,0,0,0.04),inset_0_1px_1.5px_rgba(255,255,255,0.8)]"
+                    : "border border-transparent text-slate-500 hover:text-slate-800"
                 }`}
               >
                 {platform.label}
@@ -1105,8 +976,8 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                 onClick={() => setActiveView("card_news")}
                 className={`rounded-full px-4 py-2 text-xs font-extrabold transition ${
                   activeView === "card_news"
-                    ? "bg-[#292929] text-white"
-                    : "bg-[#EFECE6] text-[#57514A]"
+                    ? "border border-slate-900/[0.08] bg-slate-900/[0.08] text-slate-800 shadow-[0_2px_10px_rgba(0,0,0,0.04),inset_0_1px_1.5px_rgba(255,255,255,0.8)]"
+                    : "border border-transparent text-slate-500 hover:text-slate-800"
                 }`}
               >
                 카드뉴스

@@ -50,9 +50,9 @@ const baseCss="*{box-sizing:border-box}\n.news-card{--accent:#d1f38a;--text-scal
    };
    let words;
    if(service) words=field('service_message');
-   else words=(card.show_keyword&&card.keyword?field('keyword'):'')+field('headline')+
+   else words=(card.show_keyword&&(editable||card.keyword)?field('keyword'):'')+field('headline')+
      (card.content_version===2?(role!=='cover'&&(editable||card.answer)?field('answer'):'')+((editable||card.detail)?field('detail'):''):((editable||card.body)?field('body'):''))+
-     (role==='closing'&&card.farewell?field('farewell'):'');
+     (role==='closing'&&(editable||card.farewell)?field('farewell'):'');
    const page=Number.isInteger(card.page)?card.page:1,total=Number.isInteger(card.total_pages)?card.total_pages:null;
    return '<article class="news-card role-'+role+' layout-'+d.layout+'" data-layout="'+d.layout+'" data-compact="'+d.compact+'" data-auto-fit="'+(card.auto_fit===true)+'">'+
      (url?'<img class="photo" style="'+esc(photoStyle.photo)+'" alt="선택한 사진" src="'+esc(url)+'"><div class="shade" style="'+esc(photoStyle.shade)+'"></div>':'')+

@@ -3,20 +3,26 @@
 // 기사 항목: { id, title, subtitle, state(draft|editing|published), updated_at, revision_count, unsaved_changes,
 //            linkedSources(source_ids), linkedInterviews(interviews), snapshot_count, photo_count }
 
-/** 상태 KPI — 코어 상태(state) 그대로: 송고 전 · 송고 뒤 고침 · 송고 완료 */
-export const DESK_STAGES = [["draft", "작성 중"], ["editing", "송고 후 수정"], ["published", "송고 완료"]];
+/** 상태 KPI 4단계 — 코어 상태와 저장된 사실에서 계산: 편집 중(수동 저장 전) · 검증 대기(저장했으나 고정본 없음) · 송고 준비(고정본 있음) · 출고 완료(송고함, 송고 뒤 고침 포함) */
+export const DESK_STAGES = ["편집 중", "검증 대기", "송고 준비", "출고 완료"];
 
 /** 기사 작성 단계(지금 집중할 기사의 진행 표시) */
 export const WRITING_STEPS = ["취재", "작성", "검증", "송고"];
 
 const count = (value) => (Array.isArray(value) ? value.length : 0);
 
-/** [[라벨, 건수], ...] (DESK_STAGES 순서) */
-export function countByStage(articles) {
-  return DESK_STAGES.map(([state, label]) => [label, articles.filter((item) => (item.state || "draft") === state).length]);
+/** 기사가 속한 상태 단계의 이름 */
+export function stageLabel(article) {
+  if (article.state === "published" || article.state === "editing") return DESK_STAGES[3];
+  if ((article.snapshot_count || 0) > 0) return DESK_STAGES[2];
+  if ((article.revision_count || 0) > 0) return DESK_STAGES[1];
+  return DESK_STAGES[0];
 }
 
-export const stageLabel = (article) => (DESK_STAGES.find(([state]) => state === (article.state || "draft")) || DESK_STAGES[0])[1];
+/** [[라벨, 건수], ...] (DESK_STAGES 순서) */
+export function countByStage(articles) {
+  return DESK_STAGES.map((label) => [label, articles.filter((item) => stageLabel(item) === label).length]);
+}
 
 /** 단계별 완료 여부 — 취재: 자료·녹취 연결 / 작성: 수동 저장 / 검증: 고정본(검증·변환에 넘긴 판) / 송고: 송고본 있음 */
 export function stepsDone(article) {

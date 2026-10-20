@@ -55,8 +55,9 @@ test("desk counts, focus and checks come only from stored article facts", async 
     { ...base, id: "old", state: "draft", updated_at: "2026-10-17T01:00:00+00:00" },
     { ...base, id: "new", state: "editing", updated_at: "2026-10-18T02:00:00+00:00", unsaved_changes: true },
     { id: "unsaved", state: "draft", updated_at: "2026-10-18T03:00:00+00:00" }, // 저장 전(현재 원고)은 세지 않는다
+    { ...base, id: "ready", state: "draft", updated_at: "2026-10-16T01:00:00+00:00", snapshot_count: 1 },
   ];
-  assert.deepEqual(countByStage(items.filter((i) => i.revision_no)), [["작성 중", 1], ["송고 후 수정", 1], ["송고 완료", 1]]);
+  assert.deepEqual(countByStage(items.filter((i) => i.revision_no)), [["편집 중", 0], ["검증 대기", 1], ["송고 준비", 1], ["출고 완료", 2]]);
   assert.equal(focusStory(items).id, "new", "송고를 마치지 않은 기사 중 가장 최근 것");
   assert.deepEqual(issuesOf(items[2]).map((i) => i.kind), ["save", "verify"]);
   assert.deepEqual(issuesOf({ ...base, linkedSources: [] }).map((i) => i.kind), ["evidence"]);

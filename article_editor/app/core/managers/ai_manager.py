@@ -51,8 +51,12 @@ class AIManager:
             'boundary': (paths.BOUNDARY_DIR / 'model.onnx').is_file(),  # 없으면 규칙만으로 청킹
         }
         local = local_ai()  # 끄면 판정은 외부 모델이 하므로 로컬 판정 모델은 필요 없다
+        devices = {}
+        if importlib.util.find_spec('onnxruntime') is not None:  # 로컬 모델이 어느 장치로 도는지(연 모델만, 열기 전이면 빈 목록)
+            from ..ai import ort_device
+            devices = ort_device.status()
         return {'ready': all(deps.values()) and (models['judge'] or not local) and models['embedding'],
-                'mode': 'local' if local else 'external', 'models': models, 'runtime': deps}
+                'mode': 'local' if local else 'external', 'models': models, 'runtime': deps, 'devices': devices}
 
     def factcheck_run(self, payload):
         """원고 문장(nodes)을 등록 자료(materials)에 비춰 판정한다.
@@ -139,8 +143,9 @@ class AIManager:
                 'node_statuses': statuses, 'critiques': critiques, 'results': results}
 
     def factcheck_external(self, payload):
-        """로컬 판정기가 확정 못 한 문장만 OpenAI 로 재판정(임시·시험용). payload: {items: [{id, claim, evidence: [str]}], cachedOnly?}
-        cachedOnly 가 참이면 저장된 재판정 결과만 돌려주고 OpenAI 는 부르지 않는다(원고를 다시 열 때 화면 복원용)."""
+        """로컬 판정기가 확정 못 한 문장만 OpenAI 로 재판정(임시·시험용). payload: {items: [{id, claim, evidence: [str]}], cachedOnly?, materials?}
+        cachedOnly 가 참이면 저장된 재판정 결과만 돌려주고 OpenAI 는 부르지 않는다(원고를 다시 열 때 화면 복원용).
+        materials 가 있으면 판정기가 값을 요청한 문장은 그 자료에서 한 번 더 찾아 마지막 판정을 저장한다(service.recheck_requests)."""
         from ..ai.factcheck.external import judge
         items = payload.get('items')
         if not isinstance(items, list) or not 0 < len(items) or not all(isinstance(i, dict) for i in items):
@@ -150,6 +155,9 @@ class AIManager:
         todo = [i for i, key in zip(items, keys) if key not in stored]
         if todo and not payload.get('cachedOnly'):
             out = judge({'items': todo})
+            if isinstance(payload.get('materials'), list) and payload['materials']:
+                from ..ai.factcheck.service import recheck_requests
+                out = {**out, 'results': recheck_requests(todo, out.get('results', []), payload['materials'])}
             ids = {str(i.get('id')): memo.external_key(i) for i in todo}
             memo.put_many({ids[str(r.get('id'))]: {k: v for k, v in r.items() if k != 'id'}
                            for r in out.get('results', []) if str(r.get('id')) in ids})

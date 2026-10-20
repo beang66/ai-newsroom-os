@@ -17,10 +17,11 @@ import onnxruntime as ort
 from tokenizers import Tokenizer
 
 
-def _session(path: Path):
+def _session(path: Path, gpu=True):
     options = ort.SessionOptions()
     options.log_severity_level = 3
-    return ort.InferenceSession(str(path), options, providers=['CPUExecutionProvider'])
+    from .ort_device import session
+    return session(path, options, gpu)  # GPU(DirectML) 기준을 넘으면 GPU, 아니면 CPU
 
 
 def _clean(values):
@@ -31,7 +32,7 @@ class BeamGraphModel:
     """BeamSearch 연산자를 포함한 단일 그래프(KeT5). 생성 설정은 호출 인자로 넘긴다."""
 
     def __init__(self, folder: Path):
-        self.sess = _session(folder / 'beam.onnx')
+        self.sess = _session(folder / 'beam.onnx', gpu=False)  # BeamSearch 연산자는 DirectML 에서 프로세스가 죽는다(2026-10-20 확인)
         self.tok = Tokenizer.from_file(str(folder / 'tokenizer.json'))
         self.tok.enable_truncation(512)
 
@@ -54,9 +55,10 @@ class EncoderDecoderModel:
     """encoder.onnx + cross_kv.onnx + decoder.onnx(KoBART) 와 HF 4.46.2 호환 빔 서치."""
 
     def __init__(self, folder: Path):
-        self.enc = _session(folder / 'encoder.onnx')
-        self.dec = _session(folder / 'decoder.onnx')
-        self.cross = _session(folder / 'cross_kv.onnx')
+        # 한 토큰씩 디코딩하는 작은 실행이 많아 GPU 가 오히려 느리다(GTX 1060: 부제 0.94→1.74초, 2026-10-20) → CPU
+        self.enc = _session(folder / 'encoder.onnx', gpu=False)
+        self.dec = _session(folder / 'decoder.onnx', gpu=False)
+        self.cross = _session(folder / 'cross_kv.onnx', gpu=False)
         self.tok = Tokenizer.from_file(str(folder / 'tokenizer.json'))
         self.tok.enable_truncation(512)
         cfg = json.loads((folder / 'generation.json').read_text(encoding='utf-8'))

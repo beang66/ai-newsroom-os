@@ -51,8 +51,12 @@ class AIManager:
             'boundary': (paths.BOUNDARY_DIR / 'model.onnx').is_file(),  # 없으면 규칙만으로 청킹
         }
         local = local_ai()  # 끄면 판정은 외부 모델이 하므로 로컬 판정 모델은 필요 없다
+        devices = {}
+        if importlib.util.find_spec('onnxruntime') is not None:  # 로컬 모델이 어느 장치로 도는지(연 모델만, 열기 전이면 빈 목록)
+            from ..ai import ort_device
+            devices = ort_device.status()
         return {'ready': all(deps.values()) and (models['judge'] or not local) and models['embedding'],
-                'mode': 'local' if local else 'external', 'models': models, 'runtime': deps}
+                'mode': 'local' if local else 'external', 'models': models, 'runtime': deps, 'devices': devices}
 
     def factcheck_run(self, payload):
         """원고 문장(nodes)을 등록 자료(materials)에 비춰 판정한다.

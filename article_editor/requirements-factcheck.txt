@@ -1,7 +1,9 @@
 # Fact-check judge, embedding and semantic boundaries use ONNX Runtime.
 # torch/transformers are needed only for dev/tools conversion/reference checks.
 numpy>=2.0
-onnxruntime>=1.20
+onnxruntime>=1.20; sys_platform != "win32"
+# Windows: DirectML 판(같은 onnxruntime 모듈, CPU 포함 + GPU). 두 패키지를 함께 깔면 모듈이 충돌하니 onnxruntime 은 지울 것(core/ai/ort_device.py)
+onnxruntime-directml>=1.20; sys_platform == "win32"
 tokenizers>=0.21
 # 자료 파일 텍스트 추출(core/documents.py): PDF·옛 HWP. DOCX·HWPX 는 표준 라이브러리
 pypdf>=5.0

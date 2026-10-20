@@ -1,4 +1,4 @@
-"""KLUE-RoBERTa 경계 판정 모델 (Colab v3 학습, ONNX CPU 추론). 라벨 기준: LABELING_GUIDE.md"""
+"""KLUE-RoBERTa 경계 판정 모델 (Colab v3 학습, ONNX 추론 — GPU(DirectML) 기준을 넘으면 GPU, 아니면 CPU). 라벨 기준: LABELING_GUIDE.md"""
 import json
 from pathlib import Path
 
@@ -16,7 +16,8 @@ class BoundaryModel:
         self.tok = Tokenizer.from_file(str(model_dir / "tokenizer.json"))
         self.tok.enable_truncation(cfg["maxlen"])  # longest_first, 학습 때와 동일
         opt = ort.SessionOptions(); opt.intra_op_num_threads = threads
-        self.sess = ort.InferenceSession(str(model_dir / "model.onnx"), opt, providers=["CPUExecutionProvider"])
+        from ..ort_device import session
+        self.sess = session(model_dir / "model.onnx", opt)
 
     def probs(self, pairs, batch=16):
         """pairs: [(left, right)] → (n, 3) 확률 [SPLIT, JOIN, SPLIT_INHERIT]"""

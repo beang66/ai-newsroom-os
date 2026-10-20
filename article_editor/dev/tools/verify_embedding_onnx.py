@@ -109,7 +109,7 @@ def main():
     chunks = [{'text': text, 'material_id': str(i)} for i, text in enumerate(texts)]
     original_mode = os.environ.get('FACTCHECK_RETRIEVAL')
     try:
-        for mode in ('exact', 'densefly-bm25-rrf'):
+        for mode in ('exact', 'densefly-bm25-rrf', 'kc-band-bm25-rrf'):
             os.environ['FACTCHECK_RETRIEVAL'] = mode
             orders = []
             for runtime in (0, 1):

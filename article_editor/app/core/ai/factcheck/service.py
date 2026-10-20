@@ -94,7 +94,7 @@ def _candidate_chunks(node, all_chunks):
     return candidates or all_chunks
 
 
-def _retrieve_qwen_candidates(claim, node, all_chunks, limit=DEFAULT_K, indexes=None):
+def _retrieve_qwen_candidates(claim, node, all_chunks, limit=DEFAULT_K, indexes=None, query_vector=None, exclude=()):
     """Retrieve semantically related evidence in the pinned Qwen3 space.
     indexes: 한 요청 안에서 같은 후보 집합의 색인(벡터·BM25·코드)을 재사용하는 딕셔너리(없으면 매번 만든다)."""
     candidates = _candidate_chunks(node, all_chunks)
@@ -106,7 +106,7 @@ def _retrieve_qwen_candidates(claim, node, all_chunks, limit=DEFAULT_K, indexes=
         index = indexes.get(key)
         if index is None:
             index = indexes[key] = ChunkIndex(candidates)
-    return rank_chunks(claim, candidates, limit=limit, index=index)
+    return rank_chunks(claim, candidates, limit=limit, index=index, query_vector=query_vector, exclude=exclude)
 
 
 # 한 주장에 판정기를 돌리는 최대 후보 수. 근거가 없는 주장은 후보를 전부 판정해 가장 오래 걸린다(건당 ~1초).
@@ -315,7 +315,7 @@ def _external_pass(nodes, chunks, materials, indexes):
     """로컬 판정기 대신 외부 모델이 모든 문장을 판정한다(설정 localAi=끔). 검색은 그대로 하고, 문장마다 상위 근거
     최대 5개를 보낸다. → {node_id: (검색 후보 전체, 판정 묶음)}. 외부 호출이 실패하면 오류를 그대로 올린다(조용히 건너뛰지 않는다).
     ponytail: 문장 묶음을 순서대로 보낸다. 느리면 묶음을 병렬로."""
-    from .external import MAX_EVIDENCE, judge
+    from .external import MAX_EVIDENCE, RETRY_ADD, judge
     prepared, items = {}, []
     for node in nodes or []:
         node_id, claim = str(node.get("id") or ""), _clean(node.get("text") or "")
@@ -332,6 +332,7 @@ def _external_pass(nodes, chunks, materials, indexes):
     for n in range(0, len(items), EXTERNAL_BATCH):
         for row in judge({"items": items[n:n + EXTERNAL_BATCH]}).get("results", []):
             verdicts[str(row.get("id"))] = row
+    _retry_requests(nodes, chunks, prepared, items, verdicts, indexes, RETRY_ADD, judge)
     out = {}
     for node_id, (claim, candidates, top) in prepared.items():
         row = verdicts.get(node_id)
@@ -353,8 +354,43 @@ def _external_pass(nodes, chunks, materials, indexes):
                       "evidence_text": quote if at >= 0 else "", "field": "external"}]
         out[node_id] = (candidates, {"status": status, "confidence": None, "evidence": evidence, "conflict_spans": spans,
                                      "focus_spans": list(spans), "reason": row.get("reason") or "", "provider": "external",
-                                     "model_metadata": {"external": True}, "candidate_judgements": []})
+                                     "model_metadata": {"external": True, "retried": bool(row.get("retried"))},
+                                     "candidate_judgements": []})
     return out
+
+
+def _retry_requests(nodes, chunks, prepared, items, verdicts, indexes, add, judge):
+    """근거가 모자라 판정기가 필요한 값을 요청(request)한 문장만, 요청문으로 다시 검색해 아직 안 보낸 근거를 최대 add 개 붙여
+    한 번 더 판정한다(연구 P29: 값 하나를 뺀 계산 주장 30건 정답 0→25, 거짓 지지 0). 그래도 없으면 근거 부족으로 끝.
+    요청문 벡터는 캐시에 남기지 않는다(매번 다른 문장이라 쌓이기만 한다)."""
+    asks = {}
+    for item in items:
+        row = verdicts.get(item["id"]) or {}
+        ask = " ".join(str(x).strip() for x in row.get("request") or [] if str(x).strip())
+        if row.get("verdict") == "NOT_ENOUGH_INFO" and ask:
+            asks[item["id"]] = ask
+    if not asks:
+        return
+    from .retrieval import get_vector_cache
+    vecs = dict(zip(asks, get_vector_cache().encoder.encode(list(asks.values()), "query")))
+    by_id = {str(n.get("id") or ""): n for n in nodes or []}
+    retry = []
+    for item in items:
+        node_id = item["id"]
+        if node_id not in asks:
+            continue
+        claim, candidates, top = prepared[node_id]
+        sent = {c["text"] for c in top}
+        found = _retrieve_qwen_candidates(asks[node_id], by_id[node_id], chunks, limit=add + len(sent), indexes=indexes,
+                                          query_vector=vecs[node_id], exclude=sent)
+        extra = [c for c in found if c["text"] not in sent][:add]
+        if extra:
+            top = top + extra
+            prepared[node_id] = (claim, candidates + extra, top)
+            retry.append({**item, "evidence": [c["text"] for c in top], "titles": [c.get("material_title") or "" for c in top]})
+    for n in range(0, len(retry), EXTERNAL_BATCH):
+        for row in judge({"items": retry[n:n + EXTERNAL_BATCH], "final": True}).get("results", []):
+            verdicts[str(row.get("id"))] = {**row, "retried": True}
 
 
 def review_workspace(nodes, materials, external=False):

@@ -47,7 +47,7 @@ class ChunkIndexTests(unittest.TestCase):
                     for q in ('예산 3억원', '교통 관련 문장 8', '환경 28억원 규모')]
 
     def test_same_ranking_and_scores_with_and_without_index(self):
-        for mode in ('densefly-bm25-rrf', 'exact'):
+        for mode in ('kc-band-bm25-rrf', 'densefly-bm25-rrf', 'exact'):
             plain, indexed = self.ranked(mode, False), self.ranked(mode, True)
             for a, b in zip(plain, indexed):
                 self.assertEqual([(r['text'], r['retrieval_rank'], r['retrieval_score']) for r in a],

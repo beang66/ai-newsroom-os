@@ -109,6 +109,23 @@ class ExternalModeTests(unittest.TestCase):
         self.assertEqual(done['n1'][1]['status'], 'SUPPORTED')
         self.assertEqual(done['n1'][1]['evidence']['text'], '수출기업 9월 지수 95.7')
 
+    def test_click_recheck_researches_materials_and_remembers_final(self):
+        item = {'id': '0', 'claim': '내수기업 지수는 수출기업보다 3.7 높았다.', 'evidence': ['내수기업 9월 99.4'], 'titles': ['자료A']}
+        first = {'results': [{'id': '0', 'verdict': 'NOT_ENOUGH_INFO', 'reason': '값 없음', 'wrong_text': '',
+                              'evidence_text': '', 'request': ['수출기업 9월 지수']}]}
+        final = {'results': [{'id': '0', 'verdict': 'SUPPORTED', 'reason': '99.4-95.7', 'wrong_text': '',
+                              'evidence_text': '95.7', 'request': []}]}
+        found = [{'text': '수출기업 9월 95.7', 'material_title': '자료A', 'material_id': 'a'}]
+        with mock.patch.object(service, '_material_chunks', return_value=found),                 mock.patch.object(service, '_retrieve_qwen_candidates', return_value=found) as retrieve,                 mock.patch('core.ai.factcheck.retrieval.get_vector_cache') as cache,                 mock.patch.object(external, 'judge', side_effect=[first, final]) as judge:
+            cache.return_value.encoder.encode.return_value = [[0.0]]
+            out = ai_manager.AIManager().factcheck_external({'items': [item], 'materials': [{'id': 'a', 'title': '자료A', 'content': '…'}]})
+            again = ai_manager.AIManager().factcheck_external({'items': [item], 'cachedOnly': True})
+        self.assertEqual(judge.call_count, 2)
+        self.assertEqual(judge.call_args[0][0]['items'][0]['evidence'], ['내수기업 9월 99.4', '수출기업 9월 95.7'])
+        self.assertEqual(retrieve.call_args[0][0], '수출기업 9월 지수')
+        self.assertEqual((out['results'][0]['id'], out['results'][0]['verdict']), ('0', 'SUPPORTED'))
+        self.assertEqual(again['results'][0]['verdict'], 'SUPPORTED', '마지막 판정을 기억한다')
+
     def test_review_workspace_end_to_end_without_local_judge(self):
         materials = [{'id': 'a', 'title': '자료A', 'content': '2025년 매출은 20억원이다. 대표는 박씨다.'}]
         nodes = [{'id': 'n1', 'type': 'TEXT', 'text': '2025년 매출은 30억원이다.'}]

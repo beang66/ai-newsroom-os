@@ -160,7 +160,8 @@ export function useFactCheck(article, flush) {
     setRecheckBusy(true);
     setError("");
     try {
-      for (const x of await externalRecheck(recheckItems(todo))) {
+      const files = (latest.current.sources || []).filter((s) => s.text != null);
+      for (const x of await externalRecheck(recheckItems(todo), files)) {
         const hit = todo[Number(x.id)];
         if (hit) state.current.cache.set(hit[0], { ...hit[1], external: x });
       }

@@ -321,15 +321,17 @@ export async function factcheckArticle(content, files, cache = new Map(), snapsh
 export const needsRecheck = (r) =>
   !r.external && (["REVIEW", "EXTERNAL_REQUIRED"].includes(r.status) || (r.status === "EVIDENCE_GAP" && r.related_evidence));
 
-/** 재판정에 보낼 근거: 검색 상위 본문 청크 3개(자료 정보 줄 제외) */
+/** 재판정에 보낼 근거: 검색 상위 본문 후보 5개(자료 정보 줄 제외) — 외부 판정 모드(코어 external.MAX_EVIDENCE)와 같은 수 */
 export const recheckEvidence = (r) => {
-  const top = (r.evidence_candidates || []).filter((c) => c.kind !== "metadata").slice(0, 3);
+  const top = (r.evidence_candidates || []).filter((c) => c.kind !== "metadata").slice(0, 5);
   return top.length ? top : r.evidence ? [r.evidence] : [];
 };
 
-/** 외부 재판정(임시·OpenAI) — items: [{id, claim, evidence:[str], titles:[str]}] → 결과 목록 */
-export async function externalRecheck(items) {
-  return (await core.factcheckExternal(items)).results || [];
+/** 외부 재판정(임시·OpenAI) — items: [{id, claim, evidence:[str], titles:[str]}] → 결과 목록.
+ *  files([{ id, name, text }])를 주면 판정기가 값을 요청한 문장은 코어가 자료에서 다시 찾아 한 번 더 판정한다 */
+export async function externalRecheck(items, files = []) {
+  const materials = files.map((f) => ({ id: f.id, title: f.name, content: f.text }));
+  return (await core.factcheckExternal(items, undefined, materials.length ? { materials } : {})).results || [];
 }
 
 /** 이미 받아 둔 외부 재판정만 조회(저장된 것만 — OpenAI 호출·비용 없음). 원고를 다시 열 때 AI 판정을 화면에 복원한다.

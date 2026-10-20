@@ -393,6 +393,25 @@ def _retry_requests(nodes, chunks, prepared, items, verdicts, indexes, add, judg
             verdicts[str(row.get("id"))] = {**row, "retried": True}
 
 
+def recheck_requests(items, results, materials):
+    """'상위모델로 재검토'(화면이 근거를 골라 보내는 재판정)에서도 판정기가 값을 요청하면 자료에서 한 번 더 찾아 다시 판정한다.
+    items: [{id, claim, evidence: [str], titles?}] (보낸 그대로), results: 첫 판정 → 마지막 판정으로 바꾼 결과 목록."""
+    from .external import RETRY_ADD, judge
+    chunks = []
+    for material in materials or []:
+        if isinstance(material, dict):
+            chunks.extend(_material_chunks(material))
+    verdicts = {str(r.get("id")): r for r in results}
+    items = [{**i, "id": str(i.get("id"))} for i in items]
+    prepared = {i["id"]: (i.get("claim") or "", [], [{"text": str(e), "material_title": t}
+                                                     for e, t in zip(i.get("evidence") or [], i.get("titles") or [""] * len(i.get("evidence") or []))])
+                for i in items}
+    nodes = [{"id": i["id"], "text": i.get("claim") or ""} for i in items]
+    if chunks:
+        _retry_requests(nodes, chunks, prepared, items, verdicts, {}, RETRY_ADD, judge)
+    return [verdicts.get(i["id"], {}) | {"id": i["id"]} for i in items if i["id"] in verdicts]
+
+
 def review_workspace(nodes, materials, external=False):
     """external=True 면 로컬 판정기를 쓰지 않고 외부 모델이 모든 문장을 판정한다."""
     request_id = uuid.uuid4().hex

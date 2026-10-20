@@ -30,7 +30,7 @@ export default function DeskView({ articles, onNavigate, onOpen, onNewArticle, b
     <header className="mb-7 flex flex-wrap items-end justify-between gap-6">
       <div className="min-w-0">
         <p className="text-[12px] font-semibold uppercase tracking-[0.28em] text-[#8E8982]">{todayFormatted}</p>
-        <h1 data-testid="page-heading" className="mt-2 text-[40px] md:text-[56px] font-black leading-[1.04] tracking-[-0.045em] text-[#111]">
+        <h1 data-testid="page-heading" className="mt-2 text-[40px] md:text-[56px] font-black leading-[1.04] tracking-[-0.045em] text-[#292929]">
           좋은 기사를 위한<br />오늘의 업무
         </h1>
         {onNewArticle && <button type="button" onClick={onNewArticle} disabled={busy}

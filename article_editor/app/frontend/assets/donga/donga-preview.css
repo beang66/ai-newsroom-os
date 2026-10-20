@@ -70,20 +70,18 @@ body {
 }
 .subtitle {
   position: relative;
-  padding-left: 16px;
+  border-left: 4px solid #111;
+  padding-left: 12px;
   font-size: 18px;
   line-height: 32.4px;
   font-weight: 700;
   margin: 0 0 36px;
+  text-align: left;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 .subtitle:before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 4px;
-  height: 100%;
-  background: #111;
+  content: none;
 }
 figure {
   margin: 0 auto 36px;
@@ -188,9 +186,26 @@ figure {
   .preview-body {
     margin: 0;
     width: 100%;
+    text-align: left;
   }
   .title {
     font-size: 34px;
     line-height: 47.6px;
+    text-align: left;
+  }
+  .subtitle {
+    position: relative !important;
+    text-align: left !important;
+    border-left: 4px solid #111 !important;
+    padding-left: 12px !important;
+    margin: 0 0 28px 0 !important;
+    font-size: 18px !important;
+    line-height: 32.4px !important;
+    font-weight: 700 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .subtitle:before {
+    display: none !important;
   }
 }

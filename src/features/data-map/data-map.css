@@ -3,7 +3,7 @@
    - 큰 패널은 앱 패널 곡률(28px), 안쪽 컨트롤은 작은 곡률.
    - 모든 선택자는 .dm-root 아래로 한정한다. 폭 대응은 슬롯 폭 기준 @container dm. */
 .dm-root {
-  --map-purple: #7963b6;
+  --map-purple: #7A93AC;
   --map-ink: #252b35;
   --map-line: #eae7f0;
   --map-soft: #f4f1fa;
@@ -45,16 +45,17 @@
 .dm-root .dm-button:focus-within { outline: 2px solid var(--accent-orange); outline-offset: 3px; }
 .dm-root .small-button.saved { background: var(--text-primary); border-color: var(--text-primary); color: white; }
 
-/* 분류 표시(색 + 모양) */
+/* 분류 표시(외곽선 없는 블루 & 어스 톤온톤 그라데이션 & 은은한 글로우) */
 .dm-root .category-mark { display: inline-block; overflow: visible; }
-.dm-root .mark-article { fill: var(--text-primary); }
-.dm-root .mark-plan { fill: var(--accent-orange); }
-.dm-root .mark-data { fill: var(--map-purple); }
-.dm-root .mark-interview { fill: var(--accent-orange-hover); }
-.dm-root .mark-verify { fill: var(--map-purple); }
-.dm-root .mark-note { fill: var(--text-secondary); }
-.dm-root .mark-missing { fill: var(--bg-card); stroke: var(--text-muted); stroke-width: 1.4; stroke-dasharray: 2 1.6; }
-.dm-root .network-svg .mark-article { stroke: var(--bg-card); stroke-width: 2.4; }
+.dm-root .category-mark circle[filter] { display: none; }
+.dm-root .mark-article { fill: #4B5057; stroke: none; }
+.dm-root .mark-plan { fill: #4B5057; stroke: none; }
+.dm-root .mark-data { fill: #4B5057; stroke: none; }
+.dm-root .mark-interview { fill: #4B5057; stroke: none; }
+.dm-root .mark-note { fill: #4B5057; stroke: none; }
+.dm-root .mark-verify { fill: #4B5057; stroke: none; }
+.dm-root .mark-missing { fill: #F8FAFC; stroke: #CBD5E1; stroke-width: 1.4; stroke-dasharray: 2.5 1.8; }
+.dm-root .network-svg .mark-article { stroke: none; }
 
 /* 도구 막대: 검색 · 보기 전환 · 가져오기 */
 .dm-root .map-workspace { display: flex; flex: 1; min-height: 0; flex-direction: column; }
@@ -106,25 +107,39 @@
 .dm-root .context-resizer, .dm-root .overview-resizer { align-self: center; width: 8px; height: 56px; border-radius: 999px; background: var(--border-soft); cursor: col-resize; }
 .dm-root .context-resizer:hover, .dm-root .overview-resizer:hover, .dm-root [data-dragging="true"] { background: var(--accent-orange); }
 .dm-root .graph-panel, .dm-root .context-panel, .dm-root .library {
-  min-width: 0; border: 1px solid var(--border-soft); border-radius: var(--dm-radius-panel);
-  background: var(--bg-card); box-shadow: 0 8px 24px rgba(40, 35, 25, 0.04);
+  min-width: 0; border: 1px solid #E2E8F0; border-radius: var(--dm-radius-panel);
+  background: rgba(255, 255, 255, 0.96); box-shadow: 0 16px 36px -8px rgba(15, 23, 42, 0.04), 0 2px 8px rgba(15, 23, 42, 0.02);
 }
 .dm-root .graph-panel { position: relative; display: flex; flex-direction: column; height: 600px; padding: 20px; }
 .dm-root .graph-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 4px 4px 12px; }
 .dm-root .graph-title-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .dm-root .graph-heading h2 { font-size: 20px; line-height: 1.4; }
 .dm-root .graph-heading p { margin: 0; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dm-root .network-svg { flex: 1; width: 100%; min-height: 0; border-radius: 20px; background: var(--bg-canvas); touch-action: none; cursor: grab; }
+.dm-root .network-svg {
+  flex: 1; width: 100%; min-height: 0; border-radius: 20px;
+  /* STT 음성 파형 박스와 같은 도형(안쪽으로 파인 음각 + 연한 푸른회색) 위에 바깥 그림자와 흰색 글래스(반투명 흰 막 + 흐림) */
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.62), rgba(230, 235, 242, 0.9)), #e6ebf2;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: inset 4px 4px 9px rgba(166, 178, 198, 0.5), inset -4px -4px 9px rgba(255, 255, 255, 0.95), 0 14px 32px -10px rgba(100, 116, 139, 0.35);
+  touch-action: none; cursor: grab;
+}
 .dm-root .network-svg:active { cursor: grabbing; }
-.dm-root .graph-halo circle { fill: var(--text-muted); opacity: 0.55; }
-.dm-root .graph-edge { stroke: var(--text-muted); }
-.dm-root .graph-edge.is-strong { stroke: var(--map-purple); }
+.dm-root .graph-halo circle { fill: #7B8088; opacity: 0.5; }
+.dm-root .graph-edge { stroke: #3F4349; stroke-linecap: round; }
+.dm-root .graph-edge.is-strong { stroke: #0EA5E9; stroke-width: 1.8; filter: drop-shadow(0 0 4px rgba(14, 165, 233, 0.7)); }
 .dm-root .graph-node { cursor: pointer; transition: opacity 0.15s; }
 .dm-root .graph-node:focus { outline: none; }
-.dm-root .node-ring { fill: var(--bg-card); stroke: var(--map-purple); stroke-width: 1.4; }
-.dm-root .graph-node.is-selected .node-ring { stroke: var(--accent-orange); stroke-width: 2.2; }
-.dm-root .hub-label, .dm-root .node-label { paint-order: stroke; stroke: var(--bg-canvas); stroke-linejoin: round; fill: var(--text-secondary); pointer-events: none; }
-.dm-root .hub-label { font-weight: 700; fill: var(--text-primary); }
+.dm-root .node-diffused-glow { display: none; }
+.dm-root .node-ring { fill: none; stroke: #4B5057; stroke-width: 1.6; stroke-dasharray: 2 3; }
+.dm-root .graph-node.is-selected .node-ring { stroke: #38BDF8; stroke-width: 2.2; stroke-dasharray: none; }
+/* 기사·허브 노드는 더 진한 블랙, 선택한 노드는 짙은 하늘색 그라데이션(관계망 안에서만, 입체 효과 없이) */
+.dm-root .network-svg .graph-node [class*="mark-"]:not(.mark-missing) { fill: url(#grad-glass); stroke: rgba(255, 255, 255, 0.65); stroke-width: 1.2; }
+.dm-root .network-svg .graph-node.is-hub [class*="mark-"] { fill: url(#grad-glass-hub); }
+.dm-root .network-svg .graph-node.is-selected [class*="mark-"] { fill: url(#grad-selected); }
+.dm-root .network-svg .mark-missing { fill: transparent; stroke: #4B5057; }
+.dm-root .hub-label, .dm-root .node-label { paint-order: stroke; stroke: rgba(255, 255, 255, 0.9); stroke-linejoin: round; fill: #3F4349; pointer-events: none; }
+.dm-root .hub-label { font-weight: 700; fill: #17181A; }
 .dm-root .graph-tooltip {
   position: absolute; top: 76px; left: 36px; display: grid; gap: 2px; max-width: min(320px, 70%); padding: 10px 14px;
   border: 1px solid var(--border-soft); border-radius: var(--dm-radius-control); background: var(--bg-card);

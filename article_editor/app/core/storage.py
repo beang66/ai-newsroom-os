@@ -23,6 +23,9 @@ SAVE_LOCK = threading.Lock()
 MAX_REVISIONS = 200  # ponytail: 자동저장 이력은 원고마다 최근 200개만 둔다. 더 필요하면 간격 저장(예: 1분)이나 압축으로
 OPEN_DIR = APP_DATA / 'open'  # 외부 프로그램으로 열 때만 만드는 임시 복호화본(cleanup_open)
 MAX_TRANSCRIPT_AUDIO = 40_000_000
+MAX_PLATFORM_DRAFT_BYTES = 50_000_000
+PLATFORM_DRAFT_PREFIX = 'platform_draft:'
+TRANSCRIPT_FOLDERS_KEY = 'transcript_folders:v1'
 
 
 def _now():
@@ -72,6 +75,109 @@ def list_transcripts():
                             for row in rows]}
 
 
+def _platform_draft_title(draft):
+    """플랫폼 초안 목록에 보여 줄 제목을 안전하게 고른다."""
+    candidates = []
+    source_input = draft.get('source_input')
+    if isinstance(source_input, dict) and isinstance(source_input.get('article'), dict):
+        candidates.append(source_input['article'].get('title'))
+    card_news = draft.get('card_news')
+    if isinstance(card_news, dict) and isinstance(card_news.get('core_text'), dict):
+        candidates.append(card_news['core_text'].get('headline'))
+    cards = draft.get('cards')
+    if isinstance(cards, list) and cards and isinstance(cards[0], dict):
+        first = cards[0]
+        candidates.append(first.get('headline'))
+        if isinstance(first.get('content'), dict):
+            candidates.append(first['content'].get('headline'))
+    article = draft.get('article')
+    if isinstance(article, dict):
+        candidates.append(article.get('title'))
+    candidates.append(draft.get('title'))
+    for container_name in ('platformDrafts', 'platform_drafts'):
+        container = draft.get(container_name)
+        if isinstance(container, dict):
+            for platform in ('instagram', 'threads'):
+                value = container.get(platform)
+                if isinstance(value, dict):
+                    candidates.append(value.get('headline'))
+    return next((str(value).strip()[:500] for value in candidates if value is not None and str(value).strip()), '뉴스 초안')
+
+
+def _clean_platform_draft(draft):
+    if not isinstance(draft, dict):
+        raise RequestError('초안 객체를 전달해 주세요.')
+    cards = draft.get('cards')
+    if cards is not None and (not isinstance(cards, list) or len(cards) > 10):
+        raise RequestError('카드는 10장 이하의 배열이어야 합니다.')
+    has_cards = isinstance(cards, list) and bool(cards)
+    has_text = False
+    for name in ('platformDrafts', 'platform_drafts', 'text_drafts', 'drafts'):
+        container = draft.get(name)
+        if not isinstance(container, dict):
+            continue
+        for value in container.values():
+            if isinstance(value, str) and value.strip():
+                has_text = True
+            elif isinstance(value, dict) and value:
+                has_text = True
+    if not has_cards and not has_text:
+        raise RequestError('카드 또는 플랫폼 원고가 포함된 초안을 전달해 주세요.')
+    try:
+        encoded = json.dumps(draft, ensure_ascii=False, separators=(',', ':'))
+    except (TypeError, ValueError):
+        raise RequestError('초안 데이터 형식을 확인해 주세요.') from None
+    if len(encoded.encode('utf-8')) > MAX_PLATFORM_DRAFT_BYTES:
+        raise RequestError('플랫폼 초안은 50MB 이하만 저장할 수 있습니다.', 413)
+    return encoded
+
+
+def save_platform_draft(data):
+    """플랫폼 편집 상태 전체를 현재 계정의 암호화 저장소에 보관한다."""
+    draft = data.get('draft') if isinstance(data, dict) else None
+    encoded = _clean_platform_draft(draft)
+    identifier, saved_at = str(uuid.uuid4()), _now()
+    record = {'id': identifier, 'saved_at': saved_at, 'title': _platform_draft_title(draft),
+              'draft': json.loads(encoded)}
+    with vault.connect() as db:
+        db.execute('INSERT INTO app_meta (key, value) VALUES (?, ?)',
+                   (PLATFORM_DRAFT_PREFIX + identifier, json.dumps(record, ensure_ascii=False, separators=(',', ':'))))
+    return {'success': True, 'id': identifier, 'saved_at': saved_at, 'title': record['title'],
+            'file_path': '계정별 암호화 저장소'}
+
+
+def list_platform_drafts():
+    with vault.connect() as db:
+        rows = db.execute('SELECT value FROM app_meta WHERE key LIKE ?', (PLATFORM_DRAFT_PREFIX + '%',)).fetchall()
+    records = []
+    for row in rows:
+        try:
+            record = json.loads(row[0])
+            records.append({'id': record['id'], 'title': record['title'], 'saved_at': record['saved_at']})
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    records.sort(key=lambda item: item['saved_at'], reverse=True)
+    return {'success': True, 'drafts': records}
+
+
+def get_platform_draft(identifier):
+    if not isinstance(identifier, str) or not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', identifier):
+        raise RequestError('저장된 초안 ID를 확인해 주세요.')
+    with vault.connect() as db:
+        row = db.execute('SELECT value FROM app_meta WHERE key = ?', (PLATFORM_DRAFT_PREFIX + identifier,)).fetchone()
+    if not row:
+        raise RequestError('저장된 초안을 찾지 못했습니다.', 404, code='NOT_FOUND')
+    try:
+        draft = json.loads(row[0])['draft']
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        raise RequestError('저장된 초안을 읽지 못했습니다.', 500) from None
+    return {'success': True, 'draft': draft}
+
+
+def platform_draft_storage_info():
+    return {'success': True, 'storage': 'encrypted_core', 'encrypted': True, 'account_scoped': True}
+
+
 def get_transcript(identifier):
     if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
         raise RequestError('잘못된 녹취 ID입니다.')
@@ -79,13 +185,16 @@ def get_transcript(identifier):
         row = db.execute('SELECT filename, mime_type, dialogues_json, duration, created_at FROM transcripts WHERE id = ?',
                          (identifier,)).fetchone()
         edits = db.execute('SELECT value FROM app_meta WHERE key = ?', (SPEAKER_EDITS_PREFIX + identifier,)).fetchone() if row else None
+        notes = db.execute('SELECT value FROM app_meta WHERE key = ?', (NOTES_PREFIX + identifier,)).fetchone() if row else None
     if not row:
         raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
     return {'id': identifier, 'filename': row[0], 'mimeType': row[1], 'dialogues': json.loads(row[2]),
-            'duration': row[3], 'createdAt': row[4], 'speakerEdits': json.loads(edits[0]) if edits else {}}
+            'duration': row[3], 'createdAt': row[4], 'speakerEdits': json.loads(edits[0]) if edits else {},
+            'notes': json.loads(notes[0]) if notes else _empty_notes()}
 
 
 MARK_COLORS = {'yellow', 'orange', 'green', 'blue', 'pink'}  # 형광펜 색(화면 src/lib/speakerEdits.js 와 같게)
+NOTES_PREFIX = 'transcript_notes:'  # app_meta 키 — 녹취마다 전체 메모·AI 요약·발언별 메모를 이 PC 의 암호화 저장소에만 둔다(서버로 보내지 않는다)
 SPEAKER_EDITS_PREFIX = 'speaker_edits:'  # app_meta 키 — 발언 원본(transcripts.dialogues_json)은 바꾸지 않고 사용자의 화자 수정만 따로 둔다
 
 
@@ -126,6 +235,139 @@ def _clean_speaker_edits(edits):
     return clean
 
 
+def _empty_notes():
+    return {'memo': '', 'summary': None, 'speakerNotes': {}}
+
+
+def _note_text(value, limit, label):
+    if value is None:
+        return ''
+    if not isinstance(value, str) or len(value) > limit:
+        raise RequestError(f'{label} 형식을 확인해 주세요.')
+    return value
+
+
+def _note_list(value, count, limit, label):
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > count:
+        raise RequestError(f'{label} 형식을 확인해 주세요.')
+    return [_note_text(item, limit, label) for item in value]
+
+
+def _clean_notes(notes):
+    """화면이 보낸 메모·요약을 검사해 정해진 모양으로만 저장한다(모르는 필드는 버린다)."""
+    if notes is None:
+        notes = {}
+    if not isinstance(notes, dict):
+        raise RequestError('메모 형식을 확인해 주세요.')
+    summary = notes.get('summary')
+    if summary is not None:
+        if not isinstance(summary, dict):
+            raise RequestError('AI 요약 형식을 확인해 주세요.')
+        summary = {'summary': _note_text(summary.get('summary'), 20_000, 'AI 요약'),
+                   'keyPoints': _note_list(summary.get('keyPoints'), 50, 2_000, 'AI 요약'),
+                   'keywords': _note_list(summary.get('keywords'), 50, 200, 'AI 요약')}
+    speaker_notes = notes.get('speakerNotes') or {}
+    if not isinstance(speaker_notes, dict) or len(speaker_notes) > 5_000:
+        raise RequestError('발언 메모 형식을 확인해 주세요.')
+    cleaned = {}
+    for key, text in speaker_notes.items():
+        if not isinstance(key, str) or not 0 < len(key) <= 64:
+            raise RequestError('발언 메모 형식을 확인해 주세요.')
+        text = _note_text(text, 5_000, '발언 메모')
+        if text.strip():
+            cleaned[key] = text
+    return {'memo': _note_text(notes.get('memo'), 200_000, '전체 메모'), 'summary': summary, 'speakerNotes': cleaned}
+
+
+def save_transcript_notes(identifier, notes):
+    """녹취 하나의 전체 메모·AI 요약·발언별 메모를 통째로 바꿔 저장한다(이 PC 의 계정 저장소 app_meta)."""
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    clean = _clean_notes(notes)
+    with vault.connect() as db:
+        if not db.execute('SELECT 1 FROM transcripts WHERE id = ?', (identifier,)).fetchone():
+            raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+        db.execute('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)',
+                   (NOTES_PREFIX + identifier, json.dumps(clean, ensure_ascii=False)))
+    return {'id': identifier, 'notes': clean}
+
+
+def _clean_transcript_folder_state(state, db=None):
+    """폴더 트리를 정규화하고 끊어진 부모·순환·사라진 녹취 연결을 제거한다."""
+    if state is None:
+        state = {}
+    if not isinstance(state, dict):
+        raise RequestError('녹취 폴더 형식을 확인해 주세요.')
+    raw_folders = state.get('folders') or []
+    raw_map = state.get('fileFolderMap') or {}
+    if not isinstance(raw_folders, list) or len(raw_folders) > 500 or not isinstance(raw_map, dict) or len(raw_map) > 20_000:
+        raise RequestError('녹취 폴더 형식을 확인해 주세요.')
+
+    folders, seen_ids = [], set()
+    for raw in raw_folders:
+        if not isinstance(raw, dict):
+            raise RequestError('녹취 폴더 형식을 확인해 주세요.')
+        identifier, name = raw.get('id'), raw.get('name')
+        if (not isinstance(identifier, str) or not re.fullmatch(r'folder_[A-Za-z0-9_-]{1,100}', identifier)
+                or identifier in seen_ids or not isinstance(name, str) or not name.strip() or len(name.strip()) > 200):
+            raise RequestError('녹취 폴더 형식을 확인해 주세요.')
+        folder = {'id': identifier, 'name': name.strip()}
+        created_at = raw.get('createdAt')
+        if isinstance(created_at, str) and len(created_at) <= 64:
+            folder['createdAt'] = created_at
+        parent_id = raw.get('parentId')
+        if isinstance(parent_id, str) and parent_id != identifier:
+            folder['parentId'] = parent_id
+        folders.append(folder)
+        seen_ids.add(identifier)
+
+    by_id = {folder['id']: folder for folder in folders}
+    for folder in folders:
+        if folder.get('parentId') not in by_id:
+            folder.pop('parentId', None)
+    for folder in folders:
+        visited, parent_id = {folder['id']}, folder.get('parentId')
+        while parent_id:
+            if parent_id in visited:
+                folder.pop('parentId', None)
+                break
+            visited.add(parent_id)
+            parent_id = by_id[parent_id].get('parentId')
+
+    known_transcripts = None
+    if db is not None:
+        known_transcripts = {row[0] for row in db.execute('SELECT id FROM transcripts').fetchall()}
+    file_map = {}
+    for transcript_id, folder_id in raw_map.items():
+        if (isinstance(transcript_id, str) and re.fullmatch(r'[a-f0-9]{32}', transcript_id)
+                and isinstance(folder_id, str) and folder_id in by_id
+                and (known_transcripts is None or transcript_id in known_transcripts)):
+            file_map[transcript_id] = folder_id
+    return {'folders': folders, 'fileFolderMap': file_map}
+
+
+def get_transcript_folders():
+    """현재 계정의 녹취 폴더 트리. 새 계정은 빈 트리 레코드를 만든다."""
+    with vault.connect() as db:
+        row = db.execute('SELECT value FROM app_meta WHERE key = ?', (TRANSCRIPT_FOLDERS_KEY,)).fetchone()
+        state = _clean_transcript_folder_state(json.loads(row[0]) if row else {}, db)
+        if not row:
+            db.execute('INSERT INTO app_meta (key, value) VALUES (?, ?)',
+                       (TRANSCRIPT_FOLDERS_KEY, json.dumps(state, ensure_ascii=False, separators=(',', ':'))))
+    return {'success': True, **state}
+
+
+def save_transcript_folders(data):
+    """현재 계정의 녹취 폴더 트리를 통째로 바꿔 저장한다."""
+    with vault.connect() as db:
+        state = _clean_transcript_folder_state(data, db)
+        db.execute('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)',
+                   (TRANSCRIPT_FOLDERS_KEY, json.dumps(state, ensure_ascii=False, separators=(',', ':'))))
+    return {'success': True, **state}
+
+
 def save_speaker_edits(identifier, edits):
     if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
         raise RequestError('잘못된 녹취 ID입니다.')
@@ -136,6 +378,41 @@ def save_speaker_edits(identifier, edits):
         db.execute('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)',
                    (SPEAKER_EDITS_PREFIX + identifier, json.dumps(clean, ensure_ascii=False)))
     return {'id': identifier, 'speakerEdits': clean}
+
+
+def delete_transcript(identifier):
+    """저장된 전사 녹취를 삭제한다 (transcripts 행 및 app_meta 화자 수정·메모·요약 데이터)."""
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    with vault.connect() as db:
+        db.execute('DELETE FROM transcripts WHERE id = ?', (identifier,))
+        db.execute('DELETE FROM app_meta WHERE key = ?', (SPEAKER_EDITS_PREFIX + identifier,))
+        db.execute('DELETE FROM app_meta WHERE key = ?', (NOTES_PREFIX + identifier,))
+        folders = db.execute('SELECT value FROM app_meta WHERE key = ?', (TRANSCRIPT_FOLDERS_KEY,)).fetchone()
+        if folders:
+            try:
+                state = json.loads(folders[0])
+                if isinstance(state.get('fileFolderMap'), dict) and identifier in state['fileFolderMap']:
+                    state['fileFolderMap'].pop(identifier, None)
+                    db.execute('UPDATE app_meta SET value = ? WHERE key = ?',
+                               (json.dumps(state, ensure_ascii=False, separators=(',', ':')), TRANSCRIPT_FOLDERS_KEY))
+            except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+                pass
+    return {'ok': True, 'id': identifier}
+
+
+def rename_transcript(identifier, filename):
+    """저장된 전사의 제목(파일명)을 변경한다."""
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise RequestError('잘못된 녹취 ID입니다.')
+    if not isinstance(filename, str) or not filename.strip():
+        raise RequestError('변경할 제목을 입력해 주세요.')
+    new_name = filename.strip()
+    with vault.connect() as db:
+        if not db.execute('SELECT 1 FROM transcripts WHERE id = ?', (identifier,)).fetchone():
+            raise RequestError('녹취를 찾지 못했습니다.', 404, code='NOT_FOUND')
+        db.execute('UPDATE transcripts SET filename = ? WHERE id = ?', (new_name, identifier))
+    return {'ok': True, 'id': identifier, 'filename': new_name}
 
 
 def transcript_audio(identifier):

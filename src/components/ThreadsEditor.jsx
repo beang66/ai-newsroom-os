@@ -109,7 +109,7 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
   // 문장마다 따로 올라가므로 500자 제한은 가장 긴 문장 기준이다
   const longest = Math.max(0, ...posts.map((post) => (post.value || "").length));
   return (
-    <div className="rounded-[28px] bg-[#EFECE6] p-4 md:p-8" data-testid="threads-editor">
+    <div data-testid="threads-editor">
       {toneIssues.length>0&&<p role="alert" data-testid="threads-tone-warning" className="mb-3 rounded-xl border border-amber-300 bg-white p-3 text-xs text-amber-800">본문 {toneIssues.map(issue=>issue.index+1).join(', ')}에 기본 반말과 다른 종결이 있습니다. {draft.tone_repair_status==='needs_edit'?'자동 교정으로 해결되지 않아 편집 가능한 초안을 남겼습니다. 해당 문단을 직접 고쳐 주세요.':'저장된 원고는 자동 변경하지 않습니다. 직접 편집하거나 ‘Threads 다시 생성’을 눌러 주세요. 새 생성에서는 말투를 확인하고 필요한 문단만 교정합니다.'}</p>}
       <div className="flex w-full min-w-0 flex-col items-center gap-4 lg:flex-row lg:items-start lg:justify-center">
         <div className="w-full min-w-0 max-w-[620px]">

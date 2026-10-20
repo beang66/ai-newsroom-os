@@ -85,7 +85,26 @@ async function main() {
     assert.equal(listed.body.drafts[0].title, draft.cards[0].headline);
     const loaded = await call('GET', PATHS.drafts + '/:id', { params: { id: saved.body.id } });
     assert.deepEqual(JSON.parse(JSON.stringify(loaded.body.draft)), draft);
-    assert.equal(renames.length, 2); // 초안과 메타데이터 모두 임시 파일을 rename합니다.
+
+    // 카드 없이 글만 있는 초안 저장 테스트
+    const textOnlyDraft = {
+      title: '글 전용 기사 제목',
+      platformDrafts: { instagram: { headline: '인스타 헤드라인', body: '인스타 본문 내용' } }
+    };
+    const savedTextOnly = await call('POST', PATHS.drafts, { body: { draft: textOnlyDraft } });
+    assert.equal(savedTextOnly.statusCode, 201);
+    assert.equal(savedTextOnly.body.success, true);
+    assert.equal(savedTextOnly.body.title, '글 전용 기사 제목');
+    const loadedTextOnly = await call('GET', PATHS.drafts + '/:id', { params: { id: savedTextOnly.body.id } });
+    assert.deepEqual(JSON.parse(JSON.stringify(loadedTextOnly.body.draft)), textOnlyDraft);
+
+    // 카드도 없고 글도 없는 빈 초안은 400 거부
+    const emptyDraft = {};
+    const rejectedEmpty = await call('POST', PATHS.drafts, { body: { draft: emptyDraft } });
+    assert.equal(rejectedEmpty.statusCode, 400);
+    assert.equal(rejectedEmpty.body.success, false);
+
+    assert.equal(renames.length, 4); // 초안과 메타데이터(2개 초안 = 4번 rename)
     assert.ok(renames.every(([from, to]) => from.startsWith(to + '.') && from.endsWith('.tmp')));
     assert.equal((await fs.readdir(path.join(rootDir, 'drafts'))).some(name => name.endsWith('.tmp')), false);
     assert.equal((await call('GET', PATHS.storageInfo)).body.root, rootDir);

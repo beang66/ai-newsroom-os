@@ -76,6 +76,10 @@ GET_ROUTES = [(re.compile(p),f) for p,f in (
     ('/api/shares/articles/'+ARTICLE, lambda m,q: CORE.shares.get(m[1])),
     ('/api/factcheck/status', lambda m,q: CORE.ai.factcheck_status()),
     ('/api/models', lambda m,q: CORE.models.status()),
+    ('/api/local/storage', lambda m,q: CORE.storage.platform_draft_storage_info()),
+    ('/api/local/drafts', lambda m,q: CORE.storage.list_platform_drafts()),
+    ('/api/local/drafts/('+UUID+')', lambda m,q: CORE.storage.get_platform_draft(m[1])),
+    ('/api/transcript-folders', lambda m,q: CORE.storage.get_transcript_folders()),
     ('/api/transcripts', lambda m,q: CORE.storage.list_transcripts()),
     ('/api/articles', lambda m,q: CORE.storage.list_articles()),
     ('/api/trash', lambda m,q: CORE.storage.list_trash()),
@@ -128,6 +132,8 @@ POST_ROUTES = [(re.compile(p),f) for p,f in (
     ('/api/ut-events/delete', lambda m,d: CORE.events.delete()),
     ('/api/models/install', lambda m,d: CORE.models.start_install(d)),
     ('/api/models/cancel', lambda m,d: CORE.models.cancel()),
+    ('/api/local/drafts', lambda m,d: CORE.storage.save_platform_draft(d)),
+    ('/api/transcript-folders', lambda m,d: CORE.storage.save_transcript_folders(d)),
     ('/api/articles/save', lambda m,d: CORE.storage.save_article(d)),
     ('/api/articles/publish', lambda m,d: CORE.storage.publish_article(d)),
     ('/api/vault/export', lambda m,d: CORE.storage.export_backup(d)),
@@ -147,6 +153,9 @@ POST_ROUTES = [(re.compile(p),f) for p,f in (
     ('/api/articles/'+ARTICLE+'/undelete', lambda m,d: CORE.storage.restore_deleted(m[1])),
     ('/api/articles/'+ARTICLE+'/snapshots', lambda m,d: CORE.storage.create_snapshot(m[1],d)),
     ('/api/transcripts/([a-f0-9]{32})/speakers', lambda m,d: CORE.storage.save_speaker_edits(m[1],d.get('speakerEdits'))),
+    ('/api/transcripts/([a-f0-9]{32})/notes', lambda m,d: CORE.storage.save_transcript_notes(m[1],d.get('notes'))),
+    ('/api/transcripts/([a-f0-9]{32})/delete', lambda m,d: CORE.storage.delete_transcript(m[1])),
+    ('/api/transcripts/([a-f0-9]{32})/rename', lambda m,d: CORE.storage.rename_transcript(m[1],d.get('filename'))),
     ('/api/materials/extract', lambda m,d: extract_text(d)),
     ('/api/sources/open', lambda m,d: CORE.storage.open_source(d)),
     ('/api/exports', lambda m,d: _export(d)),
@@ -167,7 +176,7 @@ AI_ROUTES = {
 }
 # shortcut: 백업을 JSON/base64로 받으므로 220MB로 제한, 저장소가 150MB에 가까워지면 스트리밍 업로드로 교체
 POST_LIMITS = {'/api/vault/restore':220_000_000,'/api/exports':220_000_000,'/api/articles/save':80_000_000,'/api/articles/publish':80_000_000,
-               '/api/interview/transcribe':56_000_000,'/api/stt':56_000_000,'/api/materials/extract':40_000_000}
+               '/api/interview/transcribe':56_000_000,'/api/stt':56_000_000,'/api/materials/extract':40_000_000,'/api/local/drafts':55_000_000}
 STATIC_TYPES = ('.css','.js','.mjs','.map','.svg','.png','.jpg','.jpeg','.webp','.gif','.ico','.woff','.woff2','.ttf','.otf','.json','.txt')
 
 def _match(routes, path):

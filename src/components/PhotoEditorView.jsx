@@ -368,7 +368,7 @@ function PhotoEditorBody({ photo, onBack: onCancel, onApplyToArticle, onTrackDow
           className="px-3.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-200/90 rounded-lg text-xs font-semibold text-slate-800 transition cursor-pointer shadow-2xs active:scale-95">
           작성으로 돌아가기
         </button>
-        <h2 className="text-base md:text-lg font-bold text-slate-900 tracking-tight">사진 편집</h2>
+        <h2 className="text-base md:text-lg font-bold text-[#292929] tracking-tight">사진 편집</h2>
       </div>
 
       <div className="flex-1 w-full px-8 py-2 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

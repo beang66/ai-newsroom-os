@@ -39,6 +39,11 @@ export default defineConfig({
     port: 5173,
     host: '127.0.0.1',
     proxy: {
+      // platform-generator Node 서버의 로컬 초안 저장소 경로
+      '/api/local': {
+        target: process.env.PLATFORM_SERVER_URL || 'http://127.0.0.1:3001',
+        changeOrigin: true,
+      },
       // 개발(`npm run dev`) 중에는 로컬 코어(창 모드 서버)로 /api 를 넘긴다.
       '/api': {
         target: 'http://127.0.0.1:8765',

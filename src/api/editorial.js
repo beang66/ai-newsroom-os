@@ -149,6 +149,11 @@ export async function loadTranscript(id, signal) {
   return { ...transcript, audioUrl: URL.createObjectURL(audio) };
 }
 export const saveSpeakerEdits = (id, speakerEdits, signal) => core.saveTranscriptSpeakers(id, speakerEdits, signal);
+export const saveTranscriptNotes = (id, notes, signal) => core.saveTranscriptNotes(id, notes, signal);
+export const getTranscriptFolders = (signal) => core.getTranscriptFolders(signal);
+export const saveTranscriptFolders = (folders, fileFolderMap, signal) => core.saveTranscriptFolders(folders, fileFolderMap, signal);
+export const deleteTranscript = (id, signal) => core.deleteTranscript(id, signal);
+export const renameTranscript = (id, filename, signal) => core.renameTranscript(id, filename, signal);
 export const publishCms = (article, signal) => core.publishCms(article, signal);
 export const getTransferFile = (signal) => core.getTransferFile(signal);
 export const makeTransferFile = (code, signal) => core.makeTransferFile(code, signal);

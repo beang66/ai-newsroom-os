@@ -4,14 +4,12 @@ import { useFactCheck } from "./EditorialAssist";
 import { toStudioArticle, plainContent, escapeHtml } from "../lib/studioArticle.js";
 import { paint, clearPaint, hitTest, locate } from "../lib/factHighlights.js";
 import { suggestHeadlines, suggestSubtitles } from "../services/assistService";
-import FlowSummaryButton from "./FlowSummaryButton";
-import { textWithoutPhotos } from "../lib/photoMarks.js";
 import PhotoSideDrawer from "./PhotoSideDrawer";
 import PhotoEditorView from "./PhotoEditorView";
 import SourceSearch from "./SourceSearch";
 import ArticleCheckModal from "./ArticleCheckModal";
 import VersionHistoryModal from "./VersionHistoryModal";
-import DongaPreview from "./DongaPreview.jsx";
+import DongaPreview, { dongaPreviewDocument } from "./DongaPreview.jsx";
 import { SECTIONS } from "../data/sections.js";
 import { trackPhotoDownload } from "../api/editorial";
 import "./articleWriterFont.css";
@@ -28,7 +26,6 @@ import {
   Wand2,
   AlertTriangle,
   Eye,
-  Edit3,
   Columns,
   Image as ImageIcon,
   Upload,
@@ -52,8 +49,33 @@ import {
   MessageSquare,
   Heart,
   Volume2,
-  History
+  History, Save, Archive
 } from "lucide-react";
+
+function formatPreviewData(article, photos = []) {
+  const known = [...photos];
+  let html = String(article?.content || "");
+  if (typeof DOMParser !== "undefined" && /<(figure|img)[\s>]/i.test(html)) {
+    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+    doc.body.querySelectorAll("figure, img").forEach((node, index) => {
+      if (!node.isConnected) return;
+      const figure = node.closest("figure") || node;
+      const img = figure.matches("img") ? figure : figure.querySelector("img");
+      if (!img) return;
+      const id = figure.getAttribute("data-photo-id") || img.getAttribute("data-photo-id") || `inline-${index}`;
+      if (!known.some((photo) => photo.id === id)) {
+        const caption = (figure.querySelector("figcaption")?.textContent || "").replace(/^\s*▲\s*/, "");
+        const [text, source] = caption.split(/\s*\(출처:\s*/);
+        known.push({ id, url: img.getAttribute("src") || "", caption: text.trim(), source: (source || "").replace(/\)\s*$/, "").trim() });
+      }
+      const line = doc.createElement("p");
+      line.textContent = `[사진:${id}]`;
+      figure.replaceWith(line);
+    });
+    html = doc.body.innerHTML;
+  }
+  return { previewArticle: { ...article, content: plainContent(html) }, previewPhotos: known };
+}
 
 export default function ArticleWriter({
   locationRequest,
@@ -68,6 +90,7 @@ export default function ArticleWriter({
   isSidebarCollapsed = true,
   onConnectSource,
   onSave,
+  onArchive,
   isReaderPreview,
   setIsReaderPreview,
   isPhotoEditing,
@@ -100,6 +123,26 @@ export default function ArticleWriter({
 
   // 저장 이력 및 복원 모달 열림 상태
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  // 오른쪽 위 저장하기·보관(예전에는 헤더에 있었다): 저장하고, 보관은 저장이 성공했을 때만 보관함으로 보낸다
+  const [topBusy, setTopBusy] = useState(false);
+  const handleTopSave = async () => {
+    setTopBusy(true);
+    try {
+      await onSave?.();
+    } finally {
+      setTopBusy(false);
+    }
+  };
+  const handleTopArchive = async () => {
+    setTopBusy(true);
+    try {
+      // 저장 결과를 기다려, 실패했을 때는 보관되었다고 알리지 않는다(화면 하단 상태줄에 사유가 표시됨).
+      const archived = await onArchive?.();
+      if (archived !== false) alert("기사가 보관되었습니다.");
+    } finally {
+      setTopBusy(false);
+    }
+  };
 
   // 팩트체크 패널과 에디터 간 분할 비율 (기본 1:1 = 50%)
   const [factCheckSplitRatio, setFactCheckSplitRatio] = useState(50);
@@ -606,14 +649,44 @@ export default function ArticleWriter({
 
   // 기사 내용 복사 및 출력 핸들러
   const handleCopyArticle = () => {
-    const fullText = [article.title, article.subtitle, article.content].filter(Boolean).join("\n\n");
+    const title = String(article.title || "").trim();
+    const subtitle = String(article.subtitle || "").trim();
+    // HTML 태그 및 사진 컨테이너를 제거하고 문단별 순수 텍스트만 추출
+    const rawContent = String(article.content || "").replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi, "");
+    const body = plainContent(rawContent);
+
+    const fullText = [title, subtitle, body].filter(Boolean).join("\n\n");
     navigator.clipboard.writeText(fullText).then(() => {
       alert("기사 내용 전체가 클립보드에 복사되었습니다.");
     });
   };
 
   const handlePrintArticle = () => {
-    window.print();
+    // 1. 이미 독자 화면 미리보기 화면이면 렌더링된 iframe 바로 인쇄
+    const previewIframe = document.querySelector('iframe[title="동아일보 기사 미리보기"]');
+    if (previewIframe?.contentWindow && viewMode === "preview") {
+      previewIframe.contentWindow.focus();
+      previewIframe.contentWindow.print();
+      return;
+    }
+
+    // 2. 기사 작성 화면이면 동아일보 지면 서식을 백그라운드 프레임에 로드하여 기사 원문만 인쇄
+    const { previewArticle: pArticle, previewPhotos: pPhotos } = formatPreviewData(article, photos);
+    const saveTimes = { firstSavedAt: article.createdAt, lastSavedAt: article.updatedAt };
+    const html = dongaPreviewDocument(pArticle, pPhotos, null, saveTimes);
+
+    let printFrame = document.getElementById("article-print-iframe");
+    if (!printFrame) {
+      printFrame = document.createElement("iframe");
+      printFrame.id = "article-print-iframe";
+      printFrame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+      document.body.appendChild(printFrame);
+    }
+    printFrame.srcdoc = html;
+    printFrame.onload = () => {
+      printFrame.contentWindow.focus();
+      printFrame.contentWindow.print();
+    };
   };
 
   const handleTitleConfirm = () => {
@@ -1278,28 +1351,7 @@ export default function ArticleWriter({
   // main 의 미리보기는 "문단은 줄, 사진 자리는 [사진:id] 줄"인 글자 원고를 읽는다. 내 에디터 HTML 을 그 모양으로 바꿔 넘긴다.
   const { previewArticle, previewPhotos } = useMemo(() => {
     if (viewMode !== "preview") return { previewArticle: article, previewPhotos: [] };
-    const known = [...photos];
-    let html = String(article.content || "");
-    if (typeof DOMParser !== "undefined" && /<(figure|img)[\s>]/i.test(html)) {
-      const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
-      doc.body.querySelectorAll("figure, img").forEach((node, index) => {
-        if (!node.isConnected) return;
-        const figure = node.closest("figure") || node;
-        const img = figure.matches("img") ? figure : figure.querySelector("img");
-        if (!img) return;
-        const id = figure.getAttribute("data-photo-id") || img.getAttribute("data-photo-id") || `inline-${index}`;
-        if (!known.some((photo) => photo.id === id)) {
-          const caption = (figure.querySelector("figcaption")?.textContent || "").replace(/^\s*▲\s*/, "");
-          const [text, source] = caption.split(/\s*\(출처:\s*/);
-          known.push({ id, url: img.getAttribute("src") || "", caption: text.trim(), source: (source || "").replace(/\)\s*$/, "").trim() });
-        }
-        const line = doc.createElement("p");
-        line.textContent = `[사진:${id}]`;
-        figure.replaceWith(line);
-      });
-      html = doc.body.innerHTML;
-    }
-    return { previewArticle: { ...article, content: plainContent(html) }, previewPhotos: known };
+    return formatPreviewData(article, photos);
   }, [viewMode, article, photos]);
   const previewSaveTimes = { firstSavedAt: article.createdAt, lastSavedAt: article.updatedAt };
 
@@ -1321,7 +1373,7 @@ export default function ArticleWriter({
             <span className="text-xs text-slate-400 font-bold tracking-wider">동아일보 공식 웹 뉴스 뷰</span>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={handlePrintArticle}
               className="p-1.5 text-slate-400 hover:text-slate-800 transition cursor-pointer"
               title="기사 인쇄"
             >
@@ -1450,17 +1502,43 @@ export default function ArticleWriter({
                     </div>
                     </div>
 
-                    {/* 저장 이력 및 자동 저장 상태 버튼 (data-testid="save-status") */}
-                    <button
-                      type="button"
-                      onClick={() => setShowHistoryModal(true)}
-                      data-testid="save-status"
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium text-stone-500 hover:text-stone-900 hover:bg-stone-100/70 transition cursor-pointer select-none"
-                      title="저장 이력 확인 및 이전 저장본 복원"
-                    >
-                      <History className="w-3.5 h-3.5 text-stone-500" />
-                      <span>자동 저장됨 · 이력</span>
-                    </button>
+                    {/* 저장 이력(아이콘만, data-testid="save-status") · 보관 · 저장하기 */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowHistoryModal(true)}
+                        data-testid="save-status"
+                        aria-label="저장 이력"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-stone-500 hover:text-stone-900 hover:bg-stone-100/70 transition cursor-pointer select-none"
+                        title="저장 이력 확인 및 이전 저장본 복원"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+                      {onArchive && (
+                        <button
+                          type="button"
+                          onClick={handleTopArchive}
+                          disabled={topBusy}
+                          data-testid="writer-archive"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-50 transition cursor-pointer disabled:opacity-50"
+                        >
+                          <Archive className="w-3.5 h-3.5" aria-hidden="true" />
+                          보관
+                        </button>
+                      )}
+                      {onSave && (
+                        <button
+                          type="button"
+                          onClick={handleTopSave}
+                          disabled={topBusy}
+                          data-testid="writer-save-top"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-[#101010] px-3 py-1 text-[11px] font-bold text-white transition cursor-pointer hover:bg-black disabled:opacity-60"
+                        >
+                          <Save className="w-3.5 h-3.5" aria-hidden="true" />
+                          {topBusy ? "저장 중…" : "저장하기"}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* 기사 제목 라벨 및 AI 버튼 */}
@@ -1662,7 +1740,6 @@ export default function ArticleWriter({
                           {factCheck.busy ? "팩트체크 중…" : factIssueCount ? `확인 필요 ${factIssueCount}문장` : "팩트체크 통과"}
                         </span>
                       )}
-                      <FlowSummaryButton body={textWithoutPhotos(article.content || "")} />
                       <span>공백 포함 {(article.content || "").replace(/<[^>]*>/g, "").length.toLocaleString()}자</span>
                     </div>
                   </div>
@@ -2082,9 +2159,9 @@ export default function ArticleWriter({
           </div>
         )}
 
-        {/* 기사 작성 화면 메인 박스 오른쪽 상단 바로 옆에 위치한 일관된 캡슐형 Hover 확장 사이드바 (미리보기 화면에서는 숨김) */}
+        {/* 기사 작성 화면 메인 박스 오른쪽 상단 바로 옆에 위치한 일관된 캡슐형 Hover 확장 사이드바 (미리보기 화면에서는 숨김, 커서 호버 시 오른쪽으로 확장) */}
         {viewMode !== "preview" && (
-          <aside className="sticky top-6 flex-shrink-0 z-30 select-none pr-36">
+          <aside className="sticky top-6 flex-shrink-0 z-30 select-none">
             <div className="flex flex-col items-start gap-2">
               {/* 1. 사진 첨부 */}
               <div className="relative w-10 h-10 group">
@@ -2167,8 +2244,6 @@ export default function ArticleWriter({
               {/* 미니 구분선 */}
               <div className="w-6 h-[1px] bg-slate-200/80 my-0.5 ml-2" />
 
-
-
               {/* 6. 취재자료 검색 */}
               <div className="relative w-10 h-10 group">
                 <button
@@ -2215,23 +2290,6 @@ export default function ArticleWriter({
                   <ShieldCheck className="w-4.5 h-4.5 flex-shrink-0 text-slate-700" />
                   <span className="text-xs font-bold whitespace-nowrap pl-2 pr-2.5 opacity-0 max-w-0 group-hover:max-w-[180px] group-hover:opacity-100 transition-all duration-200 overflow-hidden select-none">
                     기사 팩트체크 & 근거자료
-                  </span>
-                </button>
-              </div>
-
-              {/* 8. 에디터 전용 보기 */}
-              <div className="relative w-10 h-10 group">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("editor")}
-                  className={`absolute left-0 top-0 h-10 w-10 group-hover:w-max min-w-[40px] px-2.5 rounded-full flex items-center transition-all duration-200 ease-out z-10 group-hover:z-30 overflow-hidden cursor-pointer active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.04)] group-hover:shadow-md border backdrop-blur-md ${viewMode === "editor"
-                    ? "bg-slate-100/90 border-slate-800 text-slate-950 font-black shadow-xs"
-                    : "bg-white/95 border-slate-200/90 text-slate-700 group-hover:text-slate-950 group-hover:border-slate-300"
-                    }`}
-                >
-                  <Edit3 className="w-4.5 h-4.5 flex-shrink-0 text-slate-700" />
-                  <span className="text-xs font-bold whitespace-nowrap pl-2 pr-2.5 opacity-0 max-w-0 group-hover:max-w-[160px] group-hover:opacity-100 transition-all duration-200 overflow-hidden select-none">
-                    에디터 전용 보기
                   </span>
                 </button>
               </div>

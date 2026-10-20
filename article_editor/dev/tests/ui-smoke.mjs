@@ -402,7 +402,7 @@ try {
   await login.waitFor();
   assert.equal(await page.locator(".login-overlay").count(), 0, "로그인 전 첫 화면은 팝업이 아니라 로그인 화면입니다");
   assert.equal(await page.getByTestId("page-heading").count(), 0, "로그인 전에는 작업 화면 대신 로그인 화면만 보입니다");
-  assert.equal(await page.locator("header").count(), 1, "머리글(프로필 메뉴)은 로그인 화면에서도 보입니다");
+  assert.equal(await page.locator("header").count(), 0, "로그인 화면에서는 머리글을 숨기고 로그인 화면만 보입니다");
   assert.equal(await login.getByRole("button", { name: "나중에", exact: true }).count(), 0, "로그인 전에는 건너뛸 수 없어야 합니다");
   assert.equal(await login.getByRole("button", { name: "닫기", exact: true }).count(), 0, "로그인 전에는 창을 닫을 수 없어야 합니다");
   await page.keyboard.press("Escape");
@@ -1030,6 +1030,7 @@ try {
     autoLogin: { available: true, enabled: true, email: "dev@example.test", error: "" } };
   await page.reload();
   await waitWorkspaceReady();
+  await page.locator('button[title="저장 내역 및 알림"]').click(); // 자동 로그인 스위치는 헤더 종 모양 알림창 안에 있다
   const autoLogin = page.getByTestId("auto-login-toggle");
   await autoLogin.waitFor();
   await autoLogin.getByText(/켜짐/).waitFor();

@@ -9,10 +9,13 @@
 const ENTITIES = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
 const decode = (text) => text.replace(/&(?:nbsp|amp|lt|gt|quot|#39);/g, (match) => ENTITIES[match]);
 
-/** 에디터 HTML → 문단을 빈 줄로 나눈 일반 텍스트 */
+/** 에디터 HTML → 문단을 빈 줄로 나눈 일반 텍스트.
+ *  본문 사진(<figure>)은 뺀다 — 안의 조작 안내·버튼 글자(⠿ 드래그…, ↻✎✕)와 캡션이 기사 문장으로 섞이면
+ *  팩트체크가 그 글자를 문장으로 보내고 변환 원문도 오염된다. 사진 데이터는 article.photos 에 따로 있다. */
 export function plainContent(html) {
   return decode(
     String(html || "")
+      .replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi, "\n\n")
       .replace(/<\/(p|h[1-6]|li|blockquote)>/gi, "\n\n")
       .replace(/<\/div>|<br\s*\/?>/gi, "\n")
       .replace(/<[^>]*>/g, ""),

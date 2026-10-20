@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { instagramCaptionText, parseInstagramCaption, parseThreadsText, threadsText } from "../../../src/lib/platformTextEditor.js";
+import { plainContent } from "../../../src/lib/studioArticle.js";
 
 test("Instagram 통합 입력은 마무리가 없는 두 단락 원고의 본문 구조를 보존한다", () => {
   const previous = { opening: "도입", paragraphs: ["본문"], closing: "", hashtags: [] };
@@ -21,4 +22,11 @@ test("생성 시작 실패 메시지는 진행 목록이 비어도 경고 UI에 
   const source = await readFile(new URL("../../../src/components/PlatformStudio.jsx", import.meta.url), "utf8");
   assert.match(source, /catch\(error\)[\s\S]{0,180}setGenerationError\(error\.message\|\|'생성 작업을 시작하지 못했습니다\.'/);
   assert.match(source, /role="alert" data-testid="generation-error"[\s\S]{0,120}\{generationError\}/);
+});
+
+test("본문 사진의 조작 안내·버튼·캡션 글자는 기사 문장(팩트체크·변환 원문)에 섞이지 않는다", () => {
+  const figure = '<figure class="article-photo-container" data-photo-id="p1" contenteditable="false"><div><span>⠿ 드래그하여 원하는 위치로 이동</span></div>'
+    + '<img src="x.jpg"><div class="photo-action-overlay"><button><span>↻</span></button><button><span>✎</span></button><button><span>✕</span></button></div>'
+    + '<figcaption>(출처: 동아일보 DB)</figcaption></figure><p><br></p>';
+  assert.equal(plainContent(`<p>첫 문장입니다.</p>${figure}<p>고친 문장을 하나 더 씁니다.</p>`), "첫 문장입니다.\n\n고친 문장을 하나 더 씁니다.");
 });

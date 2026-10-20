@@ -61,7 +61,8 @@ class OnnxJudgeProvider:
         tok.enable_truncation(self.config["max_length"])
         opts = ort.SessionOptions()
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        self._session = ort.InferenceSession(str(self.folder / "model.onnx"), opts, providers=["CPUExecutionProvider"])
+        from ..ort_device import session
+        self._session = session(self.folder / "model.onnx", opts)
         self._tok = tok
 
     def _classify(self, claim: str, evidence: str) -> tuple[str, float]:

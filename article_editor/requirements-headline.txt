@@ -1,6 +1,8 @@
 # 로컬 제목(KeT5)·부제(KoBART) 실행 — ONNX 변환본(models/headline-ket5-onnx, subtitle-kobart-onnx)을 돌린다.
 # 2026-10-02: torch/transformers 불필요. 변환·재검증 환경("transformers==4.46.2" torch sentencepiece onnx)은
 # dev/tools/convert_seq2seq_onnx.py 머리말 참고.
-onnxruntime>=1.20
+onnxruntime>=1.20; sys_platform != "win32"
+# Windows: DirectML 판(같은 onnxruntime 모듈, CPU 포함 + GPU). 두 패키지를 함께 깔면 모듈이 충돌하니 onnxruntime 은 지울 것(core/ai/ort_device.py)
+onnxruntime-directml>=1.20; sys_platform == "win32"
 tokenizers>=0.21
 numpy>=1.24

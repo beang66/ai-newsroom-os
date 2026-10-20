@@ -69,8 +69,8 @@ class OnnxQwenEncoder:
             options.intra_op_num_threads = max(1, int(os.getenv(
                 'FACTCHECK_EMBEDDING_THREADS', '0')) or min(4, os.cpu_count() or 1))
             options.inter_op_num_threads = 1
-            session = ort.InferenceSession(str(self.path / 'embedding.onnx'),
-                sess_options=options, providers=['CPUExecutionProvider'])
+            from ..ort_device import session as ort_session
+            session = ort_session(self.path / 'embedding.onnx', options)
             self.pad_id = int(pad)
             self.tokenizer = tokenizer
             self.session = session  # publish only after complete initialization

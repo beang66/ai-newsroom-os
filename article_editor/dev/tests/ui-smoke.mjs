@@ -211,8 +211,9 @@ try {
   );
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.setDefaultTimeout(60_000); // 전체 파이썬 시험 직후처럼 PC 가 바쁠 때 30초 기본값을 넘는 경우가 있었다
+  // 일부러 지운 기사의 404는 예상한 실패다(보관함 미리보기는 주소 끝에 ?purpose=preview 를 붙이므로 경로만 비교한다)
   page.on("console", (m) => m.type() === "error" && !/status of (503|422|401|400|413)/.test(m.text())
-    && !(/status of 404/.test(m.text()) && expectedDbFailureUrls.has(m.location().url)) && problems.push("console: " + m.text()));
+    && !(/status of 404/.test(m.text()) && expectedDbFailureUrls.has(m.location().url.split("?")[0])) && problems.push("console: " + m.text() + (m.location().url ? ` (${m.location().url})` : "")));
   page.on("pageerror", (e) => problems.push("pageerror: " + e.message));
   page.on("response", async (r) => {
     // 503 = 모델·런타임 미설치(정상 상태) — 화면이 안내를 띄우는지는 단계에서 따로 본다; 422 = 깨진 자료 파일(4단계에서 일부러 올림)
@@ -227,6 +228,8 @@ try {
   const acceptTestDialog=(d)=>(!/서버에 올려 둔 내 백업/.test(d.message())&&/저장하지 않은 변경|삭제할까요|이전 파일의 자료로 바꿀까요|클라우드 백업을 끌까요|복제본 파일을 지울까요/.test(d.message())?d.accept():d.dismiss());
   page.on("dialog",acceptTestDialog);
 
+  // 직접 만든 대기(Promise)는 시간 제한이 없어 멈추면 끝나지 않는다 — 이름과 함께 실패시킨다
+  const within=(promise,label,ms=30_000)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(Error(`대기 시간 초과: ${label}`)),ms))]);
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
   // 사이드바 버튼 title(내 사이드바)과 화면 제목(page-heading, 데이터 navigation.js)은 이름이 다르다.
   // 기사 작성·인터뷰 화면은 상단 제목 대신 자체 작업 화면(저장 상태 표시 / 녹취 화면)이 열린다.
@@ -236,7 +239,7 @@ try {
   const go = async (title) => {
     await page.locator(`button[title="${NAV_BUTTON[title] || title}"]`).first().click();
     if (NAV_HEADING[title]) await page.getByTestId('page-heading').filter({ hasText: NAV_HEADING[title] }).waitFor();
-    else await page.locator(READY).first().waitFor();
+    else await page.locator(READY).filter({ visible: true }).first().waitFor(); // 인터뷰 화면은 한 번 열면 숨긴 채 남는다 — 보이는 화면만 본다
   };
   // 복구 후 HTML load와 실제 원고 조회 완료는 다르다. 작업 영역 재마운트가 끝난 뒤 다음 창을 연다.
   // 환경 설정 창은 환경 설정 화면의 "환경 설정 열기" 버튼으로 연다(이미 그 화면이면 이동하지 않는다)
@@ -768,11 +771,18 @@ try {
   await page.getByRole("status").getByText("임시 저장됨").first().waitFor({ timeout: 15_000 });
   await page.keyboard.press("Control+s"); // 저장 이력에는 수동 저장만 남는다 — 취재자료가 들어간 판을 이력에 남긴다
   await page.getByRole("status").getByText(/^저장됨/).first().waitFor({ timeout: 15_000 });
+  const judged = page.waitForResponse((r) => r.url().endsWith("/api/factcheck/run"), { timeout: 15_000 });
   await body.press('Control+End'); await page.keyboard.press('Enter');
   await page.keyboard.insertText('순서형 검사용 새 문장을 하나 더 씁니다.');
+  await judged; // 글이 멈추면 새 문장만 자동 검증한다 — 그 판정이 순서형 검사에 들어온 뒤 찾는다
   const sequence = page.getByTestId("factcheck-review"); // 서랍을 열면 순서형 검사가 함께 켜진다
   await sequence.getByText(/AI 팩트체크 순서형 검사/).waitFor({ timeout: 15_000 });
-  await sequence.getByText("스모크 불일치 사유").waitFor();
+  await page.waitForFunction(() => !/팩트체크 중/.test(document.querySelector('[data-testid="factcheck-status"]')?.textContent || ""));
+  // 앞 문장들은 위의 외부 재판정으로 '근거 부족'이 남아 있으므로, 본문 순서대로 넘겨 새 불일치 문장을 찾는다
+  for (let step = 0; !(await sequence.getByText("스모크 불일치 사유").isVisible()); step += 1) {
+    assert.ok(step < 20 && await sequence.getByRole("button", { name: "다음" }).isEnabled(), "순서형 검사에서 새 불일치 문장을 찾지 못했습니다");
+    await sequence.getByRole("button", { name: "다음" }).click();
+  }
   await page.waitForFunction(() => CSS.highlights.size > 0); // 불일치 문장이 본문에 칠해진다
   await sequence.getByRole("button", { name: "검사 종료" }).click();
   // 전체 다시 검증: 지금 글을 고정본으로 만들어 그 기준으로 검증한다 — 요청에 snapshotId 가 실리고 서랍에 기준 버전이 보인다
@@ -822,6 +832,21 @@ try {
   // 6. 플랫폼 변환: FormatConverter UI -> App Core -> platform-generator 어댑터
   await go("플랫폼 변환");
   const converter = page.getByTestId("format-converter");
+  // 생성은 코어의 백그라운드 작업(platform run)이다. 시작 응답으로 이번 작업을 잡고, 그 작업이 끝난 뒤 완료 안내를 본다
+  // (앞 작업의 완료 안내가 남아 있어도 이번 작업을 기다린다). count: 이번 작업의 생성 대상 수(없으면 확인하지 않음)
+  const runGeneration = async (count, trigger) => {
+    const started = page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/platform/runs", { timeout: 15_000 });
+    await trigger();
+    const run = await (await started).json();
+    if (count != null) assert.equal(run.targets?.length, count, `생성 대상 ${count}개`);
+    await page.waitForResponse(async (r) => {
+      if (new URL(r.url()).pathname !== `/api/platform/runs/${run.id}`) return false;
+      const state = await r.json().catch(() => null);
+      return Boolean(state) && !["queued", "running"].includes(state.status);
+    }, { timeout: 60_000 });
+    await converter.getByText("생성 작업이 끝났습니다. 결과를 확인해 주세요.").waitFor();
+    return run;
+  };
   const openEditorialOptions = async () => {
     const panel = converter.getByTestId('optional-editorial-direction');
     if (await panel.getAttribute('open') === null) await panel.locator('summary').first().click();
@@ -843,13 +868,11 @@ try {
   if (await topicOptions.getAttribute('open') === null) await topicOptions.locator('summary').first().click();
   await converter.getByRole("button", { name: /추천/ }).click();
   await converter.getByRole("button", { name: /스모크 핵심/ }).click();
-  await converter.getByRole("button", { name: "선택 항목 생성" }).click();
-  await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value === "스모크 인스타그램 도입"), null, { timeout: 15_000 });
-  await converter.getByText("2/2개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();
-  await converter.getByText(/저장 \d+번 버전의 글 기준/).waitFor(); // 생성은 저장된 글의 고정본(snapshot) 기준으로 이루어진다
+  const firstRun = await runGeneration(2, () => converter.getByRole("button", { name: "선택 항목 생성" }).click());
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value.startsWith("스모크 인스타그램 도입")), null, { timeout: 15_000 });
+  assert.match(String(firstRun.snapshot_id), /^[0-9a-f-]{36}$/); // 생성은 저장된 글의 고정본(snapshot) 기준으로 이루어진다
   // 보고 있는 항목만 다시 생성(원본 platform-generator 의 개별 생성 버튼)
-  await converter.getByTestId("generate-active").click();
-  await converter.getByText("1/1개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();
+  await runGeneration(1, () => converter.getByTestId("generate-active").click());
   // 카드뉴스 완성 이미지(임시 UI): 카드뉴스 생성 → "카드 이미지 만들기" → 코어 render → MediaAsset → 미리보기
   await converter.getByText("카드뉴스도 생성").click();
   await converter.getByRole("button", { name: "카드뉴스", exact: true }).click();
@@ -857,25 +880,29 @@ try {
   await converter.getByRole("button", { name: "Instagram 피드 원고" }).click();
   await converter.getByRole("button", { name: "Threads 짧은 요약" }).click();
   await converter.getByTestId("generate-active").getByText("카드뉴스만 생성").waitFor();
-  await converter.getByTestId("generate-active").click();
-  await converter.getByText("1/1개 결과를 실제 생성 엔진에서 받아왔습니다.").waitFor();
+  await runGeneration(1, () => converter.getByTestId("generate-active").click());
   await converter.getByTestId('platform-card-editor').waitFor();
+  // 카드 글은 미리보기 안에서 직접 고친다(사용자 경로). 입력칸·이미지 만들기·사진 업로드·정보 배치 패널은 화면에서 숨겼지만
+  // 코드는 남아 동기화되므로, 시험에서만 보이게 해 그 로직도 계속 확인한다.
+  const showCardFields = '[data-testid="card-fields"]{display:block!important}';
+  await page.addStyleTag({ content: showCardFields });
+  await page.addInitScript((css) => addEventListener("DOMContentLoaded", () => document.head.append(Object.assign(document.createElement("style"), { textContent: css }))), showCardFields);
   await converter.getByRole('button',{name:'2번 카드'}).click();
-  await converter.getByRole('textbox',{name:'headline',exact:true}).fill('카드 단독 편집 결과');
+  const cardHeadline = converter.frameLocator('iframe[title="카드 미리보기"]').locator('[data-field="headline"]');
+  await cardHeadline.click(); await cardHeadline.press('Control+A'); await page.keyboard.insertText('카드 단독 편집 결과');
   await converter.getByRole('button',{name:'1번 카드'}).click();
   await converter.getByRole('button',{name:'2번 카드'}).click();
   assert.equal(await converter.getByRole('textbox',{name:'headline',exact:true}).inputValue(),'카드 단독 편집 결과');
   await converter.getByRole("button", { name: "Instagram 피드 원고" }).click();
   await converter.getByRole("button", { name: "Threads 짧은 요약" }).click();
-  await converter.getByRole('button',{name:'선택 항목 생성',exact:true}).click();
-  await converter.getByText('3/3개 결과를 실제 생성 엔진에서 받아왔습니다.').waitFor();
+  await runGeneration(3, () => converter.getByRole('button',{name:'선택 항목 생성',exact:true}).click());
   await converter.getByRole('button',{name:/^카드뉴스●/}).click();
   await converter.getByTestId('platform-card-editor').getByRole('button',{name:'3번 카드'}).click();
   assert.equal(await converter.getByRole('textbox',{name:'headline',exact:true}).inputValue(),'스모크 카드 3');
   await converter.getByRole('button',{name:/^Threads●/}).click();
   assert.equal(await converter.getByTestId('threads-card').count(),3);
   await converter.getByRole('button',{name:/^Instagram●/}).click();
-  assert.equal(await converter.locator('main textarea').first().inputValue(),'스모크 인스타그램 도입');
+  assert.match(await converter.locator('main textarea').first().inputValue(),/^스모크 인스타그램 도입\n\n스모크 인스타그램 본문/); // 도입·본문·마무리·해시태그를 한 입력칸에서 고친다
   await converter.getByRole('button',{name:/^카드뉴스●/}).click();
   await converter.getByTestId('platform-card-editor').waitFor();
   await converter.getByTestId("card-image-make").click();
@@ -888,20 +915,25 @@ try {
 
   // 검수·렌더 결과가 늦게 도착해도 수정된 원고에 덮어쓰지 않는다.
   const headline=converter.getByRole('textbox',{name:'headline',exact:true});
-  await converter.getByTestId('platform-validate').click();
+  // 검수 버튼은 없다 — '로컬 앱 연결' 탭을 열 때마다 현재 원고를 자동 검수하고 결과를 한 줄로 보인다
+  const openDelivery=async()=>{await converter.getByRole('button',{name:'원고 & 설정',exact:true}).click();await converter.getByRole('button',{name:'로컬 앱 연결',exact:true}).click();};
+  await openDelivery();
   await converter.getByTestId('platform-review').getByText(/검수 통과/).waitFor();
   let reviewReady,reviewRelease;
   const reviewWaiting=new Promise(resolve=>{reviewReady=resolve;}),reviewHold=new Promise(resolve=>{reviewRelease=resolve;});
+  await headline.fill('검수 전 변경한 카드 제목'); // 고친 원고는 다시 검수한다
   await page.route('**/api/platform/validate',async route=>{const response=await route.fetch();reviewReady();await reviewHold;await route.fulfill({response});});
-  await converter.getByRole('button',{name:'다시 검수'}).click();await reviewWaiting; // 검수 완료 상태에서는 '검수' 버튼이 막히고 '다시 검수'가 새 검수를 시작한다
+  await openDelivery();await within(reviewWaiting,'reviewWaiting');
   await headline.fill('검수 중 변경한 카드 제목');reviewRelease();
   await converter.getByTestId('platform-review').getByText(/결과를 적용하지 않았습니다/).waitFor();
-  await converter.getByTestId('platform-review').getByText(/재검수 필요/).waitFor();
   await page.unroute('**/api/platform/validate');
+  await openDelivery(); // 바뀐 원고로 다시 열면 새로 검수한다
+  await converter.getByTestId('platform-review').getByText(/검수 통과/).waitFor();
+  await converter.getByRole('button',{name:'원고 & 설정',exact:true}).click();
   let renderReady,renderRelease;
   const renderWaiting=new Promise(resolve=>{renderReady=resolve;}),renderHold=new Promise(resolve=>{renderRelease=resolve;});
   await page.route('**/api/platform/render',async route=>{const response=await route.fetch();renderReady();await renderHold;await route.fulfill({response});});
-  await converter.getByTestId('card-image-make').click();await renderWaiting;
+  await converter.getByTestId('card-image-make').click();await within(renderWaiting,'renderWaiting');
   await headline.fill('렌더 중 변경한 카드 제목');renderRelease();
   await converter.getByTestId('card-image-error').getByText(/결과를 적용하지 않았습니다/).waitFor();
   assert.equal(await converter.getByTestId('card-image-preview').count(),0);
@@ -910,8 +942,7 @@ try {
   // 현재 카드의 추천 입력과 직접 업로드·편집 사진의 실제 저장 경계를 확인한다.
   const cardPhoto=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;canvas.getContext('2d').fillRect(0,0,32,32);return canvas.toDataURL('image/png');});
   await converter.getByLabel('카드 사진 업로드').setInputFiles({name:'card-upload.png',mimeType:'image/png',buffer:Buffer.from(cardPhoto.split(',')[1],'base64')});
-  await page.getByTestId('image-editor').getByTestId('image-apply').click();
-  await converter.getByText('사진 출처: 직접 업로드').waitFor();
+  await converter.getByText('사진 출처: 직접 업로드').waitFor(); // 올린 사진은 편집기를 거치지 않고 바로 카드에 들어간다
   let recommendation;
   await page.route('**/api/assist',async route=>{const input=route.request().postDataJSON();if(input.kind==='photo_keywords')recommendation=input;await route.continue();});
   await converter.getByRole('button',{name:'현재 카드 사진 찾기'}).click();
@@ -945,13 +976,11 @@ try {
   await converter.getByTestId('applied-source').getByText(/재적용이 필요/).waitFor();
   assert.equal(await converter.getByTestId('generate-active').isDisabled(),true);await applyStudio();
   await converter.getByRole('button',{name:/^Instagram\s*●?$/}).click();
-  await converter.getByTestId('generate-active').click();
-  await converter.getByText('1/1개 결과를 실제 생성 엔진에서 받아왔습니다.').waitFor();
+  await runGeneration(1, () => converter.getByTestId('generate-active').click());
   await converter.getByTestId('sns-prepare').click();
   await converter.getByTestId('delivery-status').getByText(/기사·고정본이 다릅니다/).waitFor();
   // 다른 원문의 고정본은 혼합하지 않는다. 세 결과를 같은 생성 작업에서 받는다.
-  await converter.getByRole('button',{name:'선택 항목 생성',exact:true}).click();
-  await converter.getByText('3/3개 결과를 실제 생성 엔진에서 받아왔습니다.').waitFor();
+  await runGeneration(3, () => converter.getByRole('button',{name:'선택 항목 생성',exact:true}).click());
   await converter.getByRole('button',{name:/^카드뉴스\s*●?$/}).click();
   const uploadedOption=converter.getByLabel('기사 사진 사용').locator('option').filter({hasText:'card-upload.png'});
   await converter.getByLabel('기사 사진 사용').selectOption(await uploadedOption.getAttribute('value'));
@@ -969,16 +998,20 @@ try {
   }
 
   await go("보관함");
-  await see("미디어 & 변환 자산");
-  // 팩트체크 서랍에 올린 자료가 기사 취재자료로 남아 보관함에 보여야 한다(깨진 파일은 빠짐)
-  await page.getByText("취재자료 (1건)").waitFor();
-  await page.getByText("• 자료.txt").waitFor();
+  const archiveView = page.getByTestId("archive-view");
+  await archiveView.waitFor();
+  // 팩트체크 서랍에 올린 자료가 기사 취재자료로 남아 보관함에 보여야 한다(깨진 파일은 빠짐) — 종류별 '취재 자료' 분류에 한 건
+  const archiveScope = page.getByTestId("archive-scope");
+  assert.equal((await archiveScope.locator('option[value="type:source"]').textContent()).trim(), "취재 자료 (1)");
+  await archiveScope.selectOption("type:source");
+  await archiveView.getByText("자료.txt", { exact: true }).first().waitFor();
+  await archiveScope.selectOption("all");
   await snapshot('prototype-ux-archive');
-  // 휴지통(코어 /api/trash): 지운 기사가 없으면 비어 있다고 보이고, 다시 누르면 목록으로 돌아온다
-  await page.getByTestId("archive-scope").selectOption("trash");
-  await page.getByTestId("trash-list").getByText("휴지통이 비어 있습니다.").waitFor();
-  await page.getByTestId("archive-scope").selectOption("all");
-  await page.getByTestId("trash-list").waitFor({ state: "detached" });
+  // 휴지통(코어 /api/trash): 지운 기사가 없으면 비어 있다고 보이고, 다시 고르면 목록으로 돌아온다
+  await archiveScope.selectOption("trash");
+  await archiveView.getByText("휴지통이 비어 있습니다.").waitFor();
+  await archiveScope.selectOption("all");
+  await archiveView.getByText("휴지통이 비어 있습니다.").waitFor({ state: "detached" });
   assert.equal(await page.getByTestId("data-map").count(), 0, "보관함에는 데이터맵을 중복 렌더링하지 않는다");
   await go("데이터맵");
   assert.equal(await page.getByTestId("archive-view").count(), 0);
@@ -1014,14 +1047,14 @@ try {
   await page.waitForTimeout(2500);
   await page.reload();
   await waitWorkspaceReady();
-  await see("미디어 & 변환 자산");
-  await page.getByText("취재자료 (1건)").waitFor();
+  await page.getByTestId("archive-view").waitFor(); // 마지막 화면(보관함)으로 다시 열린다
+  assert.equal((await page.getByTestId("archive-scope").locator('option[value="type:source"]').textContent()).trim(), "취재 자료 (1)");
   await go("기사 작성");
   assert.equal(await page.getByPlaceholder("기사 제목을 입력하세요").inputValue(), "스텁 제목 둘");
   assert.ok(((await body.innerText()).trim()).startsWith("스모크 테스트 본문입니다."));
   // 플랫폼 생성 결과도 같은 암호화 원고에 저장되어 재시작 후 복원돼야 한다.
   await go("플랫폼 변환");
-  await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value === "스모크 인스타그램 도입"), null, { timeout: 10_000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="format-converter"] textarea')].some((el) => el.value.startsWith("스모크 인스타그램 도입")), null, { timeout: 10_000 });
   await go("기사 작성");
   // 7. 좁은 화면에서도 첫 화면이 오류 없이 그려지는지
   // 개발 계정 자동 로그인이 켜져 있으면 로그인된 상태이고, 끄면 로그아웃되어 로그인 창이 뜬다
@@ -1083,8 +1116,9 @@ try {
   await page.getByRole("status").getByText('임시 저장됨').first().waitFor();
   assert.equal(savedIds.size, 2, '새 기사는 별도 ID에 저장한다');
   await go('보관함');
-  await page.getByTestId('archive-view').getByRole('button', { name: /^\d+\s*스텁 제목 둘/ }).click();
-  await page.getByRole('button', { name: '수정', exact: true }).click();
+  // 보관함 탐색기: 기사를 골라 오른쪽 미리보기의 '열기'로 편집기에 연다
+  await page.getByTestId('archive-view').locator('[data-item-key^="article:"]').filter({ hasText: '스텁 제목 둘' }).first().click();
+  await page.getByTestId('archive-view').getByLabel('선택한 자료 미리보기').getByRole('button',{name:'열기',exact:true}).click();
   await page.waitForFunction(() => document.querySelector('input[placeholder="기사 제목을 입력하세요"]')?.value === '스텁 제목 둘');
   assert.ok(((await body.innerText()).trim()).includes('전환 직전 보존 문장'));
   // 전환 저장이 실패하면 현재 원고를 버리거나 새 기사로 넘어가지 않는다.
@@ -1096,11 +1130,13 @@ try {
   await page.unroute('**/api/articles/save');
   await go('기사 작성');
   assert.ok(((await body.innerText()).trim()).includes('저장 실패 시 보존 문장'));
-  // 보관함 × 로 기사 삭제(지금 쓰는 기사가 아닌 것) → 목록에서 사라지고 코어 목록에서도 빠진다
+  // 보관함에서 기사를 골라 미리보기의 '삭제'(지금 쓰는 기사가 아닌 것) → 목록에서 사라지고 코어 목록에서도 빠진다
   await go('보관함');
   const archive = page.getByTestId('archive-view');
-  await archive.getByRole('button', { name: '전환 검증 두 번째 기사 삭제' }).click();
-  await archive.getByRole('button', { name: /^\d+\s*전환 검증 두 번째 기사/ }).waitFor({ state: 'detached' });
+  const deleteTarget = archive.locator('[data-item-key^="article:"]').filter({ hasText: '전환 검증 두 번째 기사' });
+  await deleteTarget.first().click();
+  await archive.getByTestId('archive-delete').click();
+  await deleteTarget.first().waitFor({ state: 'detached' });
   const remaining = (await (await page.request.get(`${BASE}/api/articles`)).json()).articles.map((item) => item.title);
   assert.ok(!remaining.includes('전환 검증 두 번째 기사'), '삭제한 기사가 코어 목록에 남았습니다: ' + remaining);
   // 저장 기사 선택은 기존 보관함을 재사용한다. 변환 화면에 별도 선택기·DB 우회 경로는 없다.
@@ -1123,12 +1159,12 @@ try {
   const previewStored=async id=>{
     await go('보관함');
     const view=page.getByTestId('archive-view');
-    await view.locator('.workspace-article-list .archive-item > button:not(.archive-delete)').filter({hasText:dbTitles.get(id)}).click();
+    await view.locator('[data-item-key^="article:"]').filter({hasText:dbTitles.get(id)}).first().click();
     return view;
   };
   const selectStored=async id=>{
     const view=await previewStored(id);
-    await view.getByRole('button',{name:'수정',exact:true}).click();
+    await view.getByLabel('선택한 자료 미리보기').getByRole('button',{name:'열기',exact:true}).click();
     await page.waitForFunction(title=>document.querySelector('input[placeholder="기사 제목을 입력하세요"]')?.value===title,dbTitles.get(id));
     await go('플랫폼 변환');
   };
@@ -1143,7 +1179,7 @@ try {
     assert.equal(await converter.getByTestId(field).evaluate(el=>el.scrollHeight>el.clientHeight),false,'전체 기사 메타데이터는 잘리면 안 된다');
     assert.equal(await converter.getByTestId(field).evaluate(el=>getComputedStyle(el).webkitLineClamp),'none');
   }
-  const generateActive=async()=>{if(await converter.getByTestId('generate-active').isDisabled())await applyStudio();await converter.getByTestId('generate-active').click();await converter.getByText(/\d+\/\d+개 결과를 실제 생성 엔진에서 받아왔습니다\./).waitFor();};
+  const generateActive=async()=>{if(await converter.getByTestId('generate-active').isDisabled())await applyStudio();await runGeneration(null, () => converter.getByTestId('generate-active').click());};
   const saveCurrent=async()=>{
     const saved=page.waitForResponse(response=>response.url().endsWith('/api/articles/save')&&response.ok()&&response.request().postDataJSON()?.kind==='manual');
     await page.keyboard.press('Control+s');await saved;await page.locator('header, [role="status"]').getByText(/^저장됨/).first().waitFor();
@@ -1167,7 +1203,7 @@ try {
   assert.deepEqual((await readDb(plainId)).platformDrafts.instagram.generation_input.article,{article_id:plainId,title:dbTitles.get(plainId),content:'DB 기사 본문입니다.'});
   await selectStored(linkedId);
   await page.waitForFunction(()=>[...document.querySelectorAll('[data-testid="format-converter"] main textarea')].some(el=>el.value==='DB 플랫폼 사용자 편집'));
-  await converter.getByRole('button',{name:/기사 (전문 보기|편집)/}).first().click();
+  await go('기사 작성'); // 변환 화면에는 편집기로 가는 버튼이 없다 — 메뉴로 간다
   await page.getByPlaceholder(/부제.*입력/).fill('편집 화면에서 수정한 실제 부제');
   await go('플랫폼 변환');await converter.getByTestId('loaded-subtitle').getByText('편집 화면에서 수정한 실제 부제',{exact:true}).waitFor();
   await converter.getByTestId('applied-source').getByText(/재적용이 필요/).waitFor();
@@ -1182,11 +1218,11 @@ try {
   assert.equal((await readDb(structuredId)).platformDrafts.instagram.generation_input.article.content,'구조화 원문의 HTML 본문입니다.');
   console.log('ui-smoke: 제목/부제·세 필드 입력·URL 유무·Blog 기록·저장/복원·고정본 재사용 확인');
   // 미리보기 이후 실제 작업 영역 조회가 실패해도 현재 기사와 편집은 유지한다.
-  const preview=await previewStored(emptyId);await preview.getByRole('button',{name:'수정',exact:true}).waitFor();
+  const preview=await previewStored(emptyId);await preview.getByLabel('선택한 자료 미리보기').getByRole('button',{name:'열기',exact:true}).waitFor();
   await page.waitForFunction(()=>!document.querySelector('.workspace-primary')?.disabled);
   expectedDbFailureUrls.add(`${BASE}/api/articles/${emptyId}`);
   await page.route(`**/api/articles/${emptyId}`,route=>reply(route,{error:'DB 조회 실패 테스트'},404));
-  await preview.getByRole('button',{name:'수정',exact:true}).click();
+  await preview.getByLabel('선택한 자료 미리보기').getByRole('button',{name:'열기',exact:true}).click();
   await page.getByRole('alert').filter({hasText:/기사 조회 실패/}).waitFor();
   await go('플랫폼 변환');assert.equal(await converter.getByTestId('loaded-title').textContent(),'HTML 호환 DB 기사');
   await page.unroute(`**/api/articles/${emptyId}`);
@@ -1194,16 +1230,20 @@ try {
   await page.waitForFunction(()=>!document.querySelector('.workspace-primary')?.disabled);
   const deleted=await page.request.post(`${BASE}/api/articles/${emptyId}/delete`,{headers:{Origin:BASE},data:{}});assert.equal(deleted.status(),200);
   // 선택·미리보기 후 DB에서 삭제되는 실제 경쟁 조건. 이전 정보를 새 기사처럼 적용하지 않는다.
-  await deletedPreview.getByRole('button',{name:'수정',exact:true}).click();
+  await deletedPreview.getByLabel('선택한 자료 미리보기').getByRole('button',{name:'열기',exact:true}).click();
   await page.getByRole('alert').filter({hasText:/기사 조회 실패/}).waitFor();
   await go('플랫폼 변환');assert.equal(await converter.getByTestId('loaded-title').textContent(),'HTML 호환 DB 기사');
   // 생성 결과가 늦게 와도 기존 기사 선택 경로로 전환한 새 기사에 적용하지 않는다.
+  // 생성은 코어 백그라운드 작업이고 화면은 작업 상태 조회(GET /api/platform/runs/<id>)로 결과를 받는다 — 그 조회를 붙잡아 결과가 늦게 오게 한다.
   let generationStarted,generationRelease;
   const genWaiting=new Promise(resolve=>generationStarted=resolve),genHold=new Promise(resolve=>generationRelease=resolve);
-  await page.route('**/api/platform/generate',async route=>{const response=await route.fetch();generationStarted();await genHold;await route.fulfill({response});});
-  await converter.getByTestId('generate-active').click();await genWaiting;
-  await converter.getByTestId('request-source').getByText(/HTML 호환 DB 기사/).waitFor();
-  await selectStored(plainId);generationRelease();await page.unroute('**/api/platform/generate');
+  const runPoll=/\/api\/platform\/runs\/[0-9a-f-]{36}$/;
+  await page.route(runPoll,async route=>{generationStarted();await genHold;await route.continue().catch(()=>{});});
+  const lateRun=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname==='/api/platform/runs');
+  await converter.getByTestId('generate-active').click();
+  assert.equal((await (await lateRun).json()).article_id,structuredId,'지금 불러온 기사(HTML 호환 DB 기사)로 생성을 시작한다');
+  await within(genWaiting,'genWaiting');
+  await selectStored(plainId);generationRelease();await page.unroute(runPoll);
   assert.equal(await converter.getByTestId('loaded-title').textContent(),'URL과 부제 없는 DB 기사');
   assert.equal((await readDb(plainId)).platformDrafts.instagram.article_id,plainId);
   await saveCurrent();
@@ -1212,26 +1252,31 @@ try {
   let queryStarted,queryRelease;
   const queryWaiting=new Promise(resolve=>queryStarted=resolve),queryHold=new Promise(resolve=>queryRelease=resolve);
   await page.route(`**/api/articles/${linkedId}`,async route=>{const response=await route.fetch();queryStarted();await queryHold;await route.fulfill({response}).catch(()=>{});});
-  await latePreview.getByRole('button',{name:'수정',exact:true}).click();await queryWaiting;
+  await latePreview.getByLabel('선택한 자료 미리보기').getByRole('button',{name:'열기',exact:true}).click();await within(queryWaiting,'queryWaiting');
   await page.getByRole('status').filter({hasText:'현재 원고를 저장하고 작업을 전환합니다'}).waitFor();
   await page.reload();await waitWorkspaceReady();await go('플랫폼 변환');await converter.getByTestId('loaded-title').getByText('URL과 부제 없는 DB 기사',{exact:true}).waitFor();
   queryRelease();await page.unroute(`**/api/articles/${linkedId}`);
   assert.equal(await converter.getByTestId('loaded-title').textContent(),'URL과 부제 없는 DB 기사');
   await snapshot('db-article-platform-source');
   await applyStudio();
-  // 같은 기사에서 생성 도중 조건을 고치면 늦은 결과를 적용하지 않는다.
+  // 같은 기사에서 생성 도중 조건을 고치면 늦은 결과를 적용하지 않는다(이전 방식).
+  // 생성이 코어 백그라운드 작업(platform run)으로 바뀐 뒤에는 조건 변경으로 진행 중인 작업을 취소하지 않고, 결과에 그 작업의 조건(generation_input)을
+  // 기록한다. 화면은 원문이 바뀌었거나 그사이 원고를 고친 경우에만 적용을 막는다(위의 기사 전환 검사). 이 단계는 브라우저의 /api/platform/generate 를
+  // 가로채는 이전 구조 기준이라 기본은 건너뛴다. 다시 보려면 UI_SMOKE_LEGACY_CONVERT=1 로 실행한다.
+  if (process.env.UI_SMOKE_LEGACY_CONVERT === "1") {
   let editStarted,editRelease;
   const editWaiting=new Promise(resolve=>{editStarted=resolve;}),editHold=new Promise(resolve=>{editRelease=resolve;});
   await page.route('**/api/platform/generate',async route=>{
     const response=await route.fetch(),result=await response.json();result.draft.opening='조건 수정 중 응답 (적용 금지)';
     editStarted();await editHold;await route.fulfill({response,body:JSON.stringify(result)});
   });
-  await converter.getByTestId('generate-active').click();await editWaiting;
+  await converter.getByTestId('generate-active').click();await within(editWaiting,'editWaiting');
   await openEditorialOptions();
   await converter.getByLabel('덧붙일 편집 방향 (선택)').fill('생성 도중 바꾼 요구사항');editRelease();
   await converter.getByText(/원문 또는 입력 조건이 바뀌어 이전 작업의 후속 호출과 결과 적용을 중단했습니다/).waitFor();
   assert.equal(await converter.locator('textarea').evaluateAll(elements=>elements.some(element=>element.value==='조건 수정 중 응답 (적용 금지)')),false);
   await page.unroute('**/api/platform/generate');
+  }
   // 편집실 내부 목록·미리보기·명시적 적용. 선택만 하면 적용 원문/생성 입력은 유지된다.
   const previewStudio=async title=>{
     await converter.getByTestId('choose-studio-article').click();
@@ -1266,7 +1311,7 @@ try {
   await page.route(`**/api/articles/${linkedId}`,async route=>{const response=await route.fetch();previewStarted();await previewHold;await route.fulfill({response}).catch(()=>{});});
   await converter.getByTestId('choose-studio-article').click();
   await page.getByTestId('platform-article-picker').getByRole('textbox',{name:'기사 제목 검색'}).fill(longTitle);
-  await page.getByTestId('platform-article-picker').getByRole('button').filter({hasText:longTitle}).first().click();await previewWaiting;
+  await page.getByTestId('platform-article-picker').getByRole('button').filter({hasText:longTitle}).first().click();await within(previewWaiting,'previewWaiting');
   assert.equal(await converter.getByTestId('apply-studio-article').isDisabled(),true);
   await previewStudio('URL과 부제 없는 DB 기사');previewRelease();await page.unroute(`**/api/articles/${linkedId}`);
   assert.equal(await converter.getByTestId('loaded-title').textContent(),'URL과 부제 없는 DB 기사');
@@ -1296,7 +1341,7 @@ try {
   let applyStarted,applyRelease;
   const applyWaiting=new Promise(resolve=>applyStarted=resolve),applyHold=new Promise(resolve=>applyRelease=resolve);
   await page.route(`**/api/articles/${plainId}`,async route=>{const response=await route.fetch();applyStarted();await applyHold;await route.fulfill({response}).catch(()=>{});});
-  await converter.getByTestId('apply-studio-article').click();await applyWaiting;
+  await converter.getByTestId('apply-studio-article').click();await within(applyWaiting,'applyWaiting');
   await go('기사 작성');applyRelease();await page.unroute(`**/api/articles/${plainId}`);
   assert.equal(await page.getByPlaceholder('기사 제목을 입력하세요').inputValue(),'HTML 호환 DB 기사');
   await go('플랫폼 변환');assert.ok((await converter.getByTestId('applied-source').textContent()).includes('HTML 호환 DB 기사'));

@@ -23,6 +23,9 @@ SAVE_LOCK = threading.Lock()
 MAX_REVISIONS = 200  # ponytail: 자동저장 이력은 원고마다 최근 200개만 둔다. 더 필요하면 간격 저장(예: 1분)이나 압축으로
 OPEN_DIR = APP_DATA / 'open'  # 외부 프로그램으로 열 때만 만드는 임시 복호화본(cleanup_open)
 MAX_TRANSCRIPT_AUDIO = 40_000_000
+MAX_PLATFORM_DRAFT_BYTES = 50_000_000
+PLATFORM_DRAFT_PREFIX = 'platform_draft:'
+TRANSCRIPT_FOLDERS_KEY = 'transcript_folders:v1'
 
 
 def _now():
@@ -70,6 +73,109 @@ def list_transcripts():
     return {'transcripts': [{'id': row[0], 'filename': row[1], 'mimeType': row[2], 'duration': row[3],
                              'createdAt': row[4], 'bytes': row[5], 'segments': len(json.loads(row[6]))}
                             for row in rows]}
+
+
+def _platform_draft_title(draft):
+    """플랫폼 초안 목록에 보여 줄 제목을 안전하게 고른다."""
+    candidates = []
+    source_input = draft.get('source_input')
+    if isinstance(source_input, dict) and isinstance(source_input.get('article'), dict):
+        candidates.append(source_input['article'].get('title'))
+    card_news = draft.get('card_news')
+    if isinstance(card_news, dict) and isinstance(card_news.get('core_text'), dict):
+        candidates.append(card_news['core_text'].get('headline'))
+    cards = draft.get('cards')
+    if isinstance(cards, list) and cards and isinstance(cards[0], dict):
+        first = cards[0]
+        candidates.append(first.get('headline'))
+        if isinstance(first.get('content'), dict):
+            candidates.append(first['content'].get('headline'))
+    article = draft.get('article')
+    if isinstance(article, dict):
+        candidates.append(article.get('title'))
+    candidates.append(draft.get('title'))
+    for container_name in ('platformDrafts', 'platform_drafts'):
+        container = draft.get(container_name)
+        if isinstance(container, dict):
+            for platform in ('instagram', 'threads'):
+                value = container.get(platform)
+                if isinstance(value, dict):
+                    candidates.append(value.get('headline'))
+    return next((str(value).strip()[:500] for value in candidates if value is not None and str(value).strip()), '뉴스 초안')
+
+
+def _clean_platform_draft(draft):
+    if not isinstance(draft, dict):
+        raise RequestError('초안 객체를 전달해 주세요.')
+    cards = draft.get('cards')
+    if cards is not None and (not isinstance(cards, list) or len(cards) > 10):
+        raise RequestError('카드는 10장 이하의 배열이어야 합니다.')
+    has_cards = isinstance(cards, list) and bool(cards)
+    has_text = False
+    for name in ('platformDrafts', 'platform_drafts', 'text_drafts', 'drafts'):
+        container = draft.get(name)
+        if not isinstance(container, dict):
+            continue
+        for value in container.values():
+            if isinstance(value, str) and value.strip():
+                has_text = True
+            elif isinstance(value, dict) and value:
+                has_text = True
+    if not has_cards and not has_text:
+        raise RequestError('카드 또는 플랫폼 원고가 포함된 초안을 전달해 주세요.')
+    try:
+        encoded = json.dumps(draft, ensure_ascii=False, separators=(',', ':'))
+    except (TypeError, ValueError):
+        raise RequestError('초안 데이터 형식을 확인해 주세요.') from None
+    if len(encoded.encode('utf-8')) > MAX_PLATFORM_DRAFT_BYTES:
+        raise RequestError('플랫폼 초안은 50MB 이하만 저장할 수 있습니다.', 413)
+    return encoded
+
+
+def save_platform_draft(data):
+    """플랫폼 편집 상태 전체를 현재 계정의 암호화 저장소에 보관한다."""
+    draft = data.get('draft') if isinstance(data, dict) else None
+    encoded = _clean_platform_draft(draft)
+    identifier, saved_at = str(uuid.uuid4()), _now()
+    record = {'id': identifier, 'saved_at': saved_at, 'title': _platform_draft_title(draft),
+              'draft': json.loads(encoded)}
+    with vault.connect() as db:
+        db.execute('INSERT INTO app_meta (key, value) VALUES (?, ?)',
+                   (PLATFORM_DRAFT_PREFIX + identifier, json.dumps(record, ensure_ascii=False, separators=(',', ':'))))
+    return {'success': True, 'id': identifier, 'saved_at': saved_at, 'title': record['title'],
+            'file_path': '계정별 암호화 저장소'}
+
+
+def list_platform_drafts():
+    with vault.connect() as db:
+        rows = db.execute('SELECT value FROM app_meta WHERE key LIKE ?', (PLATFORM_DRAFT_PREFIX + '%',)).fetchall()
+    records = []
+    for row in rows:
+        try:
+            record = json.loads(row[0])
+            records.append({'id': record['id'], 'title': record['title'], 'saved_at': record['saved_at']})
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    records.sort(key=lambda item: item['saved_at'], reverse=True)
+    return {'success': True, 'drafts': records}
+
+
+def get_platform_draft(identifier):
+    if not isinstance(identifier, str) or not re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', identifier):
+        raise RequestError('저장된 초안 ID를 확인해 주세요.')
+    with vault.connect() as db:
+        row = db.execute('SELECT value FROM app_meta WHERE key = ?', (PLATFORM_DRAFT_PREFIX + identifier,)).fetchone()
+    if not row:
+        raise RequestError('저장된 초안을 찾지 못했습니다.', 404, code='NOT_FOUND')
+    try:
+        draft = json.loads(row[0])['draft']
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        raise RequestError('저장된 초안을 읽지 못했습니다.', 500) from None
+    return {'success': True, 'draft': draft}
+
+
+def platform_draft_storage_info():
+    return {'success': True, 'storage': 'encrypted_core', 'encrypted': True, 'account_scoped': True}
 
 
 def get_transcript(identifier):
@@ -188,6 +294,80 @@ def save_transcript_notes(identifier, notes):
     return {'id': identifier, 'notes': clean}
 
 
+def _clean_transcript_folder_state(state, db=None):
+    """폴더 트리를 정규화하고 끊어진 부모·순환·사라진 녹취 연결을 제거한다."""
+    if state is None:
+        state = {}
+    if not isinstance(state, dict):
+        raise RequestError('녹취 폴더 형식을 확인해 주세요.')
+    raw_folders = state.get('folders') or []
+    raw_map = state.get('fileFolderMap') or {}
+    if not isinstance(raw_folders, list) or len(raw_folders) > 500 or not isinstance(raw_map, dict) or len(raw_map) > 20_000:
+        raise RequestError('녹취 폴더 형식을 확인해 주세요.')
+
+    folders, seen_ids = [], set()
+    for raw in raw_folders:
+        if not isinstance(raw, dict):
+            raise RequestError('녹취 폴더 형식을 확인해 주세요.')
+        identifier, name = raw.get('id'), raw.get('name')
+        if (not isinstance(identifier, str) or not re.fullmatch(r'folder_[A-Za-z0-9_-]{1,100}', identifier)
+                or identifier in seen_ids or not isinstance(name, str) or not name.strip() or len(name.strip()) > 200):
+            raise RequestError('녹취 폴더 형식을 확인해 주세요.')
+        folder = {'id': identifier, 'name': name.strip()}
+        created_at = raw.get('createdAt')
+        if isinstance(created_at, str) and len(created_at) <= 64:
+            folder['createdAt'] = created_at
+        parent_id = raw.get('parentId')
+        if isinstance(parent_id, str) and parent_id != identifier:
+            folder['parentId'] = parent_id
+        folders.append(folder)
+        seen_ids.add(identifier)
+
+    by_id = {folder['id']: folder for folder in folders}
+    for folder in folders:
+        if folder.get('parentId') not in by_id:
+            folder.pop('parentId', None)
+    for folder in folders:
+        visited, parent_id = {folder['id']}, folder.get('parentId')
+        while parent_id:
+            if parent_id in visited:
+                folder.pop('parentId', None)
+                break
+            visited.add(parent_id)
+            parent_id = by_id[parent_id].get('parentId')
+
+    known_transcripts = None
+    if db is not None:
+        known_transcripts = {row[0] for row in db.execute('SELECT id FROM transcripts').fetchall()}
+    file_map = {}
+    for transcript_id, folder_id in raw_map.items():
+        if (isinstance(transcript_id, str) and re.fullmatch(r'[a-f0-9]{32}', transcript_id)
+                and isinstance(folder_id, str) and folder_id in by_id
+                and (known_transcripts is None or transcript_id in known_transcripts)):
+            file_map[transcript_id] = folder_id
+    return {'folders': folders, 'fileFolderMap': file_map}
+
+
+def get_transcript_folders():
+    """현재 계정의 녹취 폴더 트리. 새 계정은 빈 트리 레코드를 만든다."""
+    with vault.connect() as db:
+        row = db.execute('SELECT value FROM app_meta WHERE key = ?', (TRANSCRIPT_FOLDERS_KEY,)).fetchone()
+        state = _clean_transcript_folder_state(json.loads(row[0]) if row else {}, db)
+        if not row:
+            db.execute('INSERT INTO app_meta (key, value) VALUES (?, ?)',
+                       (TRANSCRIPT_FOLDERS_KEY, json.dumps(state, ensure_ascii=False, separators=(',', ':'))))
+    return {'success': True, **state}
+
+
+def save_transcript_folders(data):
+    """현재 계정의 녹취 폴더 트리를 통째로 바꿔 저장한다."""
+    with vault.connect() as db:
+        state = _clean_transcript_folder_state(data, db)
+        db.execute('INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)',
+                   (TRANSCRIPT_FOLDERS_KEY, json.dumps(state, ensure_ascii=False, separators=(',', ':'))))
+    return {'success': True, **state}
+
+
 def save_speaker_edits(identifier, edits):
     if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{32}', identifier):
         raise RequestError('잘못된 녹취 ID입니다.')
@@ -208,6 +388,16 @@ def delete_transcript(identifier):
         db.execute('DELETE FROM transcripts WHERE id = ?', (identifier,))
         db.execute('DELETE FROM app_meta WHERE key = ?', (SPEAKER_EDITS_PREFIX + identifier,))
         db.execute('DELETE FROM app_meta WHERE key = ?', (NOTES_PREFIX + identifier,))
+        folders = db.execute('SELECT value FROM app_meta WHERE key = ?', (TRANSCRIPT_FOLDERS_KEY,)).fetchone()
+        if folders:
+            try:
+                state = json.loads(folders[0])
+                if isinstance(state.get('fileFolderMap'), dict) and identifier in state['fileFolderMap']:
+                    state['fileFolderMap'].pop(identifier, None)
+                    db.execute('UPDATE app_meta SET value = ? WHERE key = ?',
+                               (json.dumps(state, ensure_ascii=False, separators=(',', ':')), TRANSCRIPT_FOLDERS_KEY))
+            except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+                pass
     return {'ok': True, 'id': identifier}
 
 

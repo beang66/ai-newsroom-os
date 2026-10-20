@@ -1,73 +1,29 @@
-// 로컬 초안 저장소(내 문서 / AI-Newsroom / drafts)와의 통신 및 데이터 변환 API.
-// UI는 직접 fetch나 엔드포인트를 호출하지 않고 이 모듈을 통해서만 로컬 초안을 저장·조회합니다.
-
-const LOCAL_DRAFTS_PATH = "/api/local/drafts";
-const LOCAL_STORAGE_INFO_PATH = "/api/local/storage";
-
-async function requestJson(url, options = {}) {
-  let response;
-  try {
-    response = await fetch(url, options);
-  } catch (error) {
-    throw new Error(`로컬 서버 연결 실패: ${error.message}. platform-generator 서버 실행을 확인해 주세요.`);
-  }
-
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    if (response.status === 410) {
-      throw Object.assign(
-        new Error("로컬 파일 저장이 비활성화되어 있습니다. PLATFORM_LOCAL_STORAGE=1 환경 변수로 서버를 실행해 주세요."),
-        { status: 410 }
-      );
-    }
-    throw new Error(`서버 응답(HTTP ${response.status})을 JSON으로 읽지 못했습니다.`);
-  }
-
-  if (response.status === 410) {
-    throw Object.assign(
-      new Error(data?.error || "로컬 파일 저장이 비활성화되어 있습니다. PLATFORM_LOCAL_STORAGE=1 환경 변수로 서버를 실행해 주세요."),
-      { status: 410 }
-    );
-  }
-
-  if (!response.ok || (data && data.success === false)) {
-    throw Object.assign(
-      new Error(data?.error || `요청 실패 (HTTP ${response.status})`),
-      { status: response.status }
-    );
-  }
-
-  return data;
-}
+// 플랫폼 초안은 현재 계정의 Core 암호화 저장소에 보관한다.
+// 경로·HTTP/IPC 선택은 공통 Core 계약이 담당하고, 이 모듈은 화면 상태 변환만 맡는다.
+import { core } from "./core.js";
 
 /** 편집 상태 전체를 내 문서의 로컬 초안 파일로 저장합니다. */
 export async function saveLocalDraft(draft) {
-  return requestJson(LOCAL_DRAFTS_PATH, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ draft }),
-  });
+  return core.saveLocalDraft(draft);
 }
 
 /** 내 문서에 저장된 로컬 초안 메타데이터 목록을 최신순으로 가져옵니다. */
 export async function listLocalDrafts() {
-  const result = await requestJson(LOCAL_DRAFTS_PATH);
+  const result = await core.listLocalDrafts();
   return Array.isArray(result?.drafts) ? result.drafts : [];
 }
 
 /** 특정 ID의 저장된 초안 본문을 읽어옵니다. */
 export async function loadLocalDraft(id) {
   if (!id) throw new Error("초안 ID가 필요합니다.");
-  const result = await requestJson(`${LOCAL_DRAFTS_PATH}/${encodeURIComponent(id)}`);
+  const result = await core.loadLocalDraft(id);
   if (!result?.draft) throw new Error("저장된 초안 데이터를 확인할 수 없습니다.");
   return result.draft;
 }
 
 /** 로컬 저장소 실제 루트 및 폴더 정보를 조회합니다. */
 export async function getLocalStorageInfo() {
-  return requestJson(LOCAL_STORAGE_INFO_PATH);
+  return core.getLocalDraftStorageInfo();
 }
 
 /**

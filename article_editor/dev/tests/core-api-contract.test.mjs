@@ -37,3 +37,20 @@ test("보관함 미리보기는 '다시 열기'로 세지 않는 경로로 읽�
   await api.previewArticle("aaaa-bbbb"); await api.getArticle("aaaa-bbbb");
   assert.deepEqual(calls.map((c) => c[0]), ["/api/articles/aaaabbbb?purpose=preview", "/api/articles/aaaabbbb"]);
 });
+
+test("플랫폼 초안과 녹취 폴더는 공통 Core 계약을 사용한다", async () => {
+  calls.length = 0;
+  await api.saveLocalDraft({ platformDrafts: { instagram: { body: "본문" } } });
+  await api.listLocalDrafts();
+  await api.loadLocalDraft("123e4567-e89b-42d3-a456-426614174000");
+  await api.getTranscriptFolders();
+  await api.saveTranscriptFolders([{ id: "folder_a", name: "A" }], {});
+  assert.deepEqual(calls.map((call) => call[0]), [
+    "/api/local/drafts",
+    "/api/local/drafts",
+    "/api/local/drafts/123e4567-e89b-42d3-a456-426614174000",
+    "/api/transcript-folders",
+    "/api/transcript-folders",
+  ]);
+  assert.deepEqual(calls[4][1], { folders: [{ id: "folder_a", name: "A" }], fileFolderMap: {} });
+});

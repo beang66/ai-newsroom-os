@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { core } from "../api/core";
 import { formatArticleTime } from "../data/article";
+import { DESK_STAGES, stageLabel } from "../data/desk.js";
 import { textWithoutPhotos } from "../lib/photoMarks.js";
 import ShareDialog from "./ShareDialog";
 import SharedInboxDialog from "./SharedInboxDialog";
@@ -68,7 +69,7 @@ function createLibraryItems(articles, drafts, currentArticle, storedSources, sto
       owner, updatedAt, createdAt: summary.created_at || summary.createdAt || draft?.createdAt, status: articleStatus(summary),
       state: summary.state || "draft", size: safeText(draft?.content).length, preview: safeText(textWithoutPhotos(draft?.content || summary.excerpt || "")),
       relationCount: sources.length + audio.length + photos.length + Object.keys(platformDrafts).length + (draft?.cardNews ? 1 : 0),
-      sourceCount: sources.length, audioCount: audio.length, photoCount: photos.length, draft, deletable: Boolean(summary.revision_no)
+      sourceCount: sources.length, audioCount: audio.length, photoCount: photos.length, draft, deskStage: stageLabel(summary), deletable: Boolean(summary.revision_no)
     });
     sources.forEach((source, index) => addRelated({
       key: `source:${source.id || source.path || `${articleId}-${index}`}`, id: source.id || source.path || `${articleId}-${index}`,
@@ -145,10 +146,11 @@ function formatSize(item) {
   return item.size >= 1048576 ? `${(item.size / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(item.size / 1024))}KB`;
 }
 
-export default function ArchiveView({ article, articles, onOpen, onMap, onDelete, onRestored, busy }) {
+export default function ArchiveView({ article, articles, dashboardFilter, onOpen, onMap, onDelete, onRestored, busy }) {
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState("all");
   const [status, setStatus] = useState("all");
+  const [deskStage, setDeskStage] = useState("all");
   const [page, setPage] = useState(1);
   const [drafts, setDrafts] = useState({});
   const [storedSources, setStoredSources] = useState([]);
@@ -173,6 +175,13 @@ export default function ArchiveView({ article, articles, onOpen, onMap, onDelete
   const ignoreSelectionClickRef = useRef(false);
   const metaSaveRef = useRef(Promise.resolve());
   const currentId = normalizedId(article.articleId || article.id);
+
+  useEffect(() => {
+    if (!dashboardFilter?.requestId) return;
+    setScope(dashboardFilter.scope || "all");
+    setDeskStage(DESK_STAGES.includes(dashboardFilter.stage) || dashboardFilter.stage === "pending" ? dashboardFilter.stage : "all");
+    setStatus("all");setQuery("");setPage(1);setSelectedKeys([]);
+  }, [dashboardFilter?.requestId, dashboardFilter?.scope, dashboardFilter?.stage]);
 
   useEffect(() => writeLocal(PREF_KEY, preferences), [preferences]);
   useEffect(() => {
@@ -291,6 +300,8 @@ export default function ArchiveView({ article, articles, onOpen, onMap, onDelete
       if (scope.startsWith("folder:") && !item.folderIds.includes(scope.slice(7))) return false;
       if (scope.startsWith("tag:") && !item.tags.includes(scope.slice(4))) return false;
       if (status !== "all" && item.status !== status) return false;
+      if (deskStage === "pending" && (item.type !== "article" || item.deskStage === "출고 완료")) return false;
+      if (deskStage !== "all" && deskStage !== "pending" && (item.type !== "article" || item.deskStage !== deskStage)) return false;
       return !needle || `${item.searchText} ${item.tags.join(" ")}`.includes(needle);
     });
     const direction = preferences.direction === "asc" ? 1 : -1;
@@ -300,7 +311,7 @@ export default function ArchiveView({ article, articles, onOpen, onMap, onDelete
       if (field === "size") return ((left.size || 0) - (right.size || 0)) * direction;
       return String(left[field] || "").localeCompare(String(right[field] || ""), "ko") * direction;
     });
-  }, [allItems, deletedArticles, query, scope, status, preferences]);
+  }, [allItems, deletedArticles, query, scope, status, deskStage, preferences]);
 
   const pageCount = Math.max(1, Math.ceil(filteredItems.length / 20));
   const currentPage = Math.min(page, pageCount);
@@ -551,10 +562,11 @@ export default function ArchiveView({ article, articles, onOpen, onMap, onDelete
           <optgroup label="관리"><option value="trash">휴지통 ({trashCount})</option></optgroup>
         </select>
         <select aria-label="상태 필터" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="all">모든 상태</option><option value="작업 중">작업 중</option><option value="검토 필요">검토 필요</option><option value="송고 완료">송고 완료</option><option value="송고 후 수정">송고 후 수정</option></select>
+        <select aria-label="데스크 단계 필터" value={deskStage} onChange={(event) => { setDeskStage(event.target.value); setPage(1); }}><option value="all">모든 데스크 단계</option><option value="pending">송고 대기</option>{DESK_STAGES.map((label) => <option value={label} key={label}>{label}</option>)}</select>
         <select aria-label="정렬 기준" value={preferences.sort} onChange={(event) => patchPreference({ sort: event.target.value })}><option value="updatedAt">수정일</option><option value="title">이름</option><option value="type">종류</option><option value="status">상태</option><option value="size">크기</option></select>
         <button type="button" aria-label="정렬 방향" onClick={() => patchPreference({ direction: preferences.direction === "asc" ? "desc" : "asc" })}>{preferences.direction === "asc" ? "오름차순" : "내림차순"}</button>
         {[['details', List, '자세히 보기'], ['small', Grid2X2, '작은 아이콘'], ['large', LayoutGrid, '큰 아이콘']].map(([id, Icon, label]) => <button type="button" key={id} aria-label={label} aria-pressed={preferences.view === id} onClick={() => patchPreference({ view: id })}><Icon size={16} /></button>)}
-        {(query || status !== "all" || scope !== "all") && <button type="button" onClick={() => { setQuery(""); setStatus("all"); setScope("all"); setPage(1); }}>초기화</button>}
+        {(query || status !== "all" || deskStage !== "all" || scope !== "all") && <button type="button" onClick={() => { setQuery(""); setStatus("all"); setDeskStage("all"); setScope("all"); setPage(1); }}>초기화</button>}
       </div>
     </div>
 

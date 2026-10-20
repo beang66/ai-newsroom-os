@@ -2,17 +2,17 @@ import { useState } from "react";
 import { AlertTriangle, ArrowRight, Plus } from "lucide-react";
 import { formatArticleTime } from "../data/article";
 import DeskCalendar from "./DeskCalendar.jsx";
-import { WRITING_STEPS, articlesInRange, countByStage, focusStory, issuesOf, nextAction, stageLabel, stepsDone, writingStep } from "../data/desk";
+import { WRITING_STEPS, articlesInRange, countByStage, deliveryPendingArticles, focusStory, issuesOf, nextAction, stageLabel, stepsDone, writingStep } from "../data/desk";
 
 const ISSUE_ICONS = { verify: AlertTriangle, evidence: AlertTriangle, save: Plus };
 // 오늘 저장한 원고는 시각만, 그 전 원고는 날짜까지 보인다
 const savedAt = (value, today) => { const time = formatArticleTime(value); return time.startsWith(today) ? time.slice(11) : time; };
 
 // 오늘의 데스크: 코어에 저장된 기사만 보인다(데모 편성표 없음). articles = listStoredArticles() 결과
-export default function DeskView({ articles, onNavigate, onOpen, onNewArticle, busy }) {
+export default function DeskView({ articles, onNavigate, onOpen, onNewArticle, onArchive, busy }) {
   const [today] = useState(() => new Date());
   const story = focusStory(articles);
-  const recent = articles.filter((item) => item.revision_no).slice(0, 2);
+  const pendingDelivery = deliveryPendingArticles(articles).slice(0, 2);
   const todayStamp = today.toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
   const todayFormatted = new Intl.DateTimeFormat("ko-KR", { dateStyle: "full", timeZone: "Asia/Seoul" }).format(today);
   // 달력에서 고른 날짜(기간)에 고친 기사를 보인다. 기본은 오늘.
@@ -36,7 +36,7 @@ export default function DeskView({ articles, onNavigate, onOpen, onNewArticle, b
         {onNewArticle && <button type="button" onClick={onNewArticle} disabled={busy}
           className="mt-4 rounded-full bg-[#111] px-4 py-2 text-[12px] font-bold text-white hover:bg-black disabled:opacity-50 cursor-pointer">+ 새 기사</button>}
       </div>
-      <section data-testid="desk-metrics" className="workspace-metrics workspace-metrics--inline !my-0 w-full max-w-[620px] lg:w-auto lg:min-w-[420px]" aria-label="상태별 기사">{countByStage(articles.filter((item) => item.revision_no)).map(([label, value]) => <div key={label}><span>{label}</span><strong>{String(value).padStart(2, "0")}</strong></div>)}</section>
+      <section data-testid="desk-metrics" className="workspace-metrics workspace-metrics--inline !my-0 w-full max-w-[620px] lg:w-auto lg:min-w-[420px]" aria-label="상태별 기사">{countByStage(articles.filter((item) => item.revision_no)).map(([label, value]) => <div key={label}><button type="button" onClick={() => onArchive({ scope: "type:article", stage: label })} aria-label={`${label} 기사 ${value}건을 보관함에서 보기`}><span>{label}</span><strong>{String(value).padStart(2, "0")}</strong></button></div>)}</section>
     </header>
 
     {story ? <div className="workspace-master-detail">
@@ -86,7 +86,7 @@ export default function DeskView({ articles, onNavigate, onOpen, onNewArticle, b
           <div role="row" className="desk-queue-head"><span role="columnheader">저장</span><span role="columnheader">기사</span><span role="columnheader">자료</span><span role="columnheader">현재 상태</span><span role="columnheader">다음 작업</span></div>
           {shown.map((item) => { const next = nextAction(item); return <div role="row" key={item.id} aria-current={item.id === story?.id || undefined}>
             <strong role="cell" className="desk-queue-time">{savedAt(item.updated_at, todayStamp)}</strong>
-            <span role="cell" className="desk-queue-title">{item.title || "제목 없는 기사"}</span>
+            <span role="cell" className="desk-queue-title"><button type="button" className="desk-article-link" onClick={() => onOpen(item.id, "writer")} aria-label={`${item.title || "제목 없는 기사"} 원고 열기`}>{item.title || "제목 없는 기사"}</button></span>
             <span role="cell">{item.linkedSources?.length || 0}건</span>
             <span role="cell"><span className="workspace-status">{stageLabel(item)}</span></span>
             <span role="cell">{next && <button type="button" onClick={() => go(item, next.to)} aria-label={`${item.title || "제목 없는 기사"}: ${next.label}`}>{next.label}<ArrowRight aria-hidden="true" /></button>}</span>
@@ -98,9 +98,9 @@ export default function DeskView({ articles, onNavigate, onOpen, onNewArticle, b
     </div>
 
     <footer className="desk-recent">
-      <span className="desk-recent-label">최근 활동</span>
-      <ul>{recent.length ? recent.map((item) => <li key={item.id}>{item.title || "제목 없는 기사"} · {savedAt(item.updated_at, todayStamp)} 저장</li>) : <li>아직 저장한 기사가 없습니다</li>}</ul>
-      <button type="button" disabled={busy} onClick={() => onNavigate("archive")}>최근 활동 보기 <ArrowRight aria-hidden="true" /></button>
+      <span className="desk-recent-label">송고 대기 기사</span>
+      <ul>{pendingDelivery.length ? pendingDelivery.map((item) => <li key={item.id}><button type="button" className="desk-pending-link" onClick={() => onOpen(item.id, "writer")}>{item.title || "제목 없는 기사"} · {stageLabel(item)}</button></li>) : <li>송고를 기다리는 기사가 없습니다</li>}</ul>
+      <button type="button" disabled={busy} onClick={() => onArchive({ scope: "type:article", stage: "pending" })}>보관함에서 전체 보기 <ArrowRight aria-hidden="true" /></button>
     </footer>
   </div>;
 }

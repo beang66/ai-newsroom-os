@@ -5,6 +5,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Bookmark, Heart, Image as ImageIcon, MessageCircle, MoreHorizontal, Send } from "lucide-react";
 import { CardThumb } from "./ThreadsEditor.jsx";
+import { instagramCaptionText, parseInstagramCaption } from "../lib/platformTextEditor.js";
 
 const LIMIT = 2200; // Instagram 캡션 글자 수 제한
 const ACCOUNT = "AI NEWSROOM";
@@ -58,28 +59,15 @@ function CaptionPart({ id, label, value, onChange, active, onFocus, hashtag = fa
 }
 
 // 캡션 한 덩어리 ↔ 도입·본문·마무리·해시태그: 빈 줄로 단락을 나누고, 마지막 단락이 모두 #태그면 해시태그, 첫 단락은 도입, 마지막 단락은 마무리
-const captionOf = (d) => [d.opening, ...(d.paragraphs || []), d.closing, (d.hashtags || []).join(" ")].filter(Boolean).join("\n\n");
-function parseCaption(text) {
-  const blocks = text.split(/\n\s*\n/u).map((block) => block.trim()).filter(Boolean);
-  let hashtags = [];
-  if (blocks.length && blocks[blocks.length - 1].split(/\s+/u).every((word) => word.startsWith("#"))) hashtags = blocks.pop().split(/\s+/u);
-  return {
-    opening: blocks[0] || "",
-    paragraphs: blocks.length > 2 ? blocks.slice(1, -1) : [],
-    closing: blocks.length > 1 ? blocks[blocks.length - 1] : "",
-    hashtags,
-  };
-}
-
 /** draft: 생성 결과, changed(mutate): 수정 규칙(재검수 표시 포함), cards: 카드뉴스 카드들, article: 카드 사진 조회용 */
 export default function InstagramEditor({ draft, changed, cards = [], article, showCards = true }) {
   const [activePart, setActivePart] = useState(null);
-  const [text, setText] = useState(() => captionOf(draft));
+  const [text, setText] = useState(() => instagramCaptionText(draft));
   // 밖에서 원고가 바뀌었을 때(재생성 등)만 입력 내용을 다시 맞춘다 — 입력 중의 빈 줄·공백은 그대로 둔다
-  useEffect(() => { if (captionOf(parseCaption(text)) !== captionOf(draft)) setText(captionOf(draft)); }, [draft]);
+  useEffect(() => { if (instagramCaptionText(parseInstagramCaption(text, draft)) !== instagramCaptionText(draft)) setText(instagramCaptionText(draft)); }, [draft]);
   const edit = (value) => {
     setText(value);
-    const parsed = parseCaption(value);
+    const parsed = parseInstagramCaption(value, draft);
     changed((next) => { Object.assign(next, parsed); });
   };
   const paragraphs = draft.paragraphs || [];

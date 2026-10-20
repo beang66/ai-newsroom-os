@@ -67,6 +67,12 @@ export function focusStory(articles) {
     .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0] || null;
 }
 
+/** 아직 송고가 끝나지 않았거나 송고 뒤 수정되어 다시 송고해야 하는 저장 기사 */
+export function deliveryPendingArticles(articles) {
+  return articles.filter((item) => item.revision_no && item.state !== "published")
+    .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+}
+
 /** 서울 시각 날짜 "YYYY-MM-DD" */
 export const seoulDate = (value) => (value ? new Date(value).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }) : "");
 

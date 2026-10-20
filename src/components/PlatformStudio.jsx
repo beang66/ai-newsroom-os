@@ -11,8 +11,9 @@ import {
   Sliders,
   Sparkles,
 } from "lucide-react";
-import { freezeArticle, suggestPlatformKeywords, getStudioArticle, startPlatformRun, listPlatformRuns, getPlatformRun } from "../api/platform";
+import { freezeArticle, suggestPlatformKeywords, getStudioArticle, startPlatformRun, listPlatformRuns, getPlatformRun, uiError } from "../api/platform";
 import { saveLocalDraft, loadLocalDraft, toPlatformDraftSnapshot, fromPlatformDraftSnapshot } from "../api/platformDraftStorage.js";
+import { recordUtEvent } from "../api/editorial";
 
 import PlatformReview from "./PlatformReview.jsx";
 import PlatformCardEditor from "./PlatformCardEditor.jsx";
@@ -286,12 +287,19 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
     persist(drafts,cardNews,{selectedKeywords:next,requirements});
   };
 
+  // 사용자 테스트 기록: 코어에 닿기 전에 화면에서 막힌 시도. 코어가 거절한 요청(status 있음)은 코어가 이미 남긴다
+  const blocked = (task, reason) => {
+    if (reason?.status) return;
+    const code = typeof reason === "string" ? reason : reason?.utReason || (reason instanceof TypeError ? "NETWORK" : "OTHER");
+    void recordUtEvent({ event: "ui_blocked", task, reason_code: code });
+  };
+
   // 변환을 시작할 때 지금 글을 저장해 고정본으로 만든다. 한 생성 작업의 모든 결과는 같은 고정본을 쓴다.
   // 고정본을 만들지 못하면 중단한다. 저장 큐와 표시 중인 원문이 일치해야 한다.
   const freeze = async (allowMenuChange=false) => {
-    if(!sourceReady(applied,live.current.article))throw Error('생성 원문을 먼저 적용해 주세요. 원문 변경 후에는 재적용이 필요합니다.');
+    if(!sourceReady(applied,live.current.article))throw uiError('생성 원문을 먼저 적용해 주세요. 원문 변경 후에는 재적용이 필요합니다.','SOURCE_NOT_APPLIED');
     const frozen = await freezeArticle(article, {flush, strict:true});
-    if ((!mounted.current&&!allowMenuChange) || (mounted.current&&sourceText(article) !== sourceText(live.current.article))) throw Error("고정 중 기사가 변경됐습니다. 다시 실행해 주세요.");
+    if ((!mounted.current&&!allowMenuChange) || (mounted.current&&sourceText(article) !== sourceText(live.current.article))) throw uiError("고정 중 기사가 변경됐습니다. 다시 실행해 주세요.","SOURCE_CHANGED");
     if (frozen?.articleId && frozen.articleId !== article.articleId && setArticle) {
       setArticle((previous) => articleId(previous)!==articleId(article)||sourceText(previous)!==sourceText(article)?previous:({ ...previous, articleId: frozen.articleId }));
     }
@@ -302,6 +310,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
     if (pending.current) return;
     if (!article.title?.trim() || !article.content?.trim()) {
       setGenerationError("기사 제목과 본문을 먼저 작성해 주세요.");
+      blocked("platform_keywords", "MISSING_TITLE_BODY");
       return;
     }
     pending.current = true; setKeywordLoading(true); setRequestSource({title:article.title});
@@ -311,10 +320,11 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
       const source=sourceText(article);
       setRequestSource({title:frozen.article.title, snapshotId:frozen.snapshotId});
       const candidates = await suggestPlatformKeywords(frozen.article, frozen.snapshotId);
-      if(!mounted.current || source!==sourceText(live.current.article) || frozen.articleId!==articleId(live.current.article))throw Error("키워드 추천 중 원본이 변경됐습니다. 다시 추천해 주세요.");
+      if(!mounted.current || source!==sourceText(live.current.article) || frozen.articleId!==articleId(live.current.article))throw uiError("키워드 추천 중 원본이 변경됐습니다. 다시 추천해 주세요.","SOURCE_CHANGED");
       setKeywordCandidates(candidates);
       if (!candidates.length) setGenerationError("추천할 키워드를 찾지 못했습니다.");
     } catch (error) {
+      blocked("platform_keywords", error);
       if (mounted.current) setGenerationError(error.message || "키워드 추천에 실패했습니다.");
     } finally {
       pending.current = false; if (mounted.current) { setKeywordLoading(false); setRequestSource(null); }
@@ -325,8 +335,8 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   const runGeneration = async (only) => {
     if (pending.current) return;
     const list = Array.isArray(only) ? only : targets;
-    if (!article.title?.trim() || !article.content?.trim()) { setGenerationError('기사 제목과 본문을 먼저 작성해 주세요.'); return; }
-    if (!list.length) { setGenerationError('생성할 플랫폼 또는 카드뉴스를 선택해 주세요.'); return; }
+    if (!article.title?.trim() || !article.content?.trim()) { setGenerationError('기사 제목과 본문을 먼저 작성해 주세요.'); blocked('platform_run','MISSING_TITLE_BODY'); return; }
+    if (!list.length) { setGenerationError('생성할 플랫폼 또는 카드뉴스를 선택해 주세요.'); blocked('platform_run','NO_TARGET'); return; }
     pending.current=true;setGenerating(true);setMessage('');setGenerationError('');setRequestSource({title:article.title});
     setProgress(Object.fromEntries(list.map(target=>[target,'고정본 준비 중'])));
     const source=sourceText(article);
@@ -343,6 +353,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
       persistRef.current(live.current.drafts,live.current.cardNews);
       setRunSignal(value=>value+1);
     } catch(error) {
+      blocked('platform_run',error);
       if(mounted.current){setGenerationError(error.message||'생성 작업을 시작하지 못했습니다.');setGenerating(false);setRequestSource(null);setProgress({});}
     } finally { pending.current=false; }
   };

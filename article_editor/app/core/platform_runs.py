@@ -5,6 +5,7 @@ import datetime
 import json
 import os
 import threading
+import time
 import uuid
 
 from . import vault
@@ -178,6 +179,18 @@ def _render_cards(run, target, draft, manager):
             'draft': draft}
 
 
+def _record_target(manager, run, target, result, error, started):
+    """사용자 테스트 기록: 플랫폼 하나의 변환 결과(오류 문구·원고는 남기지 않는다)."""
+    events = getattr(manager, 'events', None)
+    if not events:
+        return
+    cards = ((result.get('draft') or {}).get('cards') or []) if target == 'card_news' else []
+    events.record('platform_target_finished', run_id=run['id'], article_id=run['article_id'], platform=target,
+                  status=result['status'], error_code=events.error_code(error) if error else None,
+                  cards_total=len(cards), cards_failed=sum(1 for card in cards if card.get('render_error')),
+                  duration_ms=int((time.monotonic() - started) * 1000))
+
+
 def _work(run_id, manager):
     try:
         run = get_run(run_id)
@@ -193,6 +206,7 @@ def _work(run_id, manager):
                 continue
             _update(run_id, status='running', active=target, target=target,
                     entry=entry if entry['status'] == 'rendering' else {'status': 'running'})
+            started, error = time.monotonic(), None
             try:
                 if entry['status'] == 'rendering' and target == 'card_news':
                     draft = entry['draft']
@@ -217,9 +231,10 @@ def _work(run_id, manager):
                 else:
                     result = {'status': 'succeeded', 'draft': draft}
                 _update(run_id, status='running', target=target, entry=result)
-            except Exception as error:
-                _update(run_id, status='running', target=target,
-                        entry={'status': 'failed', 'error': str(error)[:500]})
+            except Exception as failure:
+                error, result = failure, {'status': 'failed', 'error': str(failure)[:500]}
+                _update(run_id, status='running', target=target, entry=result)
+            _record_target(manager, run, target, result, error, started)
         _update(run_id, status='completed')
     except Exception:
         try:

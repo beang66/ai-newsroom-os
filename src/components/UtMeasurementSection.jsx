@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { deleteUtEvents, exportUtEvents, getSettings, getUtEvents, openExportFolder, saveSettings } from "../api/editorial";
+import { deleteUtEvents, exportUtEvents, getUtEvents, openExportFolder, setUtConsent } from "../api/editorial";
 
 // 사용자 테스트 기록: 동의 기반 선택 측정. 켜기·미리보기 후 내보내기·폴더 열기·기록 삭제만 다룬다.
+// 동의는 로그인한 계정마다 따로 저장된다 — 한 PC에서 참여자가 계정을 바꾸면 그 참여자가 다시 켜야 한다.
 export default function UtMeasurementSection() {
   const [enabled, setEnabled] = useState(null); // null = 아직 설정을 못 읽음
   const [status, setStatus] = useState(null);
@@ -10,22 +11,21 @@ export default function UtMeasurementSection() {
 
   useEffect(() => {
     const request = new AbortController();
-    getSettings(request.signal).then((s) => setEnabled(Boolean(s?.utMeasurement))).catch((e) => {
+    getUtEvents(request.signal).then((s) => { setStatus(s); setEnabled(Boolean(s?.enabled)); }).catch((e) => {
       if (!request.signal.aborted) setError(e?.message || String(e));
     });
-    getUtEvents(request.signal).then(setStatus).catch(() => {});
     return () => request.abort();
   }, []);
 
   const changeMeasurement = async (next) => {
-    if (next && !window.confirm("사용자 테스트 기록 v1을 켤까요? 기사 저장·다시 열기·파일 내보내기의 성공 여부와 시간만 이 PC의 암호화 저장소에 기록합니다. 원고·음성·이메일·검색어·파일명·경로는 기록하거나 전송하지 않습니다.")) return;
+    if (next && !window.confirm("사용자 테스트 기록 v2를 켤까요? 기사 저장·다시 열기·내보내기, 팩트체크·변환·발행 같은 작업의 성공/실패 종류와 시간, 플랫폼별 변환 결과, 화면 이동만 이 PC의 암호화 저장소에 기록합니다. 원고·음성·이메일·검색어·파일명·경로·오류 문구는 기록하거나 전송하지 않습니다.")) return;
     const before = enabled;
     setError(""); setNotice("");
     setEnabled(next); // 바로 반영하고, 저장에 실패하면 되돌린다
     try {
-      const updated = await saveSettings({ utMeasurement: next });
-      setEnabled(Boolean(updated?.utMeasurement));
-      setStatus(await getUtEvents());
+      const updated = await setUtConsent(next);
+      setEnabled(Boolean(updated?.enabled));
+      setStatus(updated);
     } catch (e) { setEnabled(before); setError(e?.message || String(e)); }
   };
 
@@ -57,7 +57,7 @@ export default function UtMeasurementSection() {
           onChange={(event) => changeMeasurement(event.target.checked)} />
         선택 측정 켜기
       </label>
-      <p className="text-xs text-stone-500 leading-relaxed">v1 범위: 기사 저장·다시 열기·파일 내보내기의 결과와 처리 시간만 이 PC의 암호화 저장소에 최대 7일·10,000건 보관합니다. 원고·음성·개인정보·검색어·파일명·경로·토큰은 기록하지 않으며 외부 전송도 하지 않습니다.</p>
+      <p className="text-xs text-stone-500 leading-relaxed">v2 범위: 기사 저장·다시 열기·내보내기, 팩트체크·변환·발행 등 작업의 결과(오류 종류)와 처리 시간, 플랫폼별 변환 결과, 화면 이동만 이 PC의 암호화 저장소에 최대 7일·10,000건 보관합니다. 동의와 기록은 로그인한 계정마다 따로입니다. 원고·음성·개인정보·검색어·파일명·경로·토큰은 기록하지 않으며 외부 전송도 하지 않습니다.</p>
       <p className="text-xs text-stone-500">현재 {status?.count ?? 0}건{status?.dropped ? ` · 용량 제한으로 ${status.dropped}건 정리` : ""}</p>
       <div className="flex flex-wrap gap-2">
         <button type="button" data-testid="settings-export-ut-events" onClick={exportMeasurement} className={buttonClass}>미리보기 후 내보내기</button>

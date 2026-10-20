@@ -14,8 +14,8 @@ from app_paths import APP_DATA
 from ..errors import RequestError
 from .session_manager import SETTINGS, _settings
 
-FIELDS = {'cloudBackup': ('cloud_backup', True), 'localAi': ('local_ai', False),
-          'utMeasurement': ('ut_measurement', False)}  # 화면 이름 → (파일 키, 기본값)
+# 화면 이름 → (파일 키, 기본값). 사용자 테스트 기록 동의는 PC 공용이 아니라 계정별이라 여기 두지 않는다(ut_event_manager)
+FIELDS = {'cloudBackup': ('cloud_backup', True), 'localAi': ('local_ai', False)}
 
 
 class SettingsManager:
@@ -24,7 +24,7 @@ class SettingsManager:
         return {name: bool(saved.get(key, default)) for name, (key, default) in FIELDS.items()}
 
     def update(self, payload):
-        """payload: {cloudBackup?: bool, localAi?: bool, utMeasurement?: bool} — 준 항목만 바꾼다."""
+        """payload: {cloudBackup?: bool, localAi?: bool} — 준 항목만 바꾼다."""
         data = payload or {}
         changes = {}
         for name, (key, _) in FIELDS.items():

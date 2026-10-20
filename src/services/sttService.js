@@ -4,9 +4,9 @@
  * 데스크톱 앱에서도 같은 경로로 동작하고, 녹음·발언은 코어 암호화 저장소에만 남는다.
  */
 import { createTranscriptModel } from "../models/transcriptModel";
-import { transcribeAudio, analyzeInterview, listTranscripts, loadTranscript, saveSpeakerEdits, saveTranscriptNotes, deleteTranscript, renameTranscript } from "../api/editorial.js";
+import { transcribeAudio, analyzeInterview, listTranscripts, loadTranscript, saveSpeakerEdits, saveTranscriptNotes, getTranscriptFolders, saveTranscriptFolders, deleteTranscript, renameTranscript } from "../api/editorial.js";
 
-export { saveSpeakerEdits, saveTranscriptNotes, deleteTranscript, renameTranscript };
+export { saveSpeakerEdits, saveTranscriptNotes, getTranscriptFolders, saveTranscriptFolders, deleteTranscript, renameTranscript };
 
 /**
  * 코어 암호화 저장소에 보관된 녹취를 삭제한다.

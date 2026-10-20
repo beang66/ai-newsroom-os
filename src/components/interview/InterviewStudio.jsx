@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript, saveSpeakerEdits, saveTranscriptNotes, deleteStoredTranscript, renameStoredTranscript } from "../../services/sttService";
+import { requestSTT, requestInterviewAnalysis, listStoredTranscripts, loadStoredTranscript, saveSpeakerEdits, saveTranscriptNotes, getTranscriptFolders, saveTranscriptFolders, deleteStoredTranscript, renameStoredTranscript } from "../../services/sttService";
 import { SpeakerEditBar, SpeakerProfileMenu } from "./SpeakerProfiles.jsx";
 import { BoxText, SelectionToolbar } from "./BoxTools.jsx";
+import TranscriptFolderTree from "./TranscriptFolderTree.jsx";
 import { readBoxSelection } from "../../lib/boxSelection.js";
 import { createSpectrumState, runSpectrum } from "../../lib/audioSpectrum.js";
+import { canMoveTranscriptFolder, moveTranscriptFolder, removeTranscriptFolder, transcriptFolderChildren } from "../../lib/transcriptFolders.js";
 
 // 내보내기 결과는 화면에 띄우지 않고 헤더의 종 모양 알림으로 보낸다(Header.jsx 가 "newsroom:alert" 를 받는다)
 const notifyHeader = (text, openKind) => window.dispatchEvent(new CustomEvent("newsroom:alert", { detail: { text, openKind } }));
@@ -112,7 +114,7 @@ function findBestEvidenceBox(allBoxes, queryText) {
   return bestBox;
 }
 
-export default function InterviewStudio({ onReturnToArticle, onSave }) {
+export default function InterviewStudio({ onReturnToArticle, onSave, accountId }) {
   // 1. 녹음 파일 및 인터뷰 상태
   const [audioUrl, setAudioUrl] = useState(null);
   // 저장된 전사를 다시 연 경우(원본 오디오 없음). 목록은 처음 펼칠 때 불러온다.
@@ -125,23 +127,9 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
   const [fileSize, setFileSize] = useState(0);
 
   // 1-1. STT 파일 보관함 폴더 및 드래그 앤 드롭 상태 관리
-  const [folders, setFolders] = useState(() => {
-    try {
-      const saved = localStorage.getItem("newsroom_stt_folders_v1");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [fileFolderMap, setFileFolderMap] = useState(() => {
-    try {
-      const saved = localStorage.getItem("newsroom_stt_file_folder_map_v1");
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [folders, setFolders] = useState([]);
+  const [fileFolderMap, setFileFolderMap] = useState({});
+  const [folderStateOwner, setFolderStateOwner] = useState(null);
 
   const [openFolders, setOpenFolders] = useState({});
   const [viewOnlyFolders, setViewOnlyFolders] = useState(false);
@@ -150,22 +138,46 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
   const [editingFolderId, setEditingFolderId] = useState(null);
   const [editingFolderName, setEditingFolderName] = useState("");
 
-  // localStorage 동기화
+  // 폴더 구조는 현재 계정의 Core 암호화 저장소에서 불러온다.
+  // 전역 localStorage를 쓰던 이전 버전 자료는 로그인한 첫 계정으로 한 번만 이전한다.
   useEffect(() => {
-    try {
-      localStorage.setItem("newsroom_stt_folders_v1", JSON.stringify(folders));
-    } catch {
-      // ignore
-    }
-  }, [folders]);
+    let cancelled = false;
+    const load = async () => {
+      let result = await getTranscriptFolders();
+      if ((result.folders?.length || 0) === 0 && Object.keys(result.fileFolderMap || {}).length === 0) {
+        try {
+          const legacyFolders = JSON.parse(localStorage.getItem("newsroom_stt_folders_v1") || "[]");
+          const legacyMap = JSON.parse(localStorage.getItem("newsroom_stt_file_folder_map_v1") || "{}");
+          if (Array.isArray(legacyFolders) && (legacyFolders.length || Object.keys(legacyMap || {}).length)) {
+            result = await saveTranscriptFolders(legacyFolders, legacyMap || {});
+            localStorage.removeItem("newsroom_stt_folders_v1");
+            localStorage.removeItem("newsroom_stt_file_folder_map_v1");
+          }
+        } catch {
+          // 손상된 레거시 값은 계정 저장소에 섞지 않는다.
+        }
+      }
+      if (cancelled) return;
+      setFolders(Array.isArray(result.folders) ? result.folders : []);
+      setFileFolderMap(result.fileFolderMap && typeof result.fileFolderMap === "object" ? result.fileFolderMap : {});
+      setOpenFolders({});
+      setFolderStateOwner(accountId || "signed-out");
+    };
+    load().catch(() => {
+      if (!cancelled) notifyHeader("폴더 구성을 불러오지 못했습니다. Core 연결을 확인해 주세요.");
+    });
+    return () => { cancelled = true; };
+  }, [accountId]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("newsroom_stt_file_folder_map_v1", JSON.stringify(fileFolderMap));
-    } catch {
-      // ignore
-    }
-  }, [fileFolderMap]);
+    if (folderStateOwner !== (accountId || "signed-out")) return undefined;
+    const timer = setTimeout(() => {
+      saveTranscriptFolders(folders, fileFolderMap).catch(() => {
+        notifyHeader("폴더 구성을 저장하지 못했습니다. 다시 시도해 주세요.");
+      });
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [folders, fileFolderMap, folderStateOwner, accountId]);
 
   // 컨텍스트 메뉴 닫기 핸들러
   useEffect(() => {
@@ -202,19 +214,14 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
     setEditingFolderName("");
   };
 
-  // 폴더 삭제 핸들러 (폴더 내 파일은 루트로 보존)
+  // 폴더 삭제 핸들러 (파일은 루트, 하위 폴더는 삭제한 폴더의 부모로 이동)
   const handleDeleteFolder = (e, folderId) => {
     e.stopPropagation();
     const folder = folders.find((f) => f.id === folderId);
     if (!window.confirm(`'${folder?.name || "폴더"}'을(를) 삭제하시겠습니까? (안에 있는 전사 파일은 보존됩니다)`)) return;
-    setFileFolderMap((prev) => {
-      const next = { ...prev };
-      Object.keys(next).forEach((fileId) => {
-        if (next[fileId] === folderId) delete next[fileId];
-      });
-      return next;
-    });
-    setFolders((prev) => prev.filter((f) => f.id !== folderId));
+    const next = removeTranscriptFolder(folders, fileFolderMap, folderId);
+    setFolders(next.folders);
+    setFileFolderMap(next.fileFolderMap);
   };
 
   // 폴더 열림/접힘 토글
@@ -232,10 +239,8 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
       }));
       setOpenFolders((prev) => ({ ...prev, [targetFolderId]: true }));
     } else if (dragData.type === "folder") {
-      if (dragData.id === targetFolderId) return;
-      setFolders((prev) =>
-        prev.map((f) => (f.id === dragData.id ? { ...f, parentId: targetFolderId } : f))
-      );
+      if (!canMoveTranscriptFolder(folders, dragData.id, targetFolderId)) return;
+      setFolders((prev) => moveTranscriptFolder(prev, dragData.id, targetFolderId));
       setOpenFolders((prev) => ({ ...prev, [targetFolderId]: true }));
     }
     setDragOverFolderId(null);
@@ -249,6 +254,11 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
       delete next[fileId];
       return next;
     });
+  };
+
+  const handleMoveFolderToRoot = (e, folderId) => {
+    e.stopPropagation();
+    setFolders((prev) => moveTranscriptFolder(prev, folderId));
   };
 
   // 보관함 우클릭 핸들러
@@ -271,6 +281,12 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
         ...prev,
         items: prev.items.filter((i) => i.id !== item.id),
       }));
+      setFileFolderMap((prev) => {
+        if (!prev[item.id]) return prev;
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
       if (storedSource?.id === item.id || transcriptId === item.id) {
         setStoredSource(null);
         setTranscriptId(null);
@@ -504,7 +520,7 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
   };
   const notesDirty = () => Boolean(transcriptId) && JSON.stringify(latestNotes.current) !== JSON.stringify(savedNotes.current);
   const saveNotesNow = async () => {
-    if (!transcriptId) return false;
+    if (!transcriptId) return true;
     const payload = latestNotes.current;
     setNotesSave("saving");
     try {
@@ -1127,6 +1143,33 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
     return storedItems.filter((item) => !fileFolderMap[item.id]);
   }, [storedItems, fileFolderMap]);
   const isSTTCompleted = hasSource && dialogues.length > 0;
+  const folderTreeContext = {
+    folders,
+    items: storedMenu.items,
+    fileFolderMap,
+    openFolders,
+    dragOverFolderId,
+    editingFolderId,
+    editingFolderName,
+    editingStoredId,
+    editingStoredTitle,
+    currentId: transcriptId || storedSource?.id,
+    setDragOverFolderId,
+    setEditingFolderId,
+    setEditingFolderName,
+    setEditingStoredTitle,
+    toggleFolder: toggleFolderOpen,
+    dropIntoFolder: handleDropIntoFolder,
+    deleteFolder: handleDeleteFolder,
+    moveFolderToRoot: handleMoveFolderToRoot,
+    saveRenameFolder: handleSaveRenameFolder,
+    openFile: openStoredTranscript,
+    startRenameFile: handleStartRenameStored,
+    saveRenameFile: handleSaveRenameStored,
+    cancelRenameFile: handleCancelRenameStored,
+    moveFileToRoot: handleMoveFileToRoot,
+    deleteFile: handleDeleteStoredTranscript,
+  };
 
   // 통합 텍스트 문단 렌더링 함수
   const renderUnifiedParagraphs = (keyPrefix = "unified") => {
@@ -1813,6 +1856,7 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
               try {
                 const data = JSON.parse(e.dataTransfer.getData("application/json"));
                 if (data?.type === "file") handleMoveFileToRoot(e, data.id);
+                if (data?.type === "folder") handleMoveFolderToRoot(e, data.id);
               } catch {
                 // ignore
               }
@@ -1902,10 +1946,11 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
             ) : (
               <>
                 {/* 2. 폴더 목록 렌더링 (아코디언 및 드롭 타깃) */}
-                {folders.map((folder) => {
+                {transcriptFolderChildren(folders).map((folder) => {
                   const isOver = dragOverFolderId === folder.id;
                   const isOpen = Boolean(openFolders[folder.id]);
                   const isEditingThis = editingFolderId === folder.id;
+                  const childFolders = transcriptFolderChildren(folders, folder.id);
                   const folderFiles = storedMenu.items.filter((item) => fileFolderMap[item.id] === folder.id);
 
                   return (
@@ -2013,7 +2058,8 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
                       {/* 폴더 내부 파일 목록 (열려있을 때 표시) */}
                       {isOpen && (
                         <ul className="mt-1 space-y-0.5 pl-2">
-                          {folderFiles.length === 0 ? (
+                          <TranscriptFolderTree context={folderTreeContext} parentId={folder.id} />
+                          {folderFiles.length === 0 && childFolders.length === 0 ? (
                             <li className="py-2 pl-7 text-[11px] text-slate-400 italic">
                               (파일을 드래그해서 이 폴더에 넣으세요)
                             </li>
@@ -2523,7 +2569,10 @@ export default function InterviewStudio({ onReturnToArticle, onSave }) {
           <div className="w-full h-16 bg-gradient-to-b from-white via-white/60 to-transparent pointer-events-none rounded-b-2xl border-b border-transparent" />
         </div>
       )}
-      {onSave && <SaveBar onSave={async () => { await saveNotesNow(); return onSave({ id: transcriptId || storedSource?.id, filename: fileName || storedSource?.filename || "녹취 파일" }); }} testId="interview-save" />}
+      {onSave && <SaveBar onSave={async () => {
+        if (!await saveNotesNow()) return false;
+        return onSave({ id: transcriptId || storedSource?.id, filename: fileName || storedSource?.filename || "녹취 파일" });
+      }} testId="interview-save" />}
       {leavePrompt && (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 p-4"

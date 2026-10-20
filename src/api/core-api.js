@@ -69,6 +69,10 @@ export const ROUTES = Object.freeze({
   transcriptNotes: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/notes",
   transcriptDelete: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/delete",
   transcriptRename: (id) => "/api/transcripts/" + encodeURIComponent(id) + "/rename",
+  transcriptFolders: "/api/transcript-folders",
+  localDraftStorage: "/api/local/storage",
+  localDrafts: "/api/local/drafts",
+  localDraft: (id) => "/api/local/drafts/" + encodeURIComponent(id),
   cmsPublish: "/api/cms/publish",
   vaultExport: "/api/vault/export",
   vaultRestore: "/api/vault/restore",
@@ -199,6 +203,15 @@ export function createCoreApi(transport) {
     saveTranscriptSpeakers: (id, speakerEdits, signal) => transport.json(ROUTES.transcriptSpeakers(id), { speakerEdits }, signal),
     /** 녹취 하나의 전체 메모·AI 요약·발언 메모를 통째로 저장한다(이 PC 의 암호화 저장소에만). */
     saveTranscriptNotes: (id, notes, signal) => transport.json(ROUTES.transcriptNotes(id), { notes }, signal),
+    /** 현재 계정의 녹취 폴더 트리. 새 계정은 빈 트리로 시작한다. */
+    getTranscriptFolders: (signal) => transport.json(ROUTES.transcriptFolders, null, signal),
+    saveTranscriptFolders: (folders, fileFolderMap, signal) =>
+      transport.json(ROUTES.transcriptFolders, { folders, fileFolderMap }, signal),
+    /** 플랫폼 편집 상태 전체를 현재 계정의 Core 암호화 저장소에 보관한다. */
+    saveLocalDraft: (draft, signal) => transport.json(ROUTES.localDrafts, { draft }, signal),
+    listLocalDrafts: (signal) => transport.json(ROUTES.localDrafts, null, signal),
+    loadLocalDraft: (id, signal) => transport.json(ROUTES.localDraft(id), null, signal),
+    getLocalDraftStorageInfo: (signal) => transport.json(ROUTES.localDraftStorage, null, signal),
     publishCms: (article, signal) => transport.json(ROUTES.cmsPublish, { article }, signal),
     exportVault: (password, signal) => transport.json(ROUTES.vaultExport, { password }, signal),
     restoreVault: (password, data, signal) => transport.json(ROUTES.vaultRestore, { password, data }, signal),

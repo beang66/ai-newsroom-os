@@ -18,9 +18,10 @@ def _digest(*parts):
 
 
 def model_version():
-    """판정을 한 모델. 로컬 판정을 끄고 외부 모델로 판정하면 따로 취급한다(서로의 기록을 쓰지 않는다)."""
+    """판정을 한 모델. 로컬 판정을 끄고 외부 모델로 판정하면 따로 취급한다(서로의 기록을 쓰지 않는다).
+    외부는 모델 이름·판정 지시 버전까지 붙여, 둘 중 하나가 바뀌면 예전 판정 기록을 쓰지 않는다."""
     from .managers.settings_manager import local_ai
-    suffix = '' if local_ai() else '+external'
+    suffix = '' if local_ai() else '+external' + _external_version()
     try:
         from .ai.factcheck.paths import settings
         return settings.model_id + suffix
@@ -45,8 +46,14 @@ def node_key(node, materials_fp, version):
                    sorted(node.get('linkedSourceIds') or []))
 
 
+def _external_version():
+    from .config import FACTCHECK_MODEL
+    from .ai.factcheck import external
+    return f":{FACTCHECK_MODEL}:{getattr(external, 'JUDGE_VERSION', '')}"
+
+
 def external_key(item):
-    return _digest('external-v1', item.get('claim'), item.get('evidence'), item.get('titles'))
+    return _digest('external-v1' + _external_version(), item.get('claim'), item.get('evidence'), item.get('titles'))
 
 
 def get_many(keys):

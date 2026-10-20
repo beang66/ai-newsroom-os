@@ -19,7 +19,10 @@ from ..storage import (create_snapshot as _create_snapshot, get_revision as _get
                        open_source as _open_source, restore_revision as _restore_revision, prune_legacy_revisions as _prune_legacy_revisions, save_article as _save_article, delete_article as _delete_article,
                        list_trash as _list_trash, restore_deleted as _restore_deleted,
                        source_file as _source_file, transcript_audio as _transcript_audio, save_speaker_edits as _save_speaker_edits,
-                       save_transcript_notes as _save_transcript_notes)
+                       save_transcript_notes as _save_transcript_notes, save_platform_draft as _save_platform_draft,
+                       list_platform_drafts as _list_platform_drafts, get_platform_draft as _get_platform_draft,
+                       platform_draft_storage_info as _platform_draft_storage_info,
+                       get_transcript_folders as _get_transcript_folders, save_transcript_folders as _save_transcript_folders)
 from .. import vault
 
 
@@ -200,6 +203,24 @@ class StorageManager:
 
     def save_transcript_notes(self, transcript_id, notes):
         return _save_transcript_notes(transcript_id, notes)
+
+    def save_platform_draft(self, data):
+        return guarded('platform_draft_save', _save_platform_draft, data)
+
+    def list_platform_drafts(self):
+        return _list_platform_drafts()
+
+    def get_platform_draft(self, draft_id):
+        return _get_platform_draft(draft_id)
+
+    def platform_draft_storage_info(self):
+        return _platform_draft_storage_info()
+
+    def get_transcript_folders(self):
+        return _get_transcript_folders()
+
+    def save_transcript_folders(self, data):
+        return guarded('transcript_folders_save', _save_transcript_folders, data)
 
     def delete_transcript(self, transcript_id):
         return _delete_transcript(transcript_id)

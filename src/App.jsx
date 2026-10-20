@@ -704,6 +704,8 @@ export default function App() {
                 {(hasVisitedInterview || activeTab === "interview") && (
                   <main className={`flex-1 pt-0 pb-7 px-5 md:px-10 min-w-0 transition-all z-20 ${activeTab === "interview" ? "" : "hidden"}`}>
                     <InterviewStudio
+                      key={`interview-${session?.userId || "signed-out"}`}
+                      accountId={session?.userId || ""}
                       onReturnToArticle={handleReturnFromInterview}
                       onSave={(source) => persistArticle((prev) => linkInterview(prev, source), { source })}
                     />

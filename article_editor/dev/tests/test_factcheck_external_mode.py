@@ -30,7 +30,8 @@ class ExternalModeTests(unittest.TestCase):
         external_version = factcheck_memo.model_version()
         self.set_local(True)
         self.assertTrue(settings_manager.local_ai())
-        self.assertEqual(factcheck_memo.model_version() + '+external', external_version)
+        self.assertTrue(external_version.startswith(factcheck_memo.model_version() + '+external:'))
+        self.assertIn(external.JUDGE_VERSION, external_version)  # 판정 모델·지시가 바뀌면 기록을 다시 쓰지 않는다
         with self.assertRaises(Exception):
             settings_manager.SettingsManager().update({'localAi': 'no'})
 
@@ -125,6 +126,12 @@ class ExternalModeTests(unittest.TestCase):
         self.assertEqual(retrieve.call_args[0][0], '수출기업 9월 지수')
         self.assertEqual((out['results'][0]['id'], out['results'][0]['verdict']), ('0', 'SUPPORTED'))
         self.assertEqual(again['results'][0]['verdict'], 'SUPPORTED', '마지막 판정을 기억한다')
+
+    def test_judge_uses_factcheck_model(self):
+        item = {'id': 'n1', 'claim': '매출은 30억원이다.', 'evidence': ['매출 20억원']}
+        with mock.patch.object(external, 'structured_call', return_value={'results': []}) as call:
+            external.judge({'items': [item]})
+        self.assertEqual(call.call_args.kwargs['model'], external.FACTCHECK_MODEL)
 
     def test_review_workspace_end_to_end_without_local_judge(self):
         materials = [{'id': 'a', 'title': '자료A', 'content': '2025년 매출은 20억원이다. 대표는 박씨다.'}]

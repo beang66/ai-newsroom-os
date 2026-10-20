@@ -87,6 +87,8 @@ export default function Header({
 
   return (
     <div className="newsroom-header w-full pl-6 md:pl-8 pr-6 md:pr-8 pt-3.5 pb-2">
+      {/* 저장 상태는 알림창 안에만 보이지만, 보조기기와 화면 시험이 읽을 수 있게 같은 문구를 화면 밖에 항상 둔다 */}
+      <span className="sr-only" role="status" data-testid="storage-status">{switching ? "현재 원고를 저장하고 작업을 전환합니다…" : storageStatus}</span>
       <header className="w-full flex items-center justify-between z-10 relative gap-3">
         
         {/* 1. Left Brand */}

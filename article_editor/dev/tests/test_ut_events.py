@@ -51,6 +51,22 @@ class UtEventTests(unittest.TestCase):
         self.assertFalse(self.events.record('article_persisted', title='x'))  # 허용 목록 밖 필드는 거부
         self.assertEqual(len(payloads()), 2)
 
+    def test_reopen_records_revision_but_archive_preview_is_not_a_reopen(self):
+        self.settings.update({'utMeasurement': True})
+        saved = self.save()
+        self.storage.get_article(saved['articleId'], record=False)  # 보관함 미리보기
+        self.assertEqual([row['event_name'] for row in payloads()], ['article_persisted'])
+        self.storage.get_article(saved['articleId'])  # 사용자가 연 최신 원고
+        reopened = payloads()[-1]
+        self.assertEqual((reopened['event_name'], reopened['revision_no']), ('article_reopened', saved['revisionNo']))
+
+    def test_preview_route_skips_reopen_record(self):
+        from core import api
+        with mock.patch.object(api.CORE, 'storage') as storage:
+            api._article(['', 'a' * 32], {'purpose': ['preview']})
+            api._article(['', 'a' * 32], {})
+        self.assertEqual([c.kwargs['record'] for c in storage.get_article.call_args_list], [False, True])
+
     def test_recording_failure_does_not_break_save(self):
         self.settings.update({'utMeasurement': True})
         with mock.patch.object(vault, 'backup_key', side_effect=RuntimeError('boom')):
@@ -74,7 +90,7 @@ class UtEventTests(unittest.TestCase):
 
     def test_diagnostics_folder_opens_but_rejects_screen_files(self):
         with tempfile.TemporaryDirectory() as temp, mock.patch.object(exports, 'EXPORT_DIR', Path(temp)), \
-                mock.patch.object(exports.os, 'startfile', create=True) as opened:
+                mock.patch.object(exports.subprocess, 'Popen') as opened:
             self.assertEqual(Path(exports.open_folder({'kind': 'diagnostics'})['folder']).name, '진단')
             opened.assert_called_once()
             with self.assertRaises(RequestError):

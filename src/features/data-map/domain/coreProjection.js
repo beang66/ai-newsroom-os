@@ -37,6 +37,13 @@ function node(id, kind, fields) {
 export function projectKnowledgeMap(payload) {
   if (!payload || !Array.isArray(payload.articles) || !Array.isArray(payload.sources) || !Array.isArray(payload.edges))
     throw new Error("Core knowledge-map 응답 형식이 올바르지 않습니다.");
+  const library = payload.library || {};
+  const trashed = new Set(Array.isArray(library.trashed) ? library.trashed : []);
+  const itemKey = (kind, id) => kind === "article" ? `article:${id.replaceAll("-", "")}`
+    : kind === "source" ? `source:${id}`
+      : kind === "audio" ? `audio:${id}`
+        : kind === "note" ? `note:${id}` : null;
+  const isTrashed = (kind, id) => trashed.has(itemKey(kind, id));
   const nodes = [];
   const byId = new Set();
   const add = (id, kind, fields) => {
@@ -44,7 +51,8 @@ export function projectKnowledgeMap(payload) {
     byId.add(id);
     nodes.push(node(id, kind, fields));
   };
-  for (const article of payload.articles)
+  for (const article of payload.articles) {
+    if (isTrashed("article", article.id)) continue;
     add(article.id, "article", {
       category: "article",
       label: article.title || "제목 없는 기사",
@@ -52,7 +60,9 @@ export function projectKnowledgeMap(payload) {
       updated: date(article.updated_at),
       articleId: article.id,
     });
+  }
   for (const source of payload.sources) {
+    if (isTrashed("source", source.id)) continue;
     const chars = Number.isFinite(source.chars) ? `${source.chars.toLocaleString("ko-KR")}자` : "";
     add(source.id, "source", {
       category: "data",
@@ -63,6 +73,7 @@ export function projectKnowledgeMap(payload) {
     });
   }
   for (const interview of Array.isArray(payload.interviews) ? payload.interviews : []) {
+    if (isTrashed("audio", interview.id)) continue;
     const minutes = Number.isFinite(interview.duration) ? `${Math.max(1, Math.round(interview.duration / 60))}분` : "";
     add(interview.id, "audio", {
       category: "interview",
@@ -72,7 +83,8 @@ export function projectKnowledgeMap(payload) {
       articleId: Array.isArray(interview.used_by) ? interview.used_by[0] || null : null,
     });
   }
-  const fileLinks = Array.isArray(payload.file_links) ? payload.file_links : [];
+  const fileLinks = (Array.isArray(payload.file_links) ? payload.file_links : [])
+    .filter((link) => !isTrashed("note", link.source) && !isTrashed("note", link.target));
   const outgoingById = new Map();
   const backlinksById = new Map();
   for (const link of fileLinks) {
@@ -83,7 +95,8 @@ export function projectKnowledgeMap(payload) {
       backlinksById.get(link.target).push(link);
     }
   }
-  for (const file of Array.isArray(payload.files) ? payload.files : [])
+  for (const file of Array.isArray(payload.files) ? payload.files : []) {
+    if (isTrashed("note", file.id)) continue;
     add(file.id, "note", {
       category: file.role || "note",
       label: file.title || file.path || "제목 없는 노트",
@@ -95,6 +108,7 @@ export function projectKnowledgeMap(payload) {
       outgoing: outgoingById.get(file.id) || [],
       backlinks: backlinksById.get(file.id) || [],
     });
+  }
   for (const missing of Array.isArray(payload.unresolved) ? payload.unresolved : [])
     add(missing.id, "note", {
       category: "missing",
@@ -106,6 +120,19 @@ export function projectKnowledgeMap(payload) {
       outgoing: [],
       backlinks: fileLinks.filter((link) => !link.resolved && link.target === missing.id),
     });
+  const aliases = library.aliases || {};
+  const tags = library.tags || {};
+  const folderItems = library.folderItems || {};
+  const favorites = new Set(library.favorites || []);
+  for (const item of nodes) {
+    const key = item.kind === "note" && item.placeholder ? null : itemKey(item.kind, item.id);
+    if (!key) continue;
+    item.itemKey = key;
+    item.label = aliases[key] || item.label;
+    item.tags = tags[key] || [];
+    item.folderIds = folderItems[key] || [];
+    item.favorite = favorites.has(key);
+  }
   const seen = new Set();
   const edges = [];
   for (const edge of payload.edges) {

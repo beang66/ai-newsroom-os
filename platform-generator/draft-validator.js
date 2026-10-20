@@ -20,6 +20,7 @@ const ThreadsTone=require('./lib/threads-tone');
 const { getPlatformRules } = require("./platform-rules");
 const { quoteContexts } = require('./lib/quote-context');
 const { serialize } = require('./lib/review-binding');
+const EditorialDirection=require('./lib/editorial-direction');
 // ============================================================
 // 1. 환경 변수 불러오기
 // ============================================================
@@ -489,6 +490,12 @@ async function validateDraft(input, options={}) {
   // 생성에 사용한 공통·플랫폼 규칙을 검수에도 직접 전달합니다.
   // ==========================================================
   async function runCheck(kind, instructions, alreadyDetected) {
+    const post=['instagram','threads'].includes(input.platform);
+    if(post){
+      instructions=instructions.replace('- 마무리는 명사구가 아닌 완전한 문장으로, 본문 설명을 받아 도입의 쟁점을 매듭지어야 합니다.','- 마무리는 적용 문체로 의미를 완결하고, 본문 설명을 받아 도입의 쟁점을 매듭지어야 합니다. 기본은 완전한 습니다체이며 사용자 명사체 요청에서는 명사형 종결을 허용합니다.')
+        .replace('- 도입·전환의 명사형 허용을 마무리에 적용하지 않습니다.','- 기본 문체에서는 도입·전환의 명사형 허용을 마무리에 적용하지 않지만, 사용자가 마무리 문체를 지정하면 우선합니다.');
+      instructions+='\n'+EditorialDirection.instructions(input.platform,input.requirements);
+    }
     const categories =
       kind === "fact" ? FACT_CATEGORIES : REQUIREMENT_CATEGORIES;
     const response = await client.responses.create({
@@ -537,7 +544,7 @@ ${instructions}
         platform: input.platform,
         article: input.article,
         selected_keywords: input.selected_keywords ?? [],
-        requirements: input.requirements ?? "",
+        requirements: post?EditorialDirection.resolve(input.platform,input.requirements).requirements:input.requirements ?? "",
         // 서비스 문구는 기사 사실 검수 입력에서 제외하되 다른 카드와 위치는 유지합니다.
         draft: kind==='fact'&&input.platform==='card_news'?{
           ...draft,
@@ -794,6 +801,6 @@ function validationContext(input) {
   const serialized = serialize({ platform: input.platform, article: input.article,
     selected_keywords: input.selected_keywords || [], requirements: input.requirements || '',
     rules: getPlatformRules(input.platform), draft: extractDraft(input.platform, input.draft),
-    context_version: 'quote-context-v1' });
+    context_version: ['instagram','threads'].includes(input.platform)?'quote-context-v1:'+EditorialDirection.version:'quote-context-v1' });
   return require('node:crypto').createHash('sha256').update(serialized, 'utf8').digest('hex');
 }

@@ -286,7 +286,6 @@ function PhotoEditorBody({ photo, onBack: onCancel, onApplyToArticle, onTrackDow
     const finished = s.drag.kind === "brush" || s.drag.kind === "erase";
     if (finished) s.drag.stroke.points.push(p);
     s.drag = null;
-    if (finished) setTool(null); // v30: 한 번 칠하면 도구가 풀린다
     paint();
     cursor(p);
   };

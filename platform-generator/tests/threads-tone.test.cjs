@@ -16,6 +16,31 @@ test('새 결과의 문제 문단만 한 번 교정하고 제목·정상 문단�
  const calls=[];const result=await load(async request=>{calls.push(request);if(calls.length===1)return response(original);assert.equal(request.text.format.name,'threads_tone_repair');const input=JSON.parse(request.input);assert.deepEqual(input.blocks.map(block=>block.index),[0]);return response({repairs:[{index:0,text:'지원 비율은 30%야.'}]});})('threads',{article,selected_keywords:[],requirements:''});
  assert.equal(calls.length,2);assert.equal(result.paragraphs[0],'지원 비율은 30%야.');assert.equal(result.paragraphs[1],original.summary_blocks[1].text);assert.equal(result.opening,'📰 '+original.title);assert.deepEqual(Array.from(result.hashtags),original.hashtags);assert.deepEqual(Array.from(result.source_evidence),[article.content]);assert.equal(result.validation_status,'not_checked');
 });
+test('첫 교정에서 말투가 남으면 그 문단과 문제 문장만 한 번 더 교정',async()=>{
+ const requests=[];
+ const result=await load(async request=>{
+  requests.push(request);
+  if(requests.length===1)return response(original);
+  if(requests.length===2)return response({repairs:[{index:0,text:'지원 비율은 30%다.'}]});
+  const next=JSON.parse(request.input);
+  assert.deepEqual(next.blocks.map(block=>block.index),[0]);
+  assert.match(next.blocks[0].problem_sentence,/30%다/);
+  return response({repairs:[{index:0,text:'지원 비율은 30%야.'}]});
+ })('threads',{article,selected_keywords:[]});
+ assert.equal(requests.length,3);
+ assert.equal(result.paragraphs[0],'지원 비율은 30%야.');
+ assert.equal(result.paragraphs[1],original.summary_blocks[1].text);
+});
+test('두 번 교정해도 말투가 남으면 해당 문단을 버리지 않고 편집 가능한 초안으로 반환',async()=>{
+ let calls=0;
+ const draft=await load(async()=>response(++calls===1?original:{repairs:[{index:0,text:'지원 비율은 30%다.'}]}))('threads',{article,selected_keywords:[]});
+ assert.equal(calls,3);
+ assert.equal(draft.tone_repair_status,'needs_edit');
+ assert.equal(draft.paragraphs[0],'지원 비율은 30%다.');
+ assert.equal(draft.paragraphs[1],original.summary_blocks[1].text);
+ assert.deepEqual(Array.from(draft.block_evidence.paragraphs[0]),[article.content]);
+ assert.equal(Tone.issues(draft.paragraphs).length,1);
+});
 test('정상 반말·지정 다체에는 교정 호출이 추가되지 않음',async()=>{
  for(const requirements of ['', '기사체로 작성']){let calls=0;const draft=structuredClone(original);if(!requirements)draft.summary_blocks[0].text='지원 비율은 30%야.';
  await load(async()=>{calls++;return response(draft);})('threads',{article,selected_keywords:[],requirements});assert.equal(calls,1);}
@@ -33,12 +58,12 @@ test('교정 문단의 반환 순서가 달라도 번호로 연결하고 제한�
 });
 
 test('교정 실패를 응답 원문 없이 필드별 코드로 구분',async()=>{
- for(const [repairs,code] of [[[],'REPAIR_COUNT'],[[{index:1,text:'높아.'}],'REPAIR_INDEX'],[[{index:0,text:''}],'REPAIR_EMPTY'],[[{index:0,text:'지원 비율은 20%야.'}],'NUMBER_CHANGED'],[[{index:0,text:'지원 비율은 30%다.'}],'TONE_REMAINS']]){
+ for(const [repairs,code] of [[[],'REPAIR_COUNT'],[[{index:1,text:'높아.'}],'REPAIR_INDEX'],[[{index:0,text:''}],'REPAIR_EMPTY'],[[{index:0,text:'지원 비율은 20%야.'}],'NUMBER_CHANGED']]){
   let calls=0;await assert.rejects(load(async()=>response(++calls===1?original:{repairs}))('threads',{article,selected_keywords:[]}),error=>error.message.includes(`[${code}]`));assert.equal(calls,2);
  }
 });
-test('교정 실패·누락·중복·잘못된 번호·수치 변경은 두 번 뒤 실패하고 원본 객체 보존',async()=>{
- for(const repairs of [[{index:0,text:'지원 비율은 30%다.'}],[],[null],[{index:1,text:'지원 비율은 30%야.'}],[{index:0,text:'지원 비율은 20%야.'}],[{index:0,text:'지원 비율은 30원이야.'}],[{index:0,text:'지원 비율은 30%야.'},{index:0,text:'중복이야.'}]]){
+test('교정 결과 누락·중복·잘못된 번호·수치 변경은 즉시 실패하고 원본 객체 보존',async()=>{
+ for(const repairs of [[],[null],[{index:1,text:'지원 비율은 30%야.'}],[{index:0,text:'지원 비율은 20%야.'}],[{index:0,text:'지원 비율은 30원이야.'}],[{index:0,text:'지원 비율은 30%야.'},{index:0,text:'중복이야.'}]]){
  let calls=0;await assert.rejects(load(async()=>response(++calls===1?original:{repairs}))('threads',{article,selected_keywords:[]}),/말투 교정/);assert.equal(calls,2);assert.equal(original.summary_blocks[0].text,'지원 비율은 30%다.');}
 });
 test('직접 인용을 변경한 말투 교정은 거부',async()=>{

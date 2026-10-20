@@ -16,10 +16,12 @@ import { modelStatus, installModels, cancelModelInstall, exportFiles, openExport
 import { core } from "../api/core.js";
 import SettingsDialog from "./SettingsDialog";
 import AiEngineSection from "./AiEngineSection";
+import UtMeasurementSection from "./UtMeasurementSection";
 import ExportNotice from "./ExportNotice";
 import TransferWizard from "./TransferWizard";
 import { restoreTransferFile } from "../lib/vaultTransfer";
 import { beginRestore, endRestore } from "../restoreState";
+import { droppedFiles, hasDroppedFiles } from "../lib/fileDrop.js";
 
 const MIN_BACKUP_PASSWORD = 12; // Core 가 요구하는 최소 길이와 같다
 
@@ -152,6 +154,7 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
   const [backupExport, setBackupExport] = useState(null); // 마지막 백업 저장 위치(내 문서\AI Newsroom\내보내기\백업)
   const [dialog, setDialog] = useState(null); // null | "settings" | "transfer"  (main 의 설정·이전 창)
   const restoreFileInput = useRef(null);
+  const [restoreDragging, setRestoreDragging] = useState(false);
 
   const showFeedback = (msg) => {
     setFeedbackMessage(msg);
@@ -178,10 +181,12 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
   };
 
   // 백업 복구: 파일을 고르면 암호를 확인하고 현재 계정의 자료를 그 백업으로 교체한다(교체 전 안전 복사본은 Core 가 남긴다).
-  const handleRestoreFile = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
+  const restoreBackupFile = async (file) => {
     if (!file || backupBusy) return;
+    if (!file.name.toLowerCase().endsWith(".db")) {
+      showFeedback("DB 백업 파일(.db)만 업로드할 수 있습니다.");
+      return;
+    }
     if (backupPassword.length < MIN_BACKUP_PASSWORD) {
       showFeedback("백업을 만들 때 쓴 암호(12자 이상)를 먼저 입력해주세요.");
       return;
@@ -197,6 +202,12 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
       showFeedback(error?.message || String(error));
       setBackupBusy(false);
     }
+  };
+
+  const handleRestoreFile = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    void restoreBackupFile(file);
   };
 
   // 활성 단계가 뷰포트 세로 중앙에 오도록 오프셋 계산
@@ -842,6 +853,32 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
                 <span>{backupBusy ? "처리 중…" : "암호화 백업 받기"}</span>
               </button>
 
+              <div
+                data-testid="backup-restore-dropzone"
+                className={`rounded-2xl border-2 border-dashed px-5 py-2.5 text-xs font-bold transition ${restoreDragging ? "border-sky-500 bg-sky-50 text-sky-800" : "border-stone-200 bg-white text-stone-500"}`}
+                onDragEnter={(event) => {
+                  if (!hasDroppedFiles(event)) return;
+                  event.preventDefault();
+                  setRestoreDragging(true);
+                }}
+                onDragOver={(event) => {
+                  if (!hasDroppedFiles(event)) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                  setRestoreDragging(true);
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) setRestoreDragging(false);
+                }}
+                onDrop={async (event) => {
+                  event.preventDefault();
+                  setRestoreDragging(false);
+                  const [file] = await droppedFiles(event.dataTransfer);
+                  void restoreBackupFile(file);
+                }}
+              >
+                .db 백업 파일 끌어놓기
+              </div>
               <input ref={restoreFileInput} type="file" accept=".db" className="hidden" data-testid="backup-restore-input" onChange={handleRestoreFile} />
               <button
                 type="button"
@@ -865,7 +902,7 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
           <div className="space-y-1">
             <h2 className="text-lg font-black text-stone-950 tracking-tight">계정·클라우드·이전</h2>
             <p className="text-xs text-stone-500 font-medium">
-              로그인 유지, 작성 중 기사의 클라우드 백업, 다른 PC로 이전, 진단 정보 복사를 한곳에서 설정합니다.
+              로그인 유지, 작성 중 기사의 클라우드 백업, 다른 PC로 이전, 진단 정보 복사, 사용자 테스트 기록을 한곳에서 설정합니다.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -895,6 +932,7 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
             </button>
           </div>
           <p className="text-xs text-stone-500">백업·카드뉴스·사진·녹취를 내보내면 내 문서\AI Newsroom\내보내기\종류별 폴더에 저장됩니다.</p>
+          <UtMeasurementSection />
         </section>
         <AiEngineSection />
       </div>

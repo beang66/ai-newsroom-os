@@ -40,6 +40,7 @@ export const ROUTES = Object.freeze({
   // version 없음 = 그 기사의 최신 원고 | "saved"(마지막 수동 저장본) | "published"(송고본, 사진은 참조로)
   article: (id, version) => "/api/articles/" + encodeURIComponent(id.replaceAll("-", ""))
     + (version ? "?version=" + encodeURIComponent(version) + "&photos=ref" : ""),
+  articlePreview: (id) => "/api/articles/" + encodeURIComponent(id.replaceAll("-", "")) + "?purpose=preview", // 보관함 미리보기 — '다시 열기'로 기록하지 않음
   articlesLatest: "/api/articles/latest?photos=ref", // 사진은 'media:<id>' 참조로 받고 바이트는 mediaBytes 로 따로
   media: (id) => "/api/media/" + encodeURIComponent(id),
   mediaAssets: "/api/media-assets",
@@ -76,6 +77,8 @@ export const ROUTES = Object.freeze({
   source: (id) => "/api/sources/" + encodeURIComponent(id),
   sourceDelete: (id) => "/api/sources/" + encodeURIComponent(id) + "/delete",
   knowledgeMap: "/api/knowledge-map",
+  library: "/api/library",
+  knowledgeFiles: "/api/knowledge-files",
   knowledgeFilesImport: "/api/knowledge-files/import",
   knowledgeFile: (id) => "/api/knowledge-files/" + encodeURIComponent(id),
   knowledgeFileDelete: (id) => "/api/knowledge-files/" + encodeURIComponent(id) + "/delete",
@@ -88,9 +91,16 @@ export const ROUTES = Object.freeze({
   dongaPhoto: (id) => "/api/donga/photo/" + encodeURIComponent(id),
   platformKeywords: "/api/platform/keywords",
   platformGenerate: "/api/platform/generate",
+  platformRuns: "/api/platform/runs",
+  platformRun: (id) => "/api/platform/runs/" + encodeURIComponent(id),
   platformRender: "/api/platform/render",
   platformValidate: "/api/platform/validate",
   platformSns: "/api/platform/sns",
+  shareArticle: (id) => "/api/shares/articles/" + encodeURIComponent(id.replaceAll("-", "")),
+  shareArticleStop: (id) => "/api/shares/articles/" + encodeURIComponent(id.replaceAll("-", "")) + "/stop",
+  sharesReceived: "/api/shares/received",
+  shareOpen: "/api/shares/open",
+  shareImport: "/api/shares/import",
 });
 
 /**
@@ -203,6 +213,10 @@ export function createCoreApi(transport) {
       transport.json(ROUTES.sourceDelete(sourceId), force ? { force: true } : {}, signal),
     /** 기사·자료·고정본과 실제 연결(읽기 모델) → { articles, sources, snapshots, entities, edges:[{source,target,relation}] } */
     getKnowledgeMap: (signal) => transport.json(ROUTES.knowledgeMap, null, signal),
+    /** 보관함의 폴더·태그·즐겨찾기·이름·휴지통 상태. */
+    getLibraryState: (signal) => transport.json(ROUTES.library, null, signal),
+    saveLibraryState: (state, signal) => transport.json(ROUTES.library, { state }, signal),
+    listKnowledgeFiles: (signal) => transport.json(ROUTES.knowledgeFiles, null, signal),
     /** Markdown 파일을 앱 관리 저장소로 가져오고 링크·백링크를 다시 색인한다. */
     importKnowledgeFiles: (payload, signal) => transport.json(ROUTES.knowledgeFilesImport, payload, signal),
     /** Markdown 파일 본문과 링크·백링크를 읽는다. */
@@ -229,11 +243,13 @@ export function createCoreApi(transport) {
     listArticles: (signal) => transport.json(ROUTES.articles, null, signal),
     /** 기사 하나 — version 없음(최신 원고) | "saved" | "published" → latestArticle 과 같은 모양 */
     getArticle: (id, version, signal) => transport.json(ROUTES.article(id, version), null, signal),
+    /** 보관함 미리보기용으로 최신 원고 읽기(getArticle 과 같은 모양). 사용자 테스트 기록의 '다시 열기'로 세지 않는다 */
+    previewArticle: (id, signal) => transport.json(ROUTES.articlePreview(id), null, signal),
     /** 원고의 저장 이력 목록(최신이 위) → { revisions: [{ revisionNo, id, createdAt, title, excerpt, chars, ... }] } */
     listRevisions: (articleId, signal) => transport.json(ROUTES.articleRevisions(articleId), null, signal),
     /** 저장 이력 한 건의 미리보기(읽기 전용) → { title, subtitle, content, ... } */
     getRevision: (articleId, revisionNo, signal) => transport.json(ROUTES.articleRevision(articleId, revisionNo), null, signal),
-    /** 보관소에서 기사 지우기 = 휴지통(30일 뒤 영구 삭제) → { deleted, articleId, purgeAt } */
+    /** 보관함에서 기사 지우기 = 휴지통(30일 뒤 영구 삭제) → { deleted, articleId, purgeAt } */
     deleteArticle: (articleId, signal) => transport.json(ROUTES.articleDelete(articleId), {}, signal),
     /** 휴지통 → { articles: [{ articleId, title, deletedAt, purgeAt }] } */
     listTrash: (signal) => transport.json(ROUTES.trash, null, signal),
@@ -243,6 +259,18 @@ export function createCoreApi(transport) {
     saveExport: (kind, files, { title, label } = {}, signal) => transport.json(ROUTES.exports, { kind, files, title, label }, signal),
     /** 내보내기 폴더를 파일 탐색기로 연다(kind 없으면 내보내기 전체) → { opened, folder } */
     openExportFolder: (kind, signal) => transport.json(ROUTES.exportsOpen, kind ? { kind } : {}, signal),
+    /** 이 기사의 공유 설정 → { shared:false } | { shared, shareId, link, generalAccess, linkRole, expiresAt, members:[{email, role}] } */
+    getArticleShare: (articleId, signal) => transport.json(ROUTES.shareArticle(articleId), null, signal),
+    /** 공유 만들기·설정 바꾸기. { generalAccess: restricted|link, linkRole/members[].role: viewer|importer, expiresInDays?: null|1|7|30, refresh?: 최신 저장본으로 다시 올리기 } */
+    saveArticleShare: (articleId, settings, signal) => transport.json(ROUTES.shareArticle(articleId), settings, signal),
+    /** 공유 중지(이미 가져간 복사본은 받는 사람에게 남는다) */
+    stopArticleShare: (articleId, signal) => transport.json(ROUTES.shareArticleStop(articleId), {}, signal),
+    /** 내 이메일로 초대된 공유 → { shares: [{ shareId, title, ownerEmail, role, updatedAt, expiresAt }] } */
+    listReceivedShares: (signal) => transport.json(ROUTES.sharesReceived, null, signal),
+    /** 공유 열기(읽기 전용). target: { shareId } | { link } → { share, article: { title, subtitle, bodyHtml } } */
+    openShare: (target, signal) => transport.json(ROUTES.shareOpen, target, signal),
+    /** 가져오기 권한이 있으면 내 보관함에 새 기사로 복사 → { articleId, title } */
+    importShare: (target, signal) => transport.json(ROUTES.shareImport, target, signal),
     /** 수동 저장 도입 전의 옛 자동 저장 이력 정리 → { deleted } */
     pruneLegacyRevisions: (articleId, signal) => transport.json(ROUTES.articlePruneLegacy(articleId), {}, signal),
     /** 옛 저장본을 새 최신 저장본으로 복원(이력은 지우지 않음) → { draft, revisionNo, fromRevision } */
@@ -279,6 +307,9 @@ export function createCoreApi(transport) {
     /** platform-generator 실제 생성 엔진 호출 */
     generatePlatform: (platform, payload, snapshotId, signal) =>
       transport.json(ROUTES.platformGenerate, snapshotId ? { platform, payload, snapshotId } : { platform, payload }, signal),
+    startPlatformRun: (payload, signal) => transport.json(ROUTES.platformRuns, payload, signal),
+    listPlatformRuns: (articleId, signal) => transport.json(ROUTES.platformRuns + '?articleId=' + encodeURIComponent(articleId), null, signal),
+    getPlatformRun: (id, signal) => transport.json(ROUTES.platformRun(id), null, signal),
     validatePlatform: (payload, snapshotId, signal) =>
       transport.json(ROUTES.platformValidate, { payload, ...(snapshotId ? { snapshotId } : {}) }, signal),
     platformSns: (platform, action, payload, articleId, snapshotId, signal) =>

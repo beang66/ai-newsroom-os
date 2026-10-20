@@ -32,12 +32,18 @@ MAX_K = 150
 RETRIEVAL_LABELS = {
     "exact": "Qwen3-Embedding-0.6B exact",
     "densefly-bm25-rrf": "DenseFly x2 (seed 101,307) + BM25 RRF",
+    "kc-band-bm25-rrf": "Mushroom-body KC x8 (input-expanded, number SimHash bands) + BM25 RRF",
+    "kc-band-table-ctx": "Table-row units, KC x8 value bands + BM25 RRF, number + context index, packed tables",
 }
+DEFAULT_MODE = "kc-band-table-ctx"
 
 
 def retrieval_mode() -> str:
-    """검색 방식의 단일 기준: 기본 densefly-bm25-rrf(버섯체 2개 + BM25 순위 융합), FACTCHECK_RETRIEVAL=exact 면 Qwen 코사인만."""
-    return "exact" if os.getenv("FACTCHECK_RETRIEVAL", "densefly-bm25-rrf") == "exact" else "densefly-bm25-rrf"
+    """검색 방식의 단일 기준: 기본 kc-band-table-ctx(표 행 단위 + 숫자·맥락 색인 + 가공 표, evidence_rank.py).
+    FACTCHECK_RETRIEVAL=kc-band-bm25-rrf 면 청크 단위 버섯체(kc_band.py), =exact 면 Qwen 코사인만,
+    =densefly-bm25-rrf 면 그 이전 방식. 모르는 값은 기본."""
+    mode = os.getenv("FACTCHECK_RETRIEVAL", DEFAULT_MODE)
+    return mode if mode in RETRIEVAL_LABELS else DEFAULT_MODE
 
 
 def query_input(text: str) -> str:
@@ -236,12 +242,33 @@ class ChunkIndex:
         self.texts = [str(row.get("text") or "") for row in chunks]
         self.vectors = (cache or get_vector_cache()).encode(self.texts, "document")
         self._fusion = None
+        self._kc = None
+        self._bm25 = None
+        self._units = None
+
+    def bm25(self):
+        if self._bm25 is None:
+            from .fusion import BM25
+            self._bm25 = BM25(self.texts)
+        return self._bm25
 
     def fusion_parts(self):
         if self._fusion is None:
-            from .fusion import BM25, SEEDS, doc_codes
-            self._fusion = (BM25(self.texts), {seed: doc_codes(self.vectors, seed) for seed in SEEDS})
+            from .fusion import SEEDS, doc_codes
+            self._fusion = (self.bm25(), {seed: doc_codes(self.vectors, seed) for seed in SEEDS})
         return self._fusion
+
+    def kc_index(self):
+        if self._kc is None:
+            from .kc_band import KCIndex
+            self._kc = KCIndex(self.texts, self.vectors)
+        return self._kc
+
+    def unit_index(self):
+        if self._units is None:
+            from .evidence_rank import UnitIndex
+            self._units = UnitIndex(self.chunks, self.vectors)
+        return self._units
 
 
 def rank_chunks(
@@ -251,11 +278,15 @@ def rank_chunks(
     limit: int = DEFAULT_K,
     cache: VectorCache | None = None,
     index: ChunkIndex | None = None,
+    query_vector: np.ndarray | None = None,
+    exclude: Iterable[str] = (),
 ) -> list[dict]:
     """Rank the caller-provided chunk scope.
 
-    기본: DenseFly x2 + BM25 RRF (fusion.py, 버섯체 연구 최적안). FACTCHECK_RETRIEVAL=exact 면 Qwen 코사인만.
-    retrieval_score 는 두 방식 모두 Qwen 코사인(판정 단계 호환용)이다."""
+    기본: 입력 확장 버섯체 + 숫자 밴드 + BM25 RRF (kc_band.py). FACTCHECK_RETRIEVAL=exact 면 Qwen 코사인만,
+    =densefly-bm25-rrf 면 이전 DenseFly x2 + BM25 RRF (fusion.py).
+    retrieval_score 는 두 방식 모두 Qwen 코사인(판정 단계 호환용)이다.
+    query_vector: 미리 만든 질의 벡터(판정기 재검색 요청문처럼 캐시에 남기지 않을 질의). exclude: 이미 보낸 후보 글(kc-band-table-ctx 만)."""
 
     if not chunks:
         return []
@@ -264,14 +295,31 @@ def rank_chunks(
     cache = cache or get_vector_cache()
     index = index or ChunkIndex(chunks, cache)  # index 를 받으면 문서 쪽 계산을 다시 하지 않는다
     texts, corpus_vectors = index.texts, index.vectors
-    query_vector = cache.encode([query], "query")[0]
+    if query_vector is None:
+        query_vector = cache.encode([query], "query")[0]
 
     scores = corpus_vectors @ query_vector
     engine = "qwen3-embedding-0.6b-exact"
-    if retrieval_mode() == "exact":
+    mode = retrieval_mode()
+    if mode == "kc-band-table-ctx":
+        # 후보 = 단위를 묶은 글(가공 표는 여러 행). 자료 정보·점수는 그 글의 첫 부모 청크 것.
+        ranked = []
+        for rank, (text, src) in enumerate(index.unit_index().candidates(query, query_vector, exclude)[:limit], 1):
+            first = min(src)
+            ranked.append({**chunks[first], "text": text, "retrieval_rank": rank,
+                           "retrieval_score": float(max(scores[i] for i in src)),
+                           "retrieval_engine": "qwen3-embedding-0.6b-kc8-table-ctx"})
+        return ranked
+    if mode == "exact":
         order = np.lexsort(
             (np.arange(len(chunks), dtype=np.int32), -scores)
         )
+    elif mode == "kc-band-bm25-rrf":
+        from .fusion import LIST_K
+        from .kc_band import fused_order as kc_fused_order
+        fused = kc_fused_order(query, query_vector, index.kc_index(), index.bm25(), k=max(limit, LIST_K))
+        order = np.asarray(fused, dtype=np.int64)
+        engine = "qwen3-embedding-0.6b-kc8-band-bm25-rrf"
     else:
         from .fusion import LIST_K, fused_order
         bm25, codes = index.fusion_parts()

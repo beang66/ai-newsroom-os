@@ -27,9 +27,13 @@ test('SNS 화면: Instagram·Threads 두 버튼·자동 직렬 조회·busy/pend
  try{
   vite=await createServer({root,cacheDir:path.join(root,'node_modules/.vite-ig-ui-test'),configFile:path.join(root,'vite.config.js'),server:{host:'127.0.0.1',port:0},plugins:[{name:'ig-ui-test',enforce:'pre',resolveId(source,importer){if(importer?.replaceAll('\\','/').includes('/src/components/')&&source.startsWith('../api/platform'))return '\0ig-api';},load(id){if(id==='\0ig-api')return mock;},configureServer(server){server.middlewares.use('/__ig-test',async(req,res)=>{res.setHeader('Content-Type','text/html');res.end(await server.transformIndexHtml('/__ig-test',html));});}}]});
   await vite.listen();browser=await chromium.launch({headless:true});const page=await browser.newPage(),errors=[];
-  page.setDefaultTimeout(12000);page.on('pageerror',error=>errors.push(error.message));await page.goto(vite.resolvedUrls.local[0]+'__ig-test');
+  page.setDefaultTimeout(12000);page.on('pageerror',error=>errors.push(error.message));await page.goto(vite.resolvedUrls.local[0]+'__ig-test',{waitUntil:'domcontentloaded',timeout:60000});
   const connection=page.getByTestId('instagram-connection-status');
   await page.getByTestId('instagram-connect').waitFor();
+  assert.equal(await page.getByTestId('cards-jpg-status').count(),0);
+  assert.equal(await page.getByTestId('cards-export').count(),0);
+  await page.getByText('02. Instagram 작성창 채우기').waitFor();
+  await page.getByText('03. 게시 준비 완료').waitFor();
   assert.equal(await page.getByRole('combobox').count(),0);assert.equal(await page.getByRole('button',{name:'전용 창 닫기',exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Instagram 작성창 채우기',exact:true}).count(),1);
   // 설치/로그인된 Chrome 여부를 확인하기 전에는 연결 완료로 표시하지 않는다.
@@ -69,6 +73,9 @@ test('SNS 화면: Instagram·Threads 두 버튼·자동 직렬 조회·busy/pend
   assert.equal(await page.evaluate(()=>window.igTest.calls.length),count);assert.equal(await page.evaluate(()=>window.igTest.max),1);
   await page.evaluate(()=>{window.setPlatform('threads');window.setVisible(true);});
   await page.getByRole('combobox',{name:'SNS 브라우저'}).waitFor();assert.equal(await page.getByRole('button',{name:'전용 창 닫기',exact:true}).count(),0);
+  assert.equal(await page.getByTestId('cards-jpg-status').count(),0);
+  assert.equal(await page.getByTestId('cards-export').count(),0);
+  await page.getByText('02. Threads 작성창 채우기').waitFor();
   assert.equal(await page.getByRole('button',{name:'Threads 로그인 연결',exact:true}).count(),1);
   assert.equal(await page.getByRole('button',{name:'Threads 작성창 채우기',exact:true}).count(),1);
   assert.equal(await page.getByRole('button',{name:'로그인 연결 확인',exact:true}).count(),0);

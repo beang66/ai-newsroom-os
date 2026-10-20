@@ -32,6 +32,19 @@ test('AI가 고른 비교형의 항목 수만 맞지 않으면 설명형으로 �
  assert.deepEqual(Array.from(draft.cards[1].source_evidence),[article.content]);
  assert.match(Model.layoutError(original.cards[1]),/비교형/,'저장·사용자 배치는 기존 검사에서 계속 오류 안내');
 });
+test('새 목록·단계형 카드의 항목 수 오류만 설명형으로 복구하고 문안·근거를 유지',()=>{
+ const {repairGeneratedLayouts}=require('../lib/generation-format');
+ for(const layout of ['list','steps'])for(const detail of ['한 문단으로 작성한 긴 설명입니다.','첫 항목\n둘째 항목\n셋째 항목\n넷째 항목\n다섯째 항목']){
+  const original=fixture();original.cards[1].design.layout=layout;original.cards[1].content.detail=detail;
+  const repaired=repairGeneratedLayouts(original);
+  assert.equal(repaired.cards[1].design.layout,'standard');
+  assert.equal(repaired.cards[1].content.detail,detail);
+  assert.deepEqual(repaired.cards[1].source_evidence,original.cards[1].source_evidence);
+  assert.equal(original.cards[1].design.layout,layout);
+  assert.match(Model.layoutError(original.cards[1]),/목록·단계형/);
+  assert.equal(Model.layoutError(repaired.cards[1]),'');
+ }
+});
 test('카드뉴스 생성·검수 프롬프트는 한국어 문장 품질을 일관되게 확인',async()=>{
  process.env.PLATFORM_LOCAL_STORAGE="1";
  const requests=[];
@@ -296,26 +309,26 @@ test('서버가 정보 ID를 연결해도 실제 문장 누락은 의미 검수�
  assert.match(draft.cards[1].content.detail,/평일 운영은 유지/);
  assert.equal(draft.generation_review.status,'passed');
 });
-test('목록형 상세 설명 오류는 교정 요청 후 재검사하고 반환',async()=>{
+test('목록형 상세 설명 오류는 추가 AI 호출 없이 설명형으로 복구하고 반환',async()=>{
  process.env.PLATFORM_LOCAL_STORAGE="1";
- let drafts=0,correction;
+ let drafts=0;
  class FakeAI{static apiKey='fixture';static model='fixture';responses={create:async r=>{
   let result;
   if(r.text.format.name.endsWith('_validation'))result={issues:[]};
   else if(r.text.format.name==='card_news_information_plan')result=planFixture();
   else{
-   drafts++;if(drafts===2)correction=r;
+   drafts++;
    result=fixture();result.cards.forEach((card,i)=>{card.covered_point_ids=i?['P1']:[];card.content.farewell='';});
    result.cards[1].design.layout='list';
-   result.cards[1].content.detail=drafts===1?'대상은 중앙·동부·서부 도서관입니다.':
-    '대상은 중앙·동부·서부 도서관입니다.\n평일 운영은 유지하며, 인력 배치 후 시행일을 확정할 예정입니다.';
+   result.cards[1].content.detail='대상은 중앙·동부·서부 도서관입니다.';
   }
   return {status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(result)}]}]};
  }};}
  const {generateCardNews}=loadWithAI('card-news-generator.js',FakeAI);
  const draft=await generateCardNews({article,selected_keywords:['도서관'],requirements:''});
- assert.equal(drafts,2);assert.match(correction.input,/2~4개 항목/);
- assert.equal(draft.cards[1].content.detail.split('\n').length,2);
+ assert.equal(drafts,1);
+ assert.equal(draft.cards[1].design.layout,'standard');
+ assert.equal(draft.cards[1].content.detail,'대상은 중앙·동부·서부 도서관입니다.');
  assert.equal(draft.generation_review.status,'passed');
 });
 test('이전 본문을 재작성하지 않고 새 필드·역할·숨긴 키워드를 보존',()=>{

@@ -1,4 +1,5 @@
 import { core } from "../api/core.js";
+import { normalizeSubtitleCandidate } from "../lib/subtitleCandidates.js";
 
 const unique = (values) => [...new Set(values.map((v) => String(v || "").trim()).filter(Boolean))];
 
@@ -43,11 +44,11 @@ export async function suggestSubtitles(html, currentHeadline = "") {
   const body = plainText(html);
   if (!body) throw new Error("본문을 먼저 작성해 주세요.");
   const result = await assist({ kind: "metadata", requested: "subheadline", body, current_headline: currentHeadline });
-  const asLines = (value) => String(value || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const asLines = (value) => normalizeSubtitleCandidate(value).split("\n").filter(Boolean);
   const items = (result.subtitle_candidates || []).map(asLines).filter((lines) => lines.length);
   const oneLinePerItem = items.length >= 2 && items.length <= 4 && items.every((lines) => lines.length === 1);
   const candidates = oneLinePerItem ? [items.flat().join("\n")] : items.map((lines) => lines.join("\n"));
-  return unique([asLines(result.subtitle).join("\n"), ...candidates]);
+  return unique([asLines(result.subtitle).join("\n"), ...candidates]).slice(0, 1);
 }
 
 /** 기사에 어울리는 스톡 사진 검색어(영어, 최대 6개).

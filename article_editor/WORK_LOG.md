@@ -7,6 +7,7 @@ GPT(Codex)로 작업하다 토큰 한도로 2026-09-30부터 Claude로 이어서
 
 - 예상과 다른 수정·추가 작업이 생기면 바로 멈추고 사용자에게 보고한 뒤, 진행 방법을 설명하고 사용자가 정하면 진행한다.
 - 결과는 VS Code가 아니라 채팅창(내장 브라우저 미리보기, 스크린샷)으로 바로 보여준다.
+- 오류 수정·검증 공유는 `docs/ERROR_TEST_REPORT_TEMPLATE.md` 형식을 사용한다. 각 항목에 `[TEST]`, `PASS/FAIL/BLOCKED`, `P0~P3`, `현상`, 단계별 `재현`, `기대`, `환경`을 빠짐없이 기록한다.
 
 ## 현재 상태 (2026-09-30 기준)
 
@@ -31,6 +32,11 @@ GPT(Codex)로 작업하다 토큰 한도로 2026-09-30부터 Claude로 이어서
 
 | 날짜 시각 | 작업자 | 내용 | 수정 파일 |
 |---|---|---|---|
+| 2026-10-19 | Codex | main 병합 후 다른 담당자의 변경을 다시 합칠 때 기사 편집 안정화 수정이 덮어써지지 않도록 팀원용 복사 프롬프트 작성. 보호 대상 동작·충돌 파일·재빌드·최소 회귀 테스트·비개발자용 오류 설명 형식을 명시. | docs/TEAM_POST_MERGE_PROTECTION_PROMPT.md, docs/2026-10-19_UI_RELIABILITY_FIXES.md, WORK_LOG.md |
+| 2026-10-19 | Codex | 사용자 지정 오류 공유 형식을 표준화. 이후 오류·검증 기록은 `[TEST] 항목명 \| 상태 \| 우선순위`와 현상·재현·기대·환경 구조로 작성하고, 미실행 외부 연동은 PASS가 아닌 BLOCKED로 구분하도록 규칙과 템플릿을 추가. | docs/ERROR_TEST_REPORT_TEMPLATE.md, WORK_LOG.md |
+| 2026-10-19 | Codex | AI 부제 추천을 완성형 묶음 1개로 제한. 원격 AI 요청 스키마도 후보 1개로 변경하고, AI가 ` / `를 줄 구분자로 반환하면 서버와 프런트 양쪽에서 실제 줄바꿈으로 교정. 중복되어 있던 실제 기사 작성용 `assistService` 경로까지 수정하고, 구형 3개 응답도 화면에서는 첫 묶음만 표시하도록 방어. Python 부제 테스트 11개, Node 73개, production build, 실제 Edge UI의 “3개 응답 → 1개 표시·3줄 적용” 회귀 테스트 통과. | app/core/ai/{router,subtitle_editorial}.py, src/lib/subtitleCandidates.js, src/services/assistService.js, src/api/editorial.js, dev/tests/{test_subtitle_style.py,ui-smoke-mine.mjs}, app/frontend/* |
+| 2026-10-19 | Codex | 최초 데스크톱 빈 화면 원인을 오래되거나 손상된 WebView2 사용자 프로필로 확인. 기존 프로필은 `%LOCALAPPDATA%\AI Newsroom\webview-backup-20261019-blank-screen-part1/2`로 보존하고 새 프로필로 셸 스모크 8개 통과 후 재실행. | 로컬 WebView2 사용자 데이터(저장소 코드 변경 없음) |
+| 2026-10-19 | Codex | 기사 작성 안정화: AI 추천 부제목 문구 수정, 최종 AI 교열이 52자를 넘을 때 검증된 부제 초안으로 복구, 미리보기 복귀 후 본문 복원, 사진을 맨 위·표시선 위치로 정확히 이동, 모자이크 도구 활성 유지(편집기 2경로), Unsplash `© 작가 / Unsplash` 복원, 영문 설명·파일명 자동 캡션 제거, 보관함 왼쪽 정렬·개별 삭제 아이콘. UI 테스트 중 빈 보관함의 `null.draft` 전체 빈 화면도 발견·수정. lint 0, 부제 테스트 9, Node 테스트 73, production build, 실제 Edge UI 전체 흐름 통과. 상세 기록: `docs/2026-10-19_UI_RELIABILITY_FIXES.md` | src/components/ArticleWriter.jsx, ArchiveView.jsx, PhotoEditorView.jsx, PhotoSideDrawer.jsx, photo/*, src/api/editorial.js, src/services/photoSearch.js, src/lib/photoMarks.js, src/workspace.css, app/core/ai/subtitle_editorial.py, dev/tests/*, app/frontend/* |
 | 2026-09-30 ~17:20 | GPT | KeT5+KoBART+OpenAI 제목·부제 생성 구현, 테스트 기록 작성 | server.py, index.html, model_tests/, HUGGINGFACE_HEADLINE_GUIDE.md |
 | 2026-09-30 | Claude | 프로젝트 현황 파악, 이 기록 파일 작성 (코드 수정 없음) | WORK_LOG.md |
 | 2026-09-30 | Claude | 확인: 8765 포트에 server.py가 3개 동시에 실행 중(16:31, 17:16, 17:20 시작). 오래된 서버가 요청을 받으면 최신 코드가 반영되지 않을 수 있음 → 사용자에게 보고 | - |
@@ -196,3 +202,4 @@ raw text/inline/BR을 드래그 시작 시 DIV로 묶어 첫 줄 위치 누락 �
 | 10-12 | main 병합(UI 가 루트 src/ 로 이동): 저장 두 갈래 — 자동 임시 저장(최근 작업본 한 칸 덮어쓰기, 가장 최근 원고만)과 수동 저장·송고(순서대로, 새 버전)를 한 줄로 세워 겹치지 않게. 작업 중 원고를 이 PC(IndexedDB)에 실시간 백업, 강제 종료 뒤 열면 복구 여부를 묻는다. 송고 = CMS 전송(main) 성공 뒤 송고본 기록. 상단 상태 작성 중/송고 완료/수정 중. 보관소는 main 화면에 원고/송고·'수정' 문구. 코어: replaceLatest·kind 함께, get_article 하나로(판 없음=최신), 고정본이 가리키는 작업본은 덮어쓰지 않음, SCHEMA_VERSION 3. ui-smoke 를 지금 화면(사진 넣기·AI 추천·수동 저장)에 맞춤 | src/App.jsx, components/{EditorialAssist,ArticleWriter,ArchiveView,Header}.jsx, lib/draftBackup.js, api/{core-api,editorial,platform}.js, app/core/{storage,vault,api}.py, managers/storage_manager.py, dev/tests/{ui-smoke.mjs,test_manual_save.py,test_publish.py} |
 | 10-12 | 보관소 기사 오른쪽 위 × = 삭제. 고정본은 지울 수 없게 설계돼 있어 '지움' 표시(article_deleted)로 보관소·이어서 작업·자료 사용처에서 빼고, 지운 기사에는 더 저장하지 않는다(늦은 자동 저장이 되살리지 않게). 지금 쓰던 기사를 지우면 새 기사로. 보관소 미리보기에서 사진 자리 줄 숨김. 부제 입력도 함수형 갱신(PR #40). SCHEMA_VERSION 4 | app/core/{storage,vault,api}.py, managers/storage_manager.py, src/{App.jsx,workspace.css}, components/{ArchiveView,ArticleWriter}.jsx, api/core-api.js, dev/tests/{test_article_delete.py,ui-smoke.mjs} |
 | 10-16 | PDF 자료 청킹을 글자 위치 기반으로: 색인 때 보관된 원본 PDF 를 pdfplumber 로 다시 읽어 표·그림·줄글을 블록으로 나누고(core/ai/factcheck/pdf_layout.py), 줄글은 문장 분리→경계 모델 묶기, 표는 캡션·단위·머리글 반복 행 묶음, 그림은 캡션+글자로 청킹(pdf_chunker.py). 업로드 때 보이는 텍스트는 그대로 pypdf(빠름). 손상·암호 PDF·pdfplumber 미설치면 기존 텍스트 청킹. 마침표 없는 개조식 문장 분리(semantic_chunker_v3). 청커 버전 올림 → 기존 자료 자동 재색인. 연구용 v2.4 와 27개 통계 PDF 블록·청크 완전 일치, 중립 시험지 B(117건) 근거 검색 Hit@5 현행 70→85%(표 62→80%, 줄글 100 유지) | core/ai/factcheck/pdf_layout.py, pdf_chunker.py, semantic_chunker_v3.py, core/source_index.py, requirements(pdfplumber), packaging spec(pdfminer cmap) |
+| 10-18 | 팩트체크 근거 검색 기본값을 `kc-band-bm25-rrf` 로 교체(`app/core/ai/factcheck/kc_band.py`). 입력 확장 버섯체(Qwen 임베딩 + 해시 tf-idf, 투영 8개·KC 2560·승자 10%) + 숫자 SimHash 밴드 토큰 + BM25 RRF. 연구 Real20 Hit@5 77.8(이전 DenseFly2+BM25 65.0), 앱 이식본(numpy 투영) 76.9. 이전 방식은 `FACTCHECK_RETRIEVAL=densefly-bm25-rrf`, 코사인만은 `=exact`. 후보 140청크 색인 약 3초, 질의 약 0.07초. 시험: dev/tests/test_kc_band.py, test_retrieval_label·test_chunk_index 갱신. |

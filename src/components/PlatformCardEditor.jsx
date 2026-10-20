@@ -6,6 +6,7 @@ import ExportNotice from "./ExportNotice.jsx";
 import {blobToDataUrl,photoDataUrl,renderStoredCard} from "../api/platform.js";
 import {articleId,fingerprint,invalidateDraft,renderKey,selectedCardPhoto,currentRender,sourceText} from "../lib/platformState.js";
 import {CardModel,CardTemplate} from "../lib/cardRuntime.js";
+import {droppedFiles,hasDroppedFiles} from "../lib/fileDrop.js";
 
 const button="rounded-xl border border-[#DDD6CB] bg-white px-3 py-2 text-xs font-bold text-[#292929] hover:bg-[#FAF8F5] disabled:opacity-50";
 const LAYOUT_LABEL={standard:"기본형",comparison:"비교형",list:"목록형",steps:"단계형",stat:"수치형"};
@@ -36,6 +37,7 @@ function CardPreview({card,index,total,photo,previewPhoto}){
 export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,preparing=false}) {
   const [activeIndex,setActiveIndex]=useState(0),[rendering,setRendering]=useState(false),[error,setError]=useState("");
   const [searching,setSearching]=useState(false),[editing,setEditing]=useState(null),[exported,setExported]=useState(null);
+  const [uploadDragging,setUploadDragging]=useState(false);
   const live=useRef({draft,article});useLayoutEffect(()=>{live.current={draft,article};},[draft,article]);
   const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const cards=Array.isArray(draft?.cards)?draft.cards:[],index=activeIndex<cards.length?activeIndex:0,active=cards[index];
@@ -78,14 +80,15 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
     if(action==='edit'){setEditing({photo:imported,cardId,articleKey:sourceKey});return;}
     onAddPhoto(imported,cardId);
   };
-  const upload=async event=>{
-    const file=event.target.files?.[0];event.target.value='';if(!file)return;
+  const uploadFile=async file=>{
+    if(!file)return;
     if(!/^image\/(jpeg|png|webp)$/.test(file.type)||file.size>15*1024*1024){setError("JPEG·PNG·WebP 사진 15MB 이하를 선택해 주세요.");return;}
     const cardId=active.card_id,sourceKey=articleKey(article);
     const url=await blobToDataUrl(file);
     if(articleKey(live.current.article)!==sourceKey){setError('업로드 중 기사가 바뀌었습니다. 다시 선택해 주세요.');return;}
     setEditing({photo:{id:'photo-'+crypto.randomUUID(),url,original:url,caption:file.name,source:'직접 업로드',provider:'upload'},cardId,articleKey:sourceKey});
   };
+  const upload=event=>{const file=event.target.files?.[0];event.target.value='';void uploadFile(file);};
   const editPhoto=async()=>{const sourceKey=articleKey(article),cardId=active.card_id;try{const url=await photoDataUrl(photo);if(articleKey(live.current.article)!==sourceKey)throw Error('사진을 불러오는 동안 기사가 바뀌었습니다.');setEditing({photo:{...photo,url},cardId,articleKey:sourceKey});}catch(e){setError(e.message);}};
   const modern=active.content_version===2||(active.content_version!==1&&(typeof content.answer==='string'||typeof content.detail==='string'));
   const rendered=cards.every(card=>card&&typeof card==='object')?currentRender(active,photo,draft):null;
@@ -111,12 +114,13 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
         {['keyword','headline',...(modern?['answer','detail']:['body']),'farewell'].map(key=><label className="block text-xs font-bold text-[#292929]" key={key}>{({keyword:'카드 키워드',headline:'카드 제목',answer:'핵심 문구',detail:'상세 설명',body:'카드 본문',farewell:'끝인사'})[key]}<textarea aria-label={key} rows={key==='detail'||key==='body'?4:2} className={FIELD} value={content[key]||''} onChange={e=>setField(key,e.target.value)}/></label>)}
         <label className="block text-xs font-bold text-[#292929]">정보 배치 <select aria-label="카드 정보 배치" className="mt-1.5 block w-full rounded-lg border border-[#DDD6CB] bg-white px-3 py-2 text-sm font-medium text-[#101010]" value={active.design?.layout||'standard'} onChange={e=>patch({design:{...active.design,layout:e.target.value}})}>{['standard','comparison','list','steps','stat'].map(value=><option key={value} value={value}>{LAYOUT_LABEL[value]||value}</option>)}</select></label>
         <details className="rounded-lg border border-[#EFECE6] px-3 py-2"><summary className="cursor-pointer text-xs font-bold text-[#57514A]">텍스트 위치 조정</summary>{['headline',...(modern?['answer','detail']:['body'])].map(field=><div className="flex gap-2 text-xs" key={field}>{field}{['x','y'].map(axis=><label key={axis}>{axis}<input type="number" min={axis==='x'?-1080:-1350} max={axis==='x'?1080:1350} aria-label={field+' '+axis} value={active.text_positions?.[field]?.[axis]||0} onChange={e=>patch({text_positions:{...active.text_positions,[field]:{...active.text_positions?.[field],[axis]:Number(e.target.value)}}})}/></label>)}</div>)}<button className={button} onClick={()=>patch({text_positions:{}})}>위치 초기화</button></details>
-        <div className="space-y-2 border-t border-[#F0EFEA] pt-4">
+        <div data-testid="card-photo-dropzone" onDragEnter={event=>{if(hasDroppedFiles(event)){event.preventDefault();setUploadDragging(true);}}} onDragOver={event=>{if(hasDroppedFiles(event)){event.preventDefault();event.dataTransfer.dropEffect='copy';}}} onDragLeave={event=>{if(!event.currentTarget.contains(event.relatedTarget))setUploadDragging(false);}} onDrop={async event=>{event.preventDefault();setUploadDragging(false);await uploadFile((await droppedFiles(event.dataTransfer))[0]);}} className={`space-y-2 border-t pt-4 rounded-xl transition ${uploadDragging?'border-slate-900 bg-slate-100 p-3 ring-2 ring-slate-300':'border-[#F0EFEA]'}`}>
           <p className="text-xs font-black text-[#101010]">이미지 첨부 <span className="font-normal text-[#B0AAA2]">카드 배경 적용</span></p>
           <div className="flex flex-wrap gap-2"><select aria-label="기사 사진 사용" className="min-w-0 flex-1 rounded-lg border border-[#DDD6CB] bg-white px-2 py-2 text-xs text-[#292929]" value={active.photoId||''} onChange={e=>patch({photoId:e.target.value,image:undefined})}><option value="">사진 없음</option>{(article.photos||[]).map(p=><option value={p.id} key={p.id}>{p.caption||p.source||p.id}</option>)}</select><button className={button} onClick={()=>setSearching(true)}>현재 카드 사진 찾기</button><label className={`${button} cursor-pointer`}>사진 업로드<input aria-label="카드 사진 업로드" className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={upload}/></label>{photo&&<button className={button} onClick={editPhoto}>사진 편집</button>}</div>
+          <p className="text-[11px] text-[#8E8982]">JPEG·PNG·WebP 파일을 이 영역에 끌어놓을 수 있습니다.</p>
           {photo&&<p className="text-[11px] text-[#8E8982]">사진 출처: {photo.source||photo.photographer||photo.provider||'출처 미입력'} {photo.sourceUrl&&<a className="underline" href={photo.sourceUrl} target="_blank" rel="noreferrer">원본 출처</a>}</p>}
         </div>
-        <section data-testid="card-image-section" className="border-t border-[#F0EFEA] pt-4"><button className={button} data-testid="card-image-make" disabled={rendering||preparing} onClick={makeImage}>{rendering?'이미지 생성 중…':'카드 이미지 만들기'}</button><p className="mt-2 text-[11px] text-[#8E8982]">{rendered?'현재 카드 이미지를 Core 암호화 보관소에 보관했습니다.':active.rendered_image?'카드·사진·위치가 변경됐습니다. 이미지를 다시 만들어 주세요.':'이미지를 만들어 암호화 보관소에 보관합니다. JPG 내보내기는 별도입니다.'}</p>{rendered&&<img data-testid="card-image-preview" src={rendered.uri} alt={`${content.headline||'카드'} 완성 이미지`} className="mt-2 max-w-[220px] rounded-lg"/>}</section>
+        <section data-testid="card-image-section" className="border-t border-[#F0EFEA] pt-4"><button className={button} data-testid="card-image-make" disabled={rendering||preparing} onClick={makeImage}>{rendering?'이미지 생성 중…':'카드 이미지 만들기'}</button><p className="mt-2 text-[11px] text-[#8E8982]">{rendered?'현재 카드 이미지를 Core 암호화 저장소에 보관했습니다.':active.rendered_image?'카드·사진·위치가 변경됐습니다. 이미지를 다시 만들어 주세요.':'이미지를 만들어 암호화 저장소에 보관합니다. JPG 내보내기는 별도입니다.'}</p>{rendered&&<img data-testid="card-image-preview" src={rendered.uri} alt={`${content.headline||'카드'} 완성 이미지`} className="mt-2 max-w-[220px] rounded-lg"/>}</section>
         {error&&<p role="alert" data-testid="card-image-error" className="text-xs text-rose-700">{error}</p>}
         <ExportNotice result={exported} kind="photos"/>
       </div>

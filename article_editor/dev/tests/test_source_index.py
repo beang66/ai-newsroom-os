@@ -244,7 +244,7 @@ class SourceIndexTests(unittest.TestCase):
             with mock.patch.object(material_chunks, 'chunk_document', side_effect=AssertionError('must reuse')):
                 reused = service._material_chunks(changed)
             self.assertEqual(encoded(expected), encoded(reused))
-        for mode in ('exact', 'densefly-bm25-rrf'):
+        for mode in ('exact', 'densefly-bm25-rrf', 'kc-band-bm25-rrf'):
             with mock.patch.dict('os.environ', {'FACTCHECK_RETRIEVAL': mode}):
                 self.assertEqual(encoded(retrieval.rank_chunks('Budget', first)),
                                  encoded(retrieval.rank_chunks('Budget', second)))

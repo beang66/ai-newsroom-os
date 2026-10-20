@@ -50,10 +50,10 @@ def _unsplash_photo(photo_id, track):
     except RequestError:raise
     except Exception:raise RequestError('사진을 가져오지 못했어요. 다시 시도해 주세요.',502)
 
-def _article(m, q):  # ?version=saved|published → 보관소 '수정'(그 판을 편집기로), 없으면 최신 작업본
+def _article(m, q):  # ?version=saved|published → 보관함 '수정'(그 판을 편집기로), 없으면 최신 작업본
     version=q.get('version',[''])[0]
     if version in ('saved','published'):return CORE.storage.get_article(m[1],version,photo_refs=q.get('photos')==['ref'])
-    return CORE.storage.get_article(m[1],photo_refs=True)
+    return CORE.storage.get_article(m[1],photo_refs=True,record=q.get('purpose')!=['preview'])  # 보관함 미리보기는 '다시 열기'가 아니다
 
 def _export(data):
     started=time.monotonic();result=exports.save(data)
@@ -72,12 +72,16 @@ GET_ROUTES = [(re.compile(p),f) for p,f in (
     ('/api/diagnostics', lambda m,q: support_report.report(CORE.models.status(),'local' if CORE.settings.get()['localAi'] else 'external',CORE.settings.get())),
     ('/api/ut-events', lambda m,q: CORE.events.preview()),
     ('/api/session', lambda m,q: CORE.session.status()),
+    ('/api/shares/received', lambda m,q: CORE.shares.received()),
+    ('/api/shares/articles/'+ARTICLE, lambda m,q: CORE.shares.get(m[1])),
     ('/api/factcheck/status', lambda m,q: CORE.ai.factcheck_status()),
     ('/api/models', lambda m,q: CORE.models.status()),
     ('/api/transcripts', lambda m,q: CORE.storage.list_transcripts()),
     ('/api/articles', lambda m,q: CORE.storage.list_articles()),
     ('/api/trash', lambda m,q: CORE.storage.list_trash()),
     ('/api/knowledge-map', lambda m,q: CORE.storage.knowledge_map()),
+    ('/api/library', lambda m,q: CORE.storage.library_state()),
+    ('/api/knowledge-files', lambda m,q: CORE.storage.list_knowledge_files()),
     ('/api/sources', lambda m,q: CORE.storage.list_sources()),
     ('/api/articles/latest', lambda m,q: CORE.storage.latest_article(photo_refs=q.get('photos')==['ref'])),
     ('/api/articles/'+ARTICLE, _article),
@@ -89,6 +93,8 @@ GET_ROUTES = [(re.compile(p),f) for p,f in (
     ('/api/media-assets/('+UUID+')', lambda m,q: CORE.storage.get_media_asset(m[1])),
     ('/api/media-assets/('+UUID+')/file', lambda m,q: CORE.storage.media_asset_file(m[1])),
     ('/api/jobs/('+UUID+')', lambda m,q: CORE.jobs.get(m[1])),
+    ('/api/platform/runs', lambda m,q: CORE.platform.list_runs(q.get('articleId',[''])[0])),
+    ('/api/platform/runs/('+UUID+')', lambda m,q: CORE.platform.get_run(m[1])),
     ('/api/knowledge-files/('+UUID+')', lambda m,q: CORE.storage.get_knowledge_file(m[1])),
     ('/api/transcripts/([a-f0-9]{32})', lambda m,q: CORE.storage.get_transcript(m[1])),
     ('/api/transcripts/([a-f0-9]{32})/audio', lambda m,q: CORE.storage.transcript_audio(m[1])),
@@ -114,6 +120,10 @@ POST_ROUTES = [(re.compile(p),f) for p,f in (
     ('/api/transfer/file', lambda m,d: CORE.transfer.make_file(d)),
     ('/api/transfer/file/delete', lambda m,d: CORE.transfer.delete_file()),
     ('/api/settings', lambda m,d: CORE.settings.update(d)),
+    ('/api/shares/articles/'+ARTICLE, lambda m,d: CORE.shares.save(m[1],d)),
+    ('/api/shares/articles/'+ARTICLE+'/stop', lambda m,d: CORE.shares.stop(m[1])),
+    ('/api/shares/open', lambda m,d: CORE.shares.open(d)),
+    ('/api/shares/import', lambda m,d: CORE.shares.import_article(d)),
     ('/api/ut-events/export', lambda m,d: CORE.events.export()),
     ('/api/ut-events/delete', lambda m,d: CORE.events.delete()),
     ('/api/models/install', lambda m,d: CORE.models.start_install(d)),
@@ -123,10 +133,12 @@ POST_ROUTES = [(re.compile(p),f) for p,f in (
     ('/api/vault/export', lambda m,d: CORE.storage.export_backup(d)),
     ('/api/vault/restore', lambda m,d: CORE.storage.restore_backup(d)),
     ('/api/platform/sns', lambda m,d: CORE.platform.sns(d)),
+    ('/api/platform/runs', lambda m,d: CORE.platform.start_run(d)),
     ('/api/cms/publish', lambda m,d: CORE.platform.publish(d)),
     ('/api/jobs/('+UUID+')/cancel', lambda m,d: CORE.jobs.cancel(m[1])),
     ('/api/media-assets', lambda m,d: CORE.storage.register_media_asset(d)),
     ('/api/knowledge-files/import', lambda m,d: CORE.storage.import_knowledge_files(d)),
+    ('/api/library', lambda m,d: CORE.storage.save_library_state(d)),
     ('/api/knowledge-files/('+UUID+')/delete', lambda m,d: CORE.storage.delete_knowledge_file(m[1])),
     ('/api/sources/'+SOURCE+'/delete', lambda m,d: CORE.storage.delete_source(m[1],d)),
     ('/api/articles/'+ARTICLE+r'/revisions/(\d{1,6})/restore', lambda m,d: CORE.storage.restore_revision(m[1],int(m[2]))),

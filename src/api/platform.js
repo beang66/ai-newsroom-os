@@ -14,6 +14,10 @@ const cleanArticle = (article = {}) => ({
   content: typeof article.content === "string" ? article.content : "",
 });
 
+export const startPlatformRun = payload => core.startPlatformRun(payload);
+export const listPlatformRuns = articleIdValue => core.listPlatformRuns(articleIdValue);
+export const getPlatformRun = runId => core.getPlatformRun(runId);
+
 // 편집실 목록·미리보기: 기존 Core API와 공개된 팀 본문/사진 복원기를 재사용한다.
 export async function listStudioArticles(signal) {
   const result=await core.listArticles(signal);
@@ -24,7 +28,7 @@ export async function listStudioArticles(signal) {
   });
 }
 export async function getStudioArticle(id, signal) {
-  const response=await core.getArticle(id,undefined,signal);
+  const response=await core.previewArticle(id,signal);
   const raw=response?.draft;
   if(!raw||typeof raw.articleId!=="string")throw Error("기사가 삭제되었거나 조회되지 않습니다.");
   const loaded=await loadStoredArticle(id,{},signal);
@@ -143,7 +147,7 @@ export async function renderStoredCard(card, article, draft) {
 async function assetBytes(rendered) {
   const asset=rendered.object_ref?rendered:await core.getMediaAsset(rendered.id);
   const media=/^media:([a-f0-9]{32})$/.exec(asset?.object_ref||'');
-  if(!media)throw Error('암호화 보관소의 이미지 참조를 확인하지 못했습니다. 다시 렌더해 주세요.');
+  if(!media)throw Error('암호화 저장소의 이미지 참조를 확인하지 못했습니다. 다시 렌더해 주세요.');
   return core.mediaBytes(media[1]);
 }
 export async function storedJpg(rendered) {

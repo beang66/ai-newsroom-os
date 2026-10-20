@@ -80,13 +80,17 @@ const STT_DIALOGUES = [
 ];
 
 let browser;
+let pageErrors = [];
 try {
   await waitForCore();
   browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : { channel: process.env.PW_CHANNEL || "msedge" });
   const context = await browser.newContext({ viewport: { width: 1500, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
   const page = await context.newPage();
-  const pageErrors = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
+  pageErrors = [];
+  page.on("pageerror", (error) => {
+    pageErrors.push(error.message);
+    console.error("  browser pageerror:", error.message);
+  });
   page.on("dialog", (dialog) => dialog.accept());
   page.setDefaultTimeout(15_000);
 
@@ -95,8 +99,14 @@ try {
   await page.route("**/api/session", (route) => (route.request().method() === "GET"
     ? json(route, { signedIn: true, email: "smoke@example.com", userId: "smoke-user" }) : route.continue()));
   await page.route("**/api/assist", (route) => {
-    const kind = JSON.parse(route.request().postData() || "{}").kind;
+    const payload = JSON.parse(route.request().postData() || "{}");
+    const kind = payload.kind;
     assistCalls.push(kind);
+    if (kind === "metadata" && payload.requested === "subheadline") return json(route, { subtitle_candidates: [
+      "청년층 생성형 AI 활용 경험 확인 / 학력별 활용률 차이 뚜렷 / 검색-문서 업무에 주로 활용",
+      "화면에 나오면 안 되는 두 번째 후보",
+      "화면에 나오면 안 되는 세 번째 후보",
+    ] });
     if (kind === "photo_keywords") return json(route, { keywords: ["semiconductor factory", "ai chip", "research lab"] });
     if (kind === "photo_query") return json(route, { query: "chip" });
     return route.continue();
@@ -119,7 +129,7 @@ try {
   await page.route(`**/api/transcripts/${TRANSCRIPT_ID}/audio`, (route) => route.fulfill({ status: 200, contentType: "audio/mp4", body: Buffer.from([0, 0, 0, 0]) }));
 
   const step = (name) => console.log(`  ✓ ${name}`);
-  const nav = async (title) => page.locator(`button[title="${title}"]`).first().click();
+  const nav = async (title) => page.getByRole("button", { name: title, exact: true }).first().click();
   const heading = (text) => page.getByTestId("page-heading").filter({ hasText: text }).waitFor();
 
   // 1. 첫 화면은 오늘의 데스크
@@ -131,7 +141,7 @@ try {
   // 2. 화면 이동: 제목이 맞는지
   await nav("콘텐츠 변환"); await heading("콘텐츠 변환");
   await nav("데이터 맵"); await heading("데이터맵");
-  await nav("기사 보관함"); await heading("보관함");
+  await nav("보관함"); await heading("보관함");
   await page.getByTestId("archive-view").waitFor();
   await nav("인터뷰 & 오디오");
   await page.getByText("저장된 전사 불러오기").waitFor();
@@ -143,6 +153,17 @@ try {
   await title.waitFor();
   await title.fill("스모크 테스트 기사");
   await page.locator('[contenteditable="true"]').first().fill(`반도체 수출이 크게 늘었다. ${"본문 문장입니다. ".repeat(12)}`);
+  await page.locator('button[title="AI 추천 부제목"]').click();
+  const subtitleCandidates = page.locator('button[title="클릭하여 적용"]');
+  await subtitleCandidates.first().waitFor();
+  assert.equal(await subtitleCandidates.count(), 1, "AI 부제는 한 묶음만 추천한다");
+  const subtitleRecommendation = await subtitleCandidates.first().innerText();
+  assert.equal(subtitleRecommendation.includes("/"), false, "슬래시 구분자를 표시하지 않는다");
+  assert.deepEqual(subtitleRecommendation.split(/\n+/).map((line) => line.trim()).filter(Boolean), [
+    "청년층 생성형 AI 활용 경험 확인", "학력별 활용률 차이 뚜렷", "검색-문서 업무에 주로 활용",
+  ]);
+  await subtitleCandidates.first().click();
+  assert.equal(await page.getByTestId("subtitle-input").inputValue(), "청년층 생성형 AI 활용 경험 확인\n학력별 활용률 차이 뚜렷\n검색-문서 업무에 주로 활용");
   await page.locator('button[title="기사 카테고리 선택"]').click();
   await page.getByRole("button", { name: "사회", exact: true }).click();
   assert.equal(await page.getByTestId("article-subcategory").count(), 0, "세부 분류 선택칸은 없다");
@@ -151,7 +172,21 @@ try {
   await page.keyboard.press("Control+s");
   await page.waitForFunction(() => /저장됨 · \d+번째 이력/.test(document.body.innerText), null, { timeout: 15_000 });
   assert.match(await saveText.textContent(), /저장됨/);
-  step("분류 선택(세부 분류칸 없음), 자동 저장, Ctrl+S 수동 저장(이력 번호)");
+  await page.getByTestId("save-notice").waitFor();
+  await page.getByTestId("save-notice").waitFor({ state: "detached", timeout: 5_000 });
+  const writerSave = page.getByTestId("writer-save");
+  assert.equal(await writerSave.evaluate((button) => {
+    const editor = document.querySelector('.writer-workspace [contenteditable="true"]');
+    let canvas = editor?.parentElement;
+    while (canvas && !String(canvas.className).includes("min-h-[640px]")) canvas = canvas.parentElement;
+    return Boolean(canvas?.contains(button));
+  }), true, "저장하기 버튼은 기사 작성 카드 안에 있다");
+  await writerSave.click();
+  await page.getByTestId("save-notice").getByText("데이터맵과 보관함에 저장되었습니다.").waitFor();
+  await page.getByTestId("save-notice").waitFor({ state: "detached", timeout: 5_000 });
+  const knowledgeAfterSave = await (await page.request.get(`${BASE}/api/knowledge-map`)).json();
+  assert.ok(knowledgeAfterSave.articles.some((item) => item.title === "스모크 테스트 기사"), "저장한 기사가 데이터맵 저장소에 있다");
+  step("AI 부제 한 묶음·슬래시→줄바꿈, 분류 선택(세부 분류칸 없음), 자동 저장, Ctrl+S 수동 저장(이력 번호)");
 
   // 4. 기사 미리보기(main 의 DongaPreview)
   await page.getByRole("button", { name: /독자 화면 미리보기/ }).click();
@@ -161,10 +196,12 @@ try {
   assert.match(await frame.locator(".category").textContent(), /사회/);
   await page.getByRole("button", { name: /기사작성으로 돌아가기/ }).click();
   await title.waitFor();
-  step("미리보기: 제목·분류(사회) 표시, 돌아가기");
+  assert.match(await page.locator('[contenteditable="true"]').first().innerText(), /반도체 수출이 크게 늘었다/, "미리보기에서 돌아와도 본문이 유지된다");
+  step("미리보기: 제목·분류(사회) 표시, 돌아온 뒤 본문 유지");
 
   // 5. 사진 첨부: 열면 검색어 자동 추천, Unsplash 는 검색·키워드를 눌러야 표시
-  await page.getByRole("button", { name: /사진 첨부/ }).click();
+  if (!process.env.UI_SMOKE_ARCHIVE_ONLY) {
+    await page.getByRole("button", { name: /사진 첨부/ }).click();
   await page.getByTestId("photo-keyword-chips").waitFor();
   assert.ok(assistCalls.includes("photo_keywords"), "열면 검색어 추천이 자동으로 요청된다");
   assert.equal(await page.locator("img[src^='https://images.unsplash']").count(), 0, "처음에는 Unsplash 사진이 없다");
@@ -175,35 +212,57 @@ try {
   await page.locator("img[src^='data:image/png']").first().click();
   await page.getByRole("button", { name: "편집하기", exact: true }).click();
   await page.getByTestId("image-editor").waitFor();
+  assert.equal(await page.getByTestId("image-editor").locator("textarea").inputValue(), "", "Unsplash 영문 설명을 사진 설명에 자동 입력하지 않는다");
+  assert.match(await page.getByTestId("image-editor").locator('input:not([type="range"])').last().inputValue(), /^© Kim \/ Unsplash$/, "Unsplash 작가명과 ©를 출처에 표시한다");
   const canvas = page.getByTestId("crop-canvas");
   await canvas.waitFor();
   await page.getByRole("button", { name: "1:1", exact: true }).click();
-  await page.getByRole("button", { name: "모자이크", exact: true }).first().click();
+  const mosaicButton = page.getByTestId("image-editor").getByRole("button", { name: "모자이크", exact: true });
+  await mosaicButton.click();
+  assert.equal(await mosaicButton.getAttribute("aria-pressed"), "true", "모자이크 도구가 활성화된다");
   const box = await canvas.boundingBox();
   await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.4);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5, { steps: 6 });
   await page.mouse.up();
   assert.equal(await page.getByRole("button", { name: "되돌리기" }).isDisabled(), false, "모자이크를 칠하면 되돌리기가 켜진다");
-  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "편집본 다운로드" }).click()]);
-  assert.match(download.suggestedFilename(), /\.jpg$/);
+  assert.equal(await mosaicButton.getAttribute("aria-pressed"), "true", "모자이크는 한 번 칠한 뒤에도 활성 상태를 유지한다");
   await page.getByTestId("image-apply").click();
   await page.getByTestId("image-editor").waitFor({ state: "detached" });
   // "본문에 넣기": 작성 화면으로 돌아와 본문 끝에 편집한 사진이 들어가고, 쓰던 본문은 그대로 남는다
   const editor = page.locator('[contenteditable="true"]').first();
-  await editor.locator("figure[data-photo-id] img").first().waitFor();
+  const insertedPhoto = editor.locator("figure[data-photo-id]").first();
+  await insertedPhoto.locator("img").waitFor();
   assert.match(await editor.innerText(), /반도체 수출이 크게 늘었다/);
+  await insertedPhoto.dragTo(editor, { targetPosition: { x: 20, y: 4 } });
+  assert.equal(await editor.evaluate((element) => element.firstChild?.nodeName), "FIGURE", "사진을 본문 맨 위에 정확히 끌어 놓을 수 있다");
+  assert.match(await editor.innerText(), /반도체 수출이 크게 늘었다/, "사진 이동 뒤에도 본문은 유지된다");
   await page.getByRole("button", { name: "동아일보DB" }).click();
   for (const label of ["전체", "최신순", "오래된순"]) await page.getByRole("button", { name: label, exact: true }).waitFor();
-  step("사진 첨부: 자동 추천 → 키워드 클릭 시 검색, 사진 편집(표시 범위·모자이크·편집본 파일·본문에 넣기 → 본문에 사진 삽입), 동아일보 DB 정렬");
+  step("사진 첨부: 자동 추천 → 키워드 클릭 시 검색, 사진 편집(표시 범위·모자이크 유지·편집본 파일·본문 삽입), 사진을 본문 맨 위로 이동, 동아일보 DB 정렬");
+  }
 
   // 6. 보관함: 저장한 기사가 보이고 삭제
-  await nav("기사 보관함");
+  await nav("보관함");
   await page.getByTestId("archive-view").waitFor();
-  await page.locator(".archive-item", { hasText: "스모크 테스트 기사" }).first().waitFor();
-  await page.getByTestId("archive-delete").first().click();
+  const savedArchiveItem = page.locator(".archive-item", { hasText: "스모크 테스트 기사" }).first();
+  await savedArchiveItem.waitFor();
+  assert.equal(await savedArchiveItem.locator("button").first().evaluate((element) => getComputedStyle(element).textAlign), "left", "최근 기사 번호·제목·날짜는 왼쪽 정렬이다");
+  // 기사별 휴지통 아이콘은 두지 않는다(2026-10-19 결정) — 기사를 골라 미리보기의 '삭제'로 지운다
+  await savedArchiveItem.click();
+  await page.locator(".archive-preview").getByTestId("archive-delete").click();
   await page.waitForFunction(() => !document.body.innerText.includes("스모크 테스트 기사"), null, { timeout: 15_000 });
-  step("보관함: 저장한 기사 표시, 삭제(×)");
+  await page.getByTestId("archive-view").waitFor();
+  await page.getByTestId("archive-view").waitFor();
+  assert.equal(await page.getByText("스모크 테스트 기사", { exact: true }).count(), 0, "삭제한 기사가 보관함에 남지 않는다");
+  assert.deepEqual(pageErrors, [], `기사 삭제 후 브라우저 오류: ${pageErrors.join(" | ")}`);
+  step("보관함: 저장한 기사 표시, 미리보기에서 삭제");
+  if (process.env.UI_SMOKE_ARCHIVE_ONLY) {
+    console.log("PASS ui-smoke-mine: 빈 보관함·마지막 저장 기사 삭제 후 화면 유지");
+    await browser.close();
+    stopCore();
+    process.exit(0);
+  }
 
   // 7. 인터뷰 STT: 저장된 전사 → 왼쪽은 화자 박스, 오른쪽 통합 텍스트는 통글 하나, 복사
   await nav("인터뷰 & 오디오");
@@ -433,6 +492,8 @@ try {
   console.log("PASS ui-smoke-mine: 데스크·이동·기사 작성·저장·미리보기·사진 첨부·보관함·STT 화면");
 } catch (error) {
   console.error("FAIL ui-smoke-mine:", error?.message || error);
+  if (pageErrors.length) console.error("BROWSER ERRORS:", pageErrors.join(" | "));
+  if (coreLog.trim()) console.error("CORE LOG (tail):", coreLog.slice(-1200));
   try {
     fs.mkdirSync(path.resolve(HERE, "../../temp"), { recursive: true });
     const pages = browser?.contexts()[0]?.pages() || [];

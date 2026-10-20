@@ -235,3 +235,38 @@ def upsert(table: str, rows, access_token: str = '', on_conflict: str = '') -> l
         method='POST',
     )
     return _call(request) or []
+
+
+def _write(method: str, table: str, params: dict | None, body, access_token: str) -> list:
+    url = _base() + '/rest/v1/' + urllib.parse.quote(table)
+    if params:
+        url += '?' + urllib.parse.urlencode(params, doseq=True)
+    request = urllib.request.Request(
+        url, data=None if body is None else json.dumps(body).encode(), method=method,
+        headers=_headers(access_token, {'Content-Type': 'application/json', 'Prefer': 'return=representation'}))
+    return _call(request) or []
+
+
+def insert(table: str, rows, access_token: str = '') -> list:
+    return _write('POST', table, None, rows, access_token)
+
+
+def update(table: str, filters: dict, row: dict, access_token: str = '') -> list:
+    """filters 예: {'id': 'eq.<uuid>'} — 비우면 거절한다(표 전체를 바꾸지 않게)."""
+    if not filters:
+        raise RequestError('수정할 행을 지정해 주세요.')
+    return _write('PATCH', table, filters, row, access_token)
+
+
+def delete(table: str, filters: dict, access_token: str = '') -> list:
+    if not filters:
+        raise RequestError('지울 행을 지정해 주세요.')
+    return _write('DELETE', table, filters, None, access_token)
+
+
+def rpc(name: str, args: dict | None = None, access_token: str = ''):
+    """데이터베이스 함수 호출(POST /rest/v1/rpc/<name>) → 함수의 결과(JSON)."""
+    request = urllib.request.Request(
+        _base() + '/rest/v1/rpc/' + urllib.parse.quote(name), data=json.dumps(args or {}).encode(), method='POST',
+        headers=_headers(access_token, {'Content-Type': 'application/json'}))
+    return _call(request)

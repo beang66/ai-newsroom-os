@@ -10,7 +10,7 @@ ponytail: 전부 한 번에 읽는다(기사·자료 수백 건 규모까지). �
 import datetime
 import json
 
-from . import ids, knowledge_files, sources, storage, vault
+from . import ids, knowledge_files, library_state, sources, storage, vault
 
 
 def _uuid(value):
@@ -44,7 +44,7 @@ def _articles(db):
                '(SELECT max(revision_no) FROM article_revisions WHERE article_id = r.article_id)').fetchall()}
     snapshots = dict(db.execute('SELECT article_id, count(*) FROM article_snapshots GROUP BY article_id').fetchall())
     out = []
-    # 보관소에는 마지막 수동 저장본을 보인다(수동 저장 전인 기사는 임시 저장본, unsaved_changes 로 표시)
+    # 보관함에는 마지막 수동 저장본을 보인다(수동 저장 전인 기사는 임시 저장본, unsaved_changes 로 표시)
     for article_id, created, updated, revision_no, body in storage.latest_revisions(db, manual=True):
         draft = json.loads(body)
         count = counts.get(article_id, 0)
@@ -76,6 +76,16 @@ def knowledge_map():
                                    'FROM article_snapshots ORDER BY created_at DESC, id').fetchall()
         transcript_rows = db.execute('SELECT id, filename, duration, created_at FROM transcripts ORDER BY created_at DESC').fetchall()
         files, unresolved, file_links = knowledge_files.map_items(db)
+        library = library_state.read(db)
+        trashed = set(library['trashed'])
+    articles = [item for item in articles if f"article:{item['article_id']}" not in trashed]
+    source_rows = [row for row in source_rows if f'source:{row[0]}' not in trashed]
+    transcript_rows = [row for row in transcript_rows if f'audio:{row[0]}' not in trashed]
+    removed_file_ids = {item['id'] for item in files if f"note:{item['id']}" in trashed}
+    files = [item for item in files if item['id'] not in removed_file_ids]
+    file_links = [link for link in file_links if link['source'] not in removed_file_ids and link['target'] not in removed_file_ids]
+    visible_placeholder_ids = {link['target'] for link in file_links if not link['resolved']}
+    unresolved = [item for item in unresolved if item['id'] in visible_placeholder_ids]
     known = {a['id'] for a in articles}
     source_items = [sources._item(row, used) for row in source_rows]
     snapshots = [{'id': row[0], 'article_id': _uuid(row[1]), 'revision_id': row[2], 'revision_no': row[3],
@@ -108,4 +118,4 @@ def knowledge_map():
     return {'workspace_id': vault.WORKSPACE_ID, 'generated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'articles': articles, 'sources': source_list, 'interviews': interviews, 'resources': resources,
             'snapshots': snapshots, 'entities': [], 'edges': edges,
-            'files': files, 'unresolved': unresolved, 'file_links': file_links}
+            'files': files, 'unresolved': unresolved, 'file_links': file_links, 'library': library}

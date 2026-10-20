@@ -62,9 +62,9 @@ class ExportTests(unittest.TestCase):
         self.assertFalse(self.root.exists())
 
     def test_open_folder_creates_and_opens_kind_folder(self):
-        with mock.patch.object(exports.sys, 'platform', 'win32'), mock.patch.object(exports.os, 'startfile', create=True) as start:
+        with mock.patch.object(exports.sys, 'platform', 'win32'), mock.patch.object(exports.subprocess, 'Popen') as start:
             result = exports.open_folder({'kind': 'cards'})
-        start.assert_called_once_with(self.root / '카드뉴스')
+        start.assert_called_once_with(['explorer', str(self.root / '카드뉴스')])
         self.assertTrue((self.root / '카드뉴스').is_dir())
         self.assertEqual(result['opened'], True)
 

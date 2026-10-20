@@ -76,6 +76,39 @@ class ExternalModeTests(unittest.TestCase):
         self.assertIn('[근거 5]', prompt)
         self.assertNotIn('[근거 6]', prompt)
 
+    def test_final_prompt_allows_retry_evidence(self):
+        item = {'id': 'n1', 'claim': '매출은 30억원이다.', 'evidence': [f'근거 {i}' for i in range(9)]}
+        with mock.patch.object(external, 'structured_call', return_value={'results': []}) as call:
+            external.judge({'items': [item], 'final': True})
+        self.assertIn('[근거 8]', call.call_args[0][3])
+        self.assertNotIn('[근거 9]', call.call_args[0][3])
+
+    def test_request_triggers_one_research_and_final_judgement(self):
+        top = [{'text': f'근거 문단 {i}', 'material_title': '자료A', 'material_id': 'a'} for i in range(5)]
+        found = top[:2] + [{'text': '수출기업 9월 지수 95.7', 'material_title': '자료A', 'material_id': 'a'}]
+        nodes = [{'id': 'n1', 'type': 'TEXT', 'text': '내수기업 지수는 수출기업보다 3.7 높았다.'}]
+        first = {'results': [{'id': 'n1', 'verdict': 'NOT_ENOUGH_INFO', 'reason': '값 없음', 'wrong_text': '',
+                              'evidence_text': '', 'request': ['수출기업 9월 지수']}]}
+        final = {'results': [{'id': 'n1', 'verdict': 'SUPPORTED', 'reason': '99.4-95.7', 'wrong_text': '',
+                              'evidence_text': '95.7', 'request': []}]}
+        calls = []
+        retrieve = lambda claim, node, chunks, **kw: calls.append((claim, kw)) or (found if kw.get('query_vector') is not None else top)
+        with mock.patch.object(service, '_retrieve_qwen_candidates', side_effect=retrieve), \
+                mock.patch.object(service, '_direct_span_match', return_value=None), \
+                mock.patch('core.ai.factcheck.retrieval.get_vector_cache') as cache, \
+                mock.patch.object(external, 'judge', side_effect=[first, final]) as judge:
+            cache.return_value.encoder.encode.return_value = [[0.0]]
+            done = service._external_pass(nodes, top, [], {})
+        self.assertEqual(judge.call_count, 2, '요청은 한 번만 재검색·재판정')
+        again = judge.call_args[0][0]
+        self.assertTrue(again['final'])
+        self.assertEqual(again['items'][0]['evidence'][-1], '수출기업 9월 지수 95.7', '안 보낸 근거만 붙인다')
+        self.assertEqual(len(again['items'][0]['evidence']), 6)
+        self.assertEqual(calls[1][0], '수출기업 9월 지수', '요청문으로 검색')
+        self.assertEqual(cache.return_value.encode.call_count, 0, '요청문 벡터는 캐시에 저장하지 않는다')
+        self.assertEqual(done['n1'][1]['status'], 'SUPPORTED')
+        self.assertEqual(done['n1'][1]['evidence']['text'], '수출기업 9월 지수 95.7')
+
     def test_review_workspace_end_to_end_without_local_judge(self):
         materials = [{'id': 'a', 'title': '자료A', 'content': '2025년 매출은 20억원이다. 대표는 박씨다.'}]
         nodes = [{'id': 'n1', 'type': 'TEXT', 'text': '2025년 매출은 30억원이다.'}]

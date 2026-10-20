@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { deleteUtEvents, exportUtEvents, getSettings, getUtEvents, openExportFolder, saveSettings, setKeepLogin, getDiagnostics } from "../api/editorial";
+import { getSettings, saveSettings, setKeepLogin, getDiagnostics } from "../api/editorial";
 import AppDialog from "./AppDialog";
 import CloudBackupSection from "./CloudBackupSection";
 
@@ -7,15 +7,12 @@ import CloudBackupSection from "./CloudBackupSection";
 export default function SettingsDialog({ onClose, session, onSession, onTransfer }) {
   const [settings, setSettings] = useState(null);
   const [settingsError, setSettingsError] = useState("");
-  const [utStatus, setUtStatus] = useState(null);
-  const [utNotice, setUtNotice] = useState("");
 
   useEffect(() => {
     const request = new AbortController();
     getSettings(request.signal).then(setSettings).catch((e) => {
       if (!request.signal.aborted) setSettingsError(e?.message || String(e));
     });
-    getUtEvents(request.signal).then(setUtStatus).catch(() => {});
     return () => request.abort();
   }, []);
 
@@ -58,29 +55,6 @@ export default function SettingsDialog({ onClose, session, onSession, onTransfer
     catch (e) { setSettings(before); setSettingsError(e?.message || String(e)); }
   };
 
-  const changeMeasurement = async (enabled) => {
-    if (enabled && !window.confirm("사용자 테스트 기록 v1을 켤까요? 기사 저장·다시 열기·파일 내보내기의 성공 여부와 시간만 이 PC의 암호화 저장소에 기록합니다. 원고·음성·이메일·검색어·파일명·경로는 기록하거나 전송하지 않습니다.")) return;
-    const updated = await change({ utMeasurement: enabled });
-    if (updated) setUtStatus(await getUtEvents());
-  };
-
-  const exportMeasurement = async () => {
-    setSettingsError(""); setUtNotice("");
-    try {
-      const preview = await getUtEvents(); setUtStatus(preview);
-      const summary = `${preview.count}건, ${preview.eventNames.join(", ") || "이벤트 없음"}\n필드: ${preview.fields.join(", ") || "없음"}`;
-      if (!window.confirm(`다음 사용자 테스트 기록을 JSONL 파일로 이 PC에 내보낼까요?\n\n${summary}\n\n외부로 자동 전송되지 않습니다.`)) return;
-      const result = await exportUtEvents();
-      setUtNotice(`${result.count}건을 내보냈습니다.`);
-    } catch (e) { setSettingsError(e?.message || String(e)); }
-  };
-
-  const deleteMeasurement = async () => {
-    if (!window.confirm("이 PC의 사용자 테스트 기록만 모두 삭제할까요? 기사와 취재자료는 지워지지 않습니다.")) return;
-    try { const result = await deleteUtEvents(); setUtStatus(await getUtEvents()); setUtNotice(`${result.deleted}건을 삭제했습니다.`); }
-    catch (e) { setSettingsError(e?.message || String(e)); }
-  };
-
   return (
     <AppDialog title="환경 설정" testId="settings-dialog" onClose={onClose}>
       <CloudBackupSection enabled={settings?.cloudBackup ?? true} ready={Boolean(settings)} onError={setSettingsError}
@@ -111,26 +85,6 @@ export default function SettingsDialog({ onClose, session, onSession, onTransfer
         <p className="text-xs text-[#666666] leading-relaxed">PC를 바꿀 때 기사·취재자료를 옮기는 안내 마법사예요. 일회용 코드로 암호화한 이전 파일을 만들고, 새 PC에서 그 코드로 풀어요.</p>
         <button type="button" data-testid="settings-open-transfer" onClick={onTransfer}
           className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">이전 마법사 열기</button>
-      </section>
-      <hr className="border-[#DDD6CB]" />
-      <section className="space-y-3" aria-labelledby="ut-measurement-title">
-        <h3 id="ut-measurement-title" className="font-black">사용자 테스트 기록</h3>
-        <label className="flex items-center gap-2 text-sm font-bold">
-          <input type="checkbox" role="switch" data-testid="settings-ut-measurement" checked={settings?.utMeasurement ?? false} disabled={!settings}
-            onChange={(event) => changeMeasurement(event.target.checked)} />
-          선택 측정 켜기
-        </label>
-        <p className="text-xs text-[#666666] leading-relaxed">v1 범위: 기사 저장·다시 열기·파일 내보내기의 결과와 처리 시간만 이 PC의 암호화 저장소에 최대 7일·10,000건 보관합니다. 원고·음성·개인정보·검색어·파일명·경로·토큰은 기록하지 않으며 외부 전송도 하지 않습니다.</p>
-        <p className="text-xs text-[#666666]">현재 {utStatus?.count ?? 0}건{utStatus?.dropped ? ` · 용량 제한으로 ${utStatus.dropped}건 정리` : ""}</p>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" data-testid="settings-export-ut-events" onClick={exportMeasurement}
-            className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">미리보기 후 내보내기</button>
-          <button type="button" data-testid="settings-open-ut-folder" onClick={() => openExportFolder("diagnostics").catch((e) => setSettingsError(e?.message || String(e)))}
-            className="px-4 py-2 text-xs font-bold bg-[#EFECE6] border border-[#DDD6CB] rounded-full cursor-pointer">폴더 열기</button>
-          <button type="button" data-testid="settings-delete-ut-events" onClick={deleteMeasurement}
-            className="px-4 py-2 text-xs font-bold bg-white border border-rose-200 text-rose-700 rounded-full cursor-pointer">기록 삭제</button>
-        </div>
-        {utNotice && <p role="status" data-testid="settings-ut-notice" className="text-xs text-emerald-700">{utNotice}</p>}
       </section>
     </AppDialog>
   );

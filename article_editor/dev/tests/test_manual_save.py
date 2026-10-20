@@ -1,4 +1,4 @@
-"""2026-10-10 수동 저장: 저장 버튼(manual)만 저장 이력·보관소에 남고, 자동 저장(auto)은 작업본 한 칸을 덮어쓴다."""
+"""2026-10-10 수동 저장: 저장 버튼(manual)만 저장 이력·보관함에 남고, 자동 저장(auto)은 작업본 한 칸을 덮어쓴다."""
 import env_isolation  # noqa: F401  — 가장 먼저(.env 격리)
 import sys
 import unittest
@@ -51,7 +51,7 @@ class ManualSaveTests(unittest.TestCase):
         self.assertEqual(rows(aid), [(1, 'manual'), (2, 'auto')])
         self.assertEqual([r['title'] for r in storage.list_revisions(aid)['revisions']], ['제목 1'])
         listed = read_models.list_articles()['articles'][0]
-        self.assertEqual(listed['title'], '제목 1')                 # 보관소 = 마지막 수동 저장본
+        self.assertEqual(listed['title'], '제목 1')                 # 보관함 = 마지막 수동 저장본
         self.assertTrue(listed['unsaved_changes'])                 # 그 뒤 임시 저장이 있음
         latest = storage.latest_article()
         self.assertEqual(latest['draft']['title'], '제목 1-수정')  # 앱을 다시 열면 작업본으로 이어서

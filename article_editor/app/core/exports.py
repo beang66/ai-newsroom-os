@@ -6,7 +6,6 @@
 """
 import base64
 import datetime
-import os
 import re
 import subprocess
 import sys
@@ -95,8 +94,7 @@ def open_folder(payload):
     """내보내기 폴더(종류별, kind 없으면 전체)를 파일 탐색기로 연다 → {opened, folder}"""
     target = folder(_kind(payload)) if (payload or {}).get('kind') else EXPORT_DIR
     target.mkdir(parents=True, exist_ok=True)
-    if sys.platform == 'win32':
-        os.startfile(target)  # noqa: S606 — 앱이 정한 내보내기 폴더만
-    else:
-        subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(target)])
+    # os.startfile 은 폴더 연결이 바뀐 PC에서 오류 없이 아무 창도 안 열 때가 있어 explorer 를 직접 부른다
+    opener = {'win32': 'explorer', 'darwin': 'open'}.get(sys.platform, 'xdg-open')
+    subprocess.Popen([opener, str(target)])  # noqa: S603 — 앱이 정한 내보내기 폴더만
     return {'opened': True, 'folder': str(Path(target))}

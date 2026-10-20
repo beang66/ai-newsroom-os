@@ -7,7 +7,8 @@ Planned: project files + attachments.
 import time
 
 from ..diagnostics import guarded
-from ..knowledge_files import delete_file as _delete_knowledge_file, get_file as _get_knowledge_file, import_files as _import_knowledge_files
+from ..knowledge_files import delete_file as _delete_knowledge_file, get_file as _get_knowledge_file, import_files as _import_knowledge_files, list_files as _list_knowledge_files
+from ..library_state import get_state as _get_library_state, save_state as _save_library_state
 from ..media_assets import get_media_asset as _get_media_asset, media_asset_file as _media_asset_file, register_media_asset as _register_media_asset
 from ..read_models import knowledge_map as _knowledge_map, list_articles as _list_articles
 from ..sources import delete_source as _delete_source, get_source as _get_source, list_sources as _list_sources
@@ -56,13 +57,16 @@ class StorageManager:
         """CMS 최종 발행 ``{"draft": {...}}`` — 수동 저장 + 기사당 하나인 발행본 덮어쓰기(발행 시각 갱신)."""
         return self._saved(guarded('article_publish', _publish_article, data), 'manual')
 
-    def get_article(self, article_id, version=None, photo_refs=False):
+    def get_article(self, article_id, version=None, photo_refs=False, record=True):
         """기사 하나를 편집기로 연다. 모양은 latest_article 과 같다.
-        version 없음 = 그 기사의 최신 저장본(임시 저장 포함) | 'saved'(마지막 수동 저장본) | 'published'(발행본)."""
+        version 없음 = 그 기사의 최신 저장본(임시 저장 포함) | 'saved'(마지막 수동 저장본) | 'published'(발행본).
+        record=False: 보관함 미리보기처럼 사용자가 기사를 연 것이 아닌 읽기 — '다시 열기'로 기록하지 않는다."""
         started = time.monotonic()
         result = _latest_article(photo_refs, article_id) if version is None else _get_article(article_id, version, photo_refs)
-        if self._events:
-            self._events.record('article_reopened', article_id=article_id, revision_no=result.get('revisionNo'),
+        if self._events and record:
+            # 최신 원고 응답은 저장 번호를 draft 안에만 싣는다
+            revision_no = result.get('revisionNo') or (result.get('draft') or {}).get('revisionNo')
+            self._events.record('article_reopened', article_id=article_id, revision_no=revision_no,
                                 duration_ms=int((time.monotonic() - started) * 1000))
         return result
 
@@ -101,7 +105,7 @@ class StorageManager:
         return result
 
     def delete_article(self, article_id):
-        """보관소에서 기사 지우기 = 휴지통(30일 뒤 영구 삭제) → {deleted, articleId, purgeAt}.
+        """보관함에서 기사 지우기 = 휴지통(30일 뒤 영구 삭제) → {deleted, articleId, purgeAt}.
         서버 백업 사본은 바로 지운다 — 영구 삭제한 기사가 서버 백업 복구로 되살아나지 않게."""
         return self._saved(_delete_article(article_id), 'deleted')
 
@@ -161,9 +165,18 @@ class StorageManager:
         """기사·자료·고정본과 실제 근거 있는 연결의 읽기 전용 묶음(Data Map·보관함용)."""
         return _knowledge_map()
 
+    def library_state(self):
+        return _get_library_state()
+
+    def save_library_state(self, data):
+        return guarded('library_state_save', _save_library_state, data)
+
     def import_knowledge_files(self, data):
         """앱 관리 저장소에 Markdown 지식 파일을 가져오고 링크를 다시 해석한다."""
         return guarded('knowledge_files_import', _import_knowledge_files, data)
+
+    def list_knowledge_files(self):
+        return _list_knowledge_files()
 
     def get_knowledge_file(self, file_id):
         """Markdown 지식 파일 한 건과 실제 링크·백링크를 반환한다."""

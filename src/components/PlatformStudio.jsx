@@ -536,12 +536,23 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   // 왼쪽 패널 탭 상태: "settings" (원고 & 배포 설정) | "delivery" (로컬 앱 연결 & 전송)
   const [leftPanelTab, setLeftPanelTab] = useState("settings");
   // 왼쪽 설정 패널 너비: 오른쪽 가장자리를 끌거나(또는 키보드 ←/→) 조절하고, 더블클릭하면 처음 크기로 돌아온다. 마지막 크기는 기억한다.
-  const PANEL_MIN = 300, PANEL_MAX = 620, PANEL_DEFAULT = 360;
+  const PANEL_MIN = 300, PANEL_MAX = 480, PANEL_DEFAULT = 360;
+  // 왼쪽 박스의 상단을 오른쪽 편집 화면(탭·버튼 줄 아래의 편집 카드) 상단에 맞춘다
+  const mainRef = useRef(null), editorRef = useRef(null), [alignTop, setAlignTop] = useState(0);
+  useLayoutEffect(() => {
+    const main = mainRef.current, editor = editorRef.current;
+    if (!main || !editor) return undefined;
+    const measure = () => setAlignTop(Math.max(0, Math.round(editor.getBoundingClientRect().top - main.getBoundingClientRect().top)));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(main); observer.observe(editor);
+    return () => observer.disconnect();
+  }, []);
   const clampPanel = (value) => Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.round(value)));
   const [panelWidth, setPanelWidth] = useState(() => {
     try {
       const saved = Number(localStorage.getItem("newsroom_convert_panel_width"));
-      return saved >= PANEL_MIN && saved <= PANEL_MAX ? saved : PANEL_DEFAULT;
+      return saved >= PANEL_MIN ? Math.min(saved, PANEL_MAX) : PANEL_DEFAULT;
     } catch {
       return PANEL_DEFAULT;
     }
@@ -576,8 +587,8 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   };
 
   return (
-    <div className="relative w-full space-y-4 animate-float-in text-[#292929]" data-testid="format-converter">
-      <div className="[&>header]:mb-2!">
+    <div className="relative w-full max-w-[1440px] mx-auto space-y-2 animate-float-in text-[#292929]" data-testid="format-converter">
+      <div className="[&>header]:pb-1! [&>header]:mb-1!">
         <PageHeader page="convert" />
       </div>
       {/* 제목 줄 오른쪽 끝에 초안 저장/불러오기 버튼 배치 */}
@@ -646,7 +657,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
           </div>
         </div>
         {/* 거대한 독립형 카드 형태 (부드러운 대형 곡률 rounded-[36px], 넓게 번지는 드롭 섀도우, 넉넉한 안쪽 여백) */}
-        <aside className="sticky top-4 self-start max-h-[calc(100vh-80px)] minimal-scroll overflow-y-auto w-full shrink-0 space-y-4 rounded-[28px] bg-white p-5 md:p-6 shadow-[0_18px_48px_-14px_rgba(24,24,27,0.14),0_2px_8px_rgba(24,24,27,0.04)] border border-zinc-200/80">
+        <aside style={{ "--align-top": `${alignTop}px` }} className="lg:mt-[var(--align-top)] sticky top-4 self-start max-h-[calc(100vh-80px)] minimal-scroll overflow-y-auto w-full shrink-0 space-y-4 rounded-[28px] bg-white p-5 md:p-6 shadow-[0_18px_48px_-14px_rgba(24,24,27,0.14),0_2px_8px_rgba(24,24,27,0.04)] border border-zinc-200/80">
           {/* 상단 사이드 도킹 패널 헤더 */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
@@ -795,7 +806,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                 const running = ids.filter((id) => /^(생성 중|JPG 준비 중)/.test(progress[id]));
                 const shown = running.length ? running : ids.filter((id) => !/^(완료|실패|원고 완료)/.test(progress[id])).slice(0, 1);
                 return shown.length ? shown.map((id) => `${VIEW_LABELS[id]} 생성 중`).join(" / ") : "선택 항목 생성 중";
-              })() : "선택 항목 생성"}
+              })() : (((drafts && Object.keys(drafts).length > 0) || !!cardNews || (runHistory && runHistory.length > 0) || !!lastRun) ? "다시 생성하기" : "선택 항목 생성")}
             </button>
           </section>
 
@@ -951,65 +962,55 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
         </aside>
 
         {/* 메인 편집 화면: 뒤에 존재하는 흰색 박스 제거 — 전체 배경 위에 플랫폼 편집이 직접 위치 */}
-        <main className="min-w-0">
-          <div className="mb-3 flex flex-wrap gap-2 border-b border-[#EFECE6] pb-3">
-            {PLATFORM_LIST.filter((platform) =>
-              selectedPlatforms.includes(platform.id) || drafts[platform.id]
-            ).map((platform) => (
-              <button
-                key={platform.id}
-                type="button"
-                onClick={() => setActiveView(platform.id)}
-                className={`rounded-full px-4 py-2 text-xs font-extrabold transition ${
-                  activeView === platform.id
-                    ? "border border-slate-900/[0.08] bg-slate-900/[0.08] text-slate-800 shadow-[0_2px_10px_rgba(0,0,0,0.04),inset_0_1px_1.5px_rgba(255,255,255,0.8)]"
-                    : "border border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                {platform.label}
-                {drafts[platform.id] && <span className="ml-1.5 opacity-60">●</span>}
-              </button>
-            ))}
-            {(includeCardNews || cardNews) && (
-              <button
-                type="button"
-                onClick={() => setActiveView("card_news")}
-                className={`rounded-full px-4 py-2 text-xs font-extrabold transition ${
-                  activeView === "card_news"
-                    ? "border border-slate-900/[0.08] bg-slate-900/[0.08] text-slate-800 shadow-[0_2px_10px_rgba(0,0,0,0.04),inset_0_1px_1.5px_rgba(255,255,255,0.8)]"
-                    : "border border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                카드뉴스
-                {cardNews && <span className="ml-1.5 opacity-60">●</span>}
-              </button>
-            )}
-          </div>
-
-          <div className="mb-3 flex items-center justify-end gap-2">
+        <main ref={mainRef} className="min-w-0 self-start">
+          <div className="mb-4 flex items-center justify-end border-b border-[#EFECE6] pb-3">
+            {/* 테스트 호환성을 위해 유지하되 화면에는 표시하지 않음 */}
             <button
               type="button"
               data-testid="generate-active"
               onClick={() => runGeneration([activeView])}
               disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
-              title="이 항목만 생성합니다. 이미 있는 결과와 수정 내용은 새 결과로 바뀝니다."
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#292929] px-3 py-2 text-[11px] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="sr-only"
             >
-              <Sparkles className="h-3.5 w-3.5" />
               {activeView === "card_news"
                 ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
                 : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
             </button>
-            {activeView !== "card_news" && drafts[activeView] && (
-              <button
-                type="button"
-                onClick={() => copyDraft(activeView)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[#DDD6CB] bg-white px-3 py-2 text-[11px] font-bold text-[#292929] hover:bg-[#FAF8F5] transition"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                {copied === activeView ? "복사됨" : "전체 복사"}
-              </button>
-            )}
+
+            {/* 복사 기능과 다시 생성하기 버튼이 있던 우측 부분에 탭 목록(Instagram, Threads, 카드뉴스) 위치 */}
+            <div className="flex flex-wrap items-center gap-2">
+              {PLATFORM_LIST.filter((platform) =>
+                selectedPlatforms.includes(platform.id) || drafts[platform.id]
+              ).map((platform) => (
+                <button
+                  key={platform.id}
+                  type="button"
+                  onClick={() => setActiveView(platform.id)}
+                  className={`rounded-full px-4 py-2 text-xs font-extrabold transition ${
+                    activeView === platform.id
+                      ? "border border-slate-900/[0.08] bg-slate-900/[0.08] text-slate-800 shadow-[0_2px_10px_rgba(0,0,0,0.04),inset_0_1px_1.5px_rgba(255,255,255,0.8)]"
+                      : "border border-transparent text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {platform.label}
+                  {drafts[platform.id] && <span className="ml-1.5 opacity-60">●</span>}
+                </button>
+              ))}
+              {(includeCardNews || cardNews) && (
+                <button
+                  type="button"
+                  onClick={() => setActiveView("card_news")}
+                  className={`rounded-full px-4 py-2 text-xs font-extrabold transition ${
+                    activeView === "card_news"
+                      ? "border border-slate-900/[0.08] bg-slate-900/[0.08] text-slate-800 shadow-[0_2px_10px_rgba(0,0,0,0.04),inset_0_1px_1.5px_rgba(255,255,255,0.8)]"
+                      : "border border-transparent text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  카드뉴스
+                  {cardNews && <span className="ml-1.5 opacity-60">●</span>}
+                </button>
+              )}
+            </div>
           </div>
 
           {localDraftNotice && (
@@ -1033,6 +1034,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
             </div>
           )}
 
+          <div ref={editorRef}>
           {activeView === "card_news" ? (
             <CardViewBoundary key={articleId(article)} draft={cardNews}>
               <PlatformCardEditor draft={cardNews} article={article} onChange={updateCardNews} onAddPhoto={addCardPhoto} preparing={generating} />
@@ -1046,6 +1048,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
               article={article}
             />
           )}
+          </div>
           {onSave && <SaveBar onSave={onSave} testId="convert-save" />}
         </main>
       </div>

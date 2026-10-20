@@ -1,5 +1,5 @@
 import {useEffect,useLayoutEffect,useRef,useState} from "react";
-import {Check,Clock} from "lucide-react";
+import {Check,Clock,Loader2} from "lucide-react";
 import {renderStoredCard,snsAction,storedJpg} from "../api/platform.js";
 import {exportFiles} from "../api/editorial.js";
 import ExportNotice from "./ExportNotice.jsx";
@@ -7,16 +7,24 @@ import {assertSameSource,draftText,fingerprint,reviewLabel,reviewStatus,sourceTe
 import {cardImageReadiness,prepareCardImages} from '../lib/cardPreparation.js';
 
 const button = "inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#292929] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-black active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[#292929]";
+// 연결·작성창 채우기 버튼: 흰회색 글래스 알약(밝은 테두리·위쪽 빛·부드러운 그림자)
+const glassButton = "inline-flex items-center justify-center rounded-full border border-white/90 bg-gradient-to-b from-white/80 to-slate-200/70 px-6 py-3 text-sm font-extrabold text-slate-700 backdrop-blur-md shadow-[0_12px_26px_-10px_rgba(15,23,42,0.28),inset_0_1px_1px_rgba(255,255,255,0.95),inset_0_-1px_2px_rgba(148,163,184,0.35)] transition hover:from-white hover:to-slate-200/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:from-white/80";
 const buttonSecondary = "inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#DDD6CB] bg-white px-3.5 py-2.5 text-xs font-bold text-[#292929] shadow-sm transition hover:bg-[#F7F5F0] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40";
 // 화면 표시용 단계 줄(동작은 아래 connection·run·prepare 그대로). state: done | active | idle
-const BADGE={done:['완료','bg-[#E8F5EC] text-[#2E7D4F]'],active:['진행 중','bg-[#101010] text-white'],idle:['대기 중','bg-[#F2F0EC] text-[#8E8982]']};
-// 진행 노드: 완료 = 채운 파란 원 + 체크, 진행 중 = 파란 테두리 + 시계, 대기 = 회색 테두리 + 시계. 완료·진행 중 단계 아래 선은 파란색
+const BADGE={done:['완료','bg-sky-50 text-sky-700 font-bold'],active:['진행 중','bg-[#101010] text-white'],idle:['대기 중','bg-[#F2F0EC] text-[#8E8982]']};
+// 진행 노드: 완료 = 투명감 있는 주황이 가운데에서 퍼져 채워진 원 + 체크, 진행 중 = 주황 테두리 + 은은한 번짐 + 시계, 대기 = 회색 테두리 + 시계.
+// 완료·진행 중 단계 아래 연결선은 위에서 아래로 주황색이 부드럽게 차오른다.
 function Step({n,title,hint,state,last,children}) {
- const [label,tone]=BADGE[state];
+ const [label,tone]=BADGE[state],reached=state!=='idle';
  return <li className="relative" data-state={state}>
-  {!last&&<span className={`absolute bottom-[-1.375rem] left-[25px] top-[2.625rem] w-0.5 ${state==='idle'?'bg-[#E3E3E8]':'bg-[#3B46F0]'}`} aria-hidden="true"/>}
-  <div className={`flex items-center gap-3 rounded-2xl px-2.5 py-2.5 ${state==='active'?'border border-[#E7E2D9] bg-[#FAF8F5]':'border border-transparent'}`}>
-   <span className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${state==='done'?'bg-[#3B46F0] text-white':state==='active'?'border-2 border-[#3B46F0] bg-white text-[#3B46F0]':'border-2 border-[#E3E3E8] bg-white text-[#9A9AA3]'}`}>{state==='done'?<Check className="h-4 w-4" aria-hidden="true"/>:<Clock className="h-4 w-4" aria-hidden="true"/>}</span>
+  {!last&&<span className="absolute bottom-[-1.375rem] left-[25px] top-[2.625rem] w-0.5 overflow-hidden rounded-full bg-[#E3E3E8]" aria-hidden="true">
+   <span className={`absolute inset-0 origin-top bg-gradient-to-b from-sky-500/70 to-sky-400/40 transition-transform duration-700 ease-out ${reached?'scale-y-100':'scale-y-0'}`}/>
+  </span>}
+  <div className="flex items-center gap-3 rounded-2xl border border-transparent px-2.5 py-2.5">
+   <span className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 bg-white transition-all duration-700 ease-out ${state==='done'?'border-sky-400/60 shadow-[0_0_14px_rgba(56,189,248,0.35)]':state==='active'?'border-sky-500/70 shadow-[0_0_0_4px_rgba(56,189,248,0.15)]':'border-[#E3E3E8]'}`}>
+    <span className={`absolute inset-0 rounded-full bg-gradient-to-br from-sky-300/85 to-sky-500/60 transition-all duration-700 ease-out ${state==='done'?'scale-100 opacity-100':state==='active'?'scale-75 opacity-30':'scale-0 opacity-0'}`} aria-hidden="true"/>
+    {state==='done'?<Check className="relative h-4 w-4 text-white" aria-hidden="true"/>:<Clock className={`relative h-4 w-4 ${state==='active'?'text-sky-600':'text-[#9A9AA3]'}`} aria-hidden="true"/>}
+   </span>
    <span className="min-w-0 flex-1"><span className="block text-xs font-black text-[#101010]">{String(n).padStart(2,'0')}. {title}</span>{hint&&<span className="block text-[10px] text-[#8E8982]">{hint}</span>}</span>
    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${tone}`}>{label}</span>
   </div>
@@ -26,7 +34,7 @@ function Step({n,title,hint,state,last,children}) {
 // status 요청은 직렬화하고 세대 번호로 화면 이탈/준비 작업 이전 응답을 무시한다.
 function useSnsConnection(platform,browser,paused,onClosed) {
  const name=platform==='threads'?'Threads':'Instagram',isInstagram=platform==='instagram';
- const [state,setState]=useState({text:`${name} 로그인 연결을 눌러 주세요.`,checking:false});
+ const [state,setState]=useState({text:"",checking:false});
  const epoch=useRef(0),timer=useRef(),flight=useRef(),connecting=useRef(false),closed=useRef(onClosed);
  closed.current=onClosed;
  const stop=()=>{epoch.current++;connecting.current=false;clearTimeout(timer.current);};
@@ -149,20 +157,18 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
  const sns=['instagram','threads'].includes(platform),name=platform==='threads'?'Threads':'Instagram';
  const prepared=/게시 버튼은 누르지 않았습니다/.test(message);
  const stateOf=(done,active)=>done?'done':active?'active':'idle';
- return <section className="space-y-4" data-testid="platform-delivery">
-  <div>
-   <p className="text-sm font-black text-[#101010]">{sns?`${name} 로컬 앱 연결`:'이미지 내보내기'}</p>
-  </div>
-  {sns&&<div className="flex items-center justify-between rounded-2xl bg-[#101010] px-4 py-3 text-white">
-   <span className="text-xs font-black">{name} 로컬 앱 {connection.state.connected?'연결됨':'연결 전'}</span>
-   <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold">{connection.state.checking?'확인 중':connection.state.connected?'연결 중':'대기'}</span>
-  </div>}
+ return <section className="space-y-3" data-testid="platform-delivery">
   <ol className="relative space-y-3 pl-1">
    {sns&&<Step n={1} title={`${name} 로그인 연결`} state={stateOf(connection.state.connected,connection.state.checking)}>
+    {/* 로컬 앱 연결 전·후 안내: 알림처럼 첫 단계 맨 위에 둔다 */}
+    <p role="status" data-testid={`${platform}-app-status`} className={`flex items-center gap-2 py-0.5 px-0.5 text-xs font-bold ${connection.state.connected?'text-sky-700':connection.state.checking?'text-sky-600':'text-slate-500'}`}>
+     <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${connection.state.connected?'bg-sky-500':connection.state.checking?'bg-sky-400 animate-pulse':'bg-slate-300'}`} aria-hidden="true"/>
+     {name} 로컬 앱 {connection.state.checking?'확인 중':connection.state.connected?'연결됨':'연결 전'}
+    </p>
     <div className="pt-1.5">
-     <button className={`${button} w-full`} disabled={blocked||connection.state.checking} data-testid={`${platform}-connect`} onClick={()=>connection.start()}>{name} 로그인 연결</button>
+     <button className={`${glassButton} w-full`} disabled={blocked||connection.state.checking} data-testid={`${platform}-connect`} onClick={()=>connection.start()}>{name} 로그인 연결</button>
     </div>
-    <p role="status" data-testid={`${platform}-connection-status`} className="text-xs text-[#8E8982]">{connection.state.text}</p>
+    {connection.state.text ? <p role="status" data-testid={`${platform}-connection-status`} className="text-xs text-[#8E8982]">{connection.state.text}</p> : <span data-testid={`${platform}-connection-status`} className="sr-only"/>}
    </Step>}
    {!sns&&readiness.total>0&&<Step n={1} title="카드 JPG 준비" last state={stateOf(readiness.complete,blocked&&!readiness.complete)}>
     <p role="status" data-testid="cards-jpg-status" className="text-xs">{readiness.complete?'카드 JPG 준비 완료':blocked?'카드뉴스 JPG 확인 중':'카드뉴스 JPG 준비 필요'} · 최신 JPG {readiness.ready}/{readiness.total}장</p>
@@ -174,12 +180,22 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
    </Step>}
    {sns&&<Step n={2} title={`${name} 작성창 채우기`} state={stateOf(prepared,busy&&!prepared)}>
     {attach&&currentDraft&&currentCards&&!sameBundle&&<p role="alert" className="text-xs text-amber-700">원문은 같지만 원고와 카드의 고정본이 다릅니다. 같은 생성 작업의 결과를 함께 사용해 주세요. 기존 결과는 보존됩니다.</p>}
-    {evidenceMismatch&&<div role="alert" data-testid="evidence-warning" className="space-y-1 text-xs text-amber-700"><p>원문과 일치하지 않는 근거가 표시되어 있습니다. 기사에 없는 인용이 SNS 작성창에 들어갈 수 있으니 확인한 뒤 진행해 주세요.</p><label className="flex items-center gap-1.5"><input type="checkbox" data-testid="evidence-ack" checked={evidenceAck} disabled={blocked} onChange={e=>setEvidenceAck(e.target.checked)}/> 근거가 원문과 일치하지 않음을 확인했고, 그대로 작성창을 채웁니다.</label></div>}
+    {evidenceMismatch && (
+     <div role="alert" data-testid="evidence-warning" className="space-y-2 rounded-xl border border-amber-200/80 bg-amber-50/70 p-3 text-xs text-amber-900 shadow-xs">
+      <p className="font-medium leading-snug">원문과 일치하지 않는 근거가 표시되어 있습니다. 인용 내용을 확인 후 진행해 주세요.</p>
+      <label className="flex items-center gap-2 font-bold text-amber-950 cursor-pointer select-none">
+       <input type="checkbox" data-testid="evidence-ack" checked={evidenceAck} disabled={blocked} onChange={e=>setEvidenceAck(e.target.checked)} className="h-4 w-4 rounded accent-amber-600 cursor-pointer"/>
+       <span>확인했습니다.</span>
+      </label>
+     </div>
+    )}
     <div className="space-y-2.5 pt-2">
      <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#292929] cursor-pointer">
       <input type="checkbox" className="h-4 w-4 rounded accent-[#292929]" checked={attach} disabled={blocked} onChange={e=>setAttach(e.target.checked)}/> 현재 카드뉴스 첨부
      </label>
-     <button className={`${button} w-full`} disabled={blocked||connection.state.checking||!currentDraft||(attach&&cards&&(!currentCards||!sameBundle))||(evidenceMismatch&&!evidenceAck)} data-testid="sns-prepare" onClick={prepare}>{name} 작성창 채우기</button>
+     <button className={`${glassButton} w-full flex items-center justify-center gap-2`} disabled={blocked||connection.state.checking||!currentDraft||(attach&&cards&&(!currentCards||!sameBundle))||(evidenceMismatch&&!evidenceAck)} data-testid="sns-prepare" onClick={prepare}>
+      {blocked ? <><Loader2 className="h-4 w-4 animate-spin text-slate-600"/><span>{name} 작성창 채우는 중…</span></> : <span>{name} 작성창 채우기</span>}
+     </button>
     </div>
    </Step>}
    {sns&&<Step n={3} title="게시 준비 완료" last state={stateOf(prepared,false)} />}

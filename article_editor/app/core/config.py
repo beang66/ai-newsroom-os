@@ -23,6 +23,8 @@ PORT = int(os.environ.get('PORT', '8765'))
 PIPELINE_VERSION = '2026-10-06-subtitle-final-polish-v9'  # su4228 v30 (부제 핵심 사실 확인 + 최종 교열)
 SUMMARY_PIPELINE_VERSION = '2026-10-06-summary-records-v1'
 TEXT_MODEL = os.environ.get('OPENAI_TEXT_MODEL', 'gpt-4.1-mini')
+# 팩트체크 외부 판정만 따로: 13번 기사 20문장 gpt-4.1-mini 16/20 → gpt-6-luna 20/20, 비용 절반 이하(2026-10-20 실측)
+FACTCHECK_MODEL = os.environ.get('OPENAI_FACTCHECK_MODEL', 'gpt-6-luna')
 IMAGE_MODEL = os.environ.get('OPENAI_IMAGE_MODEL', 'gpt-image-1')
 # 외부 호출 경로. local = 로컬 .env 키로 외부 API 직접(개발 전용), remote = 우리 백엔드 프록시.
 # 배포본(exe)이거나 백엔드 주소가 있으면 remote 가 기본이다 — 앱에 운영키를 두지 않는다(ARCHITECTURE.md).

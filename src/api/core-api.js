@@ -174,11 +174,12 @@ export function createCoreApi(transport) {
     /** 팩트체크: nodes=[{id,type,text,linkedSourceIds?}], materials=[{id,title,content,date?,speaker?}] */
     runFactcheck: (nodes, materials, snapshotId, signal) =>
       transport.json(ROUTES.factcheckRun, snapshotId ? { nodes, materials, snapshotId } : { nodes, materials }, signal),
-    /** 외부 재판정(임시·OpenAI): items=[{id, claim, evidence:[str], titles?:[str]}] → { results:[{id, verdict, reason, wrong_text, evidence_text}] }
+    /** 외부 재판정(임시·OpenAI): items=[{id, claim, evidence:[str], titles?:[str]}] → { results:[{id, verdict, reason, wrong_text, evidence_text, request}] }
+     *  options.materials(runFactcheck 와 같은 형식)를 주면, 근거가 모자라 판정기가 값을 요청한 문장은 코어가 자료에서 한 번 더 찾아 다시 판정한다.
      *  options.cachedOnly 가 참이면 저장된 재판정만 돌려주고 OpenAI 는 부르지 않는다(저장 없는 문장은 results 에서 빠짐) —
      *  원고를 다시 열 때 이미 받은 AI 판정을 화면에 복원하는 용도. items 는 클릭 재검토 때와 똑같은 형식이어야 기록을 찾는다. */
-    factcheckExternal: (items, signal, { cachedOnly = false } = {}) =>
-      transport.json(ROUTES.factcheckExternal, cachedOnly ? { items, cachedOnly: true } : { items }, signal),
+    factcheckExternal: (items, signal, { cachedOnly = false, materials } = {}) =>
+      transport.json(ROUTES.factcheckExternal, cachedOnly ? { items, cachedOnly: true } : materials ? { items, materials } : { items }, signal),
     /** 의미 단위 청킹: source = frontend | opendart */
     semanticParse: (text, source = "frontend", signal) =>
       transport.json(ROUTES.semanticParse, { text, source }, signal),

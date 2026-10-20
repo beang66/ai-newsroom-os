@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Focus, Maximize2, Minus, Plus, RotateCcw } from "lucide-react";
 import { categoryLabel } from "../constants.js";
-import { categoryShape } from "./categoryShape.jsx";
+import CategoryGradients from "./CategoryGradients.jsx";
 import { MAP_CENTER } from "../domain/layout.js";
 // 화면에 그리는 범위 — 원(점선 테두리)과 라벨 여백만 남기고 잘라 원이 보드를 최대한 채우게 한다
 const VIEW = { x: 80, y: 60, width: 940, height: 790 };
@@ -146,6 +146,7 @@ export default memo(function KnowledgeGraph({
           drag.current = null;
         }}
       >
+        <CategoryGradients />
         <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.k})`}>
           <g aria-hidden="true" className="graph-halo">
             {haloDots.map((dot, i) => (
@@ -203,7 +204,7 @@ export default memo(function KnowledgeGraph({
               hovered && hovered !== selected?.id
                 ? isHovered ? 1 : active ? 0.45 : 0.18
                 : !selected || active || connected ? 1 : indirect ? 0.32 : 0.14;
-            const size = article ? 8 : hub ? 6.5 : 5;
+            const size = article ? 12 : hub ? 6.5 : 5; // 기사만 큰 원
             const scale = screenScale * camera.k;
             return (
               <g
@@ -214,7 +215,7 @@ export default memo(function KnowledgeGraph({
                 tabIndex={0}
                 aria-label={`${categoryLabel(n)}: ${n.label}`}
                 aria-pressed={active}
-                className={`graph-node ${active ? "is-selected" : ""}`}
+                className={`graph-node ${active ? "is-selected" : ""} ${article || hub ? "is-hub" : ""}`}
                 style={{ opacity }}
                 onClick={() => onSelect(n.id)}
                 onKeyDown={(e) => {
@@ -230,9 +231,20 @@ export default memo(function KnowledgeGraph({
               >
                 <circle cx={n.x} cy={n.y} r={size + 9} fill="transparent" />
                 {(active || isHovered) && (
-                  <circle className="node-ring" cx={n.x} cy={n.y} r={size + 6} />
+                  <circle className="node-ring" cx={n.x} cy={n.y} r={size + 7} />
                 )}
-                {categoryShape(n.category, n.x, n.y, size)}
+                {/* ── 중앙 글로우 포인트 (Diffused Glow): 부드러운 파스텔 빛 번짐 ── */}
+                <circle
+                  className="node-diffused-glow"
+                  cx={n.x}
+                  cy={n.y}
+                  r={size * 2.3}
+                  fill={`url(#glow-radial-${n.category || "verify"})`}
+                  filter="url(#diffused-glow-filter)"
+                  pointerEvents="none"
+                />
+                {/* 관계망 안의 노드는 분류와 관계없이 모두 원형(기사는 큰 원) — 분류별 색은 data-map.css 의 mark-* */}
+                <circle className={`mark-${n.category}`} cx={n.x} cy={n.y} r={size} />
                 {visibleLabel && (
                   <text
                     x={n.x}

@@ -6,7 +6,8 @@ import ExportNotice from "./ExportNotice.jsx";
 import {assertSameSource,draftText,fingerprint,reviewLabel,reviewStatus,sourceText,sameGenerationSource,articleId} from "../lib/platformState.js";
 import {cardImageReadiness,prepareCardImages} from '../lib/cardPreparation.js';
 
-const button="rounded-xl border px-3 py-2 text-xs font-bold disabled:opacity-50";
+const button = "inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#292929] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-black active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[#292929]";
+const buttonSecondary = "inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#DDD6CB] bg-white px-3.5 py-2.5 text-xs font-bold text-[#292929] shadow-sm transition hover:bg-[#F7F5F0] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40";
 // 화면 표시용 단계 줄(동작은 아래 connection·run·prepare 그대로). state: done | active | idle
 const BADGE={done:['완료','bg-[#E8F5EC] text-[#2E7D4F]'],active:['진행 중','bg-[#101010] text-white'],idle:['대기 중','bg-[#F2F0EC] text-[#8E8982]']};
 function Step({n,title,hint,state,icon,children}) {
@@ -146,7 +147,7 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
  const sns=['instagram','threads'].includes(platform),name=platform==='threads'?'Threads':'Instagram';
  const prepared=/게시 버튼은 누르지 않았습니다/.test(message);
  const stateOf=(done,active)=>done?'done':active?'active':'idle';
- return <section className="my-4 space-y-3 rounded-[28px] bg-white p-5 shadow-[0_8px_28px_rgba(0,0,0,0.06)]" data-testid="platform-delivery">
+ return <section className="space-y-4 rounded-3xl border border-[#DDD6CB] bg-white/90 p-5 shadow-sm" data-testid="platform-delivery">
   <div>
    <p className="text-sm font-black text-[#101010]">{sns?`${name} 로컬 앱 연결`:'이미지 내보내기'}</p>
    <p className="mt-0.5 text-[11px] text-[#8E8982]">{sns?'계정 연결과 작성창 채우기 순서로 진행 상태를 확인하세요. 게시 버튼은 누르지 않습니다.':'카드 JPG를 확인하고 내보냅니다.'}</p>
@@ -155,28 +156,34 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
    <span className="text-xs font-black">{name} 로컬 앱 {connection.state.connected?'연결됨':'연결 전'}</span>
    <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold">{connection.state.checking?'확인 중':connection.state.connected?'연결 중':'대기'}</span>
   </div>}
-  <ol className="relative space-y-2 pl-1">
+  <ol className="relative space-y-3 pl-1">
    <span className="absolute bottom-4 left-[19px] top-4 w-px bg-[#E7E2D9]" aria-hidden="true" />
    {sns&&<Step n={1} title={`${name} 로그인 연결`} state={stateOf(connection.state.connected,connection.state.checking)}>
-    {platform==='instagram'?<p className="text-xs">Instagram 전용 브라우저: Chrome</p>:<label className="text-xs">로그인 브라우저 <select aria-label="SNS 브라우저" disabled={blocked||connection.state.checking} value={browser} onChange={e=>setBrowser(e.target.value)}><option value="auto">자동 (Chrome → Edge → Chromium)</option><option value="chrome">Chrome</option><option value="msedge">Edge</option><option value="chromium">Chromium</option></select></label>}
-    <button className={button} disabled={blocked||connection.state.checking} data-testid={`${platform}-connect`} onClick={()=>connection.start()}>{name} 로그인 연결</button>
-    <p role="status" data-testid={`${platform}-connection-status`} className="text-xs">{connection.state.text}</p>
+    {platform==='instagram'?<p className="text-xs text-[#57514A]">Instagram 전용 브라우저: <span className="font-semibold text-[#101010]">Chrome</span></p>:<label className="text-xs text-[#57514A]">로그인 브라우저 <select aria-label="SNS 브라우저" disabled={blocked||connection.state.checking} value={browser} onChange={e=>setBrowser(e.target.value)} className="mt-1 block w-full rounded-lg border border-[#E7E2D9] px-2 py-1 text-xs"><option value="auto">자동 (Chrome → Edge → Chromium)</option><option value="chrome">Chrome</option><option value="msedge">Edge</option><option value="chromium">Chromium</option></select></label>}
+    <div className="pt-1.5">
+     <button className={`${button} w-full`} disabled={blocked||connection.state.checking} data-testid={`${platform}-connect`} onClick={()=>connection.start()}>{name} 로그인 연결</button>
+    </div>
+    <p role="status" data-testid={`${platform}-connection-status`} className="text-xs text-[#8E8982]">{connection.state.text}</p>
    </Step>}
    {!sns&&readiness.total>0&&<Step n={1} title="카드 JPG 준비" state={stateOf(readiness.complete,blocked&&!readiness.complete)}>
     <p role="status" data-testid="cards-jpg-status" className="text-xs">{readiness.complete?'카드 JPG 준비 완료':blocked?'카드뉴스 JPG 확인 중':'카드뉴스 JPG 준비 필요'} · 최신 JPG {readiness.ready}/{readiness.total}장 · 원고 검수·SNS 입력과 별도</p>
     {readiness.items.filter(item=>item.error).map(item=><p role="alert" key={item.index} className="text-xs text-rose-700">{item.index+1}번 카드: {item.error}</p>)}
-    <div className="flex flex-wrap gap-2">
-     <button className={button} disabled={blocked||!currentCards} data-testid="cards-check" onClick={()=>run(()=>renderAll(structuredClone(live.current)))}>JPG 준비 확인</button>
-     <button className={button} disabled={blocked||!currentCards} data-testid="cards-export" onClick={exportAll}>전체 카드 JPG 내보내기</button>
+    <div className="flex flex-col gap-2 pt-1.5">
+     <button className={`${buttonSecondary} w-full`} disabled={blocked||!currentCards} data-testid="cards-check" onClick={()=>run(()=>renderAll(structuredClone(live.current)))}>JPG 준비 확인</button>
+     <button className={`${button} w-full`} disabled={blocked||!currentCards} data-testid="cards-export" onClick={exportAll}>전체 카드 JPG 내보내기</button>
     </div>
    </Step>}
    {sns&&<Step n={2} title={`${name} 작성창 채우기`} state={stateOf(prepared,busy&&!prepared)}>
-    <p data-testid="sns-review-status" className="text-xs">현재 원고: {currentDraft?reviewLabel(reviewStatus(draft)):'이전 원문 결과'} · 카드: {cards&&!currentCards?'이전 원문 결과':reviewLabel(reviewStatus(cards))}. 준비는 게시하지 않습니다. 검수 상태를 확인하고 사람이 최종 검토합니다.</p>
+    <p data-testid="sns-review-status" className="text-xs text-[#57514A]">현재 원고: <span className="font-semibold">{currentDraft?reviewLabel(reviewStatus(draft)):'이전 원문 결과'}</span> · 카드: <span className="font-semibold">{cards&&!currentCards?'이전 원문 결과':reviewLabel(reviewStatus(cards))}</span>. 준비는 게시하지 않습니다. 검수 상태를 확인하고 사람이 최종 검토합니다.</p>
     {(!currentDraft||(attach&&cards&&!currentCards))&&<p role="alert" className="text-xs text-amber-700">이전 원문 결과는 보존되어 있습니다. 현재 원문·같은 고정본의 결과로 SNS 작성창을 채워 주세요.</p>}
     {attach&&currentDraft&&currentCards&&!sameBundle&&<p role="alert" className="text-xs text-amber-700">원문은 같지만 원고와 카드의 고정본이 다릅니다. 같은 생성 작업의 결과를 함께 사용해 주세요. 기존 결과는 보존됩니다.</p>}
     {evidenceMismatch&&<div role="alert" data-testid="evidence-warning" className="space-y-1 text-xs text-amber-700"><p>원문과 일치하지 않는 근거가 표시되어 있습니다. 기사에 없는 인용이 SNS 작성창에 들어갈 수 있으니 확인한 뒤 진행해 주세요.</p><label className="flex items-center gap-1.5"><input type="checkbox" data-testid="evidence-ack" checked={evidenceAck} disabled={blocked} onChange={e=>setEvidenceAck(e.target.checked)}/> 근거가 원문과 일치하지 않음을 확인했고, 그대로 작성창을 채웁니다.</label></div>}
-    <label className="text-xs"><input type="checkbox" checked={attach} disabled={blocked} onChange={e=>setAttach(e.target.checked)}/> 현재 카드뉴스 첨부</label>
-    <button className={button} disabled={blocked||connection.state.checking||!currentDraft||(attach&&cards&&(!currentCards||!sameBundle))||(evidenceMismatch&&!evidenceAck)} data-testid="sns-prepare" onClick={prepare}>{name} 작성창 채우기</button>
+    <div className="space-y-2.5 pt-2">
+     <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#292929] cursor-pointer">
+      <input type="checkbox" className="h-4 w-4 rounded accent-[#292929]" checked={attach} disabled={blocked} onChange={e=>setAttach(e.target.checked)}/> 현재 카드뉴스 첨부
+     </label>
+     <button className={`${button} w-full`} disabled={blocked||connection.state.checking||!currentDraft||(attach&&cards&&(!currentCards||!sameBundle))||(evidenceMismatch&&!evidenceAck)} data-testid="sns-prepare" onClick={prepare}>{name} 작성창 채우기</button>
+    </div>
    </Step>}
    {sns&&<Step n={3} icon="send" title="게시 준비 완료" hint="전용 창에서 사진 순서·줄바꿈을 확인한 뒤 사람이 직접 게시합니다." state={stateOf(prepared,false)} />}
   </ol>

@@ -45,16 +45,33 @@ module.exports = function registerLocalStorage(app, options = {}) {
   app.post(PATHS.drafts, async (req, res) => {
     try {
       const draft = req.body?.draft;
-      if (!draft || typeof draft !== 'object' || Array.isArray(draft) ||
-          !Array.isArray(draft.cards) || draft.cards.length < 1 || draft.cards.length > 10) {
-        return res.status(400).json({ success: false, error: '카드 1~10장이 포함된 초안을 전달해주세요.' });
+      if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
+        return res.status(400).json({ success: false, error: '초안 객체를 전달해주세요.' });
+      }
+      if (draft.cards !== undefined && (!Array.isArray(draft.cards) || draft.cards.length > 10)) {
+        return res.status(400).json({ success: false, error: '카드는 1~10장 사이의 배열이어야 합니다.' });
+      }
+      const hasCards = Array.isArray(draft.cards) && draft.cards.length >= 1;
+      const textContainers = [draft.platformDrafts, draft.platform_drafts, draft.text_drafts, draft.drafts];
+      const hasText = textContainers.some(container =>
+        container && typeof container === 'object' && Object.values(container).some(val =>
+          val && (typeof val === 'string' ? val.trim().length > 0 : typeof val === 'object')
+        )
+      );
+      if (!hasCards && !hasText) {
+        return res.status(400).json({ success: false, error: '카드 1~10장 또는 플랫폼 원고가 포함된 초안을 전달해주세요.' });
       }
       const id = randomUUID(); // 저장 파일 식별자이며 근거 ID가 아닙니다.
       const savedAt = new Date().toISOString();
+      const firstCard = Array.isArray(draft.cards) && draft.cards[0] ? draft.cards[0] : null;
       const metadata = {
         id, saved_at: savedAt,
         title: String(draft.source_input?.article?.title || draft.card_news?.core_text?.headline ||
-          draft.cards[0]?.headline || draft.cards[0]?.content?.headline || '뉴스 초안').slice(0, 500),
+          (firstCard ? (firstCard.headline || firstCard.content?.headline) : '') ||
+          draft.article?.title || draft.title ||
+          (draft.platformDrafts?.instagram?.headline || draft.platformDrafts?.threads?.headline) ||
+          (draft.platform_drafts?.instagram?.headline || draft.platform_drafts?.threads?.headline) ||
+          '뉴스 초안').slice(0, 500),
         evidence_policy: { source_quotes_preserved: true, core_ids_generated: false },
       };
       await fs.mkdir(draftsDir, { recursive: true });

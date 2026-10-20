@@ -715,14 +715,20 @@
         throw new Error('초안 JSON 형식을 확인해주세요.');
       }
         const cards = draft.cards || draft.output?.cards;
-        if (
-          !Array.isArray(cards) ||
-          cards.length < 1 ||
-          cards.length > 10
-        ) {
-          throw Error('cards 또는 output.cards에 1~10장 카드가 필요합니다.');
+        const hasCards = Array.isArray(cards) && cards.length >= 1;
+        const textContainers = [draft.platformDrafts, draft.platform_drafts, draft.text_drafts, draft.drafts];
+        const hasText = textContainers.some(container =>
+          container && typeof container === 'object' && Object.values(container).some(val =>
+            val && (typeof val === 'string' ? val.trim().length > 0 : typeof val === 'object')
+          )
+        );
+        if (!hasCards && !hasText) {
+          throw Error('초안에 카드뉴스(1~10장) 또는 플랫폼 원고가 필요합니다.');
         }
-        const normalized = cards.map(card => {
+        if (cards !== undefined && (!Array.isArray(cards) || cards.length > 10)) {
+          throw Error('카드는 최대 10장까지 가능합니다.');
+        }
+        const normalized = hasCards ? cards.map(card => {
           const content = card.content || card;
           return {
             ...CardModel.normalize(card),
@@ -737,8 +743,8 @@
               }
               : undefined,
           };
-        });
-        if (new Set(normalized.map(card => card.card_id)).size !== normalized.length) {
+        }) : [];
+        if (hasCards && new Set(normalized.map(card => card.card_id)).size !== normalized.length) {
           throw new Error('초안에 중복된 카드 ID가 있습니다. 카드 ID를 확인해주세요.');
         }
         if (!confirm('현재 편집 내용을 불러온 초안으로 바꿀까요?')) {

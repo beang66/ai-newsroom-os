@@ -758,8 +758,7 @@ export default function App() {
                 <SettingsView onReturnToArticle={() => setActiveTab("writer")} session={session} onSession={applySession} />
               </main>
             ) : activeTab === "convert" ? (
-              <main className="flex-1 min-w-0 transition-all z-20 pt-0 pb-6 px-5 md:px-10">
-                <PageHeader page="convert" />
+              <main className="flex-1 min-w-0 transition-all z-20 pt-0 pb-8 px-5 md:px-10">
                 <PlatformStudio
                   key={article.articleId || "unsaved"}
                   article={studioArticle}

@@ -364,6 +364,7 @@ export default function App() {
   const [listError, setListError] = useState("");
   const [mapArticleId, setMapArticleId] = useState(null);
   const [archiveVersion, setArchiveVersion] = useState(0); // 휴지통에서 되살리면 목록을 다시 읽는다
+  const [archiveFilter, setArchiveFilter] = useState(null);
   useEffect(() => {
     if (activeTab !== "archive") return undefined;
     let active = true;
@@ -605,6 +606,10 @@ export default function App() {
     if (to === "evidence") handleRunFactCheck();
     else setActiveTab(to);
   };
+  const handleDeskArchive = (filter) => {
+    setArchiveFilter({ ...filter, requestId: crypto.randomUUID() });
+    setActiveTab("archive");
+  };
   // 데스크에서 고른 기사를 연다(지금 쓰는 기사면 전환 없이). evidence 면 근거자료 서랍까지 연다
   const handleDeskOpen = async (id, to) => {
     if (id !== (article.articleId || article.id)) await changeArticle(id, "writer").catch(() => {});
@@ -740,7 +745,7 @@ export default function App() {
                 ) : activeTab === "interview" ? null : activeTab === "desk" ? (
                   <main className="flex-1 min-w-0 transition-all z-20 pt-0 pb-6 px-5 md:px-10">
                     {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
-                    <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} onOpen={handleDeskOpen} onNewArticle={startNewArticle} busy={switching} />
+                    <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} onOpen={handleDeskOpen} onNewArticle={startNewArticle} onArchive={handleDeskArchive} busy={switching} />
                   </main>
             ) : activeTab === "map" ? (
               <main className="flex min-h-0 flex-1 min-w-0 flex-col transition-all z-20 pt-0 pb-0 px-5 md:px-10">
@@ -752,7 +757,7 @@ export default function App() {
                 <PageHeader page="archive" />
                 {listError && <div role="alert" className="workspace-global-error">저장된 기사 목록을 불러오지 못했습니다. {listError}</div>}
                 {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
-                <ArchiveView article={article} articles={archiveArticles} onOpen={(id) => changeArticle(id, "writer").catch(() => {})} onDelete={deleteArticles} onRestored={() => setArchiveVersion((n) => n + 1)}
+                <ArchiveView article={article} articles={archiveArticles} dashboardFilter={archiveFilter} onOpen={(id) => changeArticle(id, "writer").catch(() => {})} onDelete={deleteArticles} onRestored={() => setArchiveVersion((n) => n + 1)}
                   onMap={(id) => { setActiveTab("map"); setMapArticleId(id === currentId ? null : id); }} busy={switching} />
               </main>
             ) : activeTab === "settings" ? (

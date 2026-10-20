@@ -10,6 +10,7 @@ import { FileText, Image as ImageIcon, MapPin, MoreHorizontal, Music, SlidersHor
 import { photoDataUrl } from "../api/platform.js";
 import { selectedCardPhoto } from "../lib/platformState.js";
 import {CardModel,CardTemplate} from "../lib/cardRuntime.js";
+import {parseThreadsText,threadsText} from "../lib/platformTextEditor.js";
 import '../lib/editorialDirection.js';
 import * as toneModule from '../../platform-generator/lib/threads-tone.js';
 
@@ -86,8 +87,9 @@ function ThreadTextPart({ id, label, value, onChange, onFocus, placeholder }) {
   );
 }
 
-/** draft: 생성 결과, changed(mutate): 수정 규칙(재검수 표시 포함), Evidence: 원문 근거 접기, cards: 카드뉴스 카드들, article: 카드 사진 조회용 */
-export default function ThreadsEditor({ draft, changed, Evidence, cards = [], article }) {
+/** draft: 생성 결과, changed(mutate): 수정 규칙(재검수 표시 포함), cards: 카드뉴스 카드들, article: 카드 사진 조회용 */
+// 글 한 덩어리 ↔ 첫 문장·이어지는 문장: 빈 줄로 나누고 첫 단락이 첫 문장(opening), 나머지가 paragraphs
+export default function ThreadsEditor({ draft, changed, cards = [], article }) {
   const paragraphs = draft.paragraphs || [];
   const toneIssues=ThreadsTone.issues(paragraphs,draft.generation_input?.requirements??draft.requirements??'');
   const posts = [
@@ -100,9 +102,17 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
     })),
   ];
   const [activePost, setActivePost] = useState(null);
+  const [text, setText] = useState(() => threadsText(draft));
+  // 밖에서 원고가 바뀌었을 때(재생성 등)만 입력 내용을 다시 맞춘다 — 입력 중의 빈 줄·공백은 그대로 둔다
+  useEffect(() => { if (threadsText(parseThreadsText(text)) !== threadsText(draft)) setText(threadsText(draft)); }, [draft]);
+  const edit = (value) => {
+    setText(value);
+    const parsed = parseThreadsText(value);
+    changed((next) => { next.opening = parsed.opening; next.paragraphs = parsed.paragraphs; });
+  };
   const postId = (key) => `threads-post-${key}`;
-  const goTo = (key) => {
-    const el = document.getElementById(postId(key));
+  const goTo = () => {
+    const el = document.getElementById(postId("all"));
     el?.focus();
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
@@ -134,20 +144,15 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
                     <span className="text-[#999]">›</span>
                     <span className="text-[13px] text-[#999]">커뮤니티 또는 주제</span>
                   </div>
-                  <div className="mt-1 space-y-2">
-                    {posts.map((post) => (
-                      <div key={post.key}>
-                        <ThreadTextPart
-                          id={postId(post.key)}
-                          label={post.label}
-                          value={post.value}
-                          onChange={post.set}
-                          onFocus={() => setActivePost(post.key)}
-                          placeholder={post.key === "opening" ? "새로운 소식을 공유해보세요." : `${post.label}을 입력하세요...`}
-                        />
-                        <Evidence quotes={post.evidence} valid={post.valid} />
-                      </div>
-                    ))}
+                  <div className="mt-1">
+                    <ThreadTextPart
+                      id={postId("all")}
+                      label="게시물"
+                      value={text}
+                      onChange={edit}
+                      onFocus={() => setActivePost(null)}
+                      placeholder="새로운 소식을 공유해보세요."
+                    />
                   </div>
                   <div className="mt-3" data-testid="threads-media">
                     {cards.length > 0 ? (
@@ -195,7 +200,7 @@ export default function ThreadsEditor({ draft, changed, Evidence, cards = [], ar
         </div>
         <aside className="w-full max-w-[620px] space-y-1.5 lg:sticky lg:top-4 lg:w-[200px] lg:max-w-none" data-testid="threads-flow">
           {posts.map((post, index) => (
-            <button key={post.key} type="button" onClick={() => goTo(post.key)}
+            <button key={post.key} type="button" onClick={() => goTo()}
               className={`block w-full cursor-pointer rounded-xl border px-2.5 py-2 text-left transition ${activePost === post.key ? "border-[#292929] bg-white" : "border-[#E7E2D9] bg-white/70 hover:bg-white"}`}>
               <span className="flex items-center justify-between text-[11px] font-bold text-[#57514A]">
                 <span>{index + 1}. {post.label}</span>

@@ -34,11 +34,22 @@ export function reusableReview(platform, draft, article) {
   return draft?.validation_status !== 'needs_recheck' && record?.session === reviewSession
     && record.context === reviewContextKey(platform,draft,article) ? record.result : null;
 }
+// 같은 사진을 쓰는 다른 카드에 영향이 없도록 사진 조절값(그라데이션 등)은 카드의 photoPresentation 에 두고, 여기서 사진에 합쳐 준다.
+// 같은 사진·같은 값이면 같은 객체를 돌려줘서(화면의 변경 감지·사진 불러오기가 다시 돌지 않게) 캐시한다.
+const presented = new WeakMap();
+const withPresentation = (photo, presentation) => {
+  if (!photo || !presentation || typeof presentation !== 'object') return photo;
+  const key = JSON.stringify(presentation), hit = presented.get(photo);
+  if (hit?.key === key) return hit.value;
+  const value = { ...photo, presentation: { ...photo.presentation, ...presentation } };
+  presented.set(photo, { key, value });
+  return value;
+};
 export const selectedCardPhoto = (card, article) => {
-  if (card?.photoId) return (article?.photos || []).find(photo => photo.id === card.photoId) || null;
+  if (card?.photoId) return withPresentation((article?.photos || []).find(photo => photo.id === card.photoId) || null, card.photoPresentation);
   // 생성기의 빈 image 메타데이터는 실제 사진이 아니다. 주소가 있는 사진의 검증은 API 경계에서 유지한다.
   const image = card?.image;
-  return image && [image.url, image.data].some(value => typeof value === 'string' && value.trim()) ? image : null;
+  return image && [image.url, image.data].some(value => typeof value === 'string' && value.trim()) ? withPresentation(image, card.photoPresentation) : null;
 };
 // 편집 최신성 비교용 서명. 자산의 기사·고정본 소유권은 Core가 별도로 확인한다.
 // 사진 바이트를 중복 저장하지 않도록 길이와 128비트 체크섬을 보관한다.

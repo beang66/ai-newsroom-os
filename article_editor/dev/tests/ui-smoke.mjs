@@ -960,7 +960,6 @@ try {
     await converter.getByTestId('sns-prepare').click();
     await converter.getByTestId('delivery-status').getByText(/사진 3장/).waitFor();
     await converter.getByTestId('delivery-status').getByText(/게시 버튼은 누르지 않았습니다/).waitFor();
-    await converter.getByTestId('sns-review-status').getByText(/원고:.*카드:/).waitFor();
     await converter.getByRole('button',{name:'전용 창 닫기',exact:true}).click();
     await converter.getByTestId('delivery-status').getByText(/전용 창을 닫았습니다/).waitFor();
   }

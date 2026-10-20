@@ -2,7 +2,7 @@ import {useEffect,useLayoutEffect,useRef,useState} from "react";
 import {validatePlatformDraft} from "../api/platform.js";
 import {fingerprint,reviewLabel,reviewStatus,sourceText,sameGenerationSource,attachCurrentReview,reusableReview,articleId} from "../lib/platformState.js";
 
-export default function PlatformReview({platform,draft,article,onChange}) {
+export default function PlatformReview({platform,draft,article,onChange,compact=false}) {
   const current=!!draft&&draft.article_id===articleId(article)&&sameGenerationSource(draft,article);
   const latest=useRef({draft,article});useLayoutEffect(()=>{latest.current={draft,article};},[draft,article]);
   const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
@@ -22,6 +22,14 @@ export default function PlatformReview({platform,draft,article,onChange}) {
   };
   const record=draft?.validation_review;
   const cached=current&&reusableReview(platform,draft,article);
+  // compact: 화면(로컬 앱 연결 탭)이 열리는 즉시 검수를 시작하고 결과를 한 줄로만 보여준다
+  useEffect(()=>{if(compact&&current&&!cached)run();},[]);
+  if(compact){
+    const issues=record&&record.key===fingerprint(draft)?[...(record.result.fact?.issues||[]),...(record.result.requirement?.issues||[])]:[];
+    const status=busy?'검수 중…':!draft?'원고 없음':!current?'이전 원문 결과 · 검수 제외':message&&!cached?message:`${reviewLabel(reviewStatus(draft))}${issues.length?` · ${issues.length}건 확인 필요`:''}`;
+    const tone=busy||!draft||!current?'text-slate-500':cached&&!issues.length?'text-emerald-700':'text-amber-800';
+    return <p role="status" data-testid="platform-review" title={issues.map(issue=>`${issue.location}: ${issue.reason}`).join(' / ')||status} className={`truncate text-[13px] font-bold ${tone}`}>플랫폼 원고 검수 · {status}</p>;
+  }
   return <section className="mb-4 rounded-2xl border border-[#DDD6CB] p-4" data-testid="platform-review">
     <p className="text-sm font-bold">플랫폼 원고 검수 · {draft&&!current?'이전 원문 결과':reviewLabel(reviewStatus(draft))}</p>
     <p className="my-2 text-xs text-slate-500">기준 원문 대비 변환 왜곡과 요구사항을 확인합니다. 취재자료를 사용하는 기사 전체 팩트체크는 작성 화면에서 따로 실행합니다.</p>

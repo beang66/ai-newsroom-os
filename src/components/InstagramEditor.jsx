@@ -2,9 +2,10 @@
 //  - 캡션 안에는 단락 이름을 넣지 않는다. 단락별 흐름(도입·본문·마무리·해시태그)은 오른쪽 옆 목록에서 본다(누르면 그 단락으로 이동).
 //  - 데이터와 수정 규칙은 기존 Instagram 편집과 같다: opening · paragraphs[] · closing · hashtags 를 고치면
 //    validation_status 가 needs_recheck 로 바뀌어 원문 근거 재검수를 요구한다(changed). 여기서는 겉모습과 배치만 바꾼다.
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Bookmark, Heart, Image as ImageIcon, MessageCircle, MoreHorizontal, Send } from "lucide-react";
 import { CardThumb } from "./ThreadsEditor.jsx";
+import { instagramCaptionText, parseInstagramCaption } from "../lib/platformTextEditor.js";
 
 const LIMIT = 2200; // Instagram 캡션 글자 수 제한
 const ACCOUNT = "AI NEWSROOM";
@@ -57,9 +58,18 @@ function CaptionPart({ id, label, value, onChange, active, onFocus, hashtag = fa
   );
 }
 
-/** draft: 생성 결과, changed(mutate): 수정 규칙(재검수 표시 포함), Evidence: 원문 근거 접기, cards: 카드뉴스 카드들, article: 카드 사진 조회용 */
-export default function InstagramEditor({ draft, changed, Evidence, cards = [], article, showCards = true }) {
+// 캡션 한 덩어리 ↔ 도입·본문·마무리·해시태그: 빈 줄로 단락을 나누고, 마지막 단락이 모두 #태그면 해시태그, 첫 단락은 도입, 마지막 단락은 마무리
+/** draft: 생성 결과, changed(mutate): 수정 규칙(재검수 표시 포함), cards: 카드뉴스 카드들, article: 카드 사진 조회용 */
+export default function InstagramEditor({ draft, changed, cards = [], article, showCards = true }) {
   const [activePart, setActivePart] = useState(null);
+  const [text, setText] = useState(() => instagramCaptionText(draft));
+  // 밖에서 원고가 바뀌었을 때(재생성 등)만 입력 내용을 다시 맞춘다 — 입력 중의 빈 줄·공백은 그대로 둔다
+  useEffect(() => { if (instagramCaptionText(parseInstagramCaption(text, draft)) !== instagramCaptionText(draft)) setText(instagramCaptionText(draft)); }, [draft]);
+  const edit = (value) => {
+    setText(value);
+    const parsed = parseInstagramCaption(value, draft);
+    changed((next) => { Object.assign(next, parsed); });
+  };
   const paragraphs = draft.paragraphs || [];
   const hashtags = (draft.hashtags || []).join(" ");
   const caption = [draft.opening, ...paragraphs, draft.closing, hashtags].filter(Boolean).join("\n\n");
@@ -76,8 +86,8 @@ export default function InstagramEditor({ draft, changed, Evidence, cards = [], 
       set: (value) => changed((next) => { next.hashtags = value.trim() ? value.trim().split(/\s+/u) : []; }) },
   ];
   const partId = (key) => `instagram-part-${key}`;
-  const goTo = (key) => {
-    const el = document.getElementById(partId(key));
+  const goTo = () => {
+    const el = document.getElementById(partId("caption"));
     el?.focus();
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
@@ -117,21 +127,8 @@ export default function InstagramEditor({ draft, changed, Evidence, cards = [], 
 
         <div className="px-4 pb-3 pt-2.5">
           <span className="text-[13px] font-bold text-[#101010]">{ACCOUNT}</span>
-          <div className="mt-1 space-y-2">
-            {parts.map((part) => (
-              <div key={part.key}>
-                <CaptionPart
-                  id={partId(part.key)}
-                  label={part.label}
-                  value={part.value}
-                  hashtag={part.hashtag}
-                  active={activePart === part.key}
-                  onFocus={() => setActivePart(part.key)}
-                  onChange={part.set}
-                />
-                {!part.hashtag && <Evidence quotes={part.evidence} valid={part.valid} />}
-              </div>
-            ))}
+          <div className="mt-1">
+            <CaptionPart id={partId("caption")} label="캡션" value={text} onChange={edit} onFocus={() => setActivePart(null)} />
           </div>
           <p className={`mt-2 text-right font-mono text-[11px] ${caption.length > LIMIT ? "font-bold text-red-600" : "text-[#B0AAA2]"}`}>
             {caption.length.toLocaleString()}/{LIMIT.toLocaleString()}
@@ -145,7 +142,7 @@ export default function InstagramEditor({ draft, changed, Evidence, cards = [], 
           <button
             key={part.key}
             type="button"
-            onClick={() => goTo(part.key)}
+            onClick={() => goTo()}
             className={`block w-full rounded-xl border px-2.5 py-2 text-left transition cursor-pointer ${activePart === part.key ? "border-[#292929] bg-white" : "border-[#E7E2D9] bg-white/70 hover:bg-white"}`}
           >
             <span className="flex items-center justify-between text-[11px] font-bold text-[#57514A]">

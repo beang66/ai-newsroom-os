@@ -54,7 +54,8 @@ class PlatformManager:
         origin=json.dumps([article_id,snapshot_id,render_key],ensure_ascii=False,separators=(',',':'))
         return 'platform_render:'+asset_id+':'+hashlib.sha256(origin.encode('utf-8')).hexdigest()
 
-    def __init__(self):
+    def __init__(self, events=None):
+        self.events = events  # 사용자 테스트 기록(UtEventManager). 없으면 남기지 않는다
         self._timeout = 210
         self._sns = None
         self._sns_lock = threading.RLock()

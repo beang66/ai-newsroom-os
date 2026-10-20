@@ -43,16 +43,19 @@ export async function getStudioArticle(id, signal) {
 /** 지금 글을 저장하고 고정본(그 시점의 글을 얼린 사본)으로 만든다. 키워드·원고·카드 이미지를 이 고정본 기준으로 만들면
  *  나중에 "어느 글로 만들었는지"를 정확히 알 수 있다. → { snapshotId, articleId, revisionNo } | null.
  *  플랫폼 생성은 strict:true로 실패를 표시하고 중단한다. 기존 편집 보조 호출은 null 반환을 유지한다. */
+// 코어에 닿기 전 화면에서 막힌 이유(사용자 테스트 기록의 ui_blocked.reason_code)를 오류에 붙인다
+export const uiError = (message, utReason) => Object.assign(Error(message), { utReason });
+
 export async function freezeArticle(article, { flush, strict = false } = {}) {
   try {
     // 팀 화면은 기존 자동 저장 큐를 먼저 비운다. 편집 보조의 기존 호출도 유지한다.
     const articleId = flush ? await flush() : await saveDraft(article, article?.articleId);
-    if (!articleId) throw Error("저장된 기사 ID를 확인할 수 없습니다.");
+    if (!articleId) throw uiError("저장된 기사 ID를 확인할 수 없습니다.", "SNAPSHOT_FAILED");
     const snapshot = await core.createSnapshot(articleId);
-    if (!snapshot?.id) throw Error("기사 고정본을 만들지 못했습니다.");
+    if (!snapshot?.id) throw uiError("기사 고정본을 만들지 못했습니다.", "SNAPSHOT_FAILED");
     if (strict && (snapshot.article_id !== articleId || snapshot.title !== (article.title || "")
       || typeof snapshot.body_text !== "string" || snapshot.body_html !== bodyHtmlOf(article.content, article.photos || []))) {
-      throw Error("저장 중 원문이 변경됐습니다. 현재 기사를 확인한 뒤 다시 실행해 주세요.");
+      throw uiError("저장 중 원문이 변경됐습니다. 현재 기사를 확인한 뒤 다시 실행해 주세요.", "SOURCE_CHANGED");
     }
     return { snapshotId: snapshot.id, articleId, revisionNo: snapshot.revision_no,
       article: {article_id:snapshot.article_id, title:snapshot.title, content:snapshot.body_text},

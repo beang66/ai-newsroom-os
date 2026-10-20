@@ -22,6 +22,9 @@ export const deleteTransfer = (signal) => core.deleteTransfer(signal);
 export const getBackupKey = (signal) => core.getBackupKey(signal);
 export const getDiagnostics = (signal) => core.getDiagnostics(signal);
 export const getUtEvents = (signal) => core.getUtEvents(signal);
+export const setUtConsent = (enabled, signal) => core.setUtConsent(enabled, signal);
+// 사용자 테스트 기록은 본 작업을 막지 않는다 — 실패해도 조용히 넘긴다
+export const recordUtEvent = (event) => core.recordUtEvent(event).catch(() => {});
 export const exportUtEvents = (signal) => core.exportUtEvents(signal);
 export const deleteUtEvents = (signal) => core.deleteUtEvents(signal);
 export const getSettings = (signal) => core.getSettings(signal);

@@ -23,7 +23,7 @@ import { mergeStudioArticle, toStudioArticle } from "./lib/studioArticle.js";
 import { setLoginHandler } from "./services/authGate";
 import { getSession, signOut } from "./services/sessionService";
 import { isRestoring } from "./restoreState";
-import { getBackupKey, publishCms, publishDraft } from "./api/editorial";
+import { getBackupKey, publishCms, publishDraft, recordUtEvent } from "./api/editorial";
 import { clearBackup, readBackup, sameDraft, setBackupKey, setBackupOwner, writeBackup } from "./lib/draftBackup.js";
 
 /**
@@ -508,6 +508,14 @@ export default function App() {
   useEffect(() => {
     getSession().then(applySession).catch(() => {});
   }, [applySession]);
+
+  // 사용자 테스트 기록: 화면 이동(어느 화면에서 왔는지). 측정이 꺼져 있으면 코어가 버린다
+  const viewedTab = useRef(null);
+  useEffect(() => {
+    if (!session?.signedIn || viewedTab.current === activeTab) return;
+    void recordUtEvent({ event: "screen_viewed", screen: activeTab, from_screen: viewedTab.current });
+    viewedTab.current = activeTab;
+  }, [activeTab, session?.signedIn]);
 
   // 변환·배포는 저장된 기사(ID)를 기준으로 고정본을 만든다. 아직 저장된 적 없는 기사는 이 탭에 들어올 때 한 번 저장한다.
   useEffect(() => {

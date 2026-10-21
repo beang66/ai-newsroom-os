@@ -4,7 +4,7 @@
 
 > ERD는 어렵게 생각할 필요가 없습니다. **“어떤 데이터를 저장하고, 서로 어떻게 연결할 것인가”를 정한 DB 설계도**입니다.
 
-> **현재 저장소와의 차이 (2026-10-07):** `feature/app-core`의 로컬 SQLCipher에는 `articles`, `article_revisions`, `sources`, `media`, 검증/임베딩 캐시가 구현되어 있다. 기사 ID는 32hex, Source ID는 16hex, 수정 이력 키는 `(article_id, revision_no)`다. 아래 UUID v5 alias, Snapshot, ReportingProject, SourceChunk, Claim/EvidenceLink 등은 **현재 DB 스키마가 아니라 목표 설계**다. 실제 스키마와 미정의 전환 규칙은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md)을 참조한다.
+> **현재 저장소와의 차이 (2026-10-21, 저장소 스키마 v8):** 계정별 로컬 SQLCipher(`vault-<계정 id>.db`)에 `Article`·`ArticleRevision`(UUID id 포함)·`ArticleSnapshot`·`Source`·`SourceChunk`·`Transcript`·`MediaAsset`·`ProcessingJob`·플랫폼 변환 실행이 구현되어 있다. 기사 ID는 32hex, Source ID는 32hex(옛 자료만 16hex), 수정 이력 키는 `(article_id, revision_no)` + 파생 UUID다. `ReportingProject`·`ArticleSource`·`Claim`·`EvidenceLink`·`VerificationRun`·`TranscriptSegment`·`KnowledgeEntity/Edge` 는 **아직 목표 설계**다. 실제 표와 이 ERD 의 대응은 [§9](#9-현재-구현된-로컬-스키마-2026-10-21-v8)에 있다. 2026-10-07 기준 점검은 [Core 구현 점검](./CORE_REALITY_AUDIT_2026-10-07.md).
 
 ## 1. 먼저 알아둘 핵심 용어
 
@@ -104,6 +104,8 @@ Adapter에서 같은 legacy ID를 여러 번 변환해도 같은 canonical ID가
 
 **생성 후 기사 내용은 수정하지 않습니다.** 내용이 바뀌면 새 Snapshot을 만듭니다.
 
+2026-10-12 DB 기사 입력 연결: 원고 JSON의 `subtitle`, 선택적 출처 `url`도 같은 고정본에 복사합니다. 새 기사 저장소나 ID는 만들지 않습니다. DB schema v5는 기존 고정본을 수정하지 않고 빈 기본값의 열만 추가합니다. 기존 `content_hash(title, body_html)` 레시피는 유지하고 재사용 비교에 부제·출처도 포함합니다. 최신 자동 고정은 원문이 같으면 플랫폼 편집 저장 이력과 무관하게 재사용하며, 명시적인 `revision_id`로 고른 이력은 해당 이력의 고정본 계약을 유지합니다. 옛 고정본에 없던 메타데이터는 현재 기사에서 임의로 보충하지 않습니다.
+
 ### ReportingProject / ArticleSource — 취재건과 기사 자료
 `ReportingProject` 필수: `id`, `workspace_id`, `name`. 기존 critique-organizer의 `projects`를 받는 Workspace 내부 취재 컬렉션입니다.
 
@@ -199,3 +201,29 @@ Data Map은 이 데이터를 읽어 화면에 보여주는 기능입니다. **Da
 ## 8. 적용 시점
 
 적용 보류 범위와 v1.0 확정 조건은 `CONTRACT_ALIGNMENT_v0.8.md` §11을 따릅니다. 이 ERD는 먼저 Vertical Slice fixture와 Adapter 검증에 사용합니다.
+
+## 9. 현재 구현된 로컬 스키마 (2026-10-21, v8)
+
+출처: `article_editor/app/core/vault.py` 의 `SCHEMA`(`SCHEMA_VERSION = 8`). 저장소는 **계정마다 파일 하나**라서 `workspace_id` 는 모든 표에서 같은 값 하나(`10000000-0000-4000-8000-000000000001`)다. 서버(Supabase)에는 기사 표가 없고 암호문 파일(기사 백업·이전·공유본)만 있다.
+
+| 실제 표 | 이 ERD 의 엔터티 | 지금 동작 |
+|---|---|---|
+| `articles` | `Article` | id 32hex. `current_revision_id`·`legacy_id` 열은 없음(최신 이력 = 현재 판) |
+| `article_revisions` | `ArticleRevision` | 키 `(article_id, revision_no)` + 파생 UUID `id`. `kind`: `manual`(저장 이력) / `auto`(마지막 수동 저장 뒤 한 칸을 덮어씀). 원고마다 최근 200개, 원고 본문은 `draft_json` 안 |
+| `article_snapshots` | `ArticleSnapshot` | 내용을 **복사**해 두므로 이력이 정리돼도 남음. 수정·삭제 금지 트리거(휴지통 영구 삭제 때만 잠시 해제). `subtitle`·`url` 포함 |
+| `article_published` | (ERD 밖) 송고본 | 기사마다 하나, 다시 송고하면 덮어씀. `first_published_at`·`publish_count` 보존 |
+| `article_first_saved` | (ERD 밖) | 처음 수동 저장한 시각(이력 정리와 무관하게 유지) |
+| `article_deleted` | (ERD 밖) 휴지통 | 30일 지나면 영구 삭제 |
+| `sources` | `Source` | 원본 바이트(최대 30MB)와 추출 텍스트를 함께 저장. 기사와의 연결은 원고 JSON 의 `sources`·`linkedSources`(별도 `ArticleSource` 표 없음) |
+| `source_chunks`, `source_index` | `SourceChunk` | 근거 검색용 조각과 색인 상태 |
+| `embedding_vectors` | (ERD 밖) 캐시 | 임베딩 벡터 캐시 |
+| `factcheck_memo` | `VerificationRun` 대신 캐시 | 판정 결과 캐시. `Claim`·`EvidenceLink` 정규화 저장은 아직 없음 |
+| `transcripts` | `Transcript` | 오디오 바이트 + 화자별 대화 `dialogues_json`. `TranscriptSegment` 는 JSON 안에만 있음(고정 ID 없음) |
+| `media`, `media_assets` | `MediaAsset` | `media` 는 바이트, `media_assets` 는 메타(`generated` 로 생성 이미지 구분) |
+| `processing_jobs` | `ProcessingJob` | 자료 색인 작업. 앱 종료 때 중단 처리 |
+| `platform_runs` | `PlatformOutput`(일부) | 고정본 기준 플랫폼 변환 실행. 결과는 `results_json`, 앱을 다시 켜면 이어서 실행 |
+| `knowledge_files`, `knowledge_links` | `KnowledgeEntity/Edge` 대신 | 가져온 Markdown 노트와 그 사이 링크. Data Map 읽기 모델의 재료 |
+| `app_meta` | (ERD 밖) | 계정별 설정·표식: 사용자 테스트 기록 동의(`ut_consent`), 음성 변환 월 사용량(`clova_seconds:<월>`), 렌더 출처 확인 등 |
+| `ut_events` | (ERD 밖) 계측 | 사용자 테스트 기록. **동의한 계정만**, 최대 7일·10,000건, `payload_json` 은 허용 목록 필드만(원고·이메일·파일명 없음). 같은 이벤트를 Google Analytics 로도 보내는 대기열은 DB 가 아니라 코어 메모리에 있다(최대 200건, 기사·실행 ID 제외) |
+
+아직 표가 없는 목표 엔터티: `Workspace`(파일 단위로 대신함), `ReportingProject`, `ArticleSource`, `Claim`, `EvidenceLink`, `VerificationRun`·`VerificationIssue`·`VerificationSource`, `TranscriptSegment`, `KnowledgeEntity`·`KnowledgeEdge`.

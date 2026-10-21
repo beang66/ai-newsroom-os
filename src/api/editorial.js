@@ -27,6 +27,7 @@ export const setUtConsent = (enabled, signal) => core.setUtConsent(enabled, sign
 export const recordUtEvent = (event) => core.recordUtEvent(event).catch(() => {});
 export const exportUtEvents = (signal) => core.exportUtEvents(signal);
 export const deleteUtEvents = (signal) => core.deleteUtEvents(signal);
+export const takeUtOutbox = (signal) => core.takeUtOutbox(signal);
 export const getSettings = (signal) => core.getSettings(signal);
 export const saveSettings = (patch, signal) => core.saveSettings(patch, signal);
 

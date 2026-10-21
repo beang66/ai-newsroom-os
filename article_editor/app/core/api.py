@@ -141,6 +141,7 @@ POST_ROUTES = [(re.compile(p),f) for p,f in (
     ('/api/ut-events/consent', lambda m,d: CORE.events.set_enabled(d)),
     ('/api/ut-events/export', lambda m,d: CORE.events.export()),
     ('/api/ut-events/delete', lambda m,d: CORE.events.delete()),
+    ('/api/ut-events/outbox', lambda m,d: CORE.events.take_outbox()),
     ('/api/models/install', lambda m,d: CORE.models.start_install(d)),
     ('/api/models/cancel', lambda m,d: CORE.models.cancel()),
     ('/api/local/drafts', lambda m,d: CORE.storage.save_platform_draft(d)),
@@ -178,7 +179,6 @@ AI_ROUTES = {
     '/api/factcheck/external': lambda d: CORE.ai.factcheck_external(d),
     '/api/semantic/parse': lambda d: CORE.ai.semantic_parse(d),
     '/api/interview/transcribe': lambda d: CORE.ai.transcribe(d),
-    '/api/stt': lambda d: CORE.ai.transcribe(d),
     '/api/platform/keywords': lambda d: CORE.platform.keywords(d),
     '/api/platform/generate': lambda d: CORE.platform.generate(d),
     '/api/platform/render': lambda d: CORE.platform.render(d),
@@ -201,7 +201,6 @@ TASKS = [(re.compile(p),t) for p,t in (
     ('/api/factcheck/external','factcheck_external'),
     ('/api/semantic/parse','semantic_parse'),
     ('/api/interview/transcribe','transcribe'),
-    ('/api/stt','transcribe'),
     ('/api/assist','assist'),
     ('/api/materials/extract','materials_extract'),
 )]
@@ -223,7 +222,7 @@ def _track(task, m, data, started, status=200, error_code=None):
 
 # shortcut: 백업을 JSON/base64로 받으므로 220MB로 제한, 저장소가 150MB에 가까워지면 스트리밍 업로드로 교체
 POST_LIMITS = {'/api/vault/restore':220_000_000,'/api/exports':220_000_000,'/api/articles/save':80_000_000,'/api/articles/publish':80_000_000,
-               '/api/interview/transcribe':56_000_000,'/api/stt':56_000_000,'/api/materials/extract':40_000_000,'/api/local/drafts':55_000_000}
+               '/api/interview/transcribe':56_000_000,'/api/materials/extract':40_000_000,'/api/local/drafts':55_000_000}
 STATIC_TYPES = ('.css','.js','.mjs','.map','.svg','.png','.jpg','.jpeg','.webp','.gif','.ico','.woff','.woff2','.ttf','.otf','.json','.txt')
 
 def _match(routes, path):

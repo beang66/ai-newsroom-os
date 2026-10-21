@@ -28,7 +28,25 @@ export function plainContent(html) {
 /** HTML 글자·속성 값에 넣을 문자열의 특수 문자를 바꾼다(외부 사진 설명 등이 태그로 실행되지 않게). */
 export const escapeHtml = (text) => String(text ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-const FACT_MARKS = ".fact-flaw-target, .fact-fixed-success, .fluorescent-highlight";
+const UNSAFE_TAGS = "script,style,iframe,frame,object,embed,link,meta,base,form,svg,math,template,noscript";
+const URL_ATTRS = new Set(["src", "href", "srcset", "action", "formaction", "xlink:href"]);
+const SAFE_URL = /^(?:https?:|data:image\/(?:png|jpe?g|webp|gif);|media:|blob:|#)/i;
+
+/** 에디터에 innerHTML 로 넣을 HTML 에서 실행되는 것(스크립트 태그·on* 속성·javascript: 주소)을 걷어 낸다.
+ *  공유받아 가져온 기사처럼 남이 만든 HTML 도 들어오고, 앱 주소에서 돈 스크립트는 코어 API 를 모두 부를 수 있다.
+ *  에디터가 쓰는 태그·class·style·data-* 는 그대로 둔다(허용 목록으로 자르면 사진 틀이 깨진다). */
+export function sanitizeHtml(html) {
+  const doc = new DOMParser().parseFromString(`<body>${String(html || "")}</body>`, "text/html");
+  doc.body.querySelectorAll(UNSAFE_TAGS).forEach((element) => element.remove());
+  for (const element of doc.body.querySelectorAll("*")) {
+    for (const { name, value } of [...element.attributes]) {
+      if (name.startsWith("on") || (URL_ATTRS.has(name) && !SAFE_URL.test(value.trim()))) element.removeAttribute(name);
+    }
+  }
+  return doc.body.innerHTML;
+}
+
+const FACT_MARKS =".fact-flaw-target, .fact-fixed-success, .fluorescent-highlight";
 
 /** 예전 방식(본문에 태그를 끼워 넣던 팩트체크 표시)이 기사 본문에 섞여 저장된 것을 걷어 낸다. 글자는 그대로 둔다. */
 export function stripFactMarks(html) {

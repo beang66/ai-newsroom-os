@@ -1,4 +1,5 @@
 """동의한 사용자 테스트의 최소 동작 기록. 원고·개인정보·자유 입력은 받지 않는다."""
+import collections
 import datetime
 import hashlib
 import json
@@ -35,6 +36,9 @@ CLIENT_VALUES = {
     'screen_viewed': {'screen': SCREENS, 'from_screen': SCREENS | {None}},
     'ui_blocked': {'task': UI_TASKS, 'reason_code': UI_REASONS},
 }
+# Google Analytics 로 넘기지 않는 값 — 기사·실행 ID 는 이 PC 의 기록에만 남긴다
+GA_SKIP = {'article_id', 'run_id'}
+GA_OUTBOX_MAX = 200  # 화면이 GA 를 끈 동안 쌓이는 양의 상한(오래된 것부터 버린다)
 
 
 class UtEventManager:
@@ -44,6 +48,7 @@ class UtEventManager:
     def __init__(self):
         self.session_id = str(uuid.uuid4())
         self._session_user = None
+        self._outbox = collections.deque(maxlen=GA_OUTBOX_MAX)
 
     @staticmethod
     def _consented(db):
@@ -74,6 +79,14 @@ class UtEventManager:
     def restart_session(self):
         """로그인·로그아웃 직후 부른다 — 같은 계정으로 다시 로그인해도 새 세션으로 센다."""
         self._session_user, self.session_id = None, str(uuid.uuid4())
+        self._outbox.clear()  # 앞 계정의 이벤트를 다음 계정의 GA 로 보내지 않는다
+
+    def take_outbox(self):
+        """기록된 이벤트 중 아직 GA 로 넘기지 않은 것 → {events: [{event, ...값}]}. 가져간 것은 비운다."""
+        events = []
+        while self._outbox:
+            events.append(self._outbox.popleft())
+        return {'events': events}
 
     def _session(self):
         user = vault._user_id()
@@ -139,7 +152,10 @@ class UtEventManager:
                                (str(int(current[0]) + overflow if current else overflow),))
                 cursor = db.execute('INSERT OR IGNORE INTO ut_events VALUES (?, ?, ?)',
                                     (event_id, payload['occurred_at'], json.dumps(payload, ensure_ascii=False, separators=(',', ':'))))
-                return cursor.rowcount == 1
+                recorded = cursor.rowcount == 1
+            if recorded:  # 동의한 계정에서 실제로 기록된 것만 GA 대기열에 넣는다
+                self._outbox.append({'event': event_name, **{k: v for k, v in fields.items() if k not in GA_SKIP}})
+            return recorded
         except Exception:
             return False
 

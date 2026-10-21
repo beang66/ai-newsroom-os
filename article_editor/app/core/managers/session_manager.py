@@ -143,8 +143,9 @@ class SessionManager:
             try:
                 self._store(supabase.refresh(refresh), '', prepare=False)
                 return auth.current_token()
-            except RequestError:
-                auth.clear()
+            except RequestError as e:
+                if e.status in (400, 401, 403):  # 거절된 토큰만 지운다 — 인터넷이 끊겼을 때 로컬 저장소까지 잠그지 않게
+                    auth.clear()
         if self.auto_login_enabled():
             try:
                 self._auto_sign_in()

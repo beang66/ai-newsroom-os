@@ -62,6 +62,16 @@ class KeepLoginTests(unittest.TestCase):
             self.assertFalse(self.session.status()['signedIn'])
         self.assertNotIn('saved', self.store)
 
+    def test_token_refresh_network_error_keeps_local_login(self):
+        self.sign_in(False)
+        auth.set_session('acc1', 'ref1', 30)  # 곧 만료 → token() 이 갱신을 시도한다
+        with mock.patch.object(supabase, 'refresh', side_effect=RequestError('Supabase에 연결하지 못했어요.', 504)):
+            self.session.token()
+        self.assertEqual(auth.signed_user(), 'user-1', '인터넷이 끊겨도 로컬 저장소는 계속 열린다')
+        with mock.patch.object(supabase, 'refresh', side_effect=RequestError('거절', 401)):
+            self.session.token()
+        self.assertEqual(auth.signed_user(), '', '거절된 토큰이면 로그아웃한다')
+
     def test_sign_out_clears_and_toggle_requires_login(self):
         self.sign_in(True)
         self.session.sign_out()

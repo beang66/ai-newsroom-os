@@ -4,6 +4,8 @@
 
 > ERD는 어렵게 생각할 필요가 없습니다. **“어떤 데이터를 저장하고, 서로 어떻게 연결할 것인가”를 정한 DB 설계도**입니다.
 
+> **현재 저장소와의 차이 (2026-10-21, 저장소 스키마 v8):** 계정별 로컬 SQLCipher(`vault-<계정 id>.db`)에 `Article`·`ArticleRevision`(UUID id 포함)·`ArticleSnapshot`·`Source`·`SourceChunk`·`Transcript`·`MediaAsset`·`ProcessingJob`·플랫폼 변환 실행이 구현되어 있다. 기사 ID는 32hex, Source ID는 32hex(옛 자료만 16hex), 수정 이력 키는 `(article_id, revision_no)` + 파생 UUID다. `ReportingProject`·`ArticleSource`·`Claim`·`EvidenceLink`·`VerificationRun`·`TranscriptSegment`·`KnowledgeEntity/Edge` 는 **아직 목표 설계**다. 실제 표와 이 ERD 의 대응은 [§9](#9-현재-구현된-로컬-스키마-2026-10-21-v8)에 있다. 2026-10-07 기준 점검은 [Core 구현 점검](../../../docs/architecture/CORE_REALITY_AUDIT_2026-10-07.md).
+
 ## 1. 먼저 알아둘 핵심 용어
 
 | 개발 용어 | 쉬운 뜻 | 우리 프로젝트 예시 |
@@ -37,7 +39,7 @@
 4. 자료(`Source`)와 사진(`MediaAsset`)은 한 기사에만 묶지 않습니다. 다른 기사에서도 다시 사용할 수 있습니다.
 5. 검증할 주장(`Claim`)은 고정된 Snapshot을 기준으로 만들어야 나중에 같은 결과를 다시 확인할 수 있습니다.
 6. 근거(`EvidenceLink`)는 “어떤 자료의 어느 문장/구간인지”까지 연결합니다.
-7. AI 검증, STT, 렌더링, n8n처럼 시간이 걸리는 작업은 모두 `ProcessingJob`으로 상태를 통일합니다.
+7. AI 검증, STT, 렌더링처럼 시간이 걸리는 작업은 모두 `ProcessingJob`으로 상태를 통일합니다.
 
 ## 3. 전체 관계 — 사람 눈으로 읽는 버전
 
@@ -199,3 +201,29 @@ Data Map은 이 데이터를 읽어 화면에 보여주는 기능입니다. **Da
 ## 8. 적용 시점
 
 적용 보류 범위와 v1.0 확정 조건은 `CONTRACT_ALIGNMENT_v0.8.md` §11을 따릅니다. 이 ERD는 먼저 Vertical Slice fixture와 Adapter 검증에 사용합니다.
+
+## 9. 현재 구현된 로컬 스키마 (2026-10-21, v8)
+
+출처: `article_editor/app/core/vault.py` 의 `SCHEMA`(`SCHEMA_VERSION = 8`). 저장소는 **계정마다 파일 하나**라서 `workspace_id` 는 모든 표에서 같은 값 하나(`10000000-0000-4000-8000-000000000001`)다. 서버(Supabase)에는 기사 표가 없고 암호문 파일(기사 백업·이전·공유본)만 있다.
+
+| 실제 표 | 이 ERD 의 엔터티 | 지금 동작 |
+|---|---|---|
+| `articles` | `Article` | id 32hex. `current_revision_id`·`legacy_id` 열은 없음(최신 이력 = 현재 판) |
+| `article_revisions` | `ArticleRevision` | 키 `(article_id, revision_no)` + 파생 UUID `id`. `kind`: `manual`(저장 이력) / `auto`(마지막 수동 저장 뒤 한 칸을 덮어씀). 원고마다 최근 200개, 원고 본문은 `draft_json` 안 |
+| `article_snapshots` | `ArticleSnapshot` | 내용을 **복사**해 두므로 이력이 정리돼도 남음. 수정·삭제 금지 트리거(휴지통 영구 삭제 때만 잠시 해제). `subtitle`·`url` 포함 |
+| `article_published` | (ERD 밖) 송고본 | 기사마다 하나, 다시 송고하면 덮어씀. `first_published_at`·`publish_count` 보존 |
+| `article_first_saved` | (ERD 밖) | 처음 수동 저장한 시각(이력 정리와 무관하게 유지) |
+| `article_deleted` | (ERD 밖) 휴지통 | 30일 지나면 영구 삭제 |
+| `sources` | `Source` | 원본 바이트(최대 30MB)와 추출 텍스트를 함께 저장. 기사와의 연결은 원고 JSON 의 `sources`·`linkedSources`(별도 `ArticleSource` 표 없음) |
+| `source_chunks`, `source_index` | `SourceChunk` | 근거 검색용 조각과 색인 상태 |
+| `embedding_vectors` | (ERD 밖) 캐시 | 임베딩 벡터 캐시 |
+| `factcheck_memo` | `VerificationRun` 대신 캐시 | 판정 결과 캐시. `Claim`·`EvidenceLink` 정규화 저장은 아직 없음 |
+| `transcripts` | `Transcript` | 오디오 바이트 + 화자별 대화 `dialogues_json`. `TranscriptSegment` 는 JSON 안에만 있음(고정 ID 없음) |
+| `media`, `media_assets` | `MediaAsset` | `media` 는 바이트, `media_assets` 는 메타(`generated` 로 생성 이미지 구분) |
+| `processing_jobs` | `ProcessingJob` | 자료 색인 작업. 앱 종료 때 중단 처리 |
+| `platform_runs` | `PlatformOutput`(일부) | 고정본 기준 플랫폼 변환 실행. 결과는 `results_json`, 앱을 다시 켜면 이어서 실행 |
+| `knowledge_files`, `knowledge_links` | `KnowledgeEntity/Edge` 대신 | 가져온 Markdown 노트와 그 사이 링크. Data Map 읽기 모델의 재료 |
+| `app_meta` | (ERD 밖) | 계정별 설정·표식: 사용자 테스트 기록 동의(`ut_consent`), 음성 변환 월 사용량(`clova_seconds:<월>`), 렌더 출처 확인 등 |
+| `ut_events` | (ERD 밖) 계측 | 사용자 테스트 기록. **동의한 계정만**, 최대 7일·10,000건, `payload_json` 은 허용 목록 필드만(원고·이메일·파일명 없음). 같은 이벤트를 Google Analytics 로도 보내는 대기열은 DB 가 아니라 코어 메모리에 있다(최대 200건, 기사·실행 ID 제외) |
+
+아직 표가 없는 목표 엔터티: `Workspace`(파일 단위로 대신함), `ReportingProject`, `ArticleSource`, `Claim`, `EvidenceLink`, `VerificationRun`·`VerificationIssue`·`VerificationSource`, `TranscriptSegment`, `KnowledgeEntity`·`KnowledgeEdge`.

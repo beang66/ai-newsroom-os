@@ -110,7 +110,9 @@ class OnnxEmbeddingTests(unittest.TestCase):
                 'pooling': 'last_token', 'padding_side': 'left', 'normalize': 'l2'}), encoding='utf-8')
             tokenizer = mock.Mock()
             tokenizer.token_to_id.return_value = 151643
+            # 그래픽 메모리가 넉넉한 PC 에서는 DirectML 이 먼저 골라지므로 CPU 로 고정한다(장치 선택은 test_ort_device 가 본다)
             with mock.patch('tokenizers.Tokenizer', **{'from_file.return_value': tokenizer}), \
+                    mock.patch.dict(os.environ, {'AI_NEWSROOM_ONNX_DEVICE': 'cpu'}), \
                     mock.patch.object(ort, 'InferenceSession') as session:
                 encoder = onnx_embedding.OnnxQwenEncoder(folder, retrieval.query_input)
                 encoder._load()

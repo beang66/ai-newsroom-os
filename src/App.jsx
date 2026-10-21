@@ -23,7 +23,8 @@ import { mergeStudioArticle, toStudioArticle } from "./lib/studioArticle.js";
 import { setLoginHandler } from "./services/authGate";
 import { getSession, signOut } from "./services/sessionService";
 import { isRestoring } from "./restoreState";
-import { getBackupKey, publishCms, publishDraft, recordUtEvent } from "./api/editorial";
+import { getBackupKey, getUtEvents, publishCms, publishDraft, recordUtEvent, takeUtOutbox } from "./api/editorial";
+import { GA_TRACKING_ID, gaActive, setGAEnabled, trackEvent } from "./lib/gtag.js";
 import { clearBackup, readBackup, sameDraft, setBackupKey, setBackupOwner, writeBackup } from "./lib/draftBackup.js";
 
 /**
@@ -508,6 +509,20 @@ export default function App() {
   useEffect(() => {
     getSession().then(applySession).catch(() => {});
   }, [applySession]);
+
+  // Google Analytics 는 지금 계정의 사용자 테스트 기록 동의가 켜져 있을 때만 보낸다(로그아웃·계정 변경 때마다 다시 확인)
+  const sessionUserId = session?.signedIn ? session.userId || "signed-in" : "";
+  useEffect(() => {
+    setGAEnabled(false);
+    if (!sessionUserId) return;
+    const request = new AbortController();
+    getUtEvents(request.signal).then((s) => setGAEnabled(Boolean(s?.enabled))).catch(() => {});
+    // 코어가 동의 아래 기록한 UT 이벤트(백그라운드 변환 결과 포함)를 10초마다 가져와 GA 로도 보낸다
+    const timer = GA_TRACKING_ID && setInterval(() => {
+      if (gaActive()) takeUtOutbox().then(({ events }) => events.forEach(({ event, ...params }) => trackEvent(event, params))).catch(() => {});
+    }, 10000);
+    return () => { request.abort(); clearInterval(timer); };
+  }, [sessionUserId]);
 
   // 사용자 테스트 기록: 화면 이동(어느 화면에서 왔는지). 측정이 꺼져 있으면 코어가 버린다
   const viewedTab = useRef(null);

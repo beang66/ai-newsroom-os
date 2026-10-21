@@ -89,28 +89,24 @@ _LOCK = threading.Lock()
 _HITS: dict[str, list[float]] = {}
 
 
-def rate_ok(user: str) -> bool:
+def _rate_ok(table: dict, user: str, limit: int) -> bool:
+    """최근 60초 안의 호출 수가 limit 미만이면 이번 호출을 세고 True."""
     now = time.time()
     with _LOCK:
-        hits = [t for t in _HITS.get(user, []) if now - t < 60]
-        if len(hits) >= RATE_LIMIT:
-            _HITS[user] = hits
-            return False
-        hits.append(now)
-        _HITS[user] = hits
-    return True
+        hits = [t for t in table.get(user, []) if now - t < 60]
+        allowed = len(hits) < limit
+        if allowed:
+            hits.append(now)
+        table[user] = hits
+    return allowed
+
+
+def rate_ok(user: str) -> bool:
+    return _rate_ok(_HITS, user, RATE_LIMIT)
 
 
 def clova_rate_ok(user: str) -> bool:
-    now = time.time()
-    with _LOCK:
-        hits = [t for t in _CLOVA_HITS.get(user, []) if now - t < 60]
-        if len(hits) >= CLOVA_RATE_PER_MIN:
-            _CLOVA_HITS[user] = hits
-            return False
-        hits.append(now)
-        _CLOVA_HITS[user] = hits
-    return True
+    return _rate_ok(_CLOVA_HITS, user, CLOVA_RATE_PER_MIN)
 
 
 def clova_multipart(filename: str, mime: str, audio: bytes) -> tuple[bytes, str]:

@@ -20,6 +20,7 @@ export const ROUTES = Object.freeze({
   utEventsConsent: "/api/ut-events/consent",
   utEventsExport: "/api/ut-events/export",
   utEventsDelete: "/api/ut-events/delete",
+  utEventsOutbox: "/api/ut-events/outbox",
   backupKey: "/api/backup-key",
   backup: "/api/backup",
   backupList: "/api/backup/list",
@@ -169,6 +170,8 @@ export function createCoreApi(transport) {
     exportUtEvents: (signal) => transport.json(ROUTES.utEventsExport, {}, signal),
     /** 사용자 테스트 기록만 지운다. 기사·자료는 유지된다 */
     deleteUtEvents: (signal) => transport.json(ROUTES.utEventsDelete, {}, signal),
+    /** 기록된 UT 이벤트 중 아직 GA 로 보내지 않은 것을 가져가고 비운다 → { events: [{ event, ...값 }] }. 기사·실행 ID 는 빠져 있다 */
+    takeUtOutbox: (signal) => transport.json(ROUTES.utEventsOutbox, {}, signal),
     /** 환경 설정(이 PC) → { cloudBackup }. 모델 설치와는 별개 */
     getSettings: (signal) => transport.json(ROUTES.settings, null, signal),
     /** 환경 설정 변경. 준 항목만 바뀐다 → 바뀐 뒤의 설정 전체 */

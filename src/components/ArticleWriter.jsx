@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
 import { useFactCheck } from "./EditorialAssist";
-import { toStudioArticle, plainContent, escapeHtml } from "../lib/studioArticle.js";
+import { toStudioArticle, plainContent, escapeHtml, sanitizeHtml } from "../lib/studioArticle.js";
 import { paint, clearPaint, hitTest, locate } from "../lib/factHighlights.js";
 import { suggestHeadlines, suggestSubtitles } from "../services/assistService";
 import PhotoSideDrawer from "./PhotoSideDrawer";
@@ -549,7 +549,7 @@ export default function ArticleWriter({
     const photo = pendingPhoto;
     setPendingPhoto(null);
     // 편집 화면이 열려 있는 동안 에디터가 없었으므로 다시 열린 에디터는 비어 있다 — 기사 본문을 먼저 되돌린 뒤에 사진을 넣는다
-    if (bodyInputRef.current.innerHTML !== (article.content || "")) bodyInputRef.current.innerHTML = article.content || "";
+    if (bodyInputRef.current.innerHTML !== (article.content || "")) bodyInputRef.current.innerHTML = sanitizeHtml(article.content);
     // 새로 넣는 사진은 본문이 끝나는 지점에 놓는다(이전 캐럿 위치는 에디터가 다시 만들어지며 사라졌다)
     if (!bodyInputRef.current.querySelector(`[data-photo-id="${photo.id}"]`)) {
       const range = document.createRange();
@@ -576,7 +576,7 @@ export default function ArticleWriter({
         const textOnlyDom = bodyInputRef.current.innerText.replace(/\r\n/g, "\n");
         const textOnlyArticle = (article.content || "").replace(/<[^>]*>/g, "").replace(/\r\n/g, "\n");
         if (textOnlyDom.trim() !== textOnlyArticle.trim()) {
-          bodyInputRef.current.innerHTML = article.content || "";
+          bodyInputRef.current.innerHTML = sanitizeHtml(article.content);
         }
       }
     }
@@ -2059,7 +2059,7 @@ export default function ArticleWriter({
                       fontSize: "1.05rem"
                     }}
                     className="text-slate-800 space-y-4 pt-2"
-                    dangerouslySetInnerHTML={{ __html: article.content || "기사 본문 내용이 실시간으로 렌더링됩니다..." }}
+                    dangerouslySetInnerHTML={{ __html: article.content ? sanitizeHtml(article.content) : "기사 본문 내용이 실시간으로 렌더링됩니다..." }}
                   />
                 </div>
               </div>

@@ -54,6 +54,10 @@ class FactcheckModelTests(ApiTestCase):
         patcher = mock.patch.dict(os.environ, {'FACTCHECK_EMBEDDING_RUNTIME': 'onnx'})
         patcher.start()
         cls.addClassCleanup(patcher.stop)
+        # 판정도 로컬 모델로(기본값 localAi=false 는 백엔드 OpenAI 판정이라 로그인 없는 시험에선 AUTH_REQUIRED)
+        from core.managers.settings_manager import SettingsManager
+        SettingsManager().update({'localAi': True})
+        cls.addClassCleanup(SettingsManager().update, {'localAi': False})
         retrieval._cache = None
         cls.addClassCleanup(setattr, retrieval, '_cache', None)
         status, raw, _ = cls.request(cls, '/api/factcheck/status')

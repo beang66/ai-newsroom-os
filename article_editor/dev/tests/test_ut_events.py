@@ -50,6 +50,21 @@ class UtEventTests(unittest.TestCase):
         self.assertFalse(self.events.record('article_persisted', title='x'))  # 허용 목록 밖 필드는 거부
         self.assertEqual(len(payloads()), 2)
 
+    def test_ga_outbox_gets_only_recorded_events_without_ids(self):
+        self.save()  # 동의 전: 기록도, GA 대기열도 없다
+        self.assertEqual(self.events.take_outbox(), {'events': []})
+        self.events.set_enabled({'enabled': True})
+        self.save()
+        self.events.record_client({'event': 'screen_viewed', 'screen': 'writer', 'from_screen': None})
+        events = self.events.take_outbox()['events']
+        self.assertEqual([e['event'] for e in events], ['article_persisted', 'screen_viewed'])
+        self.assertNotIn('article_id', events[0])
+        self.assertEqual(events[0]['save_kind'], 'manual')
+        self.assertEqual(self.events.take_outbox(), {'events': []}, '가져간 것은 비운다')
+        self.save()
+        self.events.restart_session()  # 계정이 바뀌면 앞 계정 것은 버린다
+        self.assertEqual(self.events.take_outbox(), {'events': []})
+
     def test_reopen_records_revision_but_archive_preview_is_not_a_reopen(self):
         self.events.set_enabled({'enabled': True})
         saved = self.save()

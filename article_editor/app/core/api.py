@@ -55,8 +55,17 @@ def _article(m, q):  # ?version=saved|published → 보관함 '수정'(그 판�
     if version in ('saved','published'):return CORE.storage.get_article(m[1],version,photo_refs=q.get('photos')==['ref'])
     return CORE.storage.get_article(m[1],photo_refs=True,record=q.get('purpose')!=['preview'])  # 보관함 미리보기는 '다시 열기'가 아니다
 
+def _new_ut_session(result):  # 사용자 테스트 기록: 로그인·로그아웃마다 새 세션
+    CORE.events.restart_session()
+    return result
+
 def _export(data):
-    started=time.monotonic();result=exports.save(data)
+    started=time.monotonic()
+    try:result=exports.save(data)
+    except Exception as e:
+        CORE.events.record('task_failed',task='output_export',article_id=None,error_code=CORE.events.error_code(e),
+                           http_status=getattr(e,'status',500),duration_ms=int((time.monotonic()-started)*1000))
+        raise
     CORE.events.record('output_export_completed',export_kind=(data or {}).get('kind'),file_count=len(result['files']),duration_ms=int((time.monotonic()-started)*1000))
     return result
 
@@ -111,10 +120,10 @@ GET_ROUTES = [(re.compile(p),f) for p,f in (
 )]
 
 POST_ROUTES = [(re.compile(p),f) for p,f in (
-    ('/api/session', lambda m,d: CORE.session.sign_in(d)),
-    ('/api/session/signup', lambda m,d: CORE.session.sign_up(d)),
+    ('/api/session', lambda m,d: _new_ut_session(CORE.session.sign_in(d))),
+    ('/api/session/signup', lambda m,d: _new_ut_session(CORE.session.sign_up(d))),
     ('/api/session/keep', lambda m,d: CORE.session.set_keep_login(d)),
-    ('/api/session/signout', lambda m,d: CORE.session.sign_out()),
+    ('/api/session/signout', lambda m,d: _new_ut_session(CORE.session.sign_out())),
     ('/api/session/auto', lambda m,d: CORE.session.set_auto_login(d)),
     ('/api/backup/restore', lambda m,d: CORE.backup.restore(d)),
     ('/api/backup/disable', lambda m,d: CORE.backup.disable(d)),
@@ -128,6 +137,8 @@ POST_ROUTES = [(re.compile(p),f) for p,f in (
     ('/api/shares/articles/'+ARTICLE+'/stop', lambda m,d: CORE.shares.stop(m[1])),
     ('/api/shares/open', lambda m,d: CORE.shares.open(d)),
     ('/api/shares/import', lambda m,d: CORE.shares.import_article(d)),
+    ('/api/ut-events/record', lambda m,d: CORE.events.record_client(d)),
+    ('/api/ut-events/consent', lambda m,d: CORE.events.set_enabled(d)),
     ('/api/ut-events/export', lambda m,d: CORE.events.export()),
     ('/api/ut-events/delete', lambda m,d: CORE.events.delete()),
     ('/api/models/install', lambda m,d: CORE.models.start_install(d)),
@@ -174,6 +185,42 @@ AI_ROUTES = {
     '/api/platform/validate': lambda d: CORE.platform.validate(d),
     '/api/assist': lambda d: CORE.ai.assist(d),
 }
+# 사용자 테스트 기록(v2): 작업 단위 성공/실패를 남길 경로 → 작업 이름. 저장·내보내기는 따로 남긴다
+TASKS = [(re.compile(p),t) for p,t in (
+    ('/api/articles/'+ARTICLE+'/snapshots','snapshot_create'),
+    ('/api/articles/publish','article_publish'),
+    ('/api/articles/'+ARTICLE+r'/revisions/\d{1,6}/restore','revision_restore'),
+    ('/api/platform/runs','platform_run_start'),
+    ('/api/platform/keywords','platform_keywords'),
+    ('/api/platform/generate','platform_generate'),
+    ('/api/platform/render','platform_render'),
+    ('/api/platform/validate','platform_validate'),
+    ('/api/platform/sns','platform_sns'),
+    ('/api/cms/publish','cms_publish'),
+    ('/api/factcheck/run','factcheck_run'),
+    ('/api/factcheck/external','factcheck_external'),
+    ('/api/semantic/parse','semantic_parse'),
+    ('/api/interview/transcribe','transcribe'),
+    ('/api/stt','transcribe'),
+    ('/api/assist','assist'),
+    ('/api/materials/extract','materials_extract'),
+)]
+
+def _task_article(m, data):
+    """기록할 기사 ID — 경로에 있으면 그것, 아니면 요청 안의 32hex ID 하나(없으면 None)."""
+    if m and m.re.groups:return m[1]
+    data=data if isinstance(data,dict) else {}
+    nested=[data[k] for k in ('draft','article','payload') if isinstance(data.get(k),dict)]
+    for value in (data.get('articleId'),data.get('article_id'),*(n.get('articleId') or n.get('article_id') for n in nested)):
+        if isinstance(value,str) and re.fullmatch(r'[a-f0-9]{32}',value.replace('-','')):return value.replace('-','')
+    return None
+
+def _track(task, m, data, started, status=200, error_code=None):
+    if not task:return
+    fields={'task':task,'article_id':_task_article(m,data),'duration_ms':int((time.monotonic()-started)*1000)}
+    if status==200:CORE.events.record('task_completed',**fields)
+    else:CORE.events.record('task_failed',error_code=error_code,http_status=status,**fields)
+
 # shortcut: 백업을 JSON/base64로 받으므로 220MB로 제한, 저장소가 150MB에 가까워지면 스트리밍 업로드로 교체
 POST_LIMITS = {'/api/vault/restore':220_000_000,'/api/exports':220_000_000,'/api/articles/save':80_000_000,'/api/articles/publish':80_000_000,
                '/api/interview/transcribe':56_000_000,'/api/stt':56_000_000,'/api/materials/extract':40_000_000,'/api/local/drafts':55_000_000}
@@ -221,16 +268,19 @@ class Handler(BaseHTTPRequestHandler):
         ai=AI_ROUTES.get(self.path)
         if not handler and not ai:return self.send(404,{'error':'지원하지 않는 경로입니다.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.send(415,{'error':'JSON 요청이 필요합니다.'})
+        task,tm=_match(TASKS,self.path);started,data=time.monotonic(),None
         try:
             size=int(self.headers.get('Content-Length','0'))
             if not 0<size<=POST_LIMITS.get(self.path,30_000_000):raise RequestError('요청 크기가 너무 큽니다.',413)
             data=json.loads(self.rfile.read(size))
             if not isinstance(data,dict):raise RequestError('잘못된 요청입니다.')
-            if handler:return self.reply(handler(m,data))
-            if not LIMIT.acquire(blocking=False):raise RequestError('다른 AI 작업이 진행 중이에요. 잠시 후 다시 시도하세요.',429)
-            try:result=ai(data)
-            finally:LIMIT.release()
-            self.send(200,result)
-        except RequestError as e:self.send(e.status,error_body(e))
-        except (ValueError,TypeError):self.send(400,{'error':'요청 형식을 확인해 주세요.'})
-        except Exception:self.send(500,{'error':'처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'})
+            if handler:result=handler(m,data)
+            else:
+                if not LIMIT.acquire(blocking=False):raise RequestError('다른 AI 작업이 진행 중이에요. 잠시 후 다시 시도하세요.',429)
+                try:result=ai(data)
+                finally:LIMIT.release()
+            _track(task,tm,data,started)
+            self.reply(result)
+        except RequestError as e:_track(task,tm,data,started,e.status,CORE.events.error_code(e));self.send(e.status,error_body(e))
+        except (ValueError,TypeError):_track(task,tm,data,started,400,'INVALID_INPUT');self.send(400,{'error':'요청 형식을 확인해 주세요.'})
+        except Exception:_track(task,tm,data,started,500,'INTERNAL_ERROR');self.send(500,{'error':'처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'})

@@ -23,7 +23,7 @@ import { mergeStudioArticle, toStudioArticle } from "./lib/studioArticle.js";
 import { setLoginHandler } from "./services/authGate";
 import { getSession, signOut } from "./services/sessionService";
 import { isRestoring } from "./restoreState";
-import { getBackupKey, publishCms, publishDraft } from "./api/editorial";
+import { getBackupKey, publishCms, publishDraft, recordUtEvent } from "./api/editorial";
 import { clearBackup, readBackup, sameDraft, setBackupKey, setBackupOwner, writeBackup } from "./lib/draftBackup.js";
 
 /**
@@ -364,6 +364,7 @@ export default function App() {
   const [listError, setListError] = useState("");
   const [mapArticleId, setMapArticleId] = useState(null);
   const [archiveVersion, setArchiveVersion] = useState(0); // 휴지통에서 되살리면 목록을 다시 읽는다
+  const [archiveFilter, setArchiveFilter] = useState(null);
   useEffect(() => {
     if (activeTab !== "archive") return undefined;
     let active = true;
@@ -525,6 +526,14 @@ export default function App() {
     getSession().then(applySession).catch(() => {});
   }, [applySession]);
 
+  // 사용자 테스트 기록: 화면 이동(어느 화면에서 왔는지). 측정이 꺼져 있으면 코어가 버린다
+  const viewedTab = useRef(null);
+  useEffect(() => {
+    if (!session?.signedIn || viewedTab.current === activeTab) return;
+    void recordUtEvent({ event: "screen_viewed", screen: activeTab, from_screen: viewedTab.current });
+    viewedTab.current = activeTab;
+  }, [activeTab, session?.signedIn]);
+
   // 변환·배포는 저장된 기사(ID)를 기준으로 고정본을 만든다. 아직 저장된 적 없는 기사는 이 탭에 들어올 때 한 번 저장한다.
   useEffect(() => {
     if (activeTab === "convert" && isLoaded && signedInRef.current && !savedIdRef.current) void flush(true);
@@ -621,6 +630,10 @@ export default function App() {
   const handleDeskNavigate = (to) => {
     if (to === "evidence") handleRunFactCheck();
     else setActiveTab(to);
+  };
+  const handleDeskArchive = (filter) => {
+    setArchiveFilter({ ...filter, requestId: crypto.randomUUID() });
+    setActiveTab("archive");
   };
   // 데스크에서 고른 기사를 연다(지금 쓰는 기사면 전환 없이). evidence 면 근거자료 서랍까지 연다
   const handleDeskOpen = async (id, to) => {
@@ -757,7 +770,7 @@ export default function App() {
                 ) : activeTab === "interview" ? null : activeTab === "desk" ? (
                   <main className="flex-1 min-w-0 transition-all z-20 pt-0 pb-6 px-5 md:px-10">
                     {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
-                    <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} onOpen={handleDeskOpen} onNewArticle={startNewArticle} busy={switching} />
+                    <DeskView articles={deskArticles} onNavigate={handleDeskNavigate} onOpen={handleDeskOpen} onNewArticle={startNewArticle} onArchive={handleDeskArchive} busy={switching} />
                   </main>
             ) : activeTab === "map" ? (
               <main className="flex min-h-0 flex-1 min-w-0 flex-col transition-all z-20 pt-0 pb-0 px-5 md:px-10">
@@ -769,7 +782,7 @@ export default function App() {
                 <PageHeader page="archive" />
                 {listError && <div role="alert" className="workspace-global-error">저장된 기사 목록을 불러오지 못했습니다. {listError}</div>}
                 {switchError && <div role="alert" className="workspace-global-error">{switchError}</div>}
-                <ArchiveView article={article} articles={archiveArticles} onOpen={(id) => changeArticle(id, "writer").catch(() => {})} onDelete={deleteArticles} onRestored={() => setArchiveVersion((n) => n + 1)}
+                <ArchiveView article={article} articles={archiveArticles} dashboardFilter={archiveFilter} onOpen={(id) => changeArticle(id, "writer").catch(() => {})} onDelete={deleteArticles} onRestored={() => setArchiveVersion((n) => n + 1)}
                   onMap={(id) => { setActiveTab("map"); setMapArticleId(id === currentId ? null : id); }} busy={switching} />
               </main>
             ) : activeTab === "settings" ? (

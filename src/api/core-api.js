@@ -16,6 +16,8 @@ export const ROUTES = Object.freeze({
   settings: "/api/settings",
   diagnostics: "/api/diagnostics",
   utEvents: "/api/ut-events",
+  utEventsRecord: "/api/ut-events/record",
+  utEventsConsent: "/api/ut-events/consent",
   utEventsExport: "/api/ut-events/export",
   utEventsDelete: "/api/ut-events/delete",
   backupKey: "/api/backup-key",
@@ -159,6 +161,10 @@ export function createCoreApi(transport) {
     getDiagnostics: (signal) => transport.json(ROUTES.diagnostics, null, signal),
     /** 동의 기반 사용자 테스트 기록의 개수·기간·필드 미리보기. 원고 내용은 없다 */
     getUtEvents: (signal) => transport.json(ROUTES.utEvents, null, signal),
+    /** 지금 로그인한 계정의 측정 동의를 켜고 끈다 { enabled } → getUtEvents 와 같은 미리보기. 동의는 계정마다 따로다 */
+    setUtConsent: (enabled, signal) => transport.json(ROUTES.utEventsConsent, { enabled }, signal),
+    /** 화면 이벤트 하나 { event: "screen_viewed"|"ui_blocked", ...정해진 값 } → { recorded }. 측정이 꺼져 있으면 recorded=false. */
+    recordUtEvent: (event, signal) => transport.json(ROUTES.utEventsRecord, event, signal),
     /** 사용자가 미리보기 뒤 확인했을 때만 로컬 JSONL 파일을 만든다 */
     exportUtEvents: (signal) => transport.json(ROUTES.utEventsExport, {}, signal),
     /** 사용자 테스트 기록만 지운다. 기사·자료는 유지된다 */

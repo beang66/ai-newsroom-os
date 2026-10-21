@@ -10,6 +10,7 @@ import { FileText, Image as ImageIcon, MapPin, MoreHorizontal, Music, SlidersHor
 import { photoDataUrl } from "../api/platform.js";
 import { selectedCardPhoto } from "../lib/platformState.js";
 import {CardModel,CardTemplate} from "../lib/cardRuntime.js";
+import {parseThreadsText,threadsText} from "../lib/platformTextEditor.js";
 import '../lib/editorialDirection.js';
 import * as toneModule from '../../platform-generator/lib/threads-tone.js';
 
@@ -88,12 +89,6 @@ function ThreadTextPart({ id, label, value, onChange, onFocus, placeholder }) {
 
 /** draft: 생성 결과, changed(mutate): 수정 규칙(재검수 표시 포함), cards: 카드뉴스 카드들, article: 카드 사진 조회용 */
 // 글 한 덩어리 ↔ 첫 문장·이어지는 문장: 빈 줄로 나누고 첫 단락이 첫 문장(opening), 나머지가 paragraphs
-const textOf = (d) => [d.opening, ...(d.paragraphs || [])].filter(Boolean).join("\n\n");
-const parseText = (value) => {
-  const blocks = value.split(/\n\s*\n/u).map((block) => block.trim()).filter(Boolean);
-  return { opening: blocks[0] || "", paragraphs: blocks.slice(1) };
-};
-
 export default function ThreadsEditor({ draft, changed, cards = [], article }) {
   const paragraphs = draft.paragraphs || [];
   const toneIssues=ThreadsTone.issues(paragraphs,draft.generation_input?.requirements??draft.requirements??'');
@@ -107,12 +102,12 @@ export default function ThreadsEditor({ draft, changed, cards = [], article }) {
     })),
   ];
   const [activePost, setActivePost] = useState(null);
-  const [text, setText] = useState(() => textOf(draft));
+  const [text, setText] = useState(() => threadsText(draft));
   // 밖에서 원고가 바뀌었을 때(재생성 등)만 입력 내용을 다시 맞춘다 — 입력 중의 빈 줄·공백은 그대로 둔다
-  useEffect(() => { if (textOf(parseText(text)) !== textOf(draft)) setText(textOf(draft)); }, [draft]);
+  useEffect(() => { if (threadsText(parseThreadsText(text)) !== threadsText(draft)) setText(threadsText(draft)); }, [draft]);
   const edit = (value) => {
     setText(value);
-    const parsed = parseText(value);
+    const parsed = parseThreadsText(value);
     changed((next) => { next.opening = parsed.opening; next.paragraphs = parsed.paragraphs; });
   };
   const postId = (key) => `threads-post-${key}`;

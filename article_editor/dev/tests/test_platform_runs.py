@@ -60,6 +60,17 @@ class PlatformRunTests(unittest.TestCase):
             self.assertEqual(draft['snapshot_id'], self.snapshot['id'])
         self.assertEqual(platform_runs.list_runs('another-article')['runs'], [])
 
+    def test_generation_input_is_three_fields_and_keeps_url_as_metadata(self):
+        saved = storage.save_article({'draft': {'title': '부제 있는 기사', 'subtitle': '화면 부제', 'url': 'https://example.test/a',
+                                                 'bodyHtml': '<p>부제 본문</p>', 'content': '부제 본문'}})
+        self.snapshot = storage.create_snapshot(saved['articleId'])
+        run = self.start(('instagram',))
+        platform_runs._work(run['id'], self.manager)
+        draft = platform_runs.get_run(run['id'])['results']['instagram']['draft']
+        self.assertEqual(draft['generation_input']['article'],
+                         {'article_id': saved['articleId'], 'title': '부제 있는 기사', 'content': self.snapshot['body_text']})
+        self.assertEqual(draft['generation_input']['source_url'], self.snapshot['url'])
+
     def test_resume_skips_finished_target_and_retries_pending_target(self):
         run = self.start()
         platform_runs._update(run['id'], status='running', target='instagram',

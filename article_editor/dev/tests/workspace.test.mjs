@@ -48,7 +48,7 @@ test("article saves send the loaded revision to prevent silent overwrites", asyn
 });
 
 test("desk counts, focus and checks come only from stored article facts", async () => {
-  const { countByStage, focusStory, issuesOf, writingStep, articlesInRange, nextAction } = await import("../../../src/data/desk.js");
+  const { countByStage, deliveryPendingArticles, focusStory, issuesOf, writingStep, articlesInRange, nextAction } = await import("../../../src/data/desk.js");
   const base = { revision_no: 1, revision_count: 1, linkedSources: ["s"], linkedInterviews: [], snapshot_count: 0 };
   const items = [
     { ...base, id: "pub", state: "published", updated_at: "2026-10-18T01:00:00+00:00", snapshot_count: 1 },
@@ -66,6 +66,7 @@ test("desk counts, focus and checks come only from stored article facts", async 
   assert.deepEqual(articlesInRange(items, "2026-10-18").map((i) => i.id), ["new", "pub"], "서울 날짜 기준, 저장된 기사만");
   assert.equal(nextAction(items[1]).to, "evidence");
   assert.equal(focusStory([items[0]]), null);
+  assert.deepEqual(deliveryPendingArticles(items).map((item) => item.id), ["unsaved", "new", "old", "ready"].filter((id) => id !== "unsaved"));
 });
 
 test("every desk action opens a real destination", async () => {
@@ -77,6 +78,19 @@ test("every desk action opens a real destination", async () => {
     const article = { revision_no: 1, state: step === 3 ? "draft" : "draft", linkedSources: step > 0 ? ["s"] : [], revision_count: step > 1 ? 1 : 0, snapshot_count: step > 2 ? 1 : 0 };
     assert.ok(targets.has(nextAction(article).to));
   }
+});
+
+test("desk metrics and pending delivery articles open the archive with a matching filter", async () => {
+  const desk = await readFile(new URL("../../../src/components/DeskView.jsx", import.meta.url), "utf8");
+  const app = await readFile(new URL("../../../src/App.jsx", import.meta.url), "utf8");
+  const archive = await readFile(new URL("../../../src/components/ArchiveView.jsx", import.meta.url), "utf8");
+  assert.match(desk, /onArchive\(\{ scope: "type:article", stage: label \}\)/);
+  assert.match(desk, /onArchive\(\{ scope: "type:article", stage: "pending" \}\)/);
+  assert.match(desk, /송고 대기 기사/);
+  assert.match(desk, /onOpen\(item\.id, "writer"\)/);
+  assert.match(app, /dashboardFilter=\{archiveFilter\}/);
+  assert.match(archive, /item\.deskStage !== deskStage/);
+  assert.match(archive, /aria-label="데스크 단계 필터"/);
 });
 
 test("photo captions from outside sources cannot inject HTML into the article body", () => {

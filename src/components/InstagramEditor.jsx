@@ -85,86 +85,60 @@ export default function InstagramEditor({ draft, changed, cards = [], article, s
   const paragraphs = draft.paragraphs || [];
   const hashtags = (draft.hashtags || []).join(" ");
   const caption = [draft.opening, ...paragraphs, draft.closing, hashtags].filter(Boolean).join("\n\n");
-  const parts = [
-    { key: "opening", label: "도입", value: draft.opening, evidence: draft.block_evidence?.opening, valid: draft.block_evidence_valid?.opening,
-      set: (value) => changed((next) => { next.opening = value; }) },
-    ...paragraphs.map((paragraph, index) => ({
-      key: `p${index}`, label: `본문 ${index + 1}`, value: paragraph, evidence: draft.block_evidence?.paragraphs?.[index], valid: draft.block_evidence_valid?.paragraphs?.[index],
-      set: (value) => changed((next) => { next.paragraphs[index] = value; }),
-    })),
-    { key: "closing", label: "마무리", value: draft.closing, evidence: draft.block_evidence?.closing, valid: draft.block_evidence_valid?.closing,
-      set: (value) => changed((next) => { next.closing = value; }) },
-    { key: "hashtags", label: "해시태그", value: hashtags, hashtag: true,
-      set: (value) => changed((next) => { next.hashtags = value.trim() ? value.trim().split(/\s+/u) : []; }) },
-  ];
   const partId = (key) => `instagram-part-${key}`;
-  const goTo = () => {
-    const el = document.getElementById(partId("caption"));
-    el?.focus();
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-  };
 
   return (
-    <div className="flex w-full min-w-0 flex-col items-center gap-4 lg:flex-row lg:items-start lg:justify-center" data-testid="instagram-editor">
-      {/* 게시물 카드 */}
-      <article className="w-full max-w-[470px] min-w-0 overflow-hidden rounded-[20px] border border-[#ECECEC] bg-white shadow-[0_10px_35px_rgba(0,0,0,0.08)]">
-        <header className="flex items-center gap-2.5 border-b border-[#F2F2F2] px-4 py-3">
-          <Avatar />
-          <span className="text-[14px] font-bold text-[#101010]">{ACCOUNT}</span>
-          <MoreHorizontal className="ml-auto h-5 w-5 text-[#101010]" aria-hidden="true" />
-        </header>
-
+    <div className="w-full max-w-4xl mx-auto" data-testid="instagram-editor">
+      {/* 가로형 인스타그램 게시물 편집 카드 */}
+      <article className="w-full overflow-hidden rounded-[24px] border border-[#ECECEC] bg-white shadow-[0_12px_40px_rgba(0,0,0,0.08)] flex flex-col md:flex-row min-h-[500px]">
+        {/* 좌측 열: 카드뉴스 및 이미지 미디어 영역 */}
         {showCards && (
-          <div className="border-b border-[#F2F2F2] bg-[#FAFAFA]" data-testid="instagram-media">
+          <div className="md:w-1/2 lg:w-[48%] border-b md:border-b-0 md:border-r border-[#F2F2F2] bg-[#FAFAFA] flex flex-col justify-center items-center p-4 relative shrink-0" data-testid="instagram-media">
             {cards.length > 0 ? (
-              <div className="flex gap-3 overflow-x-auto px-4 py-4 scrollbar-thin">
+              <div className="flex gap-3 overflow-x-auto w-full py-2 scrollbar-thin">
                 {cards.map((card, cardIndex) => (
                   <CardThumb key={card.card_id || cardIndex} card={card} index={cardIndex} total={cards.length} article={article} />
                 ))}
               </div>
             ) : (
-              <div className="flex aspect-[4/5] w-full items-center justify-center text-[#C7C2BB]" title="카드뉴스를 생성하면 이 자리에 붙습니다">
-                <ImageIcon className="h-10 w-10" />
+              <div className="flex aspect-[4/5] w-full max-w-[320px] items-center justify-center text-[#C7C2BB] rounded-2xl border border-dashed border-zinc-200 bg-white/60" title="카드뉴스를 생성하면 이 자리에 붙습니다">
+                <ImageIcon className="h-10 w-10 text-zinc-300" />
               </div>
             )}
           </div>
         )}
 
-        <div className="flex items-center gap-4 px-4 pt-3 text-[#101010]" aria-hidden="true">
-          <Heart className="h-6 w-6" />
-          <MessageCircle className="h-6 w-6" />
-          <Send className="h-6 w-6" />
-          <Bookmark className="ml-auto h-6 w-6" />
-        </div>
+        {/* 우측 열: 프로필 헤더 + 캡션 본문 편집 + 액션바/글자수 */}
+        <div className="flex-1 flex flex-col min-w-0 bg-white">
+          <header className="flex items-center gap-2.5 border-b border-[#F2F2F2] px-5 py-3.5 shrink-0">
+            <Avatar />
+            <span className="text-[14px] font-bold text-[#101010]">{ACCOUNT}</span>
+            <MoreHorizontal className="ml-auto h-5 w-5 text-[#101010]" aria-hidden="true" />
+          </header>
 
-        <div className="px-4 pb-3 pt-2.5">
-          <span className="text-[13px] font-bold text-[#101010]">{ACCOUNT}</span>
-          <div className="mt-1">
-            <CaptionPart id={partId("caption")} label="캡션" value={text} onChange={edit} onFocus={() => setActivePart(null)} />
+          <div className="flex-1 overflow-y-auto px-5 py-4 min-h-[280px]">
+            <div className="flex items-center gap-2 mb-2">
+              <Avatar size={24} />
+              <span className="text-[13px] font-bold text-[#101010]">{ACCOUNT}</span>
+            </div>
+            <div className="mt-1">
+              <CaptionPart id={partId("caption")} label="캡션" value={text} onChange={edit} onFocus={() => setActivePart(null)} />
+            </div>
           </div>
-          <p className={`mt-2 text-right font-mono text-[11px] ${caption.length > LIMIT ? "font-bold text-red-600" : "text-[#B0AAA2]"}`}>
-            {caption.length.toLocaleString()}/{LIMIT.toLocaleString()}
-          </p>
+
+          <div className="border-t border-[#F2F2F2] px-5 py-3 shrink-0 bg-white">
+            <div className="flex items-center gap-4 text-[#101010]" aria-hidden="true">
+              <Heart className="h-5 w-5" />
+              <MessageCircle className="h-5 w-5" />
+              <Send className="h-5 w-5" />
+              <Bookmark className="ml-auto h-5 w-5" />
+            </div>
+            <p className={`mt-2 text-right font-mono text-[11px] ${caption.length > LIMIT ? "font-bold text-red-600" : "text-[#B0AAA2]"}`}>
+              {caption.length.toLocaleString()}/{LIMIT.toLocaleString()}
+            </p>
+          </div>
         </div>
       </article>
-
-      {/* 오른쪽 옆: 단락별 흐름(캡션 순서대로 무엇을 말하는지). 누르면 그 단락으로 이동한다 — Threads 와 같은 모양 */}
-      <aside className="w-full max-w-[470px] space-y-1.5 lg:w-[200px] lg:max-w-none lg:sticky lg:top-4" data-testid="instagram-parts">
-        {parts.map((part, index) => (
-          <button
-            key={part.key}
-            type="button"
-            onClick={() => goTo()}
-            className={`block w-full rounded-xl border px-2.5 py-2 text-left transition cursor-pointer ${activePart === part.key ? "border-[#292929] bg-white" : "border-[#E7E2D9] bg-white/70 hover:bg-white"}`}
-          >
-            <span className="flex items-center justify-between text-[11px] font-bold text-[#57514A]">
-              <span>{index + 1}. {part.label}</span>
-              <span className="font-mono text-[10px] font-normal text-[#B0AAA2]">{(part.value || "").length}</span>
-            </span>
-            <span className="mt-1 block text-[11px] leading-snug text-[#756F67] line-clamp-3">{part.value || "—"}</span>
-          </button>
-        ))}
-      </aside>
     </div>
   );
 }

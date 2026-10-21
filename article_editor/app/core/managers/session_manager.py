@@ -118,6 +118,10 @@ class SessionManager:
                 pass  # 이미 만료된 토큰이어도 로컬 상태는 지운다
         auth.clear()
         saved_login.clear()  # 로그아웃하면 로그인 유지도 끝낸다
+        # 팩트체크 검색 색인(자료 글을 들고 있다)을 메모리에서 비운다. 팩트체크를 쓴 적이 없으면 불러오지 않는다(numpy 등)
+        retrieval = sys.modules.get(__package__.rsplit('.', 1)[0] + '.ai.factcheck.retrieval')
+        if retrieval is not None:
+            retrieval.clear_shared_indexes()
         return self.status()
 
     def set_keep_login(self, payload):

@@ -39,6 +39,9 @@ def make_chunks(n=60):
 
 @unittest.skipIf(np is None, 'numpy 필요')
 class ChunkIndexTests(unittest.TestCase):
+    def setUp(self):
+        retrieval.clear_shared_indexes()
+
     def ranked(self, mode, with_index):
         chunks, cache = make_chunks(), FakeCache()
         index = retrieval.ChunkIndex(chunks, cache) if with_index else None
@@ -83,6 +86,37 @@ class ChunkIndexTests(unittest.TestCase):
             service._retrieve_qwen_candidates('예산', {'linkedSourceIds': ['m1']}, chunks, indexes=indexes)
             self.assertEqual(cache.document_calls, 2)  # 연결 자료가 다르면 다른 후보 집합이라 따로 색인
             self.assertEqual(len(indexes), 2)
+
+    def test_index_is_reused_across_requests_until_material_changes(self):
+        chunks, cache = make_chunks(), FakeCache()
+        with mock.patch.object(retrieval, 'get_vector_cache', lambda: cache):
+            first = service._retrieve_qwen_candidates('예산 3억원', {}, chunks, indexes={})
+            # 다음 요청: 새 indexes, 같은 글의 새 청크 객체(자료 이름 같은 메타데이터는 달라도 된다)
+            renamed = [{**c, 'material_title': '바뀐 이름'} for c in chunks]
+            again = service._retrieve_qwen_candidates('예산 3억원', {}, renamed, indexes={})
+            self.assertEqual(cache.document_calls, 1)  # 두 번째 요청은 색인을 다시 만들지 않는다
+            self.assertEqual([r['text'] for r in first], [r['text'] for r in again])
+            self.assertTrue(all(r['material_title'] == '바뀐 이름' for r in again))  # 메타데이터는 지금 요청의 청크에서
+            edited = [{**chunks[0], 'text': chunks[0]['text'] + ' 고침'}] + chunks[1:]
+            service._retrieve_qwen_candidates('예산 3억원', {}, edited, indexes={})
+            self.assertEqual(cache.document_calls, 2)  # 자료 글이 바뀌면 새로 만든다
+
+    def test_shared_indexes_are_bounded_and_cleared(self):
+        cache = FakeCache()
+        sets = [make_chunks(10 + i) for i in range(retrieval.SHARED_INDEXES + 1)]
+        for chunks in sets:
+            retrieval.shared_chunk_index(chunks, cache)
+        self.assertEqual(len(retrieval._shared), retrieval.SHARED_INDEXES)
+        retrieval.shared_chunk_index(sets[0], cache)  # 가장 오래된 것은 버렸다
+        self.assertEqual(cache.document_calls, len(sets) + 1)
+        retrieval.shared_chunk_index(sets[-1], cache)  # 최근 것은 남아 있다
+        self.assertEqual(cache.document_calls, len(sets) + 1)
+        retrieval.clear_shared_indexes()
+        self.assertEqual(len(retrieval._shared), 0)
+
+    def test_different_vector_cache_does_not_share(self):
+        chunks, a, b = make_chunks(), FakeCache(), FakeCache()
+        self.assertIsNot(retrieval.shared_chunk_index(chunks, a), retrieval.shared_chunk_index(chunks, b))
 
 
 if __name__ == '__main__':

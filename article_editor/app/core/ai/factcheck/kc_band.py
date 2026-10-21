@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import re
+import threading
 from collections import Counter
 from decimal import Decimal
 from functools import lru_cache
@@ -169,7 +170,6 @@ def _center(vecs):
 
 
 def _row(seed, r):
-    # ponytail: 행마다 난수를 새로 만든다(후보 140청크 색인 ≈3초, 질의 ≈0.07초). 느려지면 행을 float16 으로 캐시.
     return np.random.default_rng((seed, r)).standard_normal(KCS, dtype=np.float32)
 
 
@@ -178,12 +178,31 @@ def _dense_projection(seed, dim=DIM):
     return np.stack([_row(seed, r) for r in range(dim)])  # 1024×2560, 시드당 10MB
 
 
+# 어휘 쪽 투영 행: 같은 (seed, 행)은 늘 같은 값인데 색인·질의마다 새로 뽑으면 색인 시간의 절반 이상이 든다
+# (후보 150청크=단위 900개 색인 ≈5초 중 행 만들기가 대부분). 처음 쓸 때 만든 행을 기억한다.
+# float32 그대로 기억하므로 결과는 기억하지 않을 때와 같다(float16 은 후보가 달라져 쓰지 않는다).
+# 쓰인 칸만 채운다 — 최대 seed 8개 × 4096행 × 10KB ≈ 320MB(실제 자료 150청크에서 칸 약 2200개 ≈ 170MB).
+_LEX_ROWS: dict[int, dict[int, np.ndarray]] = {}
+_LEX_LOCK = threading.Lock()
+
+
+def _lex_projection(seed, cols):
+    """어휘 칸 cols 의 투영 행(len(cols)×2560). 없는 행만 만들어 기억한다."""
+    with _LEX_LOCK:
+        rows = _LEX_ROWS.setdefault(seed, {})
+        for c in cols:
+            c = int(c)
+            if c not in rows:
+                rows[c] = _row(seed, DIM + c)
+        return np.stack([rows[int(c)] for c in cols])
+
+
 def winners(emb, lex, seed):
-    """행마다 승자 KC 번호(n×256). 희소 입력의 어휘 쪽은 쓰인 행만 만든다(4096행 전체를 들고 있지 않음)."""
+    """행마다 승자 KC 번호(n×256). 희소 입력의 어휘 쪽은 쓰인 행만 쓴다(_lex_projection)."""
     act = emb @ _dense_projection(seed, emb.shape[1])
     cols = np.flatnonzero(lex.any(axis=0))
     if len(cols):
-        act += (BETA * lex[:, cols]) @ np.stack([_row(seed, DIM + int(c)) for c in cols])
+        act += (BETA * lex[:, cols]) @ _lex_projection(seed, cols)
     return np.argpartition(-act, WINNERS - 1, axis=1)[:, :WINNERS].astype(np.int16)
 
 

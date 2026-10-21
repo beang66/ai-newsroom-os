@@ -10,7 +10,6 @@ import { canMoveTranscriptFolder, moveTranscriptFolder, removeTranscriptFolder, 
 // 내보내기 결과는 화면에 띄우지 않고 헤더의 종 모양 알림으로 보낸다(Header.jsx 가 "newsroom:alert" 를 받는다)
 const notifyHeader = (text, openKind) => window.dispatchEvent(new CustomEvent("newsroom:alert", { detail: { text, openKind } }));
 import { exportFiles } from "../../api/editorial";
-import SaveBar from "../SaveBar.jsx";
 import { MARK_COLORS, addMark, applySpeakerEdits, assignByName, assignDialogues, buildBoxes, emptyEdits, isEdited, removeMarks, renameSpeakerSmart, resetSpeakers, sanitizeEdits, segmentsOf, setBoxText, speakerIndex, speakerList, speakerRoster } from "../../lib/speakerEdits.js";
 import {
   Upload,
@@ -37,7 +36,8 @@ import {
   ChevronRight,
   GripVertical,
   Trash2,
-  X
+  X,
+  Save
 } from "lucide-react";
 
 // 초 단위를 '00:00:00' (시:분:초) 형태의 시각 문자열로 포맷팅
@@ -535,6 +535,17 @@ export default function InterviewStudio({ onReturnToArticle, onSave, accountId }
     } catch {
       setNotesSave("error");
       return false;
+    }
+  };
+  const [isSaving, setIsSaving] = useState(false);
+  const handleTopSave = async () => {
+    if (isSaving || !onSave) return false;
+    setIsSaving(true);
+    try {
+      if (!await saveNotesNow()) return false;
+      return await onSave({ id: transcriptId || storedSource?.id, filename: fileName || storedSource?.filename || "녹취 파일" });
+    } finally {
+      setIsSaving(false);
     }
   };
   // 저장하지 않은 메모가 있으면 다른 전사로 옮기기 전에 묻는다
@@ -1142,6 +1153,39 @@ export default function InterviewStudio({ onReturnToArticle, onSave, accountId }
   const rootFiles = useMemo(() => {
     return storedItems.filter((item) => !fileFolderMap[item.id]);
   }, [storedItems, fileFolderMap]);
+
+  // 폴더 및 파일 통합 검색 결과 (폴더명 검색 + 폴더 내 파일 매칭)
+  const searchResults = useMemo(() => {
+    const needle = storedQuery.trim().toLowerCase();
+    if (!needle) return null;
+
+    const matchedFolders = folders.map((folder) => {
+      const folderFiles = storedMenu.items.filter((item) => fileFolderMap[item.id] === folder.id);
+      const isFolderMatched = (folder.name || "").toLowerCase().includes(needle);
+      const matchedFiles = folderFiles.filter((item) => (item.filename || "").toLowerCase().includes(needle));
+      if (isFolderMatched || matchedFiles.length > 0) {
+        return {
+          folder,
+          isFolderMatched,
+          files: isFolderMatched ? folderFiles : matchedFiles,
+          totalCount: folderFiles.length,
+        };
+      }
+      return null;
+    }).filter(Boolean);
+
+    const matchedRootFiles = storedMenu.items.filter((item) => {
+      const isRoot = !fileFolderMap[item.id];
+      const isFileMatched = (item.filename || "").toLowerCase().includes(needle);
+      return isRoot && isFileMatched;
+    });
+
+    return {
+      folders: matchedFolders,
+      rootFiles: matchedRootFiles,
+      isEmpty: matchedFolders.length === 0 && matchedRootFiles.length === 0,
+    };
+  }, [folders, storedMenu.items, fileFolderMap, storedQuery]);
   const isSTTCompleted = hasSource && dialogues.length > 0;
   const folderTreeContext = {
     folders,
@@ -1499,29 +1543,45 @@ export default function InterviewStudio({ onReturnToArticle, onSave, accountId }
           </h1>
         </div>
 
-        {onReturnToArticle && (
-          <button
-            onClick={() => {
-              const exportParts = [];
-              if (aiSummary?.summary) {
-                exportParts.push(`[AI 핵심 요약]\n${aiSummary.summary}`);
-              }
-              if (overallMemo && overallMemo.trim()) {
-                exportParts.push(`[취재 메모]\n${overallMemo.trim()}`);
-              }
-              const exportText = allBoxes.map((box) => box.text).join("\n\n");
-              if (exportText) {
-                exportParts.push(`[통합 전사 전문]\n${exportText}`);
-              }
-              onReturnToArticle(exportParts.join("\n\n---\n\n"), { id: transcriptId || storedSource?.id, filename: fileName });
-            }}
-            className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs active:scale-95"
-            title="기사 작성기로 내보내기"
-          >
-            <span>기사 작성기로 내보내기</span>
-            <ArrowUpRight className="w-3.5 h-3.5 text-slate-300" />
-          </button>
-        )}
+        <div className="flex items-center gap-2.5">
+          {onSave && (
+            <button
+              type="button"
+              data-testid="interview-save"
+              disabled={isSaving}
+              onClick={handleTopSave}
+              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-b from-[#f9fbfe] via-[#edf3f9] to-[#dce7f2] border border-sky-200/80 text-slate-700 hover:text-slate-900 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-[0_3px_8px_rgba(186,205,225,0.45),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_1px_rgba(180,200,220,0.35)] hover:from-white hover:via-[#f2f6fb] hover:to-[#e3ecf5] hover:shadow-[0_5px_12px_rgba(186,205,225,0.6),inset_0_1px_0_rgba(255,255,255,1)] active:translate-y-0.5 active:shadow-[inset_0_2px_5px_rgba(148,163,184,0.4),inset_0_1px_2px_rgba(148,163,184,0.3)] disabled:opacity-60"
+              title="저장하기"
+            >
+              <Save className="w-3.5 h-3.5 text-sky-700 stroke-[2.2]" />
+              <span>{isSaving ? "저장 중…" : "저장하기"}</span>
+            </button>
+          )}
+
+          {onReturnToArticle && (
+            <button
+              onClick={() => {
+                const exportParts = [];
+                if (aiSummary?.summary) {
+                  exportParts.push(`[AI 핵심 요약]\n${aiSummary.summary}`);
+                }
+                if (overallMemo && overallMemo.trim()) {
+                  exportParts.push(`[취재 메모]\n${overallMemo.trim()}`);
+                }
+                const exportText = allBoxes.map((box) => box.text).join("\n\n");
+                if (exportText) {
+                  exportParts.push(`[통합 전사 전문]\n${exportText}`);
+                }
+                onReturnToArticle(exportParts.join("\n\n---\n\n"), { id: transcriptId || storedSource?.id, filename: fileName });
+              }}
+              className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs active:scale-95"
+              title="기사 작성기로 내보내기"
+            >
+              <span>기사 작성기로 내보내기</span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-slate-300" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ──────────────────────────────────────────────────────────
@@ -1876,73 +1936,175 @@ export default function InterviewStudio({ onReturnToArticle, onSave, accountId }
                 <span className="text-[11px] text-slate-400/80 mt-1 inline-block">(우클릭하여 폴더를 만들 수 있습니다)</span>
               </li>
             )}
-            {storedMenu.status === "done" && storedQuery.trim() && storedItems.length === 0 && (
+            {storedMenu.status === "done" && storedQuery.trim() && searchResults?.isEmpty && (
               <li className="py-6 text-center text-xs text-slate-400">검색 결과가 없습니다.</li>
             )}
 
-            {/* 1. 검색어가 있을 때는 검색된 파일 목록 직접 렌더링 */}
-            {storedQuery.trim() ? (
-              storedItems.map((item) => {
-                const isCurrent = (storedSource?.id === item.id) || (transcriptId === item.id);
-                const isEditingThis = editingStoredId === item.id;
-                return (
-                  <li
-                    key={item.id}
-                    onClick={() => !isEditingThis && openStoredTranscript(item)}
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "F2" && !isEditingThis) {
-                        e.preventDefault();
-                        handleStartRenameStored(e, item);
-                      }
-                    }}
-                    className="group flex cursor-pointer items-center gap-2.5 py-2 px-2 rounded-lg outline-none hover:bg-slate-50 focus-visible:bg-slate-50 transition-colors"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0 group-hover:text-blue-600" />
-                    <div className="min-w-0 flex-1">
-                      {isEditingThis ? (
-                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="text"
-                            value={editingStoredTitle}
-                            onChange={(e) => setEditingStoredTitle(e.target.value)}
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleSaveRenameStored(e, item);
-                              if (e.key === "Escape") handleCancelRenameStored(e);
-                            }}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-0.5 text-xs font-bold text-slate-900 outline-none focus:border-slate-500"
-                          />
-                          <button type="button" onClick={(e) => handleSaveRenameStored(e, item)} className="shrink-0 cursor-pointer rounded p-1 text-emerald-600 hover:bg-emerald-50" title="제목 저장">
-                            <Check className="w-3.5 h-3.5 stroke-[2]" />
-                          </button>
-                          <button type="button" onClick={handleCancelRenameStored} className="shrink-0 cursor-pointer rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700" title="취소">
-                            <X className="w-3.5 h-3.5 stroke-[2]" />
-                          </button>
-                        </div>
-                      ) : (
-                        <p
-                          onDoubleClick={(e) => handleStartRenameStored(e, item)}
-                          title="더블클릭 또는 F2로 제목 변경"
-                          className={`truncate text-xs ${isCurrent ? "font-extrabold text-slate-900" : "font-bold text-slate-800"}`}
-                        >
-                          {item.filename || "(파일명 없음)"}
-                        </p>
+            {/* 1. 검색어가 있을 때는 검색된 폴더 및 내부 파일 계층형 시각화 */}
+            {storedQuery.trim() && searchResults ? (
+              <>
+                {/* 검색된 폴더 및 폴더 내부 파일 목록 (시각적 계층 연결) */}
+                {searchResults.folders.map(({ folder, files, isFolderMatched, totalCount }) => {
+                  const isOpen = openFolders[folder.id] !== false;
+                  return (
+                    <li key={`search-folder-${folder.id}`} className="py-1">
+                      <div
+                        onClick={() => toggleFolderOpen(folder.id)}
+                        className={`group flex items-center gap-2 py-1.5 px-2 rounded-xl cursor-pointer transition-all border ${
+                          isFolderMatched
+                            ? "bg-amber-50/80 border-amber-300 ring-1 ring-amber-200"
+                            : "bg-slate-50/70 border-slate-200 hover:bg-slate-100"
+                        }`}
+                      >
+                        <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-90 text-slate-700" : ""}`} />
+                        {isOpen ? (
+                          <FolderOpen className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" />
+                        ) : (
+                          <Folder className="w-4 h-4 text-amber-500 fill-amber-400/50 shrink-0" />
+                        )}
+                        <span className="min-w-0 flex-1 text-xs font-bold text-slate-900 truncate">
+                          {folder.name}
+                        </span>
+                        {/* 폴더 내부 파일 개수 뱃지 (시각적 카운트 표시) */}
+                        <span className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold shrink-0 border border-amber-200">
+                          <FileText className="w-2.5 h-2.5 text-amber-700" />
+                          <span>{files.length}{files.length !== totalCount ? `/${totalCount}` : ""}</span>
+                        </span>
+                      </div>
+
+                      {/* 폴더 내부 파일 목록: 세로 연결선과 들여쓰기로 시각적 포함 관계 표현 */}
+                      {isOpen && files.length > 0 && (
+                        <ul className="mt-1 space-y-0.5">
+                          {files.map((item) => {
+                            const isCurrent = (storedSource?.id === item.id) || (transcriptId === item.id);
+                            const isEditingThis = editingStoredId === item.id;
+                            return (
+                              <li
+                                key={`folder-file-${item.id}`}
+                                onClick={() => !isEditingThis && openStoredTranscript(item)}
+                                tabIndex={0}
+                                onKeyDown={(e) => {
+                                  if (e.key === "F2" && !isEditingThis) {
+                                    e.preventDefault();
+                                    handleStartRenameStored(e, item);
+                                  }
+                                }}
+                                className="group flex cursor-pointer items-center gap-2.5 py-1.5 px-2 rounded-lg outline-none hover:bg-slate-50 focus-visible:bg-slate-50 transition-colors border-l-2 border-amber-300 pl-3 ml-2.5"
+                              >
+                                <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0 group-hover:text-blue-600" />
+                                <div className="min-w-0 flex-1">
+                                  {isEditingThis ? (
+                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                      <input
+                                        type="text"
+                                        value={editingStoredTitle}
+                                        onChange={(e) => setEditingStoredTitle(e.target.value)}
+                                        autoFocus
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") handleSaveRenameStored(e, item);
+                                          if (e.key === "Escape") handleCancelRenameStored(e);
+                                        }}
+                                        className="w-full rounded-lg border border-slate-300 bg-white px-2 py-0.5 text-xs font-bold text-slate-900 outline-none focus:border-slate-500"
+                                      />
+                                      <button type="button" onClick={(e) => handleSaveRenameStored(e, item)} className="shrink-0 cursor-pointer rounded p-1 text-emerald-600 hover:bg-emerald-50" title="제목 저장">
+                                        <Check className="w-3.5 h-3.5 stroke-[2]" />
+                                      </button>
+                                      <button type="button" onClick={handleCancelRenameStored} className="shrink-0 cursor-pointer rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700" title="취소">
+                                        <X className="w-3.5 h-3.5 stroke-[2]" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <p
+                                      onDoubleClick={(e) => handleStartRenameStored(e, item)}
+                                      title="더블클릭 또는 F2로 제목 변경"
+                                      className={`truncate text-xs ${isCurrent ? "font-extrabold text-slate-900" : "font-bold text-slate-800"}`}
+                                    >
+                                      {item.filename || "(파일명 없음)"}
+                                    </p>
+                                  )}
+                                </div>
+                                <span className="shrink-0 font-mono text-[10px] text-slate-400">
+                                  {new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
+                                </span>
+                                {!isEditingThis && (
+                                  <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                                    <button type="button" onClick={(e) => handleDeleteStoredTranscript(e, item)} className="cursor-pointer rounded-lg p-1 text-slate-400 hover:text-rose-600" title="전사 삭제">
+                                      <Trash2 className="w-3.5 h-3.5 stroke-[1.8]" />
+                                    </button>
+                                  </span>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
                       )}
-                    </div>
-                    <span className="shrink-0 font-mono text-[10px] text-slate-400">
-                      {new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
-                    </span>
-                    {!isEditingThis && (
-                      <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
-                        <button type="button" onClick={(e) => handleDeleteStoredTranscript(e, item)} className="cursor-pointer rounded-lg p-1 text-slate-400 hover:text-rose-600" title="전사 삭제">
-                          <Trash2 className="w-3.5 h-3.5 stroke-[1.8]" />
-                        </button>
+                    </li>
+                  );
+                })}
+
+                {/* 검색된 루트 파일 목록 */}
+                {searchResults.rootFiles.map((item) => {
+                  const isCurrent = (storedSource?.id === item.id) || (transcriptId === item.id);
+                  const isEditingThis = editingStoredId === item.id;
+                  return (
+                    <li
+                      key={item.id}
+                      onClick={() => !isEditingThis && openStoredTranscript(item)}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "F2" && !isEditingThis) {
+                          e.preventDefault();
+                          handleStartRenameStored(e, item);
+                        }
+                      }}
+                      className="group flex cursor-pointer items-center gap-2.5 py-2 px-2 rounded-lg outline-none hover:bg-slate-50 focus-visible:bg-slate-50 transition-colors"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0 group-hover:text-blue-600" />
+                      <div className="min-w-0 flex-1">
+                        {isEditingThis ? (
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              value={editingStoredTitle}
+                              onChange={(e) => setEditingStoredTitle(e.target.value)}
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleSaveRenameStored(e, item);
+                                if (e.key === "Escape") handleCancelRenameStored(e);
+                              }}
+                              className="w-full rounded-lg border border-slate-300 bg-white px-2 py-0.5 text-xs font-bold text-slate-900 outline-none focus:border-slate-500"
+                            />
+                            <button type="button" onClick={(e) => handleSaveRenameStored(e, item)} className="shrink-0 cursor-pointer rounded p-1 text-emerald-600 hover:bg-emerald-50" title="제목 저장">
+                              <Check className="w-3.5 h-3.5 stroke-[2]" />
+                            </button>
+                            <button type="button" onClick={handleCancelRenameStored} className="shrink-0 cursor-pointer rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700" title="취소">
+                              <X className="w-3.5 h-3.5 stroke-[2]" />
+                            </button>
+                          </div>
+                        ) : (
+                          <p
+                            onDoubleClick={(e) => handleStartRenameStored(e, item)}
+                            title="더블클릭 또는 F2로 제목 변경"
+                            className={`truncate text-xs ${isCurrent ? "font-extrabold text-slate-900" : "font-bold text-slate-800"}`}
+                          >
+                            {item.filename || "(파일명 없음)"}
+                          </p>
+                        )}
+                      </div>
+                      <span className="shrink-0 font-mono text-[10px] text-slate-400">
+                        {new Date(item.createdAt).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
                       </span>
-                    )}
-                  </li>
-                );
-              })
+                      {!isEditingThis && (
+                        <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                          <button type="button" onClick={(e) => handleDeleteStoredTranscript(e, item)} className="cursor-pointer rounded-lg p-1 text-slate-400 hover:text-rose-600" title="전사 삭제">
+                            <Trash2 className="w-3.5 h-3.5 stroke-[1.8]" />
+                          </button>
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </>
             ) : (
               <>
                 {/* 2. 폴더 목록 렌더링 (아코디언 및 드롭 타깃) */}
@@ -2569,10 +2731,6 @@ export default function InterviewStudio({ onReturnToArticle, onSave, accountId }
           <div className="w-full h-16 bg-gradient-to-b from-white via-white/60 to-transparent pointer-events-none rounded-b-2xl border-b border-transparent" />
         </div>
       )}
-      {onSave && <SaveBar onSave={async () => {
-        if (!await saveNotesNow()) return false;
-        return onSave({ id: transcriptId || storedSource?.id, filename: fileName || storedSource?.filename || "녹취 파일" });
-      }} testId="interview-save" />}
       {leavePrompt && (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 p-4"

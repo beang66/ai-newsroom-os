@@ -396,7 +396,7 @@ export default function SettingsView({ onReturnToArticle: _onReturnToArticle, se
          ────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4 mb-8 pt-0 pb-5 border-b border-stone-200/60">
         <div>
-          <h1 className="text-2xl md:text-3xl font-black text-[#292929] tracking-tight">
+          <h1 className="text-xl md:text-2xl font-bold text-[#292929] tracking-tight">
             환경 설정
           </h1>
         </div>

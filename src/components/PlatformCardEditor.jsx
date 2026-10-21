@@ -29,7 +29,7 @@ const TEXT_FIELDS=['keyword','headline','body','answer','detail','farewell','ser
 const textKeyOf=card=>{const n=CardModel.normalize(card);return fingerprint([n.keyword,n.headline,n.body,n.answer,n.detail,n.farewell,n.service_message,n.text_positions]);};
 const structKeyOf=(n,index,total)=>fingerprint([n.role,n.design,n.image,n.show_keyword,n.content_version,n.closing_type,n.auto_fit,index,total]);
 let frameSeq=0;
-function CardPreview({card,index,total,photo,previewPhoto,onEdit,onMove}){
+function CardPreview({card,index,total,photo,previewPhoto,onEdit,onMove,width=432}){
   const frame=useRef(null),[measurement,setMeasurement]=useState(null),[,tick]=useState(0);
   const normalized=CardModel.normalize({...card,image:photo&&previewPhoto&&previewPhoto.key===photoKey(photo)?{...photo,url:previewPhoto.url,photographer:photo.photographer||photo.source,profile:photo.profile||photo.sourceUrl}:undefined,page:index+1,total_pages:total});
   const structKey=structKeyOf(normalized,index,total),textKey=textKeyOf(card);
@@ -62,7 +62,7 @@ function CardPreview({card,index,total,photo,previewPhoto,onEdit,onMove}){
   },[]);
   const fit=measurement?.frameId===current.id?measurement.fit:null;
   const fields=(fit?.overflowFields||[]).map(field=>({keyword:'키워드',headline:'제목',answer:'핵심 문구',detail:'상세 설명',body:'본문',farewell:'끝인사'})[field]||field).join('·');
-  return <div><div className="relative overflow-hidden rounded-2xl bg-black" style={{width:432,height:540}}><iframe ref={frame} title="카드 미리보기" sandbox="allow-scripts" srcDoc={current.html} style={{width:1080,height:1350,border:0,transform:'scale(.4)',transformOrigin:'top left'}}/></div>
+  return <div><div className="relative overflow-hidden rounded-2xl bg-black" style={{width,height:width*1.25}}><iframe ref={frame} title="카드 미리보기" sandbox="allow-scripts" srcDoc={current.html} style={{width:1080,height:1350,border:0,transform:`scale(${width/1080})`,transformOrigin:'top left'}}/></div>
     {fit&&(fit.overflow||fit.overlap)&&<p role="alert" data-testid="card-fit-error" className="mt-2 text-xs text-rose-300">{index+1}번 카드: {fit.overlap?'텍스트 박스 겹침':`글 넘침 (${fields||'본문 영역'}, ${fit.contentHeight}/${fit.availableHeight}px)`}. 문안·위치를 편집한 뒤 JPG 준비를 확인해 주세요.</p>}</div>;
 }
 export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,preparing=false}) {
@@ -76,6 +76,20 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
     ||(active.content!==undefined&&(!active.content||typeof active.content!=='object'||Array.isArray(active.content))));
   const photo=active&&!invalid?selectedCardPhoto(active,article):null;
   const [previewPhoto,setPreviewPhoto]=useState(null);
+  // 창이 좁으면 카드 미리보기를 줄여, 오른쪽 버튼 옆 팝업(최소 320px)이 들어갈 자리를 남긴다.
+  const [rootNode,setRootNode]=useState(null),[room,setRoom]=useState(null);
+  useLayoutEffect(()=>{
+    if(!rootNode)return;
+    // 편집 영역 너비와, 그 오른쪽에서 화면 끝까지 남는 폭(페이지 여백)을 잰다
+    const measure=()=>{const box=rootNode.getBoundingClientRect();setRoom({width:box.width,gap:Math.max(0,window.innerWidth-box.right)});};
+    measure();const observer=new ResizeObserver(measure);observer.observe(rootNode);window.addEventListener('resize',measure);
+    return()=>{observer.disconnect();window.removeEventListener('resize',measure);};
+  },[rootNode]);
+  const fixedWidth=24+24+88+24+44,popupRoom=12+300+16;// 미리보기 틀 여백·간격·썸네일 열·버튼 열 + 팝업 자리(최소 300px)
+  const spare=room?room.width-fixedWidth-Math.max(0,popupRoom-room.gap):432;
+  const previewWidth=Math.round(Math.max(160,Math.min(432,spare)));
+  // 가운데 정렬하면 오른쪽 여유가 줄어 팝업이 넘치므로, 자리가 넉넉할 때만 가운데에 둔다
+  const roomy=room?(room.width-fixedWidth-432)/2>=Math.max(0,popupRoom-room.gap):true;
   useEffect(()=>{
     let cancelled=false;
     if(photo)photoDataUrl(photo).then(url=>{if(!cancelled)setPreviewPhoto({key:photoKey(photo),url});}).catch(e=>{if(!cancelled){setPreviewPhoto(null);setError(e.message);}});
@@ -130,11 +144,11 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
   const upload=event=>{const file=event.target.files?.[0];event.target.value='';void uploadFile(file);};
   const modern=active.content_version===2||(active.content_version!==1&&(typeof content.answer==='string'||typeof content.detail==='string'));
   const rendered=cards.every(card=>card&&typeof card==='object')?currentRender(active,photo,draft):null;
-  return <div className="space-y-6" data-testid="platform-card-editor">
-    <div className="flex flex-col sm:flex-row items-center sm:items-start justify-center gap-6">
+  return <div ref={setRootNode} className="space-y-6" data-testid="platform-card-editor">
+    <div className={`flex flex-col sm:flex-row items-center sm:items-start ${roomy?'justify-center':'sm:justify-start'} gap-6`}>
       <div className="flex flex-col items-center gap-2">
         <div className="rounded-[28px] bg-[#18181B] p-3 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.45)]">
-          <CardPreviewBoundary card={active} page={index+1}><CardPreview card={active} index={index} total={cards.length} photo={photo} previewPhoto={previewPhoto} onEdit={editText} onMove={movePart}/></CardPreviewBoundary>
+          <CardPreviewBoundary card={active} page={index+1}><CardPreview card={active} index={index} total={cards.length} photo={photo} previewPhoto={previewPhoto} onEdit={editText} onMove={movePart} width={previewWidth}/></CardPreviewBoundary>
         </div>
         <button type="button" data-testid="card-reset-positions" onClick={()=>patchCard(()=>({text_positions:{}}))} className="text-[11px] font-bold text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline cursor-pointer">텍스트 위치 초기화</button>
       </div>

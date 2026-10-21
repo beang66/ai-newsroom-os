@@ -30,7 +30,7 @@ class ExternalTests(unittest.TestCase):
     def test_sends_only_claim_and_given_evidence(self):
         seen = {}
 
-        def fake(name, instructions, schema, content):
+        def fake(name, instructions, schema, content, **_kwargs):
             seen.update(content=content, schema=schema)
             return {'results': [{'id': '0', 'verdict': 'CONFLICT', 'reason': 'r', 'wrong_text': '72만', 'evidence_text': '627,546'}]}
 

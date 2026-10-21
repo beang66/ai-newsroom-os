@@ -1,7 +1,7 @@
 /* 각 화면 왼쪽 위 제목 — 콘텐츠 변환 화면의 '플랫폼 콘텐츠 편집실' 제목과 같은 글꼴(Pretendard 굵게, 자간 좁게) */
 .workspace-page-header h1 {
   font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: -0.025em;
   font-size: 1.5rem;
   line-height: 2rem;

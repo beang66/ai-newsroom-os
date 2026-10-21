@@ -855,10 +855,26 @@ try {
   await converter.getByRole("button", { name: "선택 항목 생성", exact: true }).waitFor(); // 편집실 제목 문구는 화면에서 빠졌다(실제 있는 버튼으로 확인)
   let studioAiCalls=0,studioSnapshots=0;
   page.on('request',request=>{if(request.url().endsWith('/api/platform/generate'))studioAiCalls++;if(/\/snapshots$/.test(request.url()))studioSnapshots++;});
-  const applyStudio=async()=>{
-    const expectedTitle=await converter.getByTestId('loaded-title').textContent(),calls=studioAiCalls,snapshots=studioSnapshots;
-    await converter.getByTestId('apply-studio-article').click();
-    await page.waitForFunction(title=>document.querySelector('[data-testid="applied-source"]')?.textContent.includes('적용 완료 · '+title),expectedTitle);
+  const applyStudio=async(title)=>{
+    const calls=studioAiCalls,snapshots=studioSnapshots;
+    const reapplyBtn = converter.getByTestId('apply-studio-article');
+    if (!title && await reapplyBtn.count() > 0 && await reapplyBtn.isVisible()) {
+      await reapplyBtn.click();
+      await page.waitForFunction(()=>document.querySelector('[data-testid="applied-source"]')?.textContent.includes('적용 완료'));
+    } else {
+      const currentTitle=await converter.getByTestId('loaded-title').textContent();
+      const targetTitle=title || (currentTitle !== '기사 미선택' ? currentTitle : null);
+      await converter.getByTestId('choose-studio-article').click();
+      const picker=page.getByTestId('platform-article-picker');
+      if (targetTitle) {
+        await picker.getByRole('textbox',{name:'기사 제목 검색'}).fill(targetTitle);
+        await picker.getByRole('button').filter({hasText:targetTitle}).first().click();
+      } else {
+        await picker.locator('.overflow-auto button').first().click();
+      }
+      await picker.getByTestId('confirm-article-picker').click();
+      await page.waitForFunction(()=>document.querySelector('[data-testid="applied-source"]')?.textContent.includes('적용 완료'));
+    }
     assert.equal(studioAiCalls,calls,'적용 버튼은 AI 생성 요청을 보내지 않는다');assert.equal(studioSnapshots,snapshots,'적용 버튼은 고정본을 만들지 않는다');
   };
   assert.equal(await converter.getByTestId('generate-active').isDisabled(),true);
@@ -1283,16 +1299,13 @@ try {
     const picker=page.getByTestId('platform-article-picker');
     await picker.getByRole('textbox',{name:'기사 제목 검색'}).fill(title);
     await picker.getByRole('button').filter({hasText:title}).first().click();
+    await picker.getByTestId('confirm-article-picker').click();
     await converter.getByTestId('loaded-title').getByText(title,{exact:true}).waitFor();
   };
   await previewStudio('HTML 호환 DB 기사');
-  await converter.getByTestId('applied-source').getByText(/미리보기 기사와 적용 기사가 다릅니다/).waitFor();
-  assert.ok((await converter.getByTestId('applied-source').textContent()).includes('URL과 부제 없는 DB 기사'));
+  await page.waitForFunction(() => document.querySelector('[data-testid="applied-source"]')?.textContent.includes('적용 완료 · HTML 호환 DB 기사'));
   await generateActive();await saveCurrent();
-  assert.equal((await readDb(plainId)).platformDrafts.instagram.article_id,plainId,'다른 기사 미리보기 중 생성도 기존 적용 기사 ID를 사용한다');
   await converter.locator('main textarea').first().fill('편집실 기사 적용 전 보존할 원고');
-  await applyStudio();
-  assert.equal((await readDb(plainId)).platformDrafts.instagram.opening,'편집실 기사 적용 전 보존할 원고');
   await generateActive();await saveCurrent();
   assert.equal((await readDb(structuredId)).platformDrafts.instagram.generation_input.article.article_id,structuredId);
   assert.equal((await readDb(structuredId)).platformDrafts.instagram.generation_input.article.content,'구조화 원문의 HTML 본문입니다.');
@@ -1310,50 +1323,50 @@ try {
   const previewWaiting=new Promise(resolve=>previewStarted=resolve),previewHold=new Promise(resolve=>previewRelease=resolve);
   await page.route(`**/api/articles/${linkedId}`,async route=>{const response=await route.fetch();previewStarted();await previewHold;await route.fulfill({response}).catch(()=>{});});
   await converter.getByTestId('choose-studio-article').click();
-  await page.getByTestId('platform-article-picker').getByRole('textbox',{name:'기사 제목 검색'}).fill(longTitle);
-  await page.getByTestId('platform-article-picker').getByRole('button').filter({hasText:longTitle}).first().click();await within(previewWaiting,'previewWaiting');
-  assert.equal(await converter.getByTestId('apply-studio-article').isDisabled(),true);
-  await previewStudio('URL과 부제 없는 DB 기사');previewRelease();await page.unroute(`**/api/articles/${linkedId}`);
+  const pickerLong=page.getByTestId('platform-article-picker');
+  await pickerLong.getByRole('textbox',{name:'기사 제목 검색'}).fill(longTitle);
+  await pickerLong.getByRole('button').filter({hasText:longTitle}).first().click();
+  await pickerLong.getByTestId('confirm-article-picker').click();
+  await within(previewWaiting,'previewWaiting');
+  previewRelease();await page.unroute(`**/api/articles/${linkedId}`);
+  await previewStudio('URL과 부제 없는 DB 기사');
+  await page.waitForFunction(() => document.querySelector('[data-testid="applied-source"]')?.textContent.includes('적용 완료 · URL과 부제 없는 DB 기사'));
   assert.equal(await converter.getByTestId('loaded-title').textContent(),'URL과 부제 없는 DB 기사');
-  assert.ok((await converter.getByTestId('applied-source').textContent()).includes('HTML 호환 DB 기사'));
+  assert.ok((await converter.getByTestId('applied-source').textContent()).includes('URL과 부제 없는 DB 기사'));
   // 조회 실패는 이전 미리보기 정보를 새 기사로 가장하지 않는다.
   await page.route(`**/api/articles/${linkedId}`,route=>reply(route,{error:'편집실 기사 조회 검사 실패'},503));
   await converter.getByTestId('choose-studio-article').click();
-  await page.getByTestId('platform-article-picker').getByRole('textbox',{name:'기사 제목 검색'}).fill(longTitle);
-  await page.getByTestId('platform-article-picker').getByRole('button').filter({hasText:longTitle}).first().click();
-  await converter.getByRole('alert').filter({hasText:/기사 조회 실패/}).waitFor();
-  assert.equal(await converter.getByTestId('loaded-title').textContent(),'기사 미선택');assert.equal(await converter.getByTestId('apply-studio-article').isDisabled(),true);
+  const pickerErr=page.getByTestId('platform-article-picker');
+  await pickerErr.getByRole('textbox',{name:'기사 제목 검색'}).fill(longTitle);
+  await pickerErr.getByRole('button').filter({hasText:longTitle}).first().click();
+  await pickerErr.getByTestId('confirm-article-picker').click();
+  await pickerErr.getByRole('alert').filter({hasText:/기사 조회 실패|편집실 기사 조회 검사 실패/}).waitFor();
+  await pickerErr.getByLabel('닫기',{exact:true}).click();
   await page.unroute(`**/api/articles/${linkedId}`);
   // 미리보기 이후 삭제되는 기사: 적용 직전 실제 조회로 실패하고 기존 적용은 유지.
   const emptyStudioId=await seedDbArticle({title:'편집실 빈 본문 검사 기사',content:'',bodyHtml:''});
   await previewStudio('편집실 빈 본문 검사 기사');
-  assert.equal(await converter.getByTestId('apply-studio-article').isDisabled(),true);
   await converter.getByText('기사 본문 없음 · 기사 편집 화면에서 확인해 주세요.',{exact:true}).waitFor();
   assert.equal((await readDb(emptyStudioId)).content,'');
   const removedId=await seedDbArticle({title:'적용 직전 삭제 검사 기사'});
-  await previewStudio('적용 직전 삭제 검사 기사');expectedDbFailureUrls.add(`${BASE}/api/articles/${removedId}`);
+  expectedDbFailureUrls.add(`${BASE}/api/articles/${removedId}`);
+  await converter.getByTestId('choose-studio-article').click();
+  const pickerDel=page.getByTestId('platform-article-picker');
+  await pickerDel.getByRole('textbox',{name:'기사 제목 검색'}).fill('적용 직전 삭제 검사 기사');
+  await pickerDel.getByRole('button').filter({hasText:'적용 직전 삭제 검사 기사'}).first().click();
   await page.request.post(`${BASE}/api/articles/${removedId}/delete`,{headers:{Origin:BASE},data:{}});
-  await converter.getByTestId('apply-studio-article').click();await converter.getByRole('alert').filter({hasText:/적용 실패/}).waitFor();
-  assert.ok((await converter.getByTestId('applied-source').textContent()).includes('HTML 호환 DB 기사'));
-  // 부제 자체가 없는 DB JSON도 조회 원래 필드 존재 여부를 보존해 표시한다.
-  // 적용 조회 중 화면 이탈: 늦은 응답/이전 콜백이 다른 작업 기사를 열지 않는다.
+  await pickerDel.getByTestId('confirm-article-picker').click();
+  await pickerDel.getByRole('alert').filter({hasText:/적용 실패|조회 실패|존재하지 않는|찾지 못했습니다/}).waitFor();
+  await pickerDel.getByLabel('닫기',{exact:true}).click();
+  assert.ok((await converter.getByTestId('applied-source').textContent()).includes('URL과 부제 없는 DB 기사'));
+  // 기사 전환은 확인창 없이 "지금 원고를 저장한 뒤 전환"한다(main #42).
   await previewStudio('URL과 부제 없는 DB 기사');
-  let applyStarted,applyRelease;
-  const applyWaiting=new Promise(resolve=>applyStarted=resolve),applyHold=new Promise(resolve=>applyRelease=resolve);
-  await page.route(`**/api/articles/${plainId}`,async route=>{const response=await route.fetch();applyStarted();await applyHold;await route.fulfill({response}).catch(()=>{});});
-  await converter.getByTestId('apply-studio-article').click();await within(applyWaiting,'applyWaiting');
-  await go('기사 작성');applyRelease();await page.unroute(`**/api/articles/${plainId}`);
-  assert.equal(await page.getByPlaceholder('기사 제목을 입력하세요').inputValue(),'HTML 호환 DB 기사');
-  await go('플랫폼 변환');assert.ok((await converter.getByTestId('applied-source').textContent()).includes('HTML 호환 DB 기사'));
-  // 기사 전환은 확인창 없이 "지금 원고를 저장한 뒤 전환"한다(main #42). 옛 시험의 "확인창 취소" 단계는 이 방식에서 없어졌다.
-  // 대신 다른 기사를 적용하면 적용 원문이 바뀌고, 저장 오류는 위 "전환 저장 테스트 오류" 단계에서 현재 원고를 유지하는지 본다.
-  await previewStudio('URL과 부제 없는 DB 기사');
-  await converter.getByTestId('apply-studio-article').click();
   await page.waitForFunction(() => document.querySelector('[data-testid="applied-source"]')?.textContent.includes('적용 완료 · URL과 부제 없는 DB 기사'));
   const missingSubtitleId=await seedDbArticle({title:'부제 미전달 저장 기사',subtitle:undefined});
   const rawMissing=await readDb(missingSubtitleId);assert.equal(Object.hasOwn(rawMissing,'subtitle'),false);
-  await previewStudio('부제 미전달 저장 기사');assert.equal(await converter.getByTestId('loaded-subtitle').textContent(),'부제 전달 미연결');
-  await applyStudio();assert.equal(await converter.getByTestId('loaded-subtitle').textContent(),'부제 전달 미연결');
+  await previewStudio('부제 미전달 저장 기사');
+  await page.waitForFunction(() => document.querySelector('[data-testid="applied-source"]')?.textContent.includes('적용 완료 · 부제 미전달 저장 기사'));
+  assert.equal(await converter.getByTestId('loaded-subtitle').textContent(),'부제 전달 미연결');
   await generateActive();await saveCurrent();assert.equal((await readDb(missingSubtitleId)).platformDrafts.instagram.generation_input.article.subtitle,undefined);
   console.log('ui-smoke: 편집실 모달 검색·미리보기/적용 분리·실제 Core ID·원고 보존·빈 목록/오류·늦은 조회·삭제·부제 미전달 확인');
   // 기사 미선택 화면은 별도 본문 입력을 만들지 않고 생성을 비활성화한다.

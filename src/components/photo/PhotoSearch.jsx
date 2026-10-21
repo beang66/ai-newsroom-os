@@ -19,13 +19,9 @@ const btn = "px-2.5 py-1 rounded-full text-[11px] font-bold border border-[#DDD6
 function popoverPlace(anchor) {
   const vw = window.innerWidth, vh = window.innerHeight, width = Math.min(620, vw - 32);
   if (!anchor) return { left: (vw - width) / 2, top: 24, width, maxHeight: vh - 48, ox: width / 2, oy: 24 };
-  // 왼쪽(버튼 쪽)을 고정하고 오른쪽으로 퍼진다. 오른쪽 자리가 모자라면 너비를 줄이고, 360px 도 안 되면 버튼 왼쪽에 둔다.
-  let left = anchor.right + 12, w = width;
-  if (left + w > vw - 16) {
-    if (vw - 16 - left >= 360) w = vw - 16 - left;
-    else left = Math.max(16, anchor.left - 12 - width);
-  }
-  const top = Math.max(16, Math.min(anchor.top - 8, vh - 520));
+  // 정보 배치 팝업과 같이 버튼 오른쪽 12px 옆에 왼쪽을 고정하고 오른쪽으로 퍼진다(왼쪽으로 뒤집지 않는다). 자리가 모자라면 너비만 줄인다(최소 260px).
+  const left = anchor.right + 12, w = Math.min(width, Math.max(260, vw - 16 - left));
+  const top = Math.max(16, Math.min(anchor.top - 8, vh - 340)); // 정보 배치 팝업과 같은 위치 규칙
   return { left, top, width: w, maxHeight: vh - top - 16, ox: anchor.left + anchor.width / 2 - left, oy: anchor.top + anchor.height / 2 - top };
 }
 
@@ -125,7 +121,7 @@ export default function PhotoSearch({ body, card, onClose, onChoose, onUpload, a
     <div className="fixed inset-0 z-50" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div role="dialog" aria-label="사진 검색하기" data-testid="photo-search"
         style={{ left: place.left, top: place.top, width: place.width, maxHeight: place.maxHeight, transformOrigin: "left center" }}
-        className="photo-popover minimal-scroll fixed overflow-auto bg-white rounded-3xl border border-[#DDD6CB] shadow-[0_24px_60px_-12px_rgba(15,23,42,0.35)] p-5 space-y-4">
+        className="photo-popover minimal-scroll fixed overflow-auto bg-white rounded-2xl border border-[#DDD6CB] shadow-[0_24px_60px_-12px_rgba(15,23,42,0.35)] p-3 space-y-3">
         <div className="flex items-center justify-between border-b border-[#F0EFEA] pb-3">
           <div className="flex items-center gap-2">
             <ImageIcon className="h-5 w-5 text-slate-700" strokeWidth={1.6} aria-hidden="true" />

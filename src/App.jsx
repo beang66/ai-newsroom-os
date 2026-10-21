@@ -419,23 +419,6 @@ export default function App() {
     return mergeStudioArticle(previous, next);
   }), []);
 
-  // 콘텐츠 변환 전용 상태: 탭 진입 시 항상 빈 화면에서 시작하여 원하는 기사를 직접 선택
-  const [convertArticle, setConvertArticle] = useState(null);
-  useEffect(() => {
-    if (activeTab !== "convert") {
-      setConvertArticle(null);
-    }
-  }, [activeTab]);
-  const emptyConvertArticle = useMemo(() => toStudioArticle(createEmptyArticle()), []);
-  const convertStudioArticle = useMemo(() => convertArticle ? toStudioArticle(convertArticle) : emptyConvertArticle, [convertArticle, emptyConvertArticle]);
-  const setConvertStudioArticle = useCallback((update) => {
-    setConvertArticle((previous) => {
-      if (!previous) return previous;
-      const next = typeof update === "function" ? update(toStudioArticle(previous)) : update;
-      return mergeStudioArticle(previous, next);
-    });
-  }, []);
-
   // 송고: ① 수동 저장으로 ID·최신 원고 확보 ② CMS 로 전송 ③ 성공하면 Core 에 송고본을 남긴다.
   // CMS 전송이 실패하면 송고본은 바뀌지 않고 오류를 던진다(화면은 "발행 완료"로 바꾸지 않는다).
   const handlePublish = useCallback(async () => {
@@ -792,17 +775,14 @@ export default function App() {
             ) : activeTab === "convert" ? (
               <main className="flex-1 min-w-0 transition-all z-20 pt-0 pb-8 px-5 md:px-10">
                 <PlatformStudio
-                  key="convert-studio"
-                  article={convertStudioArticle}
-                  setArticle={setConvertStudioArticle}
+                  key={article.articleId || "unsaved"}
+                  article={studioArticle}
+                  setArticle={setStudioArticle}
                   flush={flushForStudio}
-                  onApplyArticle={async (id) => {
-                    const next = await loadArticleById(id, createEmptyArticle());
-                    setConvertArticle(next);
-                  }}
+                  onApplyArticle={(id) => changeArticle(id, "convert")}
                   onOpenArticles={() => setActiveTab("archive")}
                   onEditArticle={() => setActiveTab("writer")}
-                  onSave={() => convertArticle && persistArticle()}
+                  onSave={() => persistArticle()}
                   sourceLoading={switching}
                   sourceError={switchError}
                 />

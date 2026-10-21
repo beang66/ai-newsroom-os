@@ -144,7 +144,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   const [previewLoading,setPreviewLoading]=useState(false),[previewError,setPreviewError]=useState('');
   const [applying,setApplying]=useState(false),[applyError,setApplyError]=useState('');
   const [applyReturned,setApplyReturned]=useState(0);
-  const [applied,setApplied]=useState(()=>appliedSource(article)||(article?.content?.trim()?applyCurrentSource(article):null));
+  const [applied,setApplied]=useState(()=>appliedSource(article));
   const lookup=useRef({epoch:0,controller:null}),application=useRef(null),previewLive=useRef(preview);
   useLayoutEffect(()=>{previewLive.current=preview;},[preview]);
   useLayoutEffect(()=>{
@@ -731,7 +731,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                   {/^https?:\/\//iu.test(preview?.article.url || "") && <a href={preview.article.url} target="_blank" rel="noreferrer" className="mt-2 block text-xs underline text-[#292929]">원문 출처 링크</a>}
                 </div>}
                 {previewError&&<p role="alert" className="mt-2 text-xs text-red-700">기사 조회 실패: {previewError}</p>}
-            <div className="mt-3 flex items-center">
+            <div className="mt-3 flex items-center gap-2">
               <button
                 type="button"
                 data-testid="choose-studio-article"
@@ -743,6 +743,17 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                   ? "다른 기사 불러오기"
                   : "저장 기사에서 선택"}
               </button>
+              {!ready && applied && (
+                <button
+                  type="button"
+                  data-testid="apply-studio-article"
+                  disabled={applying || previewLoading || sourceLoading}
+                  onClick={() => applyPreview()}
+                  className="rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-100 transition"
+                >
+                  {applying ? "재적용 중…" : "원문 재적용"}
+                </button>
+              )}
             </div>
                 {applyError&&<p role="alert" className="mt-2 text-xs text-red-700">적용 실패: {applyError}</p>}
                 <p role="status" data-testid="applied-source" className="sr-only">
@@ -795,7 +806,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                   }}
                   className="sr-only"
                 />
-                <span className="text-xs font-extrabold">카드뉴스</span>
+                <span className="text-xs font-extrabold">카드뉴스<span className="sr-only">도 생성</span></span>
               </label>
             </div>
 
@@ -812,7 +823,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                 const running = ids.filter((id) => /^(생성 중|JPG 준비 중)/.test(progress[id]));
                 const shown = running.length ? running : ids.filter((id) => !/^(완료|실패|원고 완료)/.test(progress[id])).slice(0, 1);
                 return shown.length ? shown.map((id) => `${VIEW_LABELS[id]} 생성 중`).join(" / ") : "선택 항목 생성 중";
-              })() : (((drafts && Object.keys(drafts).length > 0) || !!cardNews || (runHistory && runHistory.length > 0) || !!lastRun) ? "다시 생성하기" : "선택 항목 생성")}
+              })() : "선택 항목 생성"}
             </button>
           </section>
 
@@ -971,21 +982,8 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
 
         {/* 메인 편집 화면: 뒤에 존재하는 흰색 박스 제거 — 전체 배경 위에 플랫폼 편집이 직접 위치 */}
         <main ref={mainRef} className="min-w-0 self-start">
-          <div className="mb-4 flex items-center justify-end border-b border-[#EFECE6] pb-3">
-            {/* 테스트 호환성을 위해 유지하되 화면에는 표시하지 않음 */}
-            <button
-              type="button"
-              data-testid="generate-active"
-              onClick={() => runGeneration([activeView])}
-              disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
-              className="sr-only"
-            >
-              {activeView === "card_news"
-                ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
-                : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
-            </button>
-
-            {/* 복사 기능과 다시 생성하기 버튼이 있던 우측 부분에 탭 목록(Instagram, Threads, 카드뉴스) 위치 */}
+          <div className="mb-4 flex items-center justify-between border-b border-[#EFECE6] pb-3">
+            {/* 탭 목록(Instagram, Threads, 카드뉴스) 위치 */}
             <div className="flex flex-wrap items-center gap-2">
               {PLATFORM_LIST.filter((platform) =>
                 selectedPlatforms.includes(platform.id) || drafts[platform.id]
@@ -1019,6 +1017,20 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                 </button>
               )}
             </div>
+
+            <button
+              type="button"
+              data-testid="generate-active"
+              onClick={() => runGeneration([activeView])}
+              disabled={!ready || applying || generating || keywordLoading || sourceLoading || !article.title?.trim() || !article.content?.trim()}
+              title="이 항목만 생성합니다. 이미 있는 결과와 수정 내용은 새 결과로 바뀝니다."
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-slate-500" />
+              {activeView === "card_news"
+                ? (cardNews ? "카드뉴스 다시 생성" : "카드뉴스만 생성")
+                : `${VIEW_LABELS[activeView] || "플랫폼"} ${drafts[activeView] ? "다시 생성" : "원고 생성"}`}
+            </button>
           </div>
 
           {localDraftNotice && (

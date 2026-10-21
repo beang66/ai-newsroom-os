@@ -71,7 +71,7 @@ export default function PlatformArticlePicker({onSelect,onConfirm,onClose,curren
       <button type="button" onClick={()=>{setLoading(true);setError('');setRows([]);setAttempt(value=>value+1);}} disabled={loading||confirming} className="text-xs text-slate-500 underline disabled:opacity-50">목록 다시 불러오기</button>
       <div className="flex items-center gap-2">
         <button type="button" onClick={onClose} disabled={confirming} className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">취소</button>
-        <button type="button" onClick={()=>handleConfirm(selectedId)} disabled={!selectedId||confirming||loading} className="rounded-xl bg-slate-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-40">{confirming?'기사 적용 중…':'확인'}</button>
+        <button type="button" data-testid="confirm-article-picker" onClick={()=>handleConfirm(selectedId)} disabled={!selectedId||confirming||loading} className="rounded-xl bg-slate-900 px-4 py-1.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-40">{confirming?'기사 적용 중…':'확인'}</button>
       </div>
     </div>
   </AppDialog>;

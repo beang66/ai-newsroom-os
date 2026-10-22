@@ -13,10 +13,13 @@ import {
   Plus, 
   Check,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  ChevronDown,
+  ChevronRight
 } from "lucide-react";
 import { registerSource, openSourceFile, sourcePreview, sourceChunks, isDevMode } from "../api/editorial";
 import { supportedClaimRanges } from "../api/claim-details.js";
+import { markTable } from "../lib/evidenceTable.js";
 import { core } from "../api/core.js";
 import { buildChecks, verifiedPercent, FACT_CATEGORY_EVENT } from "./ArticleCheckModal";
 
@@ -80,12 +83,20 @@ export default function FactCheckDrawer({
   className = "",
   style = {}
 }) {
-  const { results: evidenceList, busy: isAnalyzing, error: checkError, run: runCheck } = factCheck;
+  const { results: evidenceList, busy: isAnalyzing, progress, error: checkError, run: runCheck } = factCheck;
+  const progressText = progress ? ` ${progress.done}/${progress.total}문장` : "";
   // 등록된 취재자료는 기사(article.sources)에 둔다 — 서랍을 닫아도, 보관함에서도 보인다. 실패한 파일만 여기
   const [failedFiles, setFailedFiles] = useState([]);
   const sources = article.sources || [];
   const indexes = useSourceIndex(sources.map((s) => s.id));
   const { setFocus } = factCheck;
+  // 근거 카드 접기: 접은 카드는 판정과 기사 문장만 보인다(서랍 안에서만 기억, 결과가 새로 와도 유지)
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const toggleCard = (id) => setCollapsed((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   useEffect(() => () => setFocus(null), [setFocus]); // 카드에 마우스를 둔 채 서랍을 닫아도 본문 초록 표시가 남지 않게
 
   // 기사 검증률 계산 (ArticleCheckModal과 일치)
@@ -320,7 +331,7 @@ export default function FactCheckDrawer({
               disabled={isAnalyzing}
               className="w-full py-2.5 rounded-xl bg-stone-950 hover:bg-black text-white text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-98 shadow-xs cursor-pointer disabled:opacity-50"
             >
-              <span>{isAnalyzing ? "전체 검증 진행 중…" : "전체 검증 실행"}</span>
+              <span>{isAnalyzing ? `전체 검증 진행 중…${progressText}` : "전체 검증 실행"}</span>
               <span className="text-xs font-light">→</span>
             </button>
           </div>
@@ -501,6 +512,15 @@ export default function FactCheckDrawer({
                   {sources.length ? "본문을 작성하면 등록한 자료와 자동으로 대조합니다." : "취재자료를 등록하고 본문을 작성하면 문장별 검증 결과가 표시됩니다."}
                 </p>
               )}
+              {visibleList.length > 1 && (
+                <div className="flex justify-end">
+                  <button type="button" data-testid="factcheck-collapse-all"
+                    onClick={() => setCollapsed(visibleList.every((x) => collapsed.has(x.id)) ? new Set() : new Set(visibleList.map((x) => x.id)))}
+                    className="text-[11px] font-bold text-slate-500 hover:text-slate-900 cursor-pointer">
+                    {visibleList.every((x) => collapsed.has(x.id)) ? "근거 모두 펼치기" : "근거 모두 접기"}
+                  </button>
+                </div>
+              )}
               {categoryFilter && (
                 <div data-testid="factcheck-collect" className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${GROUP_TONE[categoryFilter]}`}>
                   <span className="text-xs font-black">{GROUP_TITLE[categoryFilter]} {visibleList.length}문장만 모아보기</span>
@@ -529,7 +549,12 @@ export default function FactCheckDrawer({
                     {item.judgedBy === "external" && (
                       <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">AI 재판정</span>
                     )}
-                    {item.sourceDoc && (
+                    <button type="button" data-testid="factcheck-card-toggle" onClick={() => toggleCard(item.id)}
+                      aria-expanded={!collapsed.has(item.id)} title={collapsed.has(item.id) ? "근거 펼치기" : "근거 접기"}
+                      className="ml-auto p-1 rounded-full text-slate-400 hover:text-slate-800 hover:bg-slate-100 cursor-pointer">
+                      {collapsed.has(item.id) ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    {item.sourceDoc && !collapsed.has(item.id) && (
                       <span className="w-full min-w-0 break-words text-[11px] font-bold text-slate-400">출처: {item.sourceDoc}</span>
                     )}
                   </div>
@@ -544,16 +569,15 @@ export default function FactCheckDrawer({
                     </p>
                   </div>
 
+                  {!collapsed.has(item.id) && <>
                   {/* 2. 일치하는 근거 문장/표 항목은 초록, 불일치는 대응 값과 그 문장을 강조 */}
                   {item.quote && <div className="bg-blue-50/60 p-2.5 rounded-xl border border-blue-100 text-xs space-y-1">
                     <span className="text-[10px] font-black text-blue-600 block uppercase tracking-wide flex items-center gap-1">
                       <Sparkles className="w-3 h-3" />
                       원문 문서 발췌 근거
                     </span>
-                    <p className="text-slate-800 italic leading-relaxed break-words" data-testid="evidence-quote">
-                      "<Marked text={item.quote} spans={item.quoteSpans} sentence={item.verdict !== "SUPPORTED"} ok={item.verdict === "SUPPORTED"} />"
-                    </p>
-                    {item.verdict === "SUPPORTED" && !item.quoteSpans.length && (
+                    <EvidenceQuote item={item} />
+                    {item.verdict === "SUPPORTED" && !item.quoteSpans.length && !item.table && (
                       <p className="text-[10px] text-slate-500">청크는 일치로 판정됐지만, 대응하는 근거 구간을 특정하지 못했습니다.</p>
                     )}
                   </div>}
@@ -586,6 +610,7 @@ export default function FactCheckDrawer({
                       본문에 근거 주석 삽입
                     </button>
                   </div>
+                  </>}
                 </div>
               ))}
             </div>
@@ -597,7 +622,7 @@ export default function FactCheckDrawer({
         {/* 하단 푸터 바 */}
         <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
           <span className="text-slate-500 font-medium">
-            {isAnalyzing ? "검증 중…" : `전체 ${evidenceList.length}개 문장 검증`}
+            {isAnalyzing ? `검증 중…${progressText}` : `전체 ${evidenceList.length}개 문장 검증`}
           </span>
           <button
             onClick={onClose}
@@ -609,6 +634,49 @@ export default function FactCheckDrawer({
         {/* 서랍(aside)은 애니메이션 transform 때문에 fixed 가 서랍 안에 갇힌다 → body 로 portal */}
         {viewing && createPortal(<SourceViewer source={viewing} onClose={() => setViewing(null)} />, document.body)}
       </aside>
+  );
+}
+
+/** 근거 발췌: 코어가 표 행으로 쪼갠 근거(item.table)는 표로, 나머지는 줄바꿈을 살린 글로. 기사 숫자와 같은 칸은 판정 색으로 강조.
+ *  표 행은 코어가 기사 숫자가 맞는 행부터 보낸다 — 앞의 ROWS 개만 보이고 나머지는 '더 보기' */
+const ROWS = 6;
+function EvidenceQuote({ item }) {
+  const [all, setAll] = useState(false);
+  const ok = item.verdict === "SUPPORTED";
+  if (!item.table?.rows?.length) {
+    return (
+      <p className="text-slate-800 italic leading-relaxed break-words whitespace-pre-line" data-testid="evidence-quote">
+        "<Marked text={item.quote} spans={item.quoteSpans} sentence={!ok} ok={ok} />"
+      </p>
+    );
+  }
+  const { caption, header, rows } = markTable(item.table, item.claimText);
+  const shown = all ? rows : rows.slice(0, ROWS);
+  const width = Math.max(...rows.map((r) => r.cells.length));
+  const head = header && (header.length > width ? header : ["", ...header]); // 칸 하나 더면 첫 칸은 행 이름 열 제목
+  const hitTone = ok ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900";
+  return (
+    <div className="space-y-1 text-slate-800" data-testid="evidence-table">
+      {caption.map((c, k) => <p key={k} className="text-[10px] font-bold text-slate-500 break-words">{c}</p>)}
+      <div className="overflow-x-auto rounded-lg border border-blue-100 bg-white">
+        <table className="w-full text-[11px] tabular-nums">
+          {head && <thead><tr className="text-slate-500">{head.map((h, k) => <th key={k} className={`px-1.5 py-1 font-bold whitespace-nowrap ${k ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>}
+          <tbody>
+            {shown.map((row, r) => (
+              <tr key={r} className={`border-t border-slate-100 ${row.hit ? (ok ? "bg-emerald-50" : "bg-rose-50") : ""}`}>
+                <th scope="row" className="px-1.5 py-1 text-left font-bold whitespace-nowrap">{row.label}</th>
+                {row.cells.map((c, k) => <td key={k} className="px-1.5 py-1 text-right whitespace-nowrap"><span className={c.hit ? `${hitTone} rounded-sm px-0.5 font-bold` : ""}>{c.text}</span></td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > ROWS && (
+        <button type="button" onClick={() => setAll((v) => !v)} className="text-[10px] font-bold text-blue-700 hover:underline cursor-pointer">
+          {all ? "행 접기" : `행 ${rows.length - ROWS}개 더 보기`}
+        </button>
+      )}
+    </div>
   );
 }
 

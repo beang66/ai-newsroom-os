@@ -39,6 +39,21 @@ def _is_row(line):
     return nums >= 2 and nums / max(len(toks), 1) >= 0.5
 
 
+def table_view(ctx, rows):
+    """화면 표시용 표 구조. 행은 청크를 쪼갤 때 이미 _is_row 로 고른 줄이라 여기서는 칸만 나눈다.
+    header: 표 머리 마지막 줄의 토큰 수가 값 칸 수와 같을 때만 열 제목(아니면 caption 에 남긴다)."""
+    split = []
+    for row in rows:
+        toks = row.split()
+        k = next((i for i, t in enumerate(toks) if _NUMTOK.match(t)), 0)
+        split.append({"label": " ".join(toks[:k]), "cells": toks[k:]})
+    caption = [l.strip() for l in (ctx or "").split("\n") if l.strip()]
+    width = max((len(r["cells"]) for r in split), default=0)
+    head = caption[-1].split() if caption else []
+    header = head if width and len(head) in (width, width + 1) else None  # 칸 하나 더면 첫 칸은 행 이름 열 제목('구분')
+    return {"caption": caption[:-1] if header else caption, "header": header, "rows": split}
+
+
 def units_of(chunks):
     """chunks: [{text, kind}]. 표 청크는 행 단위로 나눈다. 반환: [{text, parent, table, row, ctx}]."""
     out, last_ctx = [], ""
@@ -198,7 +213,7 @@ class UnitIndex:
         return rrf([c, ci], 200) if ci else c
 
     def candidates(self, query, query_vec, exclude=()):
-        """[(글, 부모 청크 번호 집합)] 최대 10개. exclude: 이미 보낸 글(그 줄만으로 된 후보는 뺀다, 재검색용)."""
+        """[(글, 부모 청크 번호 집합, 표 구조|None)] 최대 10개. exclude: 이미 보낸 글(그 줄만으로 된 후보는 뺀다, 재검색용)."""
         units, qn = self.units, claim_numbers(query)
         sent = {l for t in exclude for l in t.splitlines()}
         slots, where = [], {}
@@ -224,7 +239,7 @@ class UnitIndex:
         out = []
         for s in slots:
             if s["table"] is None:
-                out.append((s["text"], s["src"]))
+                out.append((s["text"], s["src"], None))
                 continue
             have = text_sigs("\n".join(s["rows"]))
             for c in qn:  # 모으기: 주장 숫자 중 이 표에 아직 없는 값을 같은 표의 다른 행에서
@@ -238,5 +253,5 @@ class UnitIndex:
                         break
             hits = {row: -sum(1 for c in qn if sig_match(c, text_sigs(row))) for row in s["rows"]} if qn else {}
             rows = sorted(s["rows"], key=lambda row: hits.get(row, 0))  # 앞으로: 주장 숫자가 많이 맞는 행부터(안정 정렬)
-            out.append(((s["ctx"] + "\n" + "\n".join(rows)).strip(), s["src"]))
-        return [(t, src) for t, src in out if not sent or set(t.splitlines()) - sent]
+            out.append(((s["ctx"] + "\n" + "\n".join(rows)).strip(), s["src"], table_view(s["ctx"], rows)))
+        return [o for o in out if not sent or set(o[0].splitlines()) - sent]

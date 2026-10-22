@@ -272,8 +272,12 @@ export function splitSentences(content) {
 
 /** 기사 문장을 등록 자료(텍스트)에 비춰 팩트체크 → 팩트체크 서랍 카드 목록. files: [{ id, name, text }]
  *  cache(Map: 공백 정리된 문장 → 코어 결과)를 주면 **이미 검증한 문장은 다시 보내지 않는다** — 새로 쓰거나 고친 문장만.
- *  자료가 바뀌면 cache 를 비워야 한다(useFactCheck). */
-export async function factcheckArticle(content, files, cache = new Map(), snapshotId) {
+ *  자료가 바뀌면 cache 를 비워야 한다(useFactCheck).
+ *  onProgress({ items, done, total })를 주면 새로 검증할 문장을 본문 위에서부터 FACTCHECK_CHUNK 개씩 나눠 보내고,
+ *  한 묶음이 끝날 때마다 그때까지의 카드 목록을 넘긴다 — 처음 검증할 때 먼저 끝난 문장부터 보이게.
+ *  묶음 크기는 코어의 외부 판정 묶음(service.EXTERNAL_BATCH = 10)과 같아 외부 호출 수는 그대로다. */
+export const FACTCHECK_CHUNK = 10;
+export async function factcheckArticle(content, files, cache = new Map(), snapshotId, onProgress) {
   // 문장마다 본문 위치를 기억해 두면 결과를 원고에 하이라이트할 수 있다(위치는 매번 새로 — 앞 문장이 바뀌면 밀린다)
   const nodes = splitSentences(content).slice(0, 200).map((s, i) => ({ ...s, id: `s${i + 1}` }));
   if (!nodes.length) throw Error("검증할 본문 문장이 없어요. 본문을 먼저 작성해 주세요.");
@@ -282,12 +286,21 @@ export async function factcheckArticle(content, files, cache = new Map(), snapsh
   const bySquash = new Map([...cache].map(([t, r]) => [squash(t), r]));
   for (const n of nodes) if (!cache.has(n.text) && bySquash.has(squash(n.text))) cache.set(n.text, bySquash.get(squash(n.text)));
   const todo = [...new Map(nodes.filter((n) => !cache.has(n.text)).map((n) => [n.text, n])).values()];
-  if (todo.length) {
-    const materials = files.map((f) => ({ id: f.id, title: f.name, content: f.text }));
-    const d = await core.runFactcheck(todo.map((n) => ({ id: n.id, type: "TEXT", text: n.text })), materials, snapshotId);
-    const byId = Object.fromEntries(todo.map((n) => [n.id, n]));
+  const materials = files.map((f) => ({ id: f.id, title: f.name, content: f.text }));
+  const size = onProgress ? FACTCHECK_CHUNK : todo.length;
+  for (let at = 0; at < todo.length; at += size) {
+    const part = todo.slice(at, at + size);
+    const d = await core.runFactcheck(part.map((n) => ({ id: n.id, type: "TEXT", text: n.text })), materials, snapshotId);
+    const byId = Object.fromEntries(part.map((n) => [n.id, n]));
     for (const r of d.results || []) if (byId[r.node_id]) cache.set(byId[r.node_id].text, r);
+    if (onProgress && at + size < todo.length) onProgress({ items: cards(nodes, cache, files), done: at + part.length, total: todo.length });
   }
+  return cards(nodes, cache, files);
+}
+
+/** 판정 기록(cache)이 있는 문장 → 서랍 카드·하이라이트 항목 */
+function cards(nodes, cache, files) {
+  const squash = (t) => t.replace(/\s+/g, "");
   return nodes.filter((n) => cache.has(n.text)).map((node) => {
     const r = cache.get(node.text);
     if (r.external) return externalItem(node, r, files);
@@ -317,6 +330,7 @@ export async function factcheckArticle(content, files, cache = new Map(), snapsh
       sourceDoc: r.evidence?.material_title || "",
       page: "",
       quote,
+      table: r.evidence?.table || null, // 검색기가 표 행으로 쪼갠 근거면 표 구조(caption·header·rows)
       details: claimDetails(node.raw, quote, files.find((f) => f.id === r.evidence?.material_id || f.name === r.evidence?.material_title)),
       comment: r.reason || "",
       suggestedFix: null,
@@ -372,6 +386,7 @@ function externalItem(node, r, files) {
     sourceDoc: source.material_title || "",
     page: "",
     quote,
+    table: source.table || null,
     details: claimDetails(node.raw, quote, files.find((f) => f.id === source.material_id || f.name === source.material_title)),
     comment: `AI 재판정(OpenAI): ${x.reason}`,
     suggestedFix: null,

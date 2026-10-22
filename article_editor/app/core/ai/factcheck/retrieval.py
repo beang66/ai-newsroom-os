@@ -352,9 +352,9 @@ def rank_chunks(
     if mode == "kc-band-table-ctx":
         # 후보 = 단위를 묶은 글(가공 표는 여러 행). 자료 정보·점수는 그 글의 첫 부모 청크 것.
         ranked = []
-        for rank, (text, src) in enumerate(index.unit_index().candidates(query, query_vector, exclude)[:limit], 1):
+        for rank, (text, src, table) in enumerate(index.unit_index().candidates(query, query_vector, exclude)[:limit], 1):
             first = min(src)
-            ranked.append({**chunks[first], "text": text, "retrieval_rank": rank,
+            ranked.append({**chunks[first], "text": text, "table": table, "retrieval_rank": rank,
                            "retrieval_score": float(max(scores[i] for i in src)),
                            "retrieval_engine": "qwen3-embedding-0.6b-kc8-table-ctx"})
         return ranked

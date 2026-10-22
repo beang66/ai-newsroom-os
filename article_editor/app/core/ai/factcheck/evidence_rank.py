@@ -39,15 +39,31 @@ def _is_row(line):
     return nums >= 2 and nums / max(len(toks), 1) >= 0.5
 
 
-def table_view(ctx, rows):
-    """화면 표시용 표 구조. 행은 청크를 쪼갤 때 이미 _is_row 로 고른 줄이라 여기서는 칸만 나눈다.
-    header: 표 머리 마지막 줄의 토큰 수가 값 칸 수와 같을 때만 열 제목(아니면 caption 에 남긴다)."""
+def _split_rows(rows):
     split = []
     for row in rows:
         toks = row.split()
         k = next((i for i, t in enumerate(toks) if _NUMTOK.match(t)), 0)
         split.append({"label": " ".join(toks[:k]), "cells": toks[k:]})
+    return split
+
+
+def table_view(ctx, rows, header=None):
+    """화면 표시용 표 구조. 행은 청크를 쪼갤 때 이미 _is_row 로 고른 줄이라 여기서는 칸만 나눈다.
+    header(PDF 표, pdf_chunker.table_chunks): 청커가 칸별로 읽은 열 제목 {line, cells, note}. 칸 수가 값 칸과 맞으면 그대로 쓰고
+    글 속 머리글 줄(line)은 caption 에서 뺀다 — '2026.8월말 (a)'처럼 띄어쓰기가 든 열 제목도 깨지지 않는다.
+    머리글 줄이 숫자처럼 보여(연도 등) 행으로 잡혔으면 화면 행에서만 뺀다(검색 단위는 그대로).
+    없거나 맞지 않으면: 표 머리 마지막 줄의 토큰 수가 값 칸 수와 같을 때만 열 제목(아니면 caption 에 남긴다)."""
     caption = [l.strip() for l in (ctx or "").split("\n") if l.strip()]
+    cells, line = (header.get("cells") or [], header.get("line") or "") if header else ([], "")
+    if cells:
+        split = _split_rows([row for row in rows if row != line])
+        width = max((len(r["cells"]) for r in split), default=0)
+        if width and len(cells) in (width, width + 1) and any(cells[-width:]):
+            note = header.get("note") or ""
+            caption = [note if l == line else l for l in caption] if line in caption else caption + [note]
+            return {"caption": [l for l in caption if l], "header": cells, "rows": split}
+    split = _split_rows(rows)
     width = max((len(r["cells"]) for r in split), default=0)
     head = caption[-1].split() if caption else []
     header = head if width and len(head) in (width, width + 1) else None  # 칸 하나 더면 첫 칸은 행 이름 열 제목('구분')
@@ -55,21 +71,23 @@ def table_view(ctx, rows):
 
 
 def units_of(chunks):
-    """chunks: [{text, kind}]. 표 청크는 행 단위로 나눈다. 반환: [{text, parent, table, row, ctx}]."""
-    out, last_ctx = [], ""
+    """chunks: [{text, kind, table_header?}]. 표 청크는 행 단위로 나눈다. 반환: [{text, parent, table, row, ctx, header}].
+    header: 청커가 넘긴 칸별 열 제목(PDF 표만, 화면 표시용 — 순위에는 쓰지 않는다)."""
+    out, last_ctx, last_header = [], "", None
     for ci, c in enumerate(chunks):
         text, kind = str(c.get("text") or ""), c.get("kind")
         lines = [l for l in text.split("\n") if l.strip()]
         rows = [l for l in lines if _is_row(l)] if kind == "table" else []
         if kind != "table" or not rows:
-            out.append(dict(text=text, parent=ci, table=None, row=None, ctx=None))
+            out.append(dict(text=text, parent=ci, table=None, row=None, ctx=None, header=None))
             continue
         k = next(i for i, l in enumerate(lines) if _is_row(l))
         ctx = "\n".join(lines[:k]) or last_ctx  # 머리글 없는 이어진 청크는 앞 표의 머리글을 쓴다
-        last_ctx = ctx
+        header = c.get("table_header") or (last_header if not lines[:k] else None)
+        last_ctx, last_header = ctx, header
         tkey = (ctx.split("\n")[0], ci if not ctx else 0)
         for l in lines[k:]:
-            out.append(dict(text=(ctx + "\n" + l).strip(), parent=ci, table=tkey, row=l, ctx=ctx))
+            out.append(dict(text=(ctx + "\n" + l).strip(), parent=ci, table=tkey, row=l, ctx=ctx, header=header))
     return out
 
 
@@ -233,7 +251,7 @@ class UnitIndex:
                         s["src"].add(u["parent"])
                 elif len(slots) < SLOTS:
                     where[key] = len(slots)
-                    slots.append(dict(table=u["table"], ctx=u["ctx"], rows=[u["row"]], src={u["parent"]}))
+                    slots.append(dict(table=u["table"], ctx=u["ctx"], header=u["header"], rows=[u["row"]], src={u["parent"]}))
             if len(slots) >= SLOTS and r >= N_SCAN:
                 break
         out = []
@@ -253,5 +271,5 @@ class UnitIndex:
                         break
             hits = {row: -sum(1 for c in qn if sig_match(c, text_sigs(row))) for row in s["rows"]} if qn else {}
             rows = sorted(s["rows"], key=lambda row: hits.get(row, 0))  # 앞으로: 주장 숫자가 많이 맞는 행부터(안정 정렬)
-            out.append(((s["ctx"] + "\n" + "\n".join(rows)).strip(), s["src"], table_view(s["ctx"], rows)))
+            out.append(((s["ctx"] + "\n" + "\n".join(rows)).strip(), s["src"], table_view(s["ctx"], rows, s["header"])))
         return [o for o in out if not sent or set(o[0].splitlines()) - sent]

@@ -54,6 +54,51 @@ class EvidenceRankTests(unittest.TestCase):
         again = retrieval.rank_chunks(claim, chunks, limit=10, cache=cache, exclude=[table['text']])
         self.assertNotIn(table['text'], [r['text'] for r in again], '재검색은 이미 보낸 후보를 빼고')
 
+    def pdf_table_chunks(self):
+        """한국은행 외환보유액 표(2줄 머리글 — 열 제목에 띄어쓰기)를 pdf_layout 이 읽은 모양으로 청킹한다."""
+        from core.ai.factcheck.pdf_chunker import pdf_units
+        rows = [['', '2022년말', '2023년말', '2024년말', '2025년말', '2026.8월말', '2026.9월말', '전월대비증감'],
+                ['', '', '', '', '', '(a)', '(b)', '(b-a)1)'],
+                ['외환보유액', '4,231.6', '4,201.5', '4,156.0', '4,280.5', '4,422.8', '4,405.6', '-17.2'],
+                ['유가증권2)', '3,696.9', '3,736.7', '3,666.7', '3,711.2', '3,870.7', '3,860.3', '-10.4'],
+                ['금', '47.9', '47.9', '47.9', '47.9', '47.9', '47.9', '0.0']]
+        pages = [{'page': 1, 'blocks': [{'type': 'caption', 'text': '2026년 9월말 외환보유액'},
+                                        {'type': 'unit', 'text': '(억달러, %)'}, {'type': 'table', 'rows': rows}]}]
+        return pdf_units(pages)
+
+    def test_pdf_table_header_cells_survive_spaces_in_column_titles(self):
+        (chunk,) = self.pdf_table_chunks()
+        head_line = '2022년말 2023년말 2024년말 2025년말 2026.8월말 (a) 2026.9월말 (b) 전월대비증감 (b-a)1)'
+        self.assertEqual(chunk['text'].split('\n')[:2], ['2026년 9월말 외환보유액 (억달러, %)', head_line])  # 글은 예전과 같다
+        self.assertEqual(chunk['table_header']['line'], head_line)
+        self.assertEqual(chunk['table_header']['cells'],
+                         ['', '2022년말', '2023년말', '2024년말', '2025년말', '2026.8월말 (a)', '2026.9월말 (b)', '전월대비증감 (b-a)1)'])
+        with mock.patch.dict(os.environ, {'FACTCHECK_RETRIEVAL': 'kc-band-table-ctx'}):
+            (found,) = [r for r in retrieval.rank_chunks('외환보유액은 4,405.6억달러였다.', [chunk], limit=3, cache=FakeCache())
+                        if r.get('table')]
+        view = found['table']
+        self.assertEqual(view['header'], chunk['table_header']['cells'])  # 예전: 토큰 10개 ≠ 값 칸 7개 → None
+        self.assertEqual(view['caption'], ['2026년 9월말 외환보유액 (억달러, %)'])  # 머리글 줄이 회색 글로 남지 않는다
+        self.assertEqual(len(view['rows'][0]['cells']), 7)
+        self.assertNotIn('table_header', found)  # 내부 값은 검색 결과로 내보내지 않는다
+
+    def test_table_view_uses_header_cells_or_falls_back(self):
+        header = {'line': '2022 2023 증감', 'cells': ['구분', '2022', '2023', '증감'], 'note': ''}
+        rows = ['2022 2023 증감', '전체 1,234 1,300 66', '남자 600 650 50']  # 연도 머리글이 숫자처럼 보여 행으로 잡힌 경우
+        view = evidence_rank.table_view('< 인구 >', rows, header)
+        self.assertEqual(view['header'], ['구분', '2022', '2023', '증감'])
+        self.assertEqual([r['label'] for r in view['rows']], ['전체', '남자'])  # 머리글 줄은 화면 행에서만 뺀다
+        noted = evidence_rank.table_view('< 인구 >\n단위: 명 / 2022 2023 증감', rows[1:],
+                                         dict(header, line='단위: 명 / 2022 2023 증감', note='단위: 명'))
+        self.assertEqual(noted['caption'], ['< 인구 >', '단위: 명'])  # head_text 는 caption 에 남긴다
+        wrong = evidence_rank.table_view('< 인구 >\n구분 8월 9월', rows[1:], dict(header, cells=['구분', '8월']))
+        self.assertEqual(wrong, evidence_rank.table_view('< 인구 >\n구분 8월 9월', rows[1:]))  # 칸 수가 안 맞으면 예전 방식
+
+    def test_shared_index_key_includes_table_header(self):
+        (chunk,) = self.pdf_table_chunks()
+        bare = {k: v for k, v in chunk.items() if k != 'table_header'}
+        self.assertNotEqual(retrieval._content_key([chunk]), retrieval._content_key([bare]))
+
     def test_unit_index_built_once_per_chunk_index(self):
         chunks, cache = [dict(c, kind='narrative') for c in make_chunks()], FakeCache()
         built = []

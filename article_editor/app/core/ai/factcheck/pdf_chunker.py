@@ -90,8 +90,12 @@ def header_split(rows):
 
 
 def table_chunks(b, cap, page):
+    """→ [(글, 쪽, 머리글)]. 머리글 = {line: 글 속 머리글 줄, cells: 칸별 열 제목(첫 칸은 행 이름 열), note: head_text}.
+    글에서는 칸을 띄어쓰기로 이어 '2026.8월말 (a)' 같은 열 제목의 칸 경계가 사라지므로, 화면 표(evidence_rank.table_view)가
+    추측하지 않도록 칸 목록을 따로 넘긴다. 칸 열 제목이 없으면 None. 글은 그대로다(검색·임베딩 캐시 영향 없음)."""
     head, rows = header_split(b['rows'])
     hline = ' / '.join(x for x in [b.get('head_text', ''), ' '.join(h for h in head if h)] if x)
+    header = {'line': hline, 'cells': head, 'note': b.get('head_text', '')} if any(head) else None
     base = '\n'.join(x for x in [cap, hline] if x)
     out, cur = [], []
     for r in rows:
@@ -99,11 +103,11 @@ def table_chunks(b, cap, page):
         size = len(base) + sum(len(x) + 1 for x in cur) + len(line)
         cont = bool(r) and not r[0]
         if cur and (size > 2 * TABLE_MAX or (size > TABLE_MAX and not cont)):
-            out.append(('\n'.join(x for x in [base] + cur if x), [page]))
+            out.append(('\n'.join(x for x in [base] + cur if x), [page], header))
             cur = []
         cur.append(line)
     if cur or base:
-        out.append(('\n'.join(x for x in [base] + cur if x), [page]))
+        out.append(('\n'.join(x for x in [base] + cur if x), [page], header))
     return out
 
 
@@ -122,7 +126,7 @@ def figure_chunks(title, text, page):
 def merge_small(items, min_len=100):
     items = [list(x) for x in items]
     keep = [True] * len(items)
-    for n, (kind, text, pg) in enumerate(items):
+    for n, (kind, text, pg, _) in enumerate(items):
         if kind == 'table' or len(text) >= min_len:
             continue
         keep[n] = False
@@ -145,12 +149,12 @@ def pdf_units(pages, boundary=None):
 
     def flush_segs():
         nonlocal segs
-        ordered.extend(('narrative', t, pg) for t, pg in pack(segs, boundary))
+        ordered.extend(('narrative', t, pg, None) for t, pg in pack(segs, boundary))
         segs = []
 
     def emit(items):
         flush_segs()
-        ordered.extend((k, t, pg) for k, (t, pg) in items)
+        ordered.extend((k, x[0], x[1], x[2] if len(x) > 2 else None) for k, x in items)  # 표만 머리글을 함께 넘긴다
 
     def heads_for(p):
         return take_heads(segs) or ([last_head[p]] if last_head.get(p) else [])
@@ -198,12 +202,21 @@ def pdf_units(pages, boundary=None):
         i += 1
     flush_segs()
     out = []
-    for kind, text, pg in merge_small(ordered):
-        text = re.sub(r'\( +', '(', re.sub(r'\(cid:\d+\)', '', text))  # 미변환 글자 제거, 여는 괄호 뒤 공백 제거
-        text = despace(text, 2 if kind == 'table' else 3).strip()
+    for kind, text, pg, header in merge_small(ordered):
+        text = tidy(text, kind)
         if text:  # 쪽마다 반복되는 각주도 지우지 않는다(쪽 번호가 다르다)
-            out.append({'text': text, 'kind': kind, 'field': None, 'pages': pg})
+            item = {'text': text, 'kind': kind, 'field': None, 'pages': pg}
+            if header:  # 글과 같은 정리를 칸마다 따로 한다(정리 규칙은 줄 안에서만 작동해 line 은 글 속 줄과 같다)
+                item['table_header'] = {'line': tidy(header['line'], kind), 'cells': [tidy(c, kind) for c in header['cells']],
+                                        'note': tidy(header['note'], kind)}
+            out.append(item)
     return out
+
+
+def tidy(text, kind):
+    """미변환 글자 제거, 여는 괄호 뒤 공백 제거, 한 글자씩 띄어 쓴 한글 붙이기. 모두 한 줄 안에서만 바꾼다."""
+    text = re.sub(r'\( +', '(', re.sub(r'\(cid:\d+\)', '', text or ''))
+    return despace(text, 2 if kind == 'table' else 3).strip()
 
 
 if __name__ == '__main__':

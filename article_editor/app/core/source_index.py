@@ -19,7 +19,7 @@ def chunker_version():
     from .ai.factcheck.paths import BOUNDARY_DIR
     # Rule-only chunks must be rebuilt after installing the optional boundary model.
     return (CHUNKER_VERSION + (':boundary' if (BOUNDARY_DIR / 'model.onnx').is_file() else ':rules')
-            + (':pdf-layout-v1' if _layout_available() else ''))
+            + (':pdf-layout-v2' if _layout_available() else ''))  # v2: 표 청크에 칸별 열 제목(table_header) — 글은 같아 임베딩은 캐시에서
 
 
 def _layout_available():

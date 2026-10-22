@@ -45,6 +45,12 @@ class EvidenceRankTests(unittest.TestCase):
         self.assertEqual(set(lines[2:4]), {'수출기업 97.3 95.7', '내수기업 99.4 99.1'}, '주장 숫자 행이 머리글 바로 아래')
         self.assertEqual(table['material_id'], 'a')
         self.assertEqual(table['retrieval_engine'], 'qwen3-embedding-0.6b-kc8-table-ctx')
+        view = table['table']  # 화면이 표로 그릴 구조: 머리 줄이 값 칸 수+1(구분 8월 9월)이라 열 제목이 된다
+        self.assertEqual(view['caption'], ['< 기업심리지수 >'])
+        self.assertEqual(view['header'], ['구분', '8월', '9월'])
+        self.assertEqual([r['label'] for r in view['rows']][:2], [l.split()[0] for l in lines[2:4]])
+        self.assertEqual(view['rows'][0]['cells'], lines[2].split()[1:])
+        self.assertTrue(all(r.get('table') is None for r in rows if not r['text'].startswith('< 기업심리지수 >')))
         again = retrieval.rank_chunks(claim, chunks, limit=10, cache=cache, exclude=[table['text']])
         self.assertNotIn(table['text'], [r['text'] for r in again], '재검색은 이미 보낸 후보를 빼고')
 

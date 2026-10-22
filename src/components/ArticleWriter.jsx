@@ -1737,7 +1737,7 @@ export default function ArticleWriter({
                     <div className="flex items-center gap-3">
                       {showFactMarks && (factCheck.busy || factCheck.results.length > 0) && (
                         <span data-testid="factcheck-status" className={`text-[11px] font-bold ${factIssueCount ? "text-rose-600" : "text-emerald-600"}`}>
-                          {factCheck.busy ? "팩트체크 중…" : factIssueCount ? `확인 필요 ${factIssueCount}문장` : "팩트체크 통과"}
+                          {factCheck.busy ? (factCheck.progress ? `팩트체크 중… ${factCheck.progress.done}/${factCheck.progress.total}문장` : "팩트체크 중…") : factIssueCount ? `확인 필요 ${factIssueCount}문장` : "팩트체크 통과"}
                         </span>
                       )}
                       <span>공백 포함 {(article.content || "").replace(/<[^>]*>/g, "").length.toLocaleString()}자</span>

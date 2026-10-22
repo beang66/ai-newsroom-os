@@ -55,10 +55,12 @@ async function restoreExternal(state, content) {
 /** 팩트체크 — 본문·취재자료가 바뀌고 1.5초 멈추면 자동으로 돈다(옛 UI 의 '작성 멈춤 감지').
  *  실행 중에 또 바뀌면 끝난 뒤 한 번 더 — 요청이 겹치지 않는다.
  *  이미 검증한 문장은 결과를 기억해 두고 **새로 쓰거나 고친 문장만** 코어에 보낸다. 취재자료가 바뀌면 기억을 비운다.
- *  → { results, busy, indexing, basis, error, run } (run(true) = 기억을 비우고 전체 다시 검증 — 서랍의 새로고침 버튼) */
+ *  → { results, busy, progress, indexing, basis, error, run } (run(true) = 기억을 비우고 전체 다시 검증 — 서랍의 새로고침 버튼)
+ *  progress: 새로 검증할 문장이 많을 때 { done, total } — 10문장씩 끝나는 대로 results 가 늘어난다 */
 export function useFactCheck(article, flush) {
   const [results, setResults] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(null); // { done, total } | null
   const [error, setError] = useState("");
   const [indexing, setIndexing] = useState(false); // false | { percent: 0~1 }
   const [basis, setBasis] = useState(null); // 마지막 "전체 다시 검증"이 기준으로 삼은 저장 버전 { revisionNo, content }
@@ -119,7 +121,11 @@ export function useFactCheck(article, flush) {
         if (!mounted.current) return;
         setBasis(frozen ? { revisionNo: frozen.revisionNo, content: latest.current.content } : null);
       }
-      const items = await factcheckArticle(content, materials, state.current.cache, frozen?.snapshotId);
+      const items = await factcheckArticle(content, materials, state.current.cache, frozen?.snapshotId, ({ items: partial, done, total }) => {
+        if (!mounted.current) return;
+        setResults(partial); // 먼저 끝난 문장부터 본문 표시·서랍 카드를 채운다
+        setProgress({ done, total });
+      });
       if (!mounted.current) return;
       // 다시 열었을 때 이미 받은 AI 재판정을 붙인다 — 붙으면 기억에서 화면만 다시 그린다(코어 판정 없음)
       const restored = await restoreExternal(state.current, content);
@@ -134,7 +140,10 @@ export function useFactCheck(article, flush) {
       } else setError(e?.message || String(e));
     } finally {
       state.current.running = false;
-      if (mounted.current) setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        setProgress(null);
+      }
       if (mounted.current && state.current.again) {
         state.current.again = false;
         run();
@@ -176,7 +185,7 @@ export function useFactCheck(article, flush) {
   // 서랍의 '팩트 일치' 카드에 마우스를 올리는 동안 본문의 그 문장을 초록으로(focus = 결과 id)
   const [focus, setFocus] = useState(null);
 
-  return { results, busy, indexing, basis: basis ? { revisionNo: basis.revisionNo, changed: basis.content !== article.content } : null, error, run, recheck, recheckBusy, recheckCount: results.filter((r) => r.needsRecheck).length, focus, setFocus };
+  return { results, busy, progress, indexing, basis: basis ? { revisionNo: basis.revisionNo, changed: basis.content !== article.content } : null, error, run, recheck, recheckBusy, recheckCount: results.filter((r) => r.needsRecheck).length, focus, setFocus };
 }
 
 const MIN_BODY = 20; // 코어 assist 하한(본문 20자)

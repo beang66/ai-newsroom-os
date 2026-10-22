@@ -97,25 +97,19 @@ def header_count(rows):
 
 def head_groups(head_rows, active):
     """위 머리글 줄(마지막 줄 빼고)마다 {글자 칸: 덮는 값 열들}. '2025. 8' 처럼 여러 열에 걸친 머리글은 글자가 묶음의 한 칸
-    (가운데·왼쪽)에만 있으므로, 값 열을 가장 가까운 글자 칸에 붙이고(같으면 왼쪽), 마지막 묶음은 앞 묶음들의 폭이 같으면 그 폭으로
-    자른다(뒤에 따로 선 '증감률' 같은 칸). active: 어느 줄에든 글자가 있는 값 열(1부터)."""
+    (가운데·왼쪽)에만 있다. 글자 칸이 값 열 사이에 일정한 간격 g(≥2)로 놓이면 묶음 하나가 g 열이라고 보고, 첫 묶음이 맨 앞 값 열부터
+    시작하도록 나눈다(10쪽 '2025. 8' → 인원·증감·증감률, 12쪽 → 구성비·증감, 뒤에 따로 선 '증감률' 열은 묶음 밖).
+    간격이 일정하지 않으면(부록 통계표처럼 한 칸의 여러 줄 글자가 열마다 흩어진 머리글) 제 열에만 둔다. active: 값 열(1부터)."""
     out = []
-    leaf = sum(1 for c in active if head_rows[-1][c])
     for r in head_rows[:-1]:
-        pos = [k for k in active if r[k]]
-        # 묶음 머리글로 볼 때만 펼친다: 마지막 줄이 값 열을 거의 다 채우고(80% 이상) 이 줄은 그보다 듬성듬성할 때.
-        # 아니면(부록 통계표처럼 한 칸의 여러 줄 글자가 열마다 흩어진 머리글) 예전처럼 제 열에만 둔다.
-        if not active or leaf < 0.8 * len(active) or len(pos) * 2 > len(active):
-            out.append({p: [p] for p in pos})
+        idx = [i for i, c in enumerate(active) if r[c]]
+        gaps = {b - a for a, b in zip(idx, idx[1:])}
+        if len(idx) < 2 or len(gaps) != 1 or min(gaps) < 2:
+            out.append({active[i]: [active[i]] for i in idx})
             continue
-        groups = {p: [] for p in pos}
-        for c in active:
-            if pos:
-                groups[min(pos, key=lambda p: (abs(p - c), p))].append(c)
-        widths = {len(groups[p]) for p in pos[:-1]}
-        if len(widths) == 1 and len(groups[pos[-1]]) > min(widths):
-            groups[pos[-1]] = groups[pos[-1]][:min(widths)]
-        out.append(groups)
+        g = gaps.pop()
+        start = idx[0] - min(idx[0], g - 1)  # 첫 글자 칸이 묶음 안에 들도록, 되도록 맨 앞 값 열부터
+        out.append({active[i]: active[start + k * g:start + (k + 1) * g] for k, i in enumerate(idx)})
     return out
 
 
@@ -157,7 +151,9 @@ SECTION = re.compile(r'^[<＜]\s*(.+?)\s*[>＞]$')
 INDENT = {'․': 1, '‥': 2}  # 행 이름 앞 들여쓰기 점(한 점·두 점) — 바로 위 얕은 행의 하위 행
 PERIOD_YEAR = re.compile(r'^(19|20)\d{2}\.\s*\d{1,2}(/4)?$')
 PERIOD_BARE = re.compile(r'^\d{1,2}(/4)?$')
-MARK = re.compile(r'^[◦◉▣○●□■•\-–]\s*')  # '◦ 15세이상인구' '- 경제활동인구': 기호 행 — 뒤따르는 기호 없는 행들의 부모
+# '◦ 15세이상인구' '- 경제활동인구' 'w 건설업': 기호 행. 'w' 는 기호 글꼴(Wingdings)의 ◆ 글머리표가 글자로 뽑힌 것이다.
+MARK = re.compile(r'^(?:[◦◉▣○●□■•\-–]|w(?=\s))\s*')
+MARK_RANK = {'◉': 0, '▣': 1, '□': 1, '■': 1, '◦': 2, '○': 2, '●': 2, 'w': 3, '•': 3, '-': 4, '–': 4}
 
 
 def row_label(label):
@@ -168,10 +164,12 @@ def row_label(label):
 def row_paths(rows):
     """데이터 행마다 상위 행 이름 [소제목, 부모 …]. 같은 이름의 행(남자 20～29세 / 여자 20～29세)을 화면에서 가르려고 쓴다.
     - '< 남 자 >' 줄은 아래 행들의 소제목(그 줄 자신은 소제목 없음)
-    - '◦'·'-' 같은 기호 행은 뒤따르는 기호 없는 행들의 부모, '․'·'‥' 들여쓰기 행은 바로 위 얕은 행의 하위
+    - 기호 행은 보도자료의 관례 단계(◉ > ▣·□ > ◦·○ > w·• > -)로 위아래를 가른다(표마다 기호가 나오는 순서는 달라 쓰지 않는다).
+      기호를 쓰는 표의 기호 없는 행('실 업 률')은 바로 위 기호 행의 하위, '․'·'‥' 들여쓰기 행은 그보다 아래 단계
     - 행 이름이 비었거나 괄호뿐인 줄('(참가율)')은 바로 앞 행의 하위
     - '8' '3/4' 같은 월·분기 행은 위의 '2025. 1' 같은 연도 행의 해('2025년')"""
     section, stack, out, last, year = None, [], [], [], None
+    ranks = any(MARK.match((r[0] if r else '').strip()) for r in rows)  # 기호를 쓰는 표인가
     for r in rows:
         label = (r[0] if r else '').strip()
         m = SECTION.match(label)
@@ -194,7 +192,9 @@ def row_paths(rows):
             continue
         year = None if re.fullmatch(r'(19|20)\d{2}', label) else year
         dots = label[:len(label) - len(label.lstrip(''.join(INDENT)))]
-        level = -1 if MARK.match(label) else sum(INDENT[ch] for ch in dots)
+        mark = MARK.match(label)
+        level = (MARK_RANK.get(mark.group(0).strip(), 4) if mark else 50 if ranks and not dots else 100 + sum(INDENT[ch] for ch in dots)
+                 if ranks else sum(INDENT[ch] for ch in dots))
         name = row_label(label)
         while stack and stack[-1][0] >= level:
             stack.pop()

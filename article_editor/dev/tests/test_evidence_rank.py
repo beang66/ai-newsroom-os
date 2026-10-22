@@ -114,6 +114,29 @@ class EvidenceRankTests(unittest.TestCase):
         self.assertEqual(paths['2,828'], ['남자'])  # '< 남 자 >' 소제목
         self.assertEqual(paths['2,851'], ['여자'])
 
+    def test_summary_table_marks_and_unlabelled_level_columns(self):
+        """고용동향 10쪽 요약표: 'w'(기호 글꼴의 ◆ 글머리표)·◦·▣ 기호 단계, 제목 없는 인원 열(2025. 8 아래 증감·증감률만 있음)."""
+        from core.ai.factcheck.pdf_chunker import pdf_units
+        rows = [['', '', '2025. 8', '', '', '2026. 8', ''], ['', '', '증 감', '증감률', '', '증 감', '증감률'],
+                ['◉ 15세이상인구', '45,779', '203', '0.4', '46,036', '257', '0.6'],
+                ['▣ 경제활동인구', '29,559', '194', '0.7', '29,739', '180', '0.6'],
+                ['w 남 자', '16,365', '44', '0.3', '16,464', '99', '0.6'],
+                ['◦ 취 업 자', '28,967', '166', '0.6', '29,151', '184', '0.6'],
+                ['w 광공업', '4,372', '-59', '-1.3', '4,336', '-37', '-0.8'],
+                ['․제조업', '4,364', '-61', '-1.4', '4,325', '-38', '-0.9'],
+                ['w 건설업', '1,910', '-132', '-6.5', '1,878', '-32', '-1.7'],
+                ['◦ 실 업 자', '592', '28', '4.9', '588', '-4', '-0.6'],
+                ['실 업 률', '2.0', '0.1', '', '2.0', '0.0', '']]
+        (c,) = [x for x in pdf_units([{'page': 10, 'blocks': [{'type': 'table', 'rows': rows}]}]) if x['kind'] == 'table']
+        meta = c['table_meta']
+        self.assertEqual(meta['cells'][1:4], ['2025. 8', '2025. 8 증감', '2025. 8 증감률'])
+        self.assertEqual([(x['text'], x['span']) for x in meta['rows'][0]], [('', 1), ('2025. 8', 3), ('2026. 8', 3)])
+        paths = {b['label']: b['path'] for b in meta['body']}
+        self.assertEqual(paths['남자'], ['15세이상인구', '경제활동인구'])
+        self.assertEqual(paths['건설업'], ['15세이상인구', '경제활동인구', '취업자'])  # w 가 ◦ 보다 먼저 나와도 ◦ 아래
+        self.assertEqual(paths['제조업'], ['15세이상인구', '경제활동인구', '취업자', '광공업'])
+        self.assertEqual(paths['실업률'], ['15세이상인구', '경제활동인구', '실업자'])  # 기호 없는 행은 바로 위 기호 행의 하위
+
     def test_same_named_rows_carry_their_section_to_screen_and_judge(self):
         chunks = self.employment_chunks() + [dict(c, kind='narrative') for c in make_chunks(20)]
         with mock.patch.dict(os.environ, {'FACTCHECK_RETRIEVAL': 'kc-band-table-ctx'}):

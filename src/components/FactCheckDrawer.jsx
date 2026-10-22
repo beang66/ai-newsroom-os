@@ -677,7 +677,11 @@ function EvidenceQuote({ item }) {
             {shown.map((row, r) => (
               <tr key={r} className={`border-t border-slate-100 ${row.hit ? (ok ? "bg-emerald-50" : "bg-rose-50") : ""}`}>
                 <th scope="row" className="px-1.5 py-1 text-left font-bold whitespace-nowrap">
-                  {row.path.length > 0 && <span className="font-normal text-slate-400">{row.path.join(" › ")} › </span>}
+                  {row.path.length > 0 && (
+                    <span className="font-normal text-slate-400" title={row.path.join(" › ")}>
+                      {(row.path.length > 2 ? ["…", ...row.path.slice(-2)] : row.path).join(" › ")} ›{" "}
+                    </span>
+                  )}
                   {row.label}
                 </th>
                 {row.cells.map((c, k) => <td key={k} className="px-1.5 py-1 text-right whitespace-nowrap"><span className={c.hit ? `${hitTone} rounded-sm px-0.5 font-bold` : ""}>{c.text}</span></td>)}

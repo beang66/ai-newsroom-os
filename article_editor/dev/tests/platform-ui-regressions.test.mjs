@@ -30,3 +30,12 @@ test("본문 사진의 조작 안내·버튼·캡션 글자는 기사 문장(팩
     + '<figcaption>(출처: 동아일보 DB)</figcaption></figure><p><br></p>';
   assert.equal(plainContent(`<p>첫 문장입니다.</p>${figure}<p>고친 문장을 하나 더 씁니다.</p>`), "첫 문장입니다.\n\n고친 문장을 하나 더 씁니다.");
 });
+
+
+test("SNS 작성창 채우기: 꺼진 버튼은 막는 이유 목록으로 정하고, 마우스를 올리면 그 이유를 보여 준다", async () => {
+  const source = await readFile(new URL("../../../src/components/PlatformDelivery.jsx", import.meta.url), "utf8");
+  assert.match(source, /disabled=\{blockers\.length>0\} data-testid="sns-prepare"/);
+  assert.match(source, /<BlockedReasons id=\{`\$\{platform\}-prepare-blockers`\} reasons=\{blockers\}>\s*<button[^\n]*data-testid="sns-prepare"/);
+  assert.match(source, /onMouseEnter=\{show\} onMouseLeave=[\s\S]{0,300}createPortal\(\s*<div ref=\{tip\} role="tooltip"/);
+  assert.doesNotMatch(source, /onFocus=\{show\}/); // 마우스를 올린 동안에만
+});

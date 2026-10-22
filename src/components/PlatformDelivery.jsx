@@ -32,16 +32,13 @@ function Step({n,title,hint,state,last,children}) {
   {children&&<div className="ml-[3.25rem] mt-1 space-y-2">{children}</div>}
  </li>;
 }
-// 꺼진 버튼에 마우스를 올리거나(키보드는 Tab 으로 초점) 막는 이유를 띄운다. 꺼진 버튼은 마우스 이벤트를 받지 않으므로 감싼 상자가 받는다.
-// 왼쪽 패널은 넘치면 스크롤되므로(overflow-y-auto) 안내는 body 에 고정 위치로 띄운다 — 버튼 아래 공간이 모자라면 위로.
-// 화면 읽기 프로그램용 같은 목록은 상자 안에 숨겨 두고 aria-describedby 로 잇는다.
+// 꺼진 버튼에 마우스를 올린 동안에만 막는 이유를 버튼 위에 띄운다. 꺼진 버튼은 마우스 이벤트를 받지 않으므로 감싼 상자가 받는다.
+// 레이아웃 칸을 차지하지 않도록 body 에 고정 위치(fixed)로 띄운다(왼쪽 패널은 넘치면 스크롤되어 안에 두면 잘린다).
+// 위로 그려 보고 화면 위로 잘리면 그때만 버튼 아래로 옮긴다. 화면 읽기 프로그램용 같은 목록은 숨겨 두고 aria-describedby 로 잇는다.
 function BlockedReasons({id,reasons,children}) {
- const box=useRef(null),[at,setAt]=useState(null);
- const show=()=>{
-  const r=box.current?.getBoundingClientRect();if(!r)return;
-  const below=window.innerHeight-r.bottom>=240||r.top<240;
-  setAt({left:r.left,width:r.width,...(below?{top:r.bottom+8}:{bottom:window.innerHeight-r.top+8})});
- };
+ const box=useRef(null),tip=useRef(null),[at,setAt]=useState(null);
+ const show=()=>{const r=box.current?.getBoundingClientRect();if(r)setAt({left:r.left,width:r.width,top:r.top,bottom:r.bottom,below:false});};
+ useLayoutEffect(()=>{if(at&&!at.below&&tip.current&&tip.current.getBoundingClientRect().top<8)setAt({...at,below:true});},[at]);
  useEffect(()=>{
   if(!at)return undefined;
   const hide=()=>setAt(null);
@@ -49,16 +46,16 @@ function BlockedReasons({id,reasons,children}) {
   return()=>{window.removeEventListener('scroll',hide,true);window.removeEventListener('resize',hide);};
  },[at]);
  if(!reasons.length)return children;
- const list=<ul className="list-disc space-y-1 pl-4">{reasons.map(reason=><li key={reason}>{reason}</li>)}</ul>;
- return <div ref={box} tabIndex={0} aria-describedby={id} data-testid="sns-prepare-wrap"
-   className="cursor-not-allowed rounded-full outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-   onMouseEnter={show} onMouseLeave={()=>setAt(null)} onFocus={show} onBlur={()=>setAt(null)}>
+ const place=at&&{left:at.left,width:at.width,...(at.below?{top:at.bottom+8}:{bottom:window.innerHeight-at.top+8})};
+ return <div ref={box} aria-describedby={id} data-testid="sns-prepare-wrap" className="cursor-not-allowed"
+   onMouseEnter={show} onMouseLeave={()=>setAt(null)}>
   {children}
   <div id={id} className="sr-only">지금 누를 수 없는 이유: {reasons.join(' ')}</div>
   {at&&createPortal(
-   <div role="tooltip" aria-hidden="true" data-testid="sns-prepare-blockers" style={at}
+   <div ref={tip} role="tooltip" aria-hidden="true" data-testid="sns-prepare-blockers" style={place}
     className="pointer-events-none fixed z-[1000] rounded-xl bg-slate-900/95 px-3 py-2.5 text-[11px] leading-5 text-white shadow-lg">
-    <p className="mb-1 font-bold">지금 누를 수 없는 이유</p>{list}
+    <p className="mb-1 font-bold">지금 누를 수 없는 이유</p>
+    <ul className="list-disc space-y-1 pl-4">{reasons.map(reason=><li key={reason}>{reason}</li>)}</ul>
    </div>,document.body)}
  </div>;
 }

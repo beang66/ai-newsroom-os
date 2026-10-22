@@ -36,5 +36,6 @@ test("SNS 작성창 채우기: 꺼진 버튼은 막는 이유 목록으로 정�
   const source = await readFile(new URL("../../../src/components/PlatformDelivery.jsx", import.meta.url), "utf8");
   assert.match(source, /disabled=\{blockers\.length>0\} data-testid="sns-prepare"/);
   assert.match(source, /<BlockedReasons id=\{`\$\{platform\}-prepare-blockers`\} reasons=\{blockers\}>\s*<button[^\n]*data-testid="sns-prepare"/);
-  assert.match(source, /onMouseEnter=\{show\}[\s\S]{0,600}createPortal\(\s*<div role="tooltip"/);
+  assert.match(source, /onMouseEnter=\{show\} onMouseLeave=[\s\S]{0,300}createPortal\(\s*<div ref=\{tip\} role="tooltip"/);
+  assert.doesNotMatch(source, /onFocus=\{show\}/); // 마우스를 올린 동안에만
 });

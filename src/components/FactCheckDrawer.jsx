@@ -650,21 +650,36 @@ function EvidenceQuote({ item }) {
       </p>
     );
   }
-  const { caption, header, rows } = markTable(item.table, item.claimText);
+  const { caption, header, headerRows, rows } = markTable(item.table, item.claimText);
   const shown = all ? rows : rows.slice(0, ROWS);
   const width = Math.max(...rows.map((r) => r.cells.length));
   const head = header && (header.length > width ? header : ["", ...header]); // 칸 하나 더면 첫 칸은 행 이름 열 제목
+  // PDF 표는 코어가 보낸 머리글 줄을 그대로(여러 칸에 걸친 머리글은 colSpan), 그 밖은 한 줄 열 제목
+  const headLines = headerRows?.length ? headerRows : head ? [head.map((text) => ({ text, span: 1 }))] : [];
   const hitTone = ok ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900";
   return (
     <div className="space-y-1 text-slate-800" data-testid="evidence-table">
       {caption.map((c, k) => <p key={k} className="text-[10px] font-bold text-slate-500 break-words">{c}</p>)}
       <div className="overflow-x-auto rounded-lg border border-blue-100 bg-white">
         <table className="w-full text-[11px] tabular-nums">
-          {head && <thead><tr className="text-slate-500">{head.map((h, k) => <th key={k} className={`px-1.5 py-1 font-bold whitespace-nowrap ${k ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>}
+          {headLines.length > 0 && (
+            <thead>
+              {headLines.map((line, i) => (
+                <tr key={i} className={`text-slate-500 ${i ? "border-t border-slate-100" : ""}`}>
+                  {line.map((h, k) => (
+                    <th key={k} colSpan={h.span || 1} className={`px-1.5 py-1 font-bold whitespace-nowrap ${!k ? "text-left" : (h.span || 1) > 1 ? "text-center" : "text-right"}`}>{h.text}</th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+          )}
           <tbody>
             {shown.map((row, r) => (
               <tr key={r} className={`border-t border-slate-100 ${row.hit ? (ok ? "bg-emerald-50" : "bg-rose-50") : ""}`}>
-                <th scope="row" className="px-1.5 py-1 text-left font-bold whitespace-nowrap">{row.label}</th>
+                <th scope="row" className="px-1.5 py-1 text-left font-bold whitespace-nowrap">
+                  {row.path.length > 0 && <span className="font-normal text-slate-400">{row.path.join(" › ")} › </span>}
+                  {row.label}
+                </th>
                 {row.cells.map((c, k) => <td key={k} className="px-1.5 py-1 text-right whitespace-nowrap"><span className={c.hit ? `${hitTone} rounded-sm px-0.5 font-bold` : ""}>{c.text}</span></td>)}
               </tr>
             ))}

@@ -238,7 +238,7 @@ def get_vector_cache() -> VectorCache:
 class ChunkIndex:
     """후보 청크 집합의 문서 쪽 계산(벡터 읽기·희소 코드·BM25 색인)을 한 번만 한다.
     주장마다 같은 집합을 다시 읽고 색인하지 않도록 한 요청 안에서 재사용하고(service.review_workspace),
-    요청 사이에도 shared_chunk_index 로 재사용한다. 색인이 읽는 것은 청크의 글·종류(kind)·표 열 제목(table_header)뿐이다."""
+    요청 사이에도 shared_chunk_index 로 재사용한다. 색인이 읽는 것은 청크의 글·종류(kind)·표 구조(table_meta)뿐이다."""
 
     def __init__(self, chunks: list[dict], cache: VectorCache | None = None):
         self.chunks = chunks
@@ -281,7 +281,7 @@ class ChunkIndex:
 
 # 요청 사이 색인 재사용: 자동 검증은 글이 멈출 때마다(고친 문장만) 돌지만 자료는 그동안 거의 바뀌지 않는다.
 # 예전에는 요청마다 색인(표 행 단위 버섯체, 150청크 ≈5초)을 새로 만들고 버렸다.
-# 키 = 청크의 글·종류·표 열 제목(색인이 읽는 것 전부). 자료가 바뀌면 키가 달라져 새로 만들고, 오래된 것은 SHARED_INDEXES 개를 넘으면 버린다.
+# 키 = 청크의 글·종류·표 구조(색인이 읽는 것 전부). 자료가 바뀌면 키가 달라져 새로 만들고, 오래된 것은 SHARED_INDEXES 개를 넘으면 버린다.
 # 자료 이름 등 메타데이터는 rank_chunks 가 호출자의 청크에서 붙이므로 키에 넣지 않는다. 로그아웃하면 비운다(clear_shared_indexes).
 SHARED_INDEXES = 4
 _shared: OrderedDict[str, tuple[object, ChunkIndex]] = OrderedDict()
@@ -291,7 +291,7 @@ _shared_lock = threading.Lock()
 def _content_key(chunks: list[dict]) -> str:
     digest = hashlib.sha256(MODEL_ID.encode("utf-8"))
     for row in chunks:
-        header = row.get("table_header")
+        header = row.get("table_meta")
         for part in (str(row.get("text") or ""), str(row.get("kind") or ""),
                      json.dumps(header, ensure_ascii=False, sort_keys=True) if header else ""):
             data = part.encode("utf-8")
@@ -300,7 +300,7 @@ def _content_key(chunks: list[dict]) -> str:
 
 
 def shared_chunk_index(chunks: list[dict], cache: VectorCache | None = None) -> ChunkIndex:
-    """같은 글·종류·표 열 제목의 청크 집합이면 이전 요청이 만든 ChunkIndex 를 돌려준다(벡터 캐시가 같을 때만)."""
+    """같은 글·종류·표 구조의 청크 집합이면 이전 요청이 만든 ChunkIndex 를 돌려준다(벡터 캐시가 같을 때만)."""
     cache = cache or get_vector_cache()
     key = _content_key(chunks)
     with _shared_lock:
@@ -323,8 +323,8 @@ def clear_shared_indexes() -> None:
 
 
 def _public(chunk: dict) -> dict:
-    """검색 결과로 내보내는 청크 필드. 표 열 제목(table_header)은 표 구조(table)를 만들 때만 쓰는 내부 값이라 뺀다."""
-    return {k: v for k, v in chunk.items() if k != "table_header"}
+    """검색 결과로 내보내는 청크 필드. 표 구조(table_meta)는 화면 표(table)를 만들 때만 쓰는 내부 값이라 뺀다."""
+    return {k: v for k, v in chunk.items() if k != "table_meta"}
 
 
 def rank_chunks(

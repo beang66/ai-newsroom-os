@@ -129,7 +129,7 @@ class SourceIndexTests(unittest.TestCase):
             rows = [(t, json.loads(m)) for t, m in db.execute('SELECT text, meta_json FROM source_chunks WHERE source_id = ? '
                                                               'ORDER BY ordinal', (sid,))]
         self.assertIn(('Budget is 10 billion won this year.', [1]), [(t, m.get('pages')) for t, m in rows])
-        self.assertIn(':pdf-layout-v2', self.status_of(sid)[3])
+        self.assertIn(':pdf-layout-v3', self.status_of(sid)[3])
         sid2, _ = storage.save_source('broken.pdf', b'%PDF-1.4 broken', 'Fallback body.')
         with mock.patch.object(pdf_layout, 'pdf_pages', side_effect=ValueError('bad pdf')):
             self.assertEqual(source_index.index_source(sid2), 'ready')

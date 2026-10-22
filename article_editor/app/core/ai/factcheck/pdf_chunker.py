@@ -78,36 +78,161 @@ def despace(text, min_run):
     return pat.sub(lambda m: m.group(1).replace(' ', ''), text)
 
 
-def header_split(rows):
+def _numeric_row(r):
+    cells = [c for c in r if c]
+    return bool(cells) and sum(bool(NUM_CELL.match(c.replace(' ', ''))) for c in cells) / len(cells) >= 0.5
+
+
+def header_count(rows):
+    """맨 위 머리글 줄 수(최대 4). 행 이름 칸이 찬 줄은 칸 절반 이상이 숫자면 데이터('구분 2022 2023' 은 데이터 — 예전과 같다).
+    행 이름 칸이 빈 줄은 아래에 행 이름이 있는 줄이 있으면 숫자처럼 보여도('2025. 8 … 2026. 8 … 증감') 머리글이다."""
     h = 0
     while h < len(rows) and h < 4:
-        cells = [c for c in rows[h] if c]
-        if cells and sum(bool(NUM_CELL.match(c.replace(' ', ''))) for c in cells) / len(cells) >= 0.5:
+        r = rows[h]
+        if _numeric_row(r) and (r[0] or not any(x[0] for x in rows[h + 1:h + 5])):
             break
         h += 1
-    head = [' '.join(x for x in (rows[r][c] for r in range(h)) if x) for c in range(len(rows[0]))] if h and rows else []
-    return head, rows[h:]
+    return h
+
+
+def head_groups(head_rows, active):
+    """위 머리글 줄(마지막 줄 빼고)마다 {글자 칸: 덮는 값 열들}. '2025. 8' 처럼 여러 열에 걸친 머리글은 글자가 묶음의 한 칸
+    (가운데·왼쪽)에만 있으므로, 값 열을 가장 가까운 글자 칸에 붙이고(같으면 왼쪽), 마지막 묶음은 앞 묶음들의 폭이 같으면 그 폭으로
+    자른다(뒤에 따로 선 '증감률' 같은 칸). active: 어느 줄에든 글자가 있는 값 열(1부터)."""
+    out = []
+    leaf = sum(1 for c in active if head_rows[-1][c])
+    for r in head_rows[:-1]:
+        pos = [k for k in active if r[k]]
+        # 묶음 머리글로 볼 때만 펼친다: 마지막 줄이 값 열을 거의 다 채우고(80% 이상) 이 줄은 그보다 듬성듬성할 때.
+        # 아니면(부록 통계표처럼 한 칸의 여러 줄 글자가 열마다 흩어진 머리글) 예전처럼 제 열에만 둔다.
+        if not active or leaf < 0.8 * len(active) or len(pos) * 2 > len(active):
+            out.append({p: [p] for p in pos})
+            continue
+        groups = {p: [] for p in pos}
+        for c in active:
+            if pos:
+                groups[min(pos, key=lambda p: (abs(p - c), p))].append(c)
+        widths = {len(groups[p]) for p in pos[:-1]}
+        if len(widths) == 1 and len(groups[pos[-1]]) > min(widths):
+            groups[pos[-1]] = groups[pos[-1]][:min(widths)]
+        out.append(groups)
+    return out
+
+
+def header_split(rows):
+    """→ (칸별 열 제목, 데이터 행). 여러 줄 머리글은 위 줄 묶음(head_groups)을 아래 칸마다 붙여 펼친다('2025. 8 인구')."""
+    head, _, body, _ = table_head(rows)
+    return head, body
+
+
+def table_head(rows):
+    """→ (칸별 열 제목[열 0 = 행 이름 열], 화면용 머리글 줄 [[{text, span}]], 데이터 행, 값 열 번호들).
+    값 열 = 머리글·데이터 어느 줄에든 글자가 있는 열(통째로 빈 열은 화면에서 뺀다). 머리글이 없으면 ([], [], rows, 값 열)."""
+    ncol = len(rows[0]) if rows else 0
+    active = [c for c in range(1, ncol) if any(r[c] for r in rows if c < len(r))]
+    h = header_count(rows)
+    if not h:
+        return [], [], rows, active
+    hrows = rows[:h]
+    groups = head_groups(hrows, active)
+    head = [' '.join(r[0] for r in hrows if r[0])]  # 행 이름 열 제목('구분')
+    for c in range(1, ncol):
+        parts = [r[p] for r, g in zip(hrows, groups) for p, cols in g.items() if c in cols]
+        head.append(' '.join(parts + ([hrows[-1][c]] if hrows[-1][c] else [])))
+    view = []  # 화면 머리글: 위 줄은 묶음을 칸 여러 개에 걸쳐(span), 마지막 줄은 열마다. 행 이름 열 제목은 첫 줄에만
+    for i, r in enumerate(hrows):
+        cells = [{'text': head[0] if i == 0 else '', 'span': 1}]
+        if i == h - 1:
+            cells += [{'text': r[c], 'span': 1} for c in active]
+        else:
+            starts = {cols[0]: (r[p], len(cols)) for p, cols in groups[i].items() if cols}
+            covered = {c for cols in groups[i].values() for c in cols}
+            cells += [{'text': starts[c][0], 'span': starts[c][1]} if c in starts else {'text': '', 'span': 1}
+                      for c in active if c in starts or c not in covered]
+        view.append(cells)
+    return head, view, rows[h:], active
+
+
+SECTION = re.compile(r'^[<＜]\s*(.+?)\s*[>＞]$')
+INDENT = {'․': 1, '‥': 2}  # 행 이름 앞 들여쓰기 점(한 점·두 점) — 바로 위 얕은 행의 하위 행
+PERIOD_YEAR = re.compile(r'^(19|20)\d{2}\.\s*\d{1,2}(/4)?$')
+PERIOD_BARE = re.compile(r'^\d{1,2}(/4)?$')
+MARK = re.compile(r'^[◦◉▣○●□■•\-–]\s*')  # '◦ 15세이상인구' '- 경제활동인구': 기호 행 — 뒤따르는 기호 없는 행들의 부모
+
+
+def row_label(label):
+    """화면에 보일 행 이름: 들여쓰기 점·기호를 떼고 한 글자씩 띄어 쓴 한글을 붙인다('․15～19세' → '15～19세', '◦ 남 자' → '남자')."""
+    return despace(MARK.sub('', label.strip().lstrip(''.join(INDENT)).strip()), 2)
+
+
+def row_paths(rows):
+    """데이터 행마다 상위 행 이름 [소제목, 부모 …]. 같은 이름의 행(남자 20～29세 / 여자 20～29세)을 화면에서 가르려고 쓴다.
+    - '< 남 자 >' 줄은 아래 행들의 소제목(그 줄 자신은 소제목 없음)
+    - '◦'·'-' 같은 기호 행은 뒤따르는 기호 없는 행들의 부모, '․'·'‥' 들여쓰기 행은 바로 위 얕은 행의 하위
+    - 행 이름이 비었거나 괄호뿐인 줄('(참가율)')은 바로 앞 행의 하위
+    - '8' '3/4' 같은 월·분기 행은 위의 '2025. 1' 같은 연도 행의 해('2025년')"""
+    section, stack, out, last, year = None, [], [], [], None
+    for r in rows:
+        label = (r[0] if r else '').strip()
+        m = SECTION.match(label)
+        if m:
+            section, stack = despace(m.group(1), 2), []
+            out.append([])
+            last = [section]
+            continue
+        if not label or re.fullmatch(r'[(（][^()（）]*[)）]', label):
+            out.append(list(last))
+            continue
+        if PERIOD_YEAR.match(label):  # '2025. 1' '2024.2/4' — 아래 '2' '3/4' 같은 행의 연도
+            year = label[:4] + '년'
+            out.append([section] if section else [])
+            last = out[-1] + [label]
+            continue
+        if PERIOD_BARE.match(label):  # '8' '3/4' — 위 연도 행의 같은 해(부록 통계표의 월·분기 행)
+            out.append(([section] if section else []) + ([year] if year else []))
+            last = out[-1] + [label]
+            continue
+        year = None if re.fullmatch(r'(19|20)\d{2}', label) else year
+        dots = label[:len(label) - len(label.lstrip(''.join(INDENT)))]
+        level = -1 if MARK.match(label) else sum(INDENT[ch] for ch in dots)
+        name = row_label(label)
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        path = ([section] if section else []) + [n for _, n in stack]
+        out.append(path)
+        stack.append((level, name))
+        last = path + [name]
+    return out
 
 
 def table_chunks(b, cap, page):
-    """→ [(글, 쪽, 머리글)]. 머리글 = {line: 글 속 머리글 줄, cells: 칸별 열 제목(첫 칸은 행 이름 열), note: head_text}.
-    글에서는 칸을 띄어쓰기로 이어 '2026.8월말 (a)' 같은 열 제목의 칸 경계가 사라지므로, 화면 표(evidence_rank.table_view)가
-    추측하지 않도록 칸 목록을 따로 넘긴다. 칸 열 제목이 없으면 None. 글은 그대로다(검색·임베딩 캐시 영향 없음)."""
-    head, rows = header_split(b['rows'])
+    """→ [(글, 쪽, 표 구조)]. 표 구조 = {line: 글 속 머리글 줄, cells: 칸별 열 제목(첫 칸은 행 이름 열), rows: 화면용 머리글 줄,
+    note: head_text, body: [{line, label, cells, path}] (이 조각의 행)}. 글에서는 칸을 띄어쓰기로 이어 칸 경계가 사라지므로
+    화면 표(evidence_rank.table_view)가 추측하지 않도록 구조를 따로 넘긴다. 머리글은 조각마다 되풀이한다."""
+    rows = b['rows']
+    if rows and not any(r[0] for r in rows if r):  # 맨 앞 열이 통째로 비면(부록 통계표) 다음 열이 행 이름 열
+        rows = [r[1:] for r in rows]
+    head, head_view, rows, active = table_head(rows)
     hline = ' / '.join(x for x in [b.get('head_text', ''), ' '.join(h for h in head if h)] if x)
-    header = {'line': hline, 'cells': head, 'note': b.get('head_text', '')} if any(head) else None
+    paths = row_paths(rows)
     base = '\n'.join(x for x in [cap, hline] if x)
+
+    def struct(part):
+        return {'line': hline, 'cells': [head[0]] + [head[c] for c in active] if any(head) else [], 'rows': head_view,
+                'note': b.get('head_text', ''),
+                'body': [{'line': line, 'label': row_label(SECTION.sub(r'\1', r[0].strip())), 'cells': [r[c] if c < len(r) else '' for c in active],
+                          'path': p} for line, r, p in part]}
     out, cur = [], []
-    for r in rows:
+    for r, p in zip(rows, paths):
         line = ' '.join(c for c in r if c)
-        size = len(base) + sum(len(x) + 1 for x in cur) + len(line)
+        size = len(base) + sum(len(x[0]) + 1 for x in cur) + len(line)
         cont = bool(r) and not r[0]
         if cur and (size > 2 * TABLE_MAX or (size > TABLE_MAX and not cont)):
-            out.append(('\n'.join(x for x in [base] + cur if x), [page], header))
+            out.append(('\n'.join(x for x in [base] + [x[0] for x in cur] if x), [page], struct(cur)))
             cur = []
-        cur.append(line)
+        cur.append((line, r, p))
     if cur or base:
-        out.append(('\n'.join(x for x in [base] + cur if x), [page], header))
+        out.append(('\n'.join(x for x in [base] + [x[0] for x in cur] if x), [page], struct(cur)))
     return out
 
 
@@ -207,8 +332,12 @@ def pdf_units(pages, boundary=None):
         if text:  # 쪽마다 반복되는 각주도 지우지 않는다(쪽 번호가 다르다)
             item = {'text': text, 'kind': kind, 'field': None, 'pages': pg}
             if header:  # 글과 같은 정리를 칸마다 따로 한다(정리 규칙은 줄 안에서만 작동해 line 은 글 속 줄과 같다)
-                item['table_header'] = {'line': tidy(header['line'], kind), 'cells': [tidy(c, kind) for c in header['cells']],
-                                        'note': tidy(header['note'], kind)}
+                t = lambda s: tidy(s, kind)
+                item['table_meta'] = {
+                    'line': t(header['line']), 'cells': [t(c) for c in header['cells']], 'note': t(header['note']),
+                    'rows': [[{'text': t(c['text']), 'span': c['span']} for c in r] for r in header['rows']],
+                    'body': [{'line': t(b['line']), 'label': t(b['label']), 'cells': [t(c) for c in b['cells']], 'path': b['path']}
+                             for b in header['body']]}
             out.append(item)
     return out
 

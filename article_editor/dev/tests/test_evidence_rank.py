@@ -69,34 +69,76 @@ class EvidenceRankTests(unittest.TestCase):
     def test_pdf_table_header_cells_survive_spaces_in_column_titles(self):
         (chunk,) = self.pdf_table_chunks()
         head_line = '2022년말 2023년말 2024년말 2025년말 2026.8월말 (a) 2026.9월말 (b) 전월대비증감 (b-a)1)'
-        self.assertEqual(chunk['text'].split('\n')[:2], ['2026년 9월말 외환보유액 (억달러, %)', head_line])  # 글은 예전과 같다
-        self.assertEqual(chunk['table_header']['line'], head_line)
-        self.assertEqual(chunk['table_header']['cells'],
+        self.assertEqual(chunk['text'].split('\n')[:2], ['2026년 9월말 외환보유액 (억달러, %)', head_line])
+        meta = chunk['table_meta']
+        self.assertEqual(meta['line'], head_line)
+        self.assertEqual(meta['cells'],
                          ['', '2022년말', '2023년말', '2024년말', '2025년말', '2026.8월말 (a)', '2026.9월말 (b)', '전월대비증감 (b-a)1)'])
         with mock.patch.dict(os.environ, {'FACTCHECK_RETRIEVAL': 'kc-band-table-ctx'}):
             (found,) = [r for r in retrieval.rank_chunks('외환보유액은 4,405.6억달러였다.', [chunk], limit=3, cache=FakeCache())
                         if r.get('table')]
         view = found['table']
-        self.assertEqual(view['header'], chunk['table_header']['cells'])  # 예전: 토큰 10개 ≠ 값 칸 7개 → None
+        self.assertEqual(view['header'], meta['cells'])  # 예전: 토큰 10개 ≠ 값 칸 7개 → None
         self.assertEqual(view['caption'], ['2026년 9월말 외환보유액 (억달러, %)'])  # 머리글 줄이 회색 글로 남지 않는다
-        self.assertEqual(len(view['rows'][0]['cells']), 7)
-        self.assertNotIn('table_header', found)  # 내부 값은 검색 결과로 내보내지 않는다
+        self.assertEqual(view['rows'][0]['cells'], ['4,231.6', '4,201.5', '4,156.0', '4,280.5', '4,422.8', '4,405.6', '-17.2'])
+        self.assertNotIn('table_meta', found)  # 내부 값은 검색 결과로 내보내지 않는다
 
-    def test_table_view_uses_header_cells_or_falls_back(self):
-        header = {'line': '2022 2023 증감', 'cells': ['구분', '2022', '2023', '증감'], 'note': ''}
-        rows = ['2022 2023 증감', '전체 1,234 1,300 66', '남자 600 650 50']  # 연도 머리글이 숫자처럼 보여 행으로 잡힌 경우
-        view = evidence_rank.table_view('< 인구 >', rows, header)
-        self.assertEqual(view['header'], ['구분', '2022', '2023', '증감'])
-        self.assertEqual([r['label'] for r in view['rows']], ['전체', '남자'])  # 머리글 줄은 화면 행에서만 뺀다
-        noted = evidence_rank.table_view('< 인구 >\n단위: 명 / 2022 2023 증감', rows[1:],
-                                         dict(header, line='단위: 명 / 2022 2023 증감', note='단위: 명'))
-        self.assertEqual(noted['caption'], ['< 인구 >', '단위: 명'])  # head_text 는 caption 에 남긴다
-        wrong = evidence_rank.table_view('< 인구 >\n구분 8월 9월', rows[1:], dict(header, cells=['구분', '8월']))
-        self.assertEqual(wrong, evidence_rank.table_view('< 인구 >\n구분 8월 9월', rows[1:]))  # 칸 수가 안 맞으면 예전 방식
+    def employment_chunks(self):
+        """국가데이터처 2026년 8월 고용동향 15쪽 '연령계층별 취업자 및 고용률' 표(pdf_layout 이 읽은 그대로, 일부 행)."""
+        from core.ai.factcheck.pdf_chunker import pdf_units
+        rows = [['', '', '2025. 8', '', '', '2026. 8', '', '', '증감', ''],
+                ['', '인구', '취업자', '고용률', '인구', '취업자', '고용률', '인구', '취업자', '고용률'],
+                ['< 전 체 >', '45,779', '28,967', '63.3', '46,036', '29,151', '63.3', '257', '184', '0.0'],
+                ['15～29세', '7,920', '3,571', '45.1', '7,776', '3,428', '44.1', '-144', '-143', '-1.0'],
+                ['․20～29세', '5,679', '3,434', '60.5', '5,484', '3,270', '59.6', '-195', '-164', '-0.9'],
+                ['‥25～29세', '3,365', '2,412', '71.7', '3,279', '2,336', '71.2', '-86', '-76', '-0.5'],
+                ['< 남 자 >', '22,580', '16,023', '71.0', '22,734', '16,130', '71.0', '154', '107', '0.0'],
+                ['20～29세', '2,828', '1,640', '58.0', '2,737', '1,554', '56.8', '-91', '-87', '-1.2'],
+                ['< 여 자 >', '23,199', '12,944', '55.8', '23,302', '13,021', '55.9', '103', '77', '0.1'],
+                ['20～29세', '2,851', '1,794', '62.9', '2,747', '1,717', '62.5', '-104', '-77', '-0.4']]
+        pages = [{'page': 15, 'blocks': [{'type': 'caption', 'text': '< 연령계층별 취업자 및 고용률 >'},
+                                         {'type': 'unit', 'text': '(단위: 천명, %, %p, 전년동월대비)'}, {'type': 'table', 'rows': rows}]}]
+        return [c for c in pdf_units(pages) if c['kind'] == 'table']
 
-    def test_shared_index_key_includes_table_header(self):
+    def test_numeric_looking_multirow_header_is_spread_over_its_columns(self):
+        (chunk,) = self.employment_chunks()
+        meta = chunk['table_meta']
+        # 예전: '2025. 8 … 증감' 줄이 숫자처럼 보여 데이터 행으로 잡혀 머리글이 없었다
+        self.assertEqual(meta['cells'][1:4], ['2025. 8 인구', '2025. 8 취업자', '2025. 8 고용률'])
+        self.assertEqual(meta['cells'][7:], ['증감 인구', '증감 취업자', '증감 고용률'])
+        self.assertEqual([(c['text'], c['span']) for c in meta['rows'][0]], [('', 1), ('2025. 8', 3), ('2026. 8', 3), ('증감', 3)])
+        self.assertEqual(chunk['text'].split('\n')[1], meta['line'])  # 글의 머리글 줄도 칸마다 펼친 열 제목
+        paths = {b['line'].split()[1]: b['path'] for b in meta['body']}
+        self.assertEqual(paths['5,679'], ['전체', '15～29세'])  # '․' 들여쓰기 = 바로 위 얕은 행의 하위
+        self.assertEqual(paths['3,365'], ['전체', '15～29세', '20～29세'])
+        self.assertEqual(paths['2,828'], ['남자'])  # '< 남 자 >' 소제목
+        self.assertEqual(paths['2,851'], ['여자'])
+
+    def test_same_named_rows_carry_their_section_to_screen_and_judge(self):
+        chunks = self.employment_chunks() + [dict(c, kind='narrative') for c in make_chunks(20)]
+        with mock.patch.dict(os.environ, {'FACTCHECK_RETRIEVAL': 'kc-band-table-ctx'}):
+            rows = retrieval.rank_chunks('20～29세 남자 취업자는 155만4천명, 여자는 171만7천명이었다.', chunks, limit=10, cache=FakeCache())
+        table = next(r for r in rows if r.get('table'))
+        view = table['table']
+        self.assertEqual(len(view['header_rows']), 2)
+        labelled = {(tuple(r['path']), r['label']) for r in view['rows']}
+        self.assertIn((('남자',), '20～29세'), labelled)
+        self.assertIn((('여자',), '20～29세'), labelled)
+        self.assertIn('남자 › 20～29세 2,828', table['text'])  # 판정기에도 어느 소제목의 행인지 보인다
+        self.assertIn('2025. 8 취업자', table['text'])
+
+    def test_table_view_without_structure_guesses_as_before(self):
+        rows = ['전체 1,234 1,300', '남자 600 650']
+        view = evidence_rank.table_view('< 인구 >\n구분 8월 9월', rows)
+        self.assertEqual(view['header'], ['구분', '8월', '9월'])
+        self.assertNotIn('header_rows', view)
+        meta = {'line': '구분 8월 9월', 'cells': ['구분', '8월', '9월'], 'rows': [], 'note': ''}
+        partial = evidence_rank.table_view('< 인구 >\n구분 8월 9월', rows, meta, {rows[0]: {'label': '전체', 'cells': ['1,234', '1,300'], 'path': []}})
+        self.assertEqual(partial, view)  # 행 구조가 하나라도 없으면 추측(섞지 않는다)
+
+    def test_shared_index_key_includes_table_meta(self):
         (chunk,) = self.pdf_table_chunks()
-        bare = {k: v for k, v in chunk.items() if k != 'table_header'}
+        bare = {k: v for k, v in chunk.items() if k != 'table_meta'}
         self.assertNotEqual(retrieval._content_key([chunk]), retrieval._content_key([bare]))
 
     def test_unit_index_built_once_per_chunk_index(self):

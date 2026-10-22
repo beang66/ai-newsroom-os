@@ -77,3 +77,27 @@ export function draftText(platform, draft) {
   return [draft?.opening, ...(draft?.paragraphs || []), draft?.closing, (draft?.hashtags || []).join(" ")]
     .filter(value => typeof value === "string" && value.trim()).join("\n\n");
 }
+
+/** SNS 작성창 채우기 버튼을 지금 누를 수 없는 이유(화면 안내 문구) 목록 — 비면 누를 수 있다.
+ *  버튼의 disabled 도 이 목록으로 정한다(안내와 실제 동작이 어긋나지 않게). 여러 이유가 겹치면 모두 보여 준다
+ *  (예: 근거 확인 체크만으로는 풀리지 않는 '이전 원문 결과'). */
+export function prepareBlockers({ platform, draft, cards, article, attach, busy, preparing, checking, evidenceMismatch, evidenceAck }) {
+  const name = platform === "threads" ? "Threads" : "Instagram", id = articleId(article), out = [];
+  if (busy) out.push(`${name} 작성창을 채우는 중입니다.`);
+  else if (preparing) out.push("플랫폼 원고를 생성하는 중입니다. 생성이 끝나면 누를 수 있습니다.");
+  if (checking) out.push(`${name} 로그인 연결 상태를 확인하는 중입니다. 확인이 끝나면 누를 수 있습니다.`);
+  if (!draft) out.push(`${name} 원고가 없습니다. '원고 & 설정'에서 원고를 생성해 주세요.`);
+  else if (draft.article_id !== id) out.push(`이 ${name} 원고는 다른 기사에서 만든 것입니다. 지금 기사로 원고를 다시 생성해 주세요.`);
+  else if (!sameGenerationSource(draft, article)) {
+    out.push(`${name} 원고를 만든 뒤 기사(제목·부제·본문·URL)가 바뀌었거나, 불러온 초안이 지금 기사와 다른 원문에서 만든 결과입니다(이전 원문 결과). 원고를 다시 생성해 주세요.`);
+  }
+  if (attach && cards) {
+    if (cards.article_id !== id || !sameGenerationSource(cards, article)) {
+      out.push(`첨부할 카드뉴스가 지금 기사와 다른 원문에서 만든 결과입니다. 카드뉴스를 다시 생성해 주세요${platform === "instagram" ? "" : "('현재 카드뉴스 첨부'를 꺼도 됩니다)"}.`);
+    } else if (draft && (cards.article_id !== draft.article_id || (cards.snapshot_id || null) !== (draft.snapshot_id || null))) {
+      out.push("원고와 카드뉴스가 서로 다른 생성 작업(고정본)의 결과입니다. 원고와 카드뉴스를 같은 생성 작업으로 다시 만들어 주세요.");
+    }
+  }
+  if (evidenceMismatch && !evidenceAck) out.push("원문과 일치하지 않는 근거가 표시되어 있습니다. 위 경고에서 내용을 확인한 뒤 '확인했습니다'를 체크해 주세요.");
+  return out;
+}

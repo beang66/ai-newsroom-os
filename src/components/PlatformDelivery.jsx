@@ -1,9 +1,10 @@
 import {useEffect,useLayoutEffect,useRef,useState} from "react";
+import {createPortal} from "react-dom";
 import {Check,Clock,Loader2} from "lucide-react";
 import {renderStoredCard,snsAction,storedJpg} from "../api/platform.js";
 import {exportFiles} from "../api/editorial.js";
 import ExportNotice from "./ExportNotice.jsx";
-import {assertSameSource,draftText,fingerprint,reviewLabel,reviewStatus,sourceText,sameGenerationSource,articleId} from "../lib/platformState.js";
+import {assertSameSource,draftText,fingerprint,reviewLabel,reviewStatus,sourceText,sameGenerationSource,articleId,prepareBlockers} from "../lib/platformState.js";
 import {cardImageReadiness,prepareCardImages} from '../lib/cardPreparation.js';
 
 const button = "inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#292929] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-black active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[#292929]";
@@ -30,6 +31,36 @@ function Step({n,title,hint,state,last,children}) {
   </div>
   {children&&<div className="ml-[3.25rem] mt-1 space-y-2">{children}</div>}
  </li>;
+}
+// 꺼진 버튼에 마우스를 올리거나(키보드는 Tab 으로 초점) 막는 이유를 띄운다. 꺼진 버튼은 마우스 이벤트를 받지 않으므로 감싼 상자가 받는다.
+// 왼쪽 패널은 넘치면 스크롤되므로(overflow-y-auto) 안내는 body 에 고정 위치로 띄운다 — 버튼 아래 공간이 모자라면 위로.
+// 화면 읽기 프로그램용 같은 목록은 상자 안에 숨겨 두고 aria-describedby 로 잇는다.
+function BlockedReasons({id,reasons,children}) {
+ const box=useRef(null),[at,setAt]=useState(null);
+ const show=()=>{
+  const r=box.current?.getBoundingClientRect();if(!r)return;
+  const below=window.innerHeight-r.bottom>=240||r.top<240;
+  setAt({left:r.left,width:r.width,...(below?{top:r.bottom+8}:{bottom:window.innerHeight-r.top+8})});
+ };
+ useEffect(()=>{
+  if(!at)return undefined;
+  const hide=()=>setAt(null);
+  window.addEventListener('scroll',hide,true);window.addEventListener('resize',hide);
+  return()=>{window.removeEventListener('scroll',hide,true);window.removeEventListener('resize',hide);};
+ },[at]);
+ if(!reasons.length)return children;
+ const list=<ul className="list-disc space-y-1 pl-4">{reasons.map(reason=><li key={reason}>{reason}</li>)}</ul>;
+ return <div ref={box} tabIndex={0} aria-describedby={id} data-testid="sns-prepare-wrap"
+   className="cursor-not-allowed rounded-full outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+   onMouseEnter={show} onMouseLeave={()=>setAt(null)} onFocus={show} onBlur={()=>setAt(null)}>
+  {children}
+  <div id={id} className="sr-only">지금 누를 수 없는 이유: {reasons.join(' ')}</div>
+  {at&&createPortal(
+   <div role="tooltip" aria-hidden="true" data-testid="sns-prepare-blockers" style={at}
+    className="pointer-events-none fixed z-[1000] rounded-xl bg-slate-900/95 px-3 py-2.5 text-[11px] leading-5 text-white shadow-lg">
+    <p className="mb-1 font-bold">지금 누를 수 없는 이유</p>{list}
+   </div>,document.body)}
+ </div>;
 }
 // status 요청은 직렬화하고 세대 번호로 화면 이탈/준비 작업 이전 응답을 무시한다.
 function useSnsConnection(platform,browser,paused,onClosed) {
@@ -156,6 +187,8 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
  const readiness=cardImageReadiness(cards,article),blocked=busy||preparing;
  const sns=['instagram','threads'].includes(platform),name=platform==='threads'?'Threads':'Instagram';
  const prepared=/게시 버튼은 누르지 않았습니다/.test(message);
+ // 작성창 채우기를 막는 이유 — 버튼 disabled 와 마우스를 올렸을 때 보이는 안내가 같은 목록을 쓴다
+ const blockers=sns?prepareBlockers({platform,draft,cards,article,attach,busy,preparing,checking:connection.state.checking,evidenceMismatch,evidenceAck}):[];
  const stateOf=(done,active)=>done?'done':active?'active':'idle';
  return <section className="space-y-3" data-testid="platform-delivery">
   <ol className="relative space-y-3 pl-1">
@@ -193,9 +226,11 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
      <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#292929] cursor-pointer">
       <input type="checkbox" className="h-4 w-4 rounded accent-[#292929]" checked={attach} disabled={blocked} onChange={e=>setAttach(e.target.checked)}/> 현재 카드뉴스 첨부
      </label>
-     <button className={`${glassButton} w-full flex items-center justify-center gap-2`} disabled={blocked||connection.state.checking||!currentDraft||(attach&&cards&&(!currentCards||!sameBundle))||(evidenceMismatch&&!evidenceAck)} data-testid="sns-prepare" onClick={prepare}>
-      {blocked ? <><Loader2 className="h-4 w-4 animate-spin text-slate-600"/><span>{name} 작성창 채우는 중…</span></> : <span>{name} 작성창 채우기</span>}
-     </button>
+     <BlockedReasons id={`${platform}-prepare-blockers`} reasons={blockers}>
+      <button className={`${glassButton} w-full flex items-center justify-center gap-2 disabled:pointer-events-none`} disabled={blockers.length>0} data-testid="sns-prepare" onClick={prepare}>
+       {blocked ? <><Loader2 className="h-4 w-4 animate-spin text-slate-600"/><span>{name} 작성창 채우는 중…</span></> : <span>{name} 작성창 채우기</span>}
+      </button>
+     </BlockedReasons>
     </div>
    </Step>}
    {sns&&<Step n={3} title="게시 준비 완료" last state={stateOf(prepared,false)} />}

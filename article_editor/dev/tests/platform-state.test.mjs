@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {assertSameSource,currentRender,fingerprint,invalidateDraft,renderKey,reviewStatus,subtitleLabel,sourceText,supportedPlatforms,visibleDrafts,selectedCardPhoto} from '../../../src/lib/platformState.js';
+import {assertSameSource,currentRender,fingerprint,invalidateDraft,renderKey,reviewStatus,subtitleLabel,sourceText,supportedPlatforms,visibleDrafts,selectedCardPhoto,prepareBlockers,articleId,sameGenerationSource} from '../../../src/lib/platformState.js';
 import {sourceReady,appliedSource,applyCurrentSource,beginSourceTransition,claimSourceTransition,cancelSourceTransition} from '../../../src/lib/platformSource.js';
 import {attachCurrentReview,reusableReview} from '../../../src/lib/platformState.js';
 import {restoredPlatformFields,conditionsCurrent,heldConditions,sourceVersion,generationErrorCode,generationHistory,conditionValues} from '../../../src/lib/platformLifecycle.js';
@@ -176,4 +176,37 @@ test('생성 카드의 빈 사진 메타데이터는 사진 없이 렌더하고 
   await assert.rejects(renderStoredCard({...card,photoId:'deleted'},article,result),/삭제/);
   assert.equal(calls.length,2,'저장되지 않은 사진과 삭제된 사진은 렌더 요청 전에 거부');
  }finally{if(previous===undefined)delete globalThis.window;else globalThis.window=previous;}
+});
+
+
+test('작성창 채우기: 막는 이유 목록이 예전 disabled 조건과 모든 조합에서 같고, 겹친 이유를 모두 알려 준다', () => {
+  const article = {articleId: 'a1', title: '제목', subtitle: '', content: '<p>본문</p>', url: ''};
+  const src = sourceText(article);
+  const drafts = [null, {article_id: 'a1', generation_source: src, snapshot_id: 's1'}, {article_id: 'a2', generation_source: src, snapshot_id: 's1'},
+    {article_id: 'a1', generation_source: sourceText({...article, title: '옛 제목'}), snapshot_id: 's1'}];
+  const cardsList = [null, {article_id: 'a1', generation_source: src, snapshot_id: 's1'}, {article_id: 'a1', generation_source: src, snapshot_id: 's2'},
+    {article_id: 'a1', generation_source: 'old', snapshot_id: 's1'}];
+  const bools = [false, true];
+  let checked = 0;
+  for (const draft of drafts) for (const cards of cardsList) for (const attach of bools) for (const busy of bools) for (const preparing of bools)
+    for (const checking of bools) for (const evidenceMismatch of bools) for (const evidenceAck of bools) {
+      // PlatformDelivery 가 예전에 쓰던 식 그대로
+      const currentDraft = !!draft && draft.article_id === articleId(article) && sameGenerationSource(draft, article);
+      const currentCards = !!cards && cards.article_id === articleId(article) && sameGenerationSource(cards, article);
+      const sameBundle = !cards || (cards.article_id === draft?.article_id && (cards.snapshot_id || null) === (draft?.snapshot_id || null));
+      const old = busy || preparing || checking || !currentDraft || (attach && cards && (!currentCards || !sameBundle)) || (evidenceMismatch && !evidenceAck);
+      const reasons = prepareBlockers({platform: 'instagram', draft, cards, article, attach, busy, preparing, checking, evidenceMismatch, evidenceAck});
+      assert.equal(reasons.length > 0, !!old);
+      checked++;
+    }
+  assert.equal(checked, 4 * 4 * 2 ** 6);
+  // 불러온 초안이 이전 원문 결과이고 근거 확인도 안 한 경우(사용자 화면): 두 이유를 함께
+  const loaded = prepareBlockers({platform: 'instagram', draft: drafts[3], cards: cardsList[3], article, attach: true, busy: false, preparing: false,
+    checking: false, evidenceMismatch: true, evidenceAck: false});
+  assert.equal(loaded.length, 3);
+  assert.match(loaded[0], /이전 원문 결과/);
+  assert.match(loaded[1], /카드뉴스를 다시 생성/);
+  assert.match(loaded[2], /확인했습니다/);
+  assert.match(prepareBlockers({platform: 'threads', draft: null, article})[0], /^Threads 원고가 없습니다/);
+  assert.deepEqual(prepareBlockers({platform: 'instagram', draft: drafts[1], cards: cardsList[1], article, attach: true}), []);
 });

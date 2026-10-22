@@ -10,7 +10,7 @@ import json
 from . import vault
 
 MEMO_MAX = 5000  # ponytail: 최근 5000건만 둔다. 더 오래 남기려면 기사별로 묶어 정리
-PIPELINE = 'factcheck-memo-v2-recipient'  # 긴 문장의 수신자 관계도 별도 판정. 예전 일치 기록은 재사용하지 않는다.
+PIPELINE = 'factcheck-memo-v3-table'  # v3: 근거에 표 구조(table)가 붙는다. 예전 기록에는 없어 다시 판정한다.
 
 
 def _digest(*parts):

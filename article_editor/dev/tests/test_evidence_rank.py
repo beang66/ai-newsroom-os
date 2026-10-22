@@ -34,6 +34,17 @@ class EvidenceRankTests(unittest.TestCase):
         self.assertTrue(units[0]['text'].startswith('< 기업심리지수 >\n구분 8월 9월\n전산업'))
         self.assertIsNone(units[4]['table'])
 
+    def test_table_view_column_head_from_chunk(self):
+        # PDF 표: 연도 줄은 숫자뿐이라 '행'으로 분류된다 → 열 머리로 따로 두고, 이어진 조각(제목만 반복)도 같은 머리를 쓴다
+        first = '성장기여도 (%p)\n2025p 2026p\n1/4 2/4 1/4 2/4\n광공업 1.7 1.5 1.9 1.9'
+        units = evidence_rank.units_of([{'text': first, 'kind': 'table'}, {'text': '성장기여도 (%p)\n내수 0.6 1.3 2.1 2.2', 'kind': 'table'}])
+        self.assertEqual(units[0]['text'], '성장기여도 (%p)\n2025p 2026p', '검색 글은 그대로')
+        self.assertEqual(units[-1]['head'], ('2025p 2026p', '1/4 2/4 1/4 2/4'))
+        view = evidence_rank.table_view(units[-1]['ctx'], ['2025p 2026p', '내수 0.6 1.3 2.1 2.2'], units[-1]['head'])
+        self.assertEqual(view['header'], ['1/4', '2/4', '1/4', '2/4'])
+        self.assertEqual(view['caption'], ['성장기여도 (%p)', '2025p 2026p'])
+        self.assertEqual([r['label'] for r in view['rows']], ['내수'])
+
     def test_packed_table_gathers_and_fronts_claim_rows(self):
         chunks = [{'text': TABLE, 'kind': 'table', 'material_id': 'a'}] + [dict(c, kind='narrative') for c in make_chunks(30)]
         cache = FakeCache()

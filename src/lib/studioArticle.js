@@ -16,6 +16,11 @@ export function plainContent(html) {
   return decode(
     String(html || "")
       .replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi, "\n\n")
+      // contentEditable 은 첫 줄을 맨 글자로 두고 다음 줄부터 <div> 로 감싼다('첫 줄<div>둘째 줄</div>').
+      // 닫는 블록 태그 없이 블록이 시작되면 줄을 바꾼다 — 안 그러면 '…했습니다.한국은행이…'처럼 두 문장이 붙어
+      // 팩트체크가 한 문장으로 판정한다(2026-10-20 앱 실험). 닫는 태그 뒤의 블록은 지금처럼 그 닫는 태그가 줄을 바꾼다.
+      .replace(/(<\/(?:div|p|h[1-6]|li|blockquote)>)?(\s*)<(div|p|h[1-6]|li|blockquote)(?=[\s>])/gi,
+        (match, close, space, tag) => (close ? match : `${space}\n<${tag}`))
       .replace(/<\/(p|h[1-6]|li|blockquote)>/gi, "\n\n")
       .replace(/<\/div>|<br\s*\/?>/gi, "\n")
       .replace(/<[^>]*>/g, ""),

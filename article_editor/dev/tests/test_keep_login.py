@@ -72,6 +72,17 @@ class KeepLoginTests(unittest.TestCase):
         self.assertTrue(self.session.set_keep_login({'enabled': True})['keepLogin'])
         self.assertFalse(self.session.set_keep_login({'enabled': False})['keepLogin'])
 
+    def test_sign_out_drops_shared_factcheck_indexes(self):
+        try:
+            from core.ai.factcheck import retrieval
+        except ImportError:
+            self.skipTest('팩트체크 런타임(numpy) 필요')
+        retrieval._shared['k'] = (object(), object())  # 자료 글을 들고 있는 검색 색인 대역
+        self.addCleanup(retrieval.clear_shared_indexes)
+        self.sign_in(False)
+        self.session.sign_out()
+        self.assertEqual(len(retrieval._shared), 0)
+
 
 class AfterLoginSafetyTests(unittest.TestCase):
     def test_non_uuid_user_never_touches_the_vault(self):

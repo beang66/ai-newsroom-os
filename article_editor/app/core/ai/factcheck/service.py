@@ -8,7 +8,7 @@ from .semantic_chunker_v3 import clean as _clean
 from .assertion import find_explicit_value_conflicts, find_near_copy_differences, shares_value, recipient_assertions
 from .semantic_provider import OnnxJudgeProvider
 from .observability import record_factcheck_event
-from .retrieval import DEFAULT_K, RETRIEVAL_LABELS, ChunkIndex, rank_chunks, retrieval_mode
+from .retrieval import DEFAULT_K, RETRIEVAL_LABELS, rank_chunks, retrieval_mode, shared_chunk_index
 
 _provider = None
 
@@ -96,7 +96,8 @@ def _candidate_chunks(node, all_chunks):
 
 def _retrieve_qwen_candidates(claim, node, all_chunks, limit=DEFAULT_K, indexes=None, query_vector=None, exclude=()):
     """Retrieve semantically related evidence in the pinned Qwen3 space.
-    indexes: 한 요청 안에서 같은 후보 집합의 색인(벡터·BM25·코드)을 재사용하는 딕셔너리(없으면 매번 만든다)."""
+    indexes: 한 요청 안에서 같은 후보 집합의 색인(벡터·BM25·코드)을 재사용하는 딕셔너리(없으면 매번 만든다).
+    색인은 요청 사이에도 재사용한다(retrieval.shared_chunk_index — 자료 글이 같으면 이전 요청이 만든 것)."""
     candidates = _candidate_chunks(node, all_chunks)
     if not candidates:
         return []
@@ -105,7 +106,7 @@ def _retrieve_qwen_candidates(claim, node, all_chunks, limit=DEFAULT_K, indexes=
         key = tuple(id(chunk) for chunk in candidates)
         index = indexes.get(key)
         if index is None:
-            index = indexes[key] = ChunkIndex(candidates)
+            index = indexes[key] = shared_chunk_index(candidates)
     return rank_chunks(claim, candidates, limit=limit, index=index, query_vector=query_vector, exclude=exclude)
 
 

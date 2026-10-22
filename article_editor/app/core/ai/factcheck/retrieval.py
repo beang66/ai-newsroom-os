@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections import OrderedDict
 from pathlib import Path
 import threading
 from typing import Iterable
@@ -235,7 +236,8 @@ def get_vector_cache() -> VectorCache:
 
 class ChunkIndex:
     """후보 청크 집합의 문서 쪽 계산(벡터 읽기·희소 코드·BM25 색인)을 한 번만 한다.
-    주장마다 같은 집합을 다시 읽고 색인하지 않도록 한 요청 안에서 재사용한다(service.review_workspace)."""
+    주장마다 같은 집합을 다시 읽고 색인하지 않도록 한 요청 안에서 재사용하고(service.review_workspace),
+    요청 사이에도 shared_chunk_index 로 재사용한다. 색인이 읽는 것은 청크의 글·종류(kind)뿐이다."""
 
     def __init__(self, chunks: list[dict], cache: VectorCache | None = None):
         self.chunks = chunks
@@ -245,30 +247,76 @@ class ChunkIndex:
         self._kc = None
         self._bm25 = None
         self._units = None
+        self._build_lock = threading.RLock()  # 여러 요청이 같은 색인을 함께 쓸 때 같은 계산을 두 번 하지 않게
 
     def bm25(self):
-        if self._bm25 is None:
-            from .fusion import BM25
-            self._bm25 = BM25(self.texts)
-        return self._bm25
+        with self._build_lock:
+            if self._bm25 is None:
+                from .fusion import BM25
+                self._bm25 = BM25(self.texts)
+            return self._bm25
 
     def fusion_parts(self):
-        if self._fusion is None:
-            from .fusion import SEEDS, doc_codes
-            self._fusion = (self.bm25(), {seed: doc_codes(self.vectors, seed) for seed in SEEDS})
-        return self._fusion
+        with self._build_lock:
+            if self._fusion is None:
+                from .fusion import SEEDS, doc_codes
+                self._fusion = (self.bm25(), {seed: doc_codes(self.vectors, seed) for seed in SEEDS})
+            return self._fusion
 
     def kc_index(self):
-        if self._kc is None:
-            from .kc_band import KCIndex
-            self._kc = KCIndex(self.texts, self.vectors)
-        return self._kc
+        with self._build_lock:
+            if self._kc is None:
+                from .kc_band import KCIndex
+                self._kc = KCIndex(self.texts, self.vectors)
+            return self._kc
 
     def unit_index(self):
-        if self._units is None:
-            from .evidence_rank import UnitIndex
-            self._units = UnitIndex(self.chunks, self.vectors)
-        return self._units
+        with self._build_lock:
+            if self._units is None:
+                from .evidence_rank import UnitIndex
+                self._units = UnitIndex(self.chunks, self.vectors)
+            return self._units
+
+
+# 요청 사이 색인 재사용: 자동 검증은 글이 멈출 때마다(고친 문장만) 돌지만 자료는 그동안 거의 바뀌지 않는다.
+# 예전에는 요청마다 색인(표 행 단위 버섯체, 150청크 ≈5초)을 새로 만들고 버렸다.
+# 키 = 청크의 글·종류(색인이 읽는 것 전부). 자료가 바뀌면 키가 달라져 새로 만들고, 오래된 것은 SHARED_INDEXES 개를 넘으면 버린다.
+# 자료 이름 등 메타데이터는 rank_chunks 가 호출자의 청크에서 붙이므로 키에 넣지 않는다. 로그아웃하면 비운다(clear_shared_indexes).
+SHARED_INDEXES = 4
+_shared: OrderedDict[str, tuple[object, ChunkIndex]] = OrderedDict()
+_shared_lock = threading.Lock()
+
+
+def _content_key(chunks: list[dict]) -> str:
+    digest = hashlib.sha256(MODEL_ID.encode("utf-8"))
+    for row in chunks:
+        for part in (str(row.get("text") or ""), str(row.get("kind") or "")):
+            data = part.encode("utf-8")
+            digest.update(len(data).to_bytes(8, "little") + data)
+    return digest.hexdigest()
+
+
+def shared_chunk_index(chunks: list[dict], cache: VectorCache | None = None) -> ChunkIndex:
+    """같은 글·종류의 청크 집합이면 이전 요청이 만든 ChunkIndex 를 돌려준다(벡터 캐시가 같을 때만)."""
+    cache = cache or get_vector_cache()
+    key = _content_key(chunks)
+    with _shared_lock:
+        entry = _shared.get(key)
+        if entry is not None and entry[0] is cache:
+            _shared.move_to_end(key)
+            return entry[1]
+    index = ChunkIndex(chunks, cache)
+    with _shared_lock:
+        _shared[key] = (cache, index)
+        _shared.move_to_end(key)
+        while len(_shared) > SHARED_INDEXES:
+            _shared.popitem(last=False)
+    return index
+
+
+def clear_shared_indexes() -> None:
+    with _shared_lock:
+        _shared.clear()
 
 
 def rank_chunks(

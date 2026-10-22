@@ -37,6 +37,29 @@ class KCBandTests(unittest.TestCase):
         self.assertEqual(list(a.top(texts[7], q)), list(b.top(texts[7], q)))
         self.assertEqual(int(a.top(texts[7], q)[0]), 7)  # 같은 글·같은 벡터면 자기 자신이 1위
 
+    def test_lexical_rows_are_made_once_and_results_unchanged(self):
+        chunks, cache = make_chunks(), FakeCache()
+        texts = [c['text'] for c in chunks]
+        vecs = cache.encode(texts, 'document')
+        q = cache.encode([texts[7]], 'query')[0]
+        kc_band._LEX_ROWS.clear()
+        made = []
+        real = kc_band._row
+        with mock.patch.object(kc_band, '_row', lambda seed, r: made.append(r) or real(seed, r)):
+            cold = kc_band.KCIndex(texts, vecs)
+            cold_top = list(cold.top(texts[7], q))
+            first = len(made)
+            warm = kc_band.KCIndex(texts, vecs)
+            warm_top = list(warm.top(texts[7], q))
+        self.assertGreater(first, 0)
+        self.assertEqual(len(made), first)  # 두 번째 색인·질의는 행을 새로 만들지 않는다
+        for a, b in zip(cold.doc_winners, warm.doc_winners):
+            self.assertTrue(np.array_equal(a, b))
+        self.assertEqual(cold_top, warm_top)
+        seed, cols = kc_band.SEEDS[0], np.array(sorted(kc_band._LEX_ROWS[kc_band.SEEDS[0]])[:5])
+        fresh = np.stack([kc_band._row(seed, kc_band.DIM + int(c)) for c in cols])
+        self.assertTrue(np.array_equal(kc_band._lex_projection(seed, cols), fresh))  # 기억한 행 = 새로 만든 행(float32 그대로)
+
     def test_document_side_work_happens_once_per_index(self):
         chunks, cache = make_chunks(), FakeCache()
         built = []

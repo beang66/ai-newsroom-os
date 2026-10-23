@@ -62,7 +62,7 @@ function CardPreview({card,index,total,photo,previewPhoto,onEdit,onMove,width=43
   },[]);
   const fit=measurement?.frameId===current.id?measurement.fit:null;
   const fields=(fit?.overflowFields||[]).map(field=>({keyword:'키워드',headline:'제목',answer:'핵심 문구',detail:'상세 설명',body:'본문',farewell:'끝인사'})[field]||field).join('·');
-  return <div><div className="relative overflow-hidden rounded-2xl bg-black" style={{width,height:width*1.25}}><iframe ref={frame} title="카드 미리보기" sandbox="allow-scripts" srcDoc={current.html} style={{width:1080,height:1350,border:0,transform:`scale(${width/1080})`,transformOrigin:'top left'}}/></div>
+  return <div><div className="relative overflow-hidden rounded-none bg-black" style={{width,height:width*1.25}}><iframe ref={frame} title="카드 미리보기" sandbox="allow-scripts" srcDoc={current.html} style={{width:1080,height:1350,border:0,transform:`scale(${width/1080})`,transformOrigin:'top left'}}/></div>
     {fit&&(fit.overflow||fit.overlap)&&<p role="alert" data-testid="card-fit-error" className="mt-2 text-xs text-rose-300">{index+1}번 카드: {fit.overlap?'텍스트 박스 겹침':`글 넘침 (${fields||'본문 영역'}, ${fit.contentHeight}/${fit.availableHeight}px)`}. 문안·위치를 편집한 뒤 JPG 준비를 확인해 주세요.</p>}</div>;
 }
 export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,preparing=false}) {
@@ -147,7 +147,7 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
   return <div ref={setRootNode} className="space-y-6" data-testid="platform-card-editor">
     <div className={`flex flex-col sm:flex-row items-center sm:items-start ${roomy?'justify-center':'sm:justify-start'} gap-6`}>
       <div className="flex flex-col items-center gap-2">
-        <div className="rounded-[28px] bg-[#18181B] p-3 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.45)]">
+        <div className="rounded-none shadow-sm">
           <CardPreviewBoundary card={active} page={index+1}><CardPreview card={active} index={index} total={cards.length} photo={photo} previewPhoto={previewPhoto} onEdit={editText} onMove={movePart} width={previewWidth}/></CardPreviewBoundary>
         </div>
         <button type="button" data-testid="card-reset-positions" onClick={()=>patchCard(()=>({text_positions:{}}))} className="text-[11px] font-bold text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline cursor-pointer">텍스트 위치 초기화</button>
@@ -155,7 +155,7 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
       <div className="flex flex-row sm:flex-col gap-3 overflow-x-auto sm:overflow-y-auto max-h-[564px] p-1">
         {cards.map((c,i)=>{const on=c===active,head=c?.content?.headline||c?.headline||'제목 없음',key=c?.content?.keyword||c?.keyword||'',body=c?.content?.answer||c?.content?.body||c?.body||c?.content?.detail||c?.detail||'';
           return <button type="button" key={c?.card_id||i} onClick={()=>setActiveIndex(i)} aria-pressed={on} aria-label={`${i+1}번 카드`}
-            className={`relative shrink-0 cursor-pointer overflow-hidden rounded-lg text-left transition ${on?'z-10 scale-105 border-2 border-white bg-[#18181B] shadow-[0_12px_28px_rgba(0,0,0,0.35)] ring-1 ring-black/10':'border border-white/5 bg-[#33373D] opacity-85 hover:opacity-100'}`} style={{width:78,height:98}}>
+            className={`relative shrink-0 cursor-pointer overflow-hidden rounded-none text-left transition ${on?'z-10 scale-105 border-2 border-white bg-[#18181B] shadow-[0_12px_28px_rgba(0,0,0,0.35)] ring-1 ring-black/10':'border border-white/5 bg-[#33373D] opacity-85 hover:opacity-100'}`} style={{width:78,height:98}}>
             <span className="pointer-events-none flex h-full select-none flex-col justify-between p-2">
               <span className="flex items-center justify-between gap-1"><span className="max-w-[44px] truncate text-[7.5px] font-medium text-[#9CA3AF]">{key}</span><span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[2px] text-[8px] ${on?'bg-white font-black text-black':'bg-white/20 font-bold text-white'}`}>{i+1}</span></span>
               <span className="my-auto line-clamp-3 break-keep text-[8.5px] font-extrabold leading-[1.25] text-white">{head}</span>

@@ -559,48 +559,61 @@ export default function FactCheckDrawer({
                     )}
                   </div>
 
-                  {/* 1. 기사 본문 문장 */}
-                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs">
-                    <span className="text-[10px] font-black text-slate-400 block mb-0.5 uppercase tracking-wide">
+                  {/* 1. 기사 본문 문장: 중첩 박스 제거, 깔끔한 텍스트 섹션 */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
                       기사 본문 대상 문장
                     </span>
-                    <p className="font-bold text-slate-800 leading-snug break-words">
+                    <p className="text-xs sm:text-[13px] font-bold text-slate-800 leading-snug break-words">
                       "<Marked text={item.claimText} spans={item.verdict === "SUPPORTED" ? supportedClaimRanges(item.claimText, item.details) : item.spans.map((s) => ({ start: s.start - item.start, end: s.end - item.start }))} ok={item.verdict === "SUPPORTED"} />"
                     </p>
                   </div>
 
                   {!collapsed.has(item.id) && <>
-                  {/* 2. 일치하는 근거 문장/표 항목은 초록, 불일치는 대응 값과 그 문장을 강조 */}
-                  {item.quote && <div className="bg-blue-50/60 p-2.5 rounded-xl border border-blue-100 text-xs space-y-1">
-                    <span className="text-[10px] font-black text-blue-600 block uppercase tracking-wide flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" />
-                      원문 문서 발췌 근거
-                    </span>
-                    <EvidenceQuote item={item} />
-                    {item.verdict === "SUPPORTED" && !item.quoteSpans.length && !item.table && (
-                      <p className="text-[10px] text-slate-500">청크는 일치로 판정됐지만, 대응하는 근거 구간을 특정하지 못했습니다.</p>
-                    )}
-                  </div>}
-
-                  {item.details?.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-2.5 space-y-2" data-testid="claim-details">
-                    <p className="text-[10px] font-black text-amber-900">날짜·기관·주체 근거 확인</p>
-                    {item.details.map((d) => <div key={d.start} className="text-[11px]">
-                      <div className="flex flex-wrap items-center gap-x-2">
-                        <strong className="text-slate-800">{d.text}</strong>
-                        <span className="text-amber-800">{d.label}</span>
+                  {/* 2. 원문 문서 발췌 근거: 중첩 박스 대신 왼쪽 인용선(Quote) 스타일 적용 */}
+                  {item.quote && (
+                    <div className="border-l-2 border-blue-400 pl-3 py-0.5 space-y-1">
+                      <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wide flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-blue-500" />
+                        원문 문서 발췌 근거
+                      </span>
+                      <div className="text-xs text-slate-700 leading-relaxed">
+                        <EvidenceQuote item={item} />
                       </div>
-                      {d.reference && <p className="mt-0.5 break-all text-slate-500">{d.location === 'title' ? '자료명' : '원문 표기'}: {d.reference}</p>}
-                    </div>)}
-                    <p className="text-[10px] text-slate-500">표기 위치를 찾은 결과입니다. 날짜의 의미와 기관·주체의 관계가 각각 검증된 것은 아닙니다.</p>
-                  </div>}
+                      {item.verdict === "SUPPORTED" && !item.quoteSpans.length && !item.table && (
+                        <p className="text-[10px] text-slate-400">청크는 일치로 판정됐지만, 대응하는 근거 구간을 특정하지 못했습니다.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {item.details?.length > 0 && (
+                    <div className="border-l-2 border-amber-400 pl-3 py-1 space-y-1.5" data-testid="claim-details">
+                      <p className="text-[10px] font-extrabold text-amber-900">날짜·기관·주체 근거 확인</p>
+                      <div className="space-y-1">
+                        {item.details.map((d) => (
+                          <div key={d.start} className="text-[11px] flex flex-wrap items-center gap-x-2 text-slate-700">
+                            <strong className="text-slate-900 font-bold">{d.text}</strong>
+                            <span className="text-amber-800 text-[10px] font-medium bg-amber-50 px-1.5 py-0.5 rounded">{d.label}</span>
+                            {d.reference && (
+                              <span className="break-all text-slate-400 text-[10px]">
+                                ({d.location === 'title' ? '자료명' : '원문'}: {d.reference})
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* 3. AI 검증 해설 */}
-                  <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
-                    <strong>검증 의견:</strong> {item.comment}
-                  </p>
+                  {item.comment && (
+                    <div className="pt-2 border-t border-slate-100 text-[11px] sm:text-xs text-slate-600 leading-relaxed font-normal">
+                      <strong className="font-bold text-slate-700">검증 의견:</strong> {item.comment}
+                    </div>
+                  )}
 
                   {/* 4. 액션 버튼 */}
-                  <div className="pt-1 flex items-center justify-end gap-2 border-t border-slate-100">
+                  <div className="pt-1 flex items-center justify-end gap-2">
                     <button
                       onClick={() => handleInsertCitation(item)}
                       disabled={!item.sourceDoc || !item.quote}

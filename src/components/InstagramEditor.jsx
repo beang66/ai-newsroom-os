@@ -3,7 +3,7 @@
 //  - 데이터와 수정 규칙은 기존 Instagram 편집과 같다: opening · paragraphs[] · closing · hashtags 를 고치면
 //    validation_status 가 needs_recheck 로 바뀌어 원문 근거 재검수를 요구한다(changed). 여기서는 겉모습과 배치만 바꾼다.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Bookmark, Heart, Image as ImageIcon, MessageCircle, MoreHorizontal, Send } from "lucide-react";
+import { Bookmark, ChevronLeft, ChevronRight, Heart, Image as ImageIcon, MessageCircle, MoreHorizontal, Send } from "lucide-react";
 import { CardThumb } from "./ThreadsEditor.jsx";
 import { instagramCaptionText, parseInstagramCaption } from "../lib/platformTextEditor.js";
 
@@ -61,6 +61,30 @@ function CaptionPart({ id, label, value, onChange, active, onFocus, hashtag = fa
 // 캡션 한 덩어리 ↔ 도입·본문·마무리·해시태그: 빈 줄로 단락을 나누고, 마지막 단락이 모두 #태그면 해시태그, 첫 단락은 도입, 마지막 단락은 마무리
 /** draft: 생성 결과, changed(mutate): 수정 규칙(재검수 표시 포함), cards: 카드뉴스 카드들, article: 카드 사진 조회용 */
 export default function InstagramEditor({ draft, changed, cards = [], article, showCards = true }) {
+  const mediaRef = useRef(null);
+  const scrollRef = useRef(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const el = mediaRef.current;
+    if (!el) return;
+    const update = () => {
+      if (el.clientWidth > 0) {
+        const w = el.clientWidth;
+        setDimensions({ width: w, height: Math.round(w * 1.25) });
+      }
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const scrollCard = (dir) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: dir * (dimensions.width || 420), behavior: "smooth" });
+    }
+  };
+
   const [activePart, setActivePart] = useState(null);
   const [text, setText] = useState(() => instagramCaptionText(draft));
   // 밖에서 원고가 바뀌었을 때(재생성 등)만 입력 내용을 다시 맞춘다 — 입력 중의 빈 줄·공백은 그대로 둔다
@@ -78,50 +102,67 @@ export default function InstagramEditor({ draft, changed, cards = [], article, s
   return (
     <div className="w-full max-w-4xl mx-auto" data-testid="instagram-editor">
       {/* 가로형 인스타그램 게시물 편집 카드 */}
-      <article className="w-full overflow-hidden rounded-[24px] border border-[#ECECEC] bg-white shadow-[0_12px_40px_rgba(0,0,0,0.08)] flex flex-col md:flex-row min-h-[500px]">
+      <article
+        style={dimensions.height ? { "--card-h": `${dimensions.height}px` } : undefined}
+        className="w-full overflow-hidden rounded-[38px] border border-[#ECECEC] bg-white shadow-[0_12px_40px_rgba(0,0,0,0.08)] flex flex-col md:flex-row md:h-[var(--card-h)]"
+      >
         {/* 좌측 열: 카드뉴스 및 이미지 미디어 영역 */}
         {showCards && (
-          <div className="md:w-1/2 lg:w-[48%] border-b md:border-b-0 md:border-r border-[#F2F2F2] bg-[#FAFAFA] flex flex-col justify-center items-center p-4 relative shrink-0" data-testid="instagram-media">
+          <div ref={mediaRef} className="group md:w-1/2 lg:w-[48%] h-full border-b md:border-b-0 md:border-r border-[#F2F2F2] bg-black flex flex-col relative shrink-0 overflow-hidden" data-testid="instagram-media">
             {cards.length > 0 ? (
-              <div className="flex gap-3 overflow-x-auto w-full py-2 scrollbar-thin">
-                {cards.map((card, cardIndex) => (
-                  <CardThumb key={card.card_id || cardIndex} card={card} index={cardIndex} total={cards.length} article={article} />
-                ))}
-              </div>
+              <>
+                <div ref={scrollRef} className="flex overflow-x-auto w-full h-full scrollbar-none snap-x snap-mandatory">
+                  {cards.map((card, cardIndex) => (
+                    <div key={card.card_id || cardIndex} className="shrink-0 snap-start h-full">
+                      <CardThumb card={card} index={cardIndex} total={cards.length} article={article} width={dimensions.width || 420} />
+                    </div>
+                  ))}
+                </div>
+                {cards.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => scrollCard(-1)}
+                      aria-label="이전 카드"
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition hover:bg-black/80 hover:scale-105 cursor-pointer shadow-md"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollCard(1)}
+                      aria-label="다음 카드"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition hover:bg-black/80 hover:scale-105 cursor-pointer shadow-md"
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
+                  </>
+                )}
+              </>
             ) : (
-              <div className="flex aspect-[4/5] w-full max-w-[320px] items-center justify-center text-[#C7C2BB] rounded-2xl border border-dashed border-zinc-200 bg-white/60" title="카드뉴스를 생성하면 이 자리에 붙습니다">
-                <ImageIcon className="h-10 w-10 text-zinc-300" />
+              <div className="flex aspect-[4/5] w-full items-center justify-center text-[#C7C2BB] rounded-none border border-dashed border-zinc-700 bg-zinc-900/50" title="카드뉴스를 생성하면 이 자리에 붙습니다">
+                <ImageIcon className="h-10 w-10 text-zinc-500" />
               </div>
             )}
           </div>
         )}
 
         {/* 우측 열: 프로필 헤더 + 캡션 본문 편집 + 액션바/글자수 */}
-        <div className="flex-1 flex flex-col min-w-0 bg-white">
+        <div className="flex-1 flex flex-col min-w-0 bg-white h-full">
           <header className="flex items-center gap-2.5 border-b border-[#F2F2F2] px-5 py-3.5 shrink-0">
             <Avatar />
             <span className="text-[14px] font-bold text-[#101010]">{ACCOUNT}</span>
             <MoreHorizontal className="ml-auto h-5 w-5 text-[#101010]" aria-hidden="true" />
           </header>
 
-          <div className="flex-1 overflow-y-auto px-5 py-4 min-h-[280px]">
-            <div className="flex items-center gap-2 mb-2">
-              <Avatar size={24} />
-              <span className="text-[13px] font-bold text-[#101010]">{ACCOUNT}</span>
-            </div>
-            <div className="mt-1">
+          <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
+            <div>
               <CaptionPart id={partId("caption")} label="캡션" value={text} onChange={edit} onFocus={() => setActivePart(null)} />
             </div>
           </div>
 
           <div className="border-t border-[#F2F2F2] px-5 py-3 shrink-0 bg-white">
-            <div className="flex items-center gap-4 text-[#101010]" aria-hidden="true">
-              <Heart className="h-5 w-5" />
-              <MessageCircle className="h-5 w-5" />
-              <Send className="h-5 w-5" />
-              <Bookmark className="ml-auto h-5 w-5" />
-            </div>
-            <p className={`mt-2 text-right font-mono text-[11px] ${caption.length > LIMIT ? "font-bold text-red-600" : "text-[#B0AAA2]"}`}>
+            <p className={`text-right font-mono text-[11px] ${caption.length > LIMIT ? "font-bold text-red-600" : "text-[#B0AAA2]"}`}>
               {caption.length.toLocaleString()}/{LIMIT.toLocaleString()}
             </p>
           </div>

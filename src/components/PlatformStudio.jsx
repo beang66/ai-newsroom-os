@@ -61,7 +61,7 @@ function draftToText(platform, draft) {
 function PlatformDraftEditor({ platform, draft, onChange, cards, article }) {
   if (!draft) {
     return (
-      <div className="rounded-3xl border border-dashed border-[#D7D0C6] bg-white/70 p-10 text-center">
+      <div className="rounded-[28px] border border-dashed border-[#D7D0C6] bg-white/70 p-10 text-center">
         <Sparkles className="mx-auto mb-3 h-7 w-7 text-[#8E8982]" />
         <p className="text-sm font-bold text-[#57514A]">
           아직 {VIEW_LABELS[platform]} 원고가 없습니다.
@@ -138,6 +138,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   const [customKeyword, setCustomKeyword] = useState("");
   const [localDraftPickerOpen, setLocalDraftPickerOpen] = useState(false);
   const [savingLocalDraft, setSavingLocalDraft] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [localDraftNotice, setLocalDraftNotice] = useState(null);
   // 미리보기와 적용 원문은 편집실 전용 상태다. 목록 선택은 팀 작업 기사를 바꾸지 않는다.
   const [pickerOpen,setPickerOpen]=useState(false),[preview,setPreview]=useState({article:structuredClone(article),subtitle:article.subtitle});
@@ -389,9 +390,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
         const current=live.current;
         const sameArticle=articleId(current.article)===run.article_id;
         const sameSource=sameArticle&&sourceText(current.article)===run.source_signature;
-        if(!sameSource){
-          setMessage('이 작업의 결과는 시작 당시 기사·고정본에 보관되어 있습니다. 현재 수정한 기사에는 적용하지 않습니다.');
-        }else{
+        if(sameSource){
           for(const target of run.targets){
             const entry=run.results?.[target],draft=entry?.draft;
             if(!draft?.generation_review_binding||draft.validation_review)continue;
@@ -496,6 +495,16 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
       });
     } finally {
       setSavingLocalDraft(false);
+    }
+  };
+
+  const handleArticleSave = async () => {
+    if (!onSave || saving) return;
+    setSaving(true);
+    try {
+      await onSave();
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -606,7 +615,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   };
 
   return (
-    <div className="relative w-full max-w-[1440px] mx-auto space-y-2 animate-float-in text-[#292929]" data-testid="format-converter">
+    <div className="relative w-full max-w-[1440px] space-y-2 animate-float-in text-[#292929]" data-testid="format-converter">
       <div className="[&>header]:pb-1! [&>header]:mb-1!">
         <PageHeader page="convert" />
       </div>
@@ -630,7 +639,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
           <button
             type="button"
             data-testid="load-local-draft"
-            disabled={savingLocalDraft || applying || generating}
+            disabled={saving || savingLocalDraft || applying || generating}
             onClick={() => setLocalDraftPickerOpen(true)}
             title="내 문서에 저장된 로컬 초안을 선택해 복원합니다."
             className="relative px-3 py-1.5 text-xs tracking-tight transition-all duration-200 cursor-pointer whitespace-nowrap rounded-full text-slate-700 hover:text-slate-950 hover:bg-slate-900/5 font-bold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -638,6 +647,24 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
             <FolderOpen className="h-3.5 w-3.5 text-slate-600" />
             <span>초안 불러오기</span>
           </button>
+
+          {onSave && (
+            <>
+              <span className="text-slate-300 select-none text-xs font-light">ㅣ</span>
+
+              <button
+                type="button"
+                data-testid="convert-save"
+                disabled={saving || savingLocalDraft || applying || generating}
+                onClick={handleArticleSave}
+                title="기사 원문과 플랫폼 변환본을 암호화 저장소에 정식 저장합니다."
+                className="relative px-3 py-1.5 text-xs tracking-tight transition-all duration-200 cursor-pointer whitespace-nowrap rounded-full text-slate-700 hover:text-slate-950 hover:bg-slate-900/5 font-bold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Save className="h-3.5 w-3.5 text-slate-600" />
+                <span>{saving ? "저장 중…" : "저장하기"}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -673,8 +700,8 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
           {/* 왼쪽 패널 박스 중간에 위치하는 얇은 알약형 조절 손잡이 */}
           <div className="sticky top-1/2 -translate-y-1/2 flex items-center justify-center w-1.5 h-7 rounded-full bg-[#e2e8f0] border border-slate-300/80 shadow-sm transition-all duration-150 group-hover:bg-slate-400 group-hover:border-slate-400 group-hover:shadow group-focus-visible:border-slate-500 group-active:scale-95 group-active:bg-slate-600 group-active:border-slate-600" />
         </div>
-        {/* 거대한 독립형 카드 형태 (부드러운 대형 곡률 rounded-[36px], 넓게 번지는 드롭 섀도우, 넉넉한 안쪽 여백) */}
-        <aside style={{ "--align-top": `${alignTop}px` }} className="lg:mt-[var(--align-top)] sticky top-4 self-start max-h-[calc(100vh-80px)] minimal-scroll overflow-y-auto w-full shrink-0 space-y-4 rounded-[28px] bg-white p-5 md:p-6 shadow-[0_18px_48px_-14px_rgba(24,24,27,0.14),0_2px_8px_rgba(24,24,27,0.04)] border border-zinc-200/80">
+        {/* 거대한 독립형 카드 형태 (사이드바와 동일한 모서리 곡률 rounded-[38px], 넓게 번지는 드롭 섀도우, 넉넉한 안쪽 여백) */}
+        <aside style={{ "--align-top": `${alignTop}px` }} className="lg:mt-[var(--align-top)] self-start w-full shrink-0 space-y-4 rounded-[38px] bg-white p-5 md:p-6 shadow-[0_18px_48px_-14px_rgba(24,24,27,0.14),0_2px_8px_rgba(24,24,27,0.04)] border border-zinc-200/80">
           {/* 상단 사이드 도킹 패널 헤더 */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
@@ -1069,7 +1096,6 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
             />
           )}
           </div>
-          {onSave && <SaveBar onSave={onSave} testId="convert-save" />}
         </main>
       </div>
     </div>

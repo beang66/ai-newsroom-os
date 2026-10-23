@@ -193,12 +193,12 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
     {/* 로컬 앱 연결 전·후 안내: 알림처럼 첫 단계 맨 위에 둔다 */}
     <p role="status" data-testid={`${platform}-app-status`} className={`flex items-center gap-2 py-0.5 px-0.5 text-xs font-bold ${connection.state.connected?'text-sky-700':connection.state.checking?'text-sky-600':'text-slate-500'}`}>
      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${connection.state.connected?'bg-sky-500':connection.state.checking?'bg-sky-400 animate-pulse':'bg-slate-300'}`} aria-hidden="true"/>
-     {name} 로컬 앱 {connection.state.checking?'확인 중':connection.state.connected?'연결됨':'연결 전'}
+     {connection.state.connected ? (connection.state.text || `${name} 연결됨`) : `${name} 로컬 앱 ${connection.state.checking?'확인 중':'연결 전'}`}
     </p>
     <div className="pt-1.5">
      <button className={`${glassButton} w-full`} disabled={blocked||connection.state.checking} data-testid={`${platform}-connect`} onClick={()=>connection.start()}>{name} 로그인 연결</button>
     </div>
-    {connection.state.text ? <p role="status" data-testid={`${platform}-connection-status`} className="text-xs text-[#8E8982]">{connection.state.text}</p> : <span data-testid={`${platform}-connection-status`} className="sr-only"/>}
+    {connection.state.text && !connection.state.connected ? <p role="status" data-testid={`${platform}-connection-status`} className="text-xs text-[#8E8982]">{connection.state.text}</p> : <span data-testid={`${platform}-connection-status`} className="sr-only">{connection.state.text}</span>}
    </Step>}
    {!sns&&readiness.total>0&&<Step n={1} title="카드 JPG 준비" last state={stateOf(readiness.complete,blocked&&!readiness.complete)}>
     <p role="status" data-testid="cards-jpg-status" className="text-xs">{readiness.complete?'카드 JPG 준비 완료':blocked?'카드뉴스 JPG 확인 중':'카드뉴스 JPG 준비 필요'} · 최신 JPG {readiness.ready}/{readiness.total}장</p>

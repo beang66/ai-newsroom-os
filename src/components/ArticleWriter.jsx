@@ -7,13 +7,11 @@ import { suggestHeadlines, suggestSubtitles } from "../services/assistService";
 import PhotoSideDrawer from "./PhotoSideDrawer";
 import PhotoEditorView from "./PhotoEditorView";
 import SourceSearch from "./SourceSearch";
-import ArticleCheckModal from "./ArticleCheckModal";
 import VersionHistoryModal from "./VersionHistoryModal";
 import DongaPreview, { dongaPreviewDocument } from "./DongaPreview.jsx";
 import { SECTIONS } from "../data/sections.js";
 import { trackPhotoDownload } from "../api/editorial";
 import "./articleWriterFont.css";
-import SaveBar from "./SaveBar.jsx";
 import {
   Sparkles,
   Search,
@@ -117,9 +115,6 @@ export default function ArticleWriter({
   // 우측 확장 사이드 박스 상태: null (닫힘) | 'photo' (사진 첨부) | 'search' (취재자료) | 'factcheck' (팩트체크)
   const [activeSidePanel, setActiveSidePanel] = useState(null);
   const isSidePanelOpen = Boolean(activeSidePanel);
-
-  // 팩트체크 사전 기사 검증률 모달 열림 상태
-  const [showCheckModal, setShowCheckModal] = useState(false);
 
   // 저장 이력 및 복원 모달 열림 상태
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -534,13 +529,31 @@ export default function ArticleWriter({
     if (hit?.item.needsRecheck && !factCheck.recheckBusy) void factCheck.recheck(hit.item.key);
   };
 
-  // 그라데이션 박스 클릭 시 수정안 본문 즉시 적용 — Core 는 고쳐 쓴 문안을 만들지 않으므로 제안이 있을 때만 동작한다.
+  // 그라데이션 팝업 클릭 시 수정안 본문 즉시 적용 또는 해당 문장으로 포커스 이동하여 바로 수정 가능하도록 연동
   const handleApplyCorrection = (issue) => {
-    if (!issue || !issue.targetText || !issue.suggestion) return;
-    setArticle((prev) => ({ ...prev, content: (prev.content || "").replace(issue.targetText, issue.suggestion) }));
+    if (!issue) return;
+    const target = issue.targetText || issue.claimText;
+    if (target && issue.suggestion) {
+      setArticle((prev) => ({ ...prev, content: (prev.content || "").replace(target, issue.suggestion) }));
+      setHoveredIssue(null);
+      setToastMessage(`"${issue.suggestion}"(으)로 본문이 수정되었습니다.`);
+      setTimeout(() => setToastMessage(""), 3500);
+      return;
+    }
+    // 별도 제안 문안이 없을 경우: 에디터에서 해당 문장을 포커스하고 선택하여 사용자가 즉시 수정할 수 있게 함
+    const root = bodyInputRef.current;
+    if (root && target) {
+      const entry = locate(root, [{ id: issue.id, claimText: target }], { focusId: issue.id })[0];
+      if (entry?.sentence) {
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(entry.sentence);
+          root.focus();
+        }
+      }
+    }
     setHoveredIssue(null);
-    setToastMessage(`"${issue.suggestion}"(으)로 본문이 수정되었습니다.`);
-    setTimeout(() => setToastMessage(""), 3500);
   };
 
   // 사진 편집 화면에서 "본문에 넣기"를 누른 뒤 작성 화면이 다시 열리면: 본문에 이미 있는 사진이면 편집본으로 바꾸고, 없으면 새로 넣는다
@@ -1744,7 +1757,7 @@ export default function ArticleWriter({
                     </div>
                   </div>
 
-                  {/* 검증 오류 문장 호버 시 은은하게 뜨는 AI 팩트체크 수정 텍스트바 */}
+                  {/* 검증 오류 문장 호버 시 은은하게 뜨는 AI 팩트체크 수정 텍스트바 (순수 화이트 글래스모피즘 직사각형) */}
                   {hoveredIssue && (
                     <div
                       ref={popupRef}
@@ -1755,18 +1768,17 @@ export default function ArticleWriter({
                       style={{
                         top: `${hoverCardPos.top}px`,
                         left: `${hoverCardPos.left}px`,
-                        background: "linear-gradient(135deg, rgba(15, 23, 42, 0.94) 0%, rgba(30, 27, 75, 0.94) 100%)",
-                        boxShadow: "0 8px 24px -4px rgba(15, 23, 42, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.15)",
+                        background: "rgba(255, 255, 255, 0.96)",
+                        boxShadow: "0 12px 30px -4px rgba(15, 23, 42, 0.16), 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06)",
                       }}
-                      className="fact-gradient-popup absolute z-50 inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full backdrop-blur-md text-white cursor-pointer select-none transition-all duration-200 ease-out hover:scale-[1.01] active:scale-[0.99] shadow-lg animate-in fade-in slide-in-from-bottom-1"
-                      title={hoveredIssue.suggestion ? "클릭하거나 우측 체크를 누르면 본문이 수정됩니다" : hoveredIssue.reason}
+                      className="fact-gradient-popup absolute z-50 inline-flex items-center gap-2.5 px-3 py-1.5 rounded-lg backdrop-blur-md text-slate-800 cursor-pointer select-none transition-all duration-200 ease-out hover:scale-[1.01] active:scale-[0.99] border border-slate-200/90 shadow-lg animate-in fade-in slide-in-from-bottom-1"
+                      title={hoveredIssue.suggestion ? "클릭하거나 우측 체크를 누르면 본문이 수정됩니다" : "클릭하면 본문 문장이 선택되어 바로 수정할 수 있습니다"}
                     >
-                      <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/25 px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
-                        <Sparkles className="w-3 h-3 text-emerald-400" />
+                      <span className="flex items-center text-[11px] font-bold text-slate-800 bg-slate-100 border border-slate-200/90 px-2 py-0.5 rounded-md whitespace-nowrap flex-shrink-0">
                         {hoveredIssue.suggestion ? "AI 제안" : hoveredIssue.type}
                       </span>
 
-                      <span className="text-xs text-slate-100 font-medium truncate max-w-[240px] sm:max-w-[320px] md:max-w-[380px]" title={hoveredIssue.suggestion || hoveredIssue.reason}>
+                      <span className="text-xs text-slate-800 font-medium truncate max-w-[240px] sm:max-w-[320px] md:max-w-[380px]" title={hoveredIssue.suggestion || hoveredIssue.reason}>
                         {hoveredIssue.suggestion ? `"${hoveredIssue.suggestion}"` : hoveredIssue.reason}
                       </span>
 
@@ -1778,7 +1790,7 @@ export default function ArticleWriter({
                             e.stopPropagation();
                             handleApplyCorrection(hoveredIssue);
                           }}
-                          className="w-6 h-6 rounded-full bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer shadow-xs flex-shrink-0 ml-0.5"
+                          className="w-6 h-6 rounded-md bg-slate-900 hover:bg-black active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer shadow-xs flex-shrink-0 ml-0.5"
                           title="수정 적용"
                         >
                           <Check className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -1788,20 +1800,20 @@ export default function ArticleWriter({
                       {/* 상위 모델 재검토 말풍선 UI (data-testid="recheck-tip") */}
                       {/* main 규칙: 로컬 판정이 확정하지 못한 문장만 상위 모델 재검토 대상이다 */}
                       {(hoveredIssue.needsRecheck || factCheck.recheckBusy || /^AI 재판정/.test(hoveredIssue.reason)) && (
-                      <div data-testid="recheck-tip" className="inline-flex items-center gap-1 pl-1.5 border-l border-white/20">
+                      <div data-testid="recheck-tip" className="inline-flex items-center gap-1 pl-1.5 border-l border-slate-200">
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleRecheck(hoveredIssue.id);
                           }}
-                          className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 hover:bg-white/20 text-stone-200 hover:text-white transition cursor-pointer flex items-center gap-1"
+                          className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 border border-slate-200/90 text-slate-700 hover:text-slate-950 transition cursor-pointer flex items-center gap-1"
                           title="로컬 판정 미확정 문장을 상위 모델로 재판정"
                         >
                           {factCheck.recheckBusy ? (
                             <span>상위모델 재검토 중…</span>
                           ) : !hoveredIssue.needsRecheck ? (
-                            <span className="text-emerald-300">AI 재판정 완료</span>
+                            <span className="text-slate-900 font-extrabold">AI 재판정 완료</span>
                           ) : (
                             <span>상위모델 재검토</span>
                           )}
@@ -1947,8 +1959,6 @@ export default function ArticleWriter({
                     className="w-full min-h-[460px] text-slate-900 text-xs md:text-sm leading-relaxed p-5 bg-slate-50/50 rounded-xl border border-black/[0.06] focus:bg-white focus:border-[#8ECAE6] focus:ring-2 focus:ring-[#8ECAE6]/20 outline-none transition-all shadow-2xs font-sans empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 cursor-text overflow-y-auto"
                   />
                 </div>
-
-                {onSave && <SaveBar onSave={onSave} testId="writer-save" />}
 
               </div>
             )}
@@ -2143,7 +2153,6 @@ export default function ArticleWriter({
               className="w-full"
               onClose={() => {
                 setActiveSidePanel(null);
-                setShowCheckModal(false);
                 setHighlightedClaim(null);
                 setHoveredIssue(null);
                 setReview(false); // 닫으면 순서형 검사도 끝낸다(카드와 진한 밑줄이 남지 않게)
@@ -2271,12 +2280,10 @@ export default function ArticleWriter({
                   onClick={() => {
                     if (activeSidePanel === "factcheck") {
                       setActiveSidePanel(null);
-                      setShowCheckModal(false);
                       setReview(false);
                     } else {
                       setActiveSidePanel("factcheck");
                       setShowFactMarks(true);
-                      setShowCheckModal(true);
                       setReview(true);
                       setReviewIdx(0);
                       if (onRunFactCheck) onRunFactCheck();
@@ -2400,22 +2407,6 @@ export default function ArticleWriter({
             </div>
           </div>
         </div>
-      )}
-
-      {/* 팩트체크 사전 기사 검증률 모달 (사이드 패널이 비활성화된 상태일 때만 독립 모달로 동작) */}
-      {showCheckModal && activeSidePanel !== "factcheck" && (
-        <ArticleCheckModal
-          isOpen={true}
-          article={article}
-          summary={factCheckSummary}
-          onClose={() => setShowCheckModal(false)}
-          onStartCheck={() => {
-            setShowCheckModal(false);
-            setActiveSidePanel("factcheck");
-            setShowFactMarks(true);
-            startFullCheck();
-          }}
-        />
       )}
 
       {/* 저장 이력 및 이전 저장본 복원 모달 */}

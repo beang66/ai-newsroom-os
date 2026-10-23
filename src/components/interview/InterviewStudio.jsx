@@ -1539,7 +1539,7 @@ export default function InterviewStudio({ onReturnToArticle, onSave, accountId }
       <div className="flex items-center justify-between pb-5 mb-5 border-b border-slate-200">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-[#292929] tracking-tight">
-            STT 인터뷰 전사 & AI 요약
+            오디오 전사 & AI요약
           </h1>
         </div>
 
@@ -1550,10 +1550,10 @@ export default function InterviewStudio({ onReturnToArticle, onSave, accountId }
               data-testid="interview-save"
               disabled={isSaving}
               onClick={handleTopSave}
-              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-b from-[#f9fbfe] via-[#edf3f9] to-[#dce7f2] border border-sky-200/80 text-slate-700 hover:text-slate-900 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-[0_3px_8px_rgba(186,205,225,0.45),inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-1px_1px_rgba(180,200,220,0.35)] hover:from-white hover:via-[#f2f6fb] hover:to-[#e3ecf5] hover:shadow-[0_5px_12px_rgba(186,205,225,0.6),inset_0_1px_0_rgba(255,255,255,1)] active:translate-y-0.5 active:shadow-[inset_0_2px_5px_rgba(148,163,184,0.4),inset_0_1px_2px_rgba(148,163,184,0.3)] disabled:opacity-60"
+              className="px-4 py-2 rounded-full border border-white/90 bg-gradient-to-b from-white/80 to-slate-200/70 backdrop-blur-md text-slate-700 hover:from-white hover:to-slate-200/90 hover:text-slate-900 shadow-[0_10px_22px_-10px_rgba(15,23,42,0.28),inset_0_1px_1px_rgba(255,255,255,0.95),inset_0_-1px_2px_rgba(148,163,184,0.35)] text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
               title="저장하기"
             >
-              <Save className="w-3.5 h-3.5 text-sky-700 stroke-[2.2]" />
+              <Save className="w-3.5 h-3.5 text-slate-600 stroke-[2]" />
               <span>{isSaving ? "저장 중…" : "저장하기"}</span>
             </button>
           )}
@@ -1574,11 +1574,11 @@ export default function InterviewStudio({ onReturnToArticle, onSave, accountId }
                 }
                 onReturnToArticle(exportParts.join("\n\n---\n\n"), { id: transcriptId || storedSource?.id, filename: fileName });
               }}
-              className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs active:scale-95"
+              className="px-4 py-2 rounded-full border border-white/90 bg-gradient-to-b from-white/80 to-slate-200/70 backdrop-blur-md text-slate-700 hover:from-white hover:to-slate-200/90 hover:text-slate-900 shadow-[0_10px_22px_-10px_rgba(15,23,42,0.28),inset_0_1px_1px_rgba(255,255,255,0.95),inset_0_-1px_2px_rgba(148,163,184,0.35)] text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-[0.98]"
               title="기사 작성기로 내보내기"
             >
               <span>기사 작성기로 내보내기</span>
-              <ArrowUpRight className="w-3.5 h-3.5 text-slate-300" />
+              <ArrowUpRight className="w-3.5 h-3.5 text-slate-500" />
             </button>
           )}
         </div>

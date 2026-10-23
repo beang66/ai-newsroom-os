@@ -584,12 +584,12 @@ export default function ArchiveView({ article, articles, dashboardFilter, onOpen
           {preferences.view === "details" ? <div className="archive-table-wrap"><table><thead><tr><th><input type="checkbox" data-testid="archive-select-all" aria-label="현재 페이지 전체 선택" checked={selectedKeys.length === visible.length} onChange={() => setSelectedKeys(selectedKeys.length === visible.length ? [] : visible.map((item) => item.key))} /> 이름</th><th>종류</th><th>담당자</th><th>수정일</th><th>상태</th><th>연결 자료</th><th>태그</th></tr></thead><tbody>{visible.map(itemNode)}</tbody></table></div>
             : <div className={`archive-icon-grid ${preferences.view}`}>{visible.map(itemNode)}</div>}
         </div>}
+        {!visible.length && <div className="archive-empty"><Folder size={42} /><h2>{scopeTitle}이 비어 있습니다.</h2><p>{query ? "검색어나 필터를 바꿔보세요." : "조건에 맞는 파일이 없습니다."}</p></div>}
         <nav className="archive-pagination" aria-label="보관함 페이지 이동">
           <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button>
           <span>{currentPage} / {pageCount}</span>
           <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button>
         </nav>
-        {!visible.length && <div className="archive-empty"><Folder size={42} /><h2>{scopeTitle}이 비어 있습니다.</h2><p>{query ? "검색어나 필터를 바꿔보세요." : "조건에 맞는 파일이 없습니다."}</p></div>}
       </main>
 
       {preferences.preview && <button

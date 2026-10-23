@@ -48,7 +48,7 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
   const navItems = [
     { id: "desk", label: "오늘의 데스크", icon: Home, isTab: true },
     { id: "writer", label: "기사 작성", icon: PenTool, isTab: true },
-    { id: "interview", label: "인터뷰 & 오디오", icon: Mic, isTab: true },
+    { id: "interview", label: "오디오 전사 & AI요약", icon: Mic, isTab: true },
     { id: "convert", label: "콘텐츠 변환", icon: Send, isTab: true },
     { id: "map", label: "데이터 맵", icon: Network, isTab: true },
     { id: "archive", label: "보관함", icon: FolderArchive, isTab: true },

@@ -6,7 +6,7 @@
 //  - 문장마다 원문 근거(Evidence)와 어조 경고(threads-tone-warning)는 그대로 유지한다.
 //  - 카드뉴스 카드는 첨부 이미지 자리에 카드 미리보기(PlatformCardEditor 와 같은 템플릿)로 들어간다.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FileText, Image as ImageIcon, MapPin, MoreHorizontal, Music, SlidersHorizontal, Smile, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Image as ImageIcon, MapPin, MoreHorizontal, Music, SlidersHorizontal, Smile, X } from "lucide-react";
 import { photoDataUrl } from "../api/platform.js";
 import { selectedCardPhoto } from "../lib/platformState.js";
 import {CardModel,CardTemplate} from "../lib/cardRuntime.js";
@@ -31,7 +31,7 @@ function Avatar({ size = 36 }) {
 }
 
 /** 카드뉴스 한 장의 미리보기(첨부 이미지 자리). 카드 편집기와 같은 템플릿으로 그린다. */
-export function CardThumb({ card, index, total, article }) {
+export function CardThumb({ card, index, total, article, width = THUMB_W }) {
   const photo = selectedCardPhoto(card, article);
   const [preview, setPreview] = useState(null);
   useEffect(() => {
@@ -47,9 +47,10 @@ export function CardThumb({ card, index, total, article }) {
     total_pages: total,
   });
   const html = `<!doctype html><html lang="ko"><meta charset="utf-8"><style>body{margin:0}${CardTemplate.css}</style>${CardTemplate.markup(normalized)}<script>(${CardTemplate.fitCard.toString()})();</script></html>`;
-  const scale = THUMB_W / CARD_W;
+  const cardW = width || THUMB_W;
+  const scale = cardW / CARD_W;
   return (
-    <div className="group relative shrink-0 overflow-hidden rounded-2xl border border-[#E3DED5] bg-black shadow-sm" style={{ width: THUMB_W, height: CARD_H * scale }} data-testid="threads-card">
+    <div className="group relative shrink-0 overflow-hidden rounded-none border-0 bg-black shadow-sm" style={{ width: cardW, height: Math.round(CARD_H * scale) }} data-testid="threads-card">
       <iframe title={`카드 ${index + 1} 미리보기`} sandbox="allow-scripts" srcDoc={html} tabIndex={-1}
         style={{ width: CARD_W, height: CARD_H, border: 0, transform: `scale(${scale})`, transformOrigin: "top left", pointerEvents: "none" }} />
       <div className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm" aria-hidden="true">
@@ -90,6 +91,7 @@ function ThreadTextPart({ id, label, value, onChange, onFocus, placeholder }) {
 /** draft: 생성 결과, changed(mutate): 수정 규칙(재검수 표시 포함), cards: 카드뉴스 카드들, article: 카드 사진 조회용 */
 // 글 한 덩어리 ↔ 첫 문장·이어지는 문장: 빈 줄로 나누고 첫 단락이 첫 문장(opening), 나머지가 paragraphs
 export default function ThreadsEditor({ draft, changed, cards = [], article }) {
+  const [showMedia, setShowMedia] = useState(true);
   const paragraphs = draft.paragraphs || [];
   const toneIssues=ThreadsTone.issues(paragraphs,draft.generation_input?.requirements??draft.requirements??'');
   const posts = [
@@ -101,6 +103,12 @@ export default function ThreadsEditor({ draft, changed, cards = [], article }) {
       set: (value) => changed((next) => { next.paragraphs[index] = value; }),
     })),
   ];
+  const scrollRef = useRef(null);
+  const scrollCard = (dir) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: dir * 292, behavior: "smooth" });
+    }
+  };
   const [activePost, setActivePost] = useState(null);
   const [text, setText] = useState(() => threadsText(draft));
   // 밖에서 원고가 바뀌었을 때(재생성 등)만 입력 내용을 다시 맞춘다 — 입력 중의 빈 줄·공백은 그대로 둔다
@@ -123,16 +131,28 @@ export default function ThreadsEditor({ draft, changed, cards = [], article }) {
       {toneIssues.length>0&&<p role="alert" data-testid="threads-tone-warning" className="mb-3 rounded-xl border border-amber-300 bg-white p-3 text-xs text-amber-800">본문 {toneIssues.map(issue=>issue.index+1).join(', ')}에 기본 반말과 다른 종결이 있습니다. {draft.tone_repair_status==='needs_edit'?'자동 교정으로 해결되지 않아 편집 가능한 초안을 남겼습니다. 해당 문단을 직접 고쳐 주세요.':'저장된 원고는 자동 변경하지 않습니다. 직접 편집하거나 ‘Threads 다시 생성’을 눌러 주세요. 새 생성에서는 말투를 확인하고 필요한 문단만 교정합니다.'}</p>}
       <div className="flex w-full min-w-0 flex-col items-center gap-4 lg:flex-row lg:items-start lg:justify-center">
         <div className="w-full min-w-0 max-w-[620px]">
-          <div className="mx-auto w-full overflow-hidden rounded-[24px] border border-[#E7E2D9] bg-white shadow-[0_10px_35px_rgba(0,0,0,0.08)]">
+          <div className="mx-auto w-full overflow-hidden rounded-[38px] border border-[#E7E2D9] bg-white shadow-[0_10px_35px_rgba(0,0,0,0.08)]">
             <div className="flex items-center justify-between border-b border-[#F0EFEA] px-5 py-3.5 text-[15px]">
               <span className="text-[15px] font-medium text-[#101010]">취소</span>
               <span className="font-bold text-[#101010]">새로운 스레드</span>
-              <div className="flex items-center gap-2 text-[#101010]" aria-hidden="true">
-                <FileText className="h-5 w-5" />
-                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[#DDD6CB]"><MoreHorizontal className="h-4 w-4" /></span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="threads-toggle-media"
+                  onClick={() => setShowMedia((prev) => !prev)}
+                  title={showMedia ? "텍스트 전용 보기로 전환" : "카드뉴스 첨부 보기로 전환"}
+                  className={`flex h-7 w-7 items-center justify-center rounded-full border transition cursor-pointer ${
+                    !showMedia
+                      ? "border-[#101010] bg-[#101010] text-white shadow-xs"
+                      : "border-[#DDD6CB] bg-white text-[#756F67] hover:bg-[#F2EFE9] hover:text-[#101010]"
+                  }`}
+                >
+                  {showMedia ? <FileText className="h-4 w-4 stroke-[1.8]" /> : <ImageIcon className="h-4 w-4 stroke-[1.8]" />}
+                </button>
+                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[#DDD6CB] text-[#101010]"><MoreHorizontal className="h-4 w-4" /></span>
               </div>
             </div>
-            <div className="px-5 pt-4">
+            <div className="px-5 py-4">
               <div className="flex gap-3" data-testid="threads-post">
                 <div className="flex w-9 shrink-0 flex-col items-center">
                   <Avatar />
@@ -154,28 +174,62 @@ export default function ThreadsEditor({ draft, changed, cards = [], article }) {
                       placeholder="새로운 소식을 공유해보세요."
                     />
                   </div>
-                  <div className="mt-3" data-testid="threads-media">
-                    {cards.length > 0 ? (
-                      <div className="-mr-2 flex gap-3 overflow-x-auto pb-2 pt-1">
-                        {cards.map((card, cardIndex) => (
-                          <CardThumb key={card.card_id || cardIndex} card={card} index={cardIndex} total={cards.length} article={article} />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="flex aspect-[16/10] w-full max-w-[420px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#DDD6CB] bg-[#FAF8F5] p-6 text-center">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-[#756F67] shadow-sm">
-                          <ImageIcon className="h-6 w-6" aria-hidden="true" />
+                  {showMedia && (
+                    <div className="mt-3" data-testid="threads-media">
+                      {cards.length > 0 ? (
+                        <div className="relative group">
+                          <div ref={scrollRef} className="-mr-2 flex gap-3 overflow-x-auto pb-2 pt-1 scrollbar-none">
+                            {cards.map((card, cardIndex) => (
+                              <CardThumb key={card.card_id || cardIndex} card={card} index={cardIndex} total={cards.length} article={article} />
+                            ))}
+                          </div>
+                          {cards.length > 1 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => scrollCard(-1)}
+                                aria-label="이전 카드"
+                                className="absolute left-1 top-1/2 -translate-y-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition hover:bg-black/80 hover:scale-105 cursor-pointer shadow-md"
+                              >
+                                <ChevronLeft className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => scrollCard(1)}
+                                aria-label="다음 카드"
+                                className="absolute right-1 top-1/2 -translate-y-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm opacity-0 group-hover:opacity-100 transition hover:bg-black/80 hover:scale-105 cursor-pointer shadow-md"
+                              >
+                                <ChevronRight className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
-                        <p className="mt-3 text-xs font-bold text-[#292929]">카드뉴스 불러오기</p>
-                        <p className="mt-1 text-[11px] text-[#8E8982]">카드뉴스를 생성하면 이미지가 이 자리에 첨부됩니다. (왼쪽에서 &quot;카드뉴스 생성&quot;을 선택하세요)</p>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-3 flex items-center gap-4 text-[#999]" aria-hidden="true">
-                    <div className="flex items-center gap-1 text-[13px] text-[#8E8982]">
-                      <ImageIcon className="h-[18px] w-[18px]" />
-                      <span>추가</span>
+                      ) : (
+                        <div className="flex aspect-[16/10] w-full max-w-[420px] flex-col items-center justify-center rounded-none border border-dashed border-[#DDD6CB] bg-[#FAF8F5] p-6 text-center">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-[#756F67] shadow-sm">
+                            <ImageIcon className="h-6 w-6" aria-hidden="true" />
+                          </div>
+                          <p className="mt-3 text-xs font-bold text-[#292929]">카드뉴스 불러오기</p>
+                          <p className="mt-1 text-[11px] text-[#8E8982]">카드뉴스를 생성하면 이미지가 이 자리에 첨부됩니다. (왼쪽에서 &quot;카드뉴스 생성&quot;을 선택하세요)</p>
+                        </div>
+                      )}
                     </div>
+                  )}
+                  <div className="mt-3 flex items-center gap-4 text-[#999]">
+                    <button
+                      type="button"
+                      data-testid="threads-bottom-toggle-media"
+                      onClick={() => setShowMedia((prev) => !prev)}
+                      title={showMedia ? "카드뉴스 첨부 숨기기" : "카드뉴스 첨부 표시"}
+                      className={`flex items-center gap-1.5 text-[13px] font-bold transition cursor-pointer px-2 py-1 rounded-lg ${
+                        showMedia
+                          ? "bg-slate-100 text-[#101010] hover:bg-slate-200"
+                          : "border border-slate-300 bg-white text-[#756F67] hover:bg-slate-50"
+                      }`}
+                    >
+                      <ImageIcon className="h-[18px] w-[18px]" />
+                      <span>{showMedia ? "카드 숨기기" : "카드 첨부"}</span>
+                    </button>
                     <Smile className="h-[18px] w-[18px] text-[#8E8982]" />
                     <FileText className="h-[18px] w-[18px] text-[#8E8982]" />
                     <MapPin className="h-[18px] w-[18px] text-[#8E8982]" />
@@ -184,32 +238,9 @@ export default function ThreadsEditor({ draft, changed, cards = [], article }) {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 py-3">
-                <div className="flex w-9 justify-center"><Avatar size={20} /></div>
-                <span className="text-[14px] text-[#999]">스레드에 추가</span>
-              </div>
-            </div>
-            <div className="flex items-center justify-between border-t border-[#F0EFEA] px-5 py-3">
-              <span className="flex items-center gap-1.5 text-[13px] font-medium text-[#756F67]" aria-hidden="true">
-                <SlidersHorizontal className="h-4 w-4" />게시물 옵션
-              </span>
-              <button type="button" disabled title="게시는 아래 SNS 작성창 준비에서 준비합니다(이 앱은 자동으로 게시하지 않습니다)"
-                className="rounded-xl border border-[#DDD6CB] bg-white px-5 py-1.5 text-[14px] font-bold text-[#101010] shadow-sm disabled:opacity-50">게시</button>
             </div>
           </div>
         </div>
-        <aside className="w-full max-w-[620px] space-y-1.5 lg:sticky lg:top-4 lg:w-[200px] lg:max-w-none" data-testid="threads-flow">
-          {posts.map((post, index) => (
-            <button key={post.key} type="button" onClick={() => goTo()}
-              className={`block w-full cursor-pointer rounded-xl border px-2.5 py-2 text-left transition ${activePost === post.key ? "border-[#292929] bg-white" : "border-[#E7E2D9] bg-white/70 hover:bg-white"}`}>
-              <span className="flex items-center justify-between text-[11px] font-bold text-[#57514A]">
-                <span>{index + 1}. {post.label}</span>
-                <span className="font-mono text-[10px] font-normal text-[#B0AAA2]">{(post.value || "").length}</span>
-              </span>
-              <span className="mt-1 line-clamp-3 block text-[11px] leading-snug text-[#756F67]">{post.value || "—"}</span>
-            </button>
-          ))}
-        </aside>
       </div>
     </div>
   );

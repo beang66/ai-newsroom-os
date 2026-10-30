@@ -233,7 +233,7 @@ try {
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
   // 사이드바 버튼 title(내 사이드바)과 화면 제목(page-heading, 데이터 navigation.js)은 이름이 다르다.
   // 기사 작성·인터뷰 화면은 상단 제목 대신 자체 작업 화면(저장 상태 표시 / 녹취 화면)이 열린다.
-  const NAV_BUTTON = { "오늘의 데스크": "오늘의 데스크", "기사 작성": "기사 작성", "녹음 파일": "인터뷰 & 오디오", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터 맵", "보관함": "보관함" };
+  const NAV_BUTTON = { "오늘의 데스크": "오늘의 데스크", "기사 작성": "기사 작성", "녹음 파일": "오디오 전사 & AI요약", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터 맵", "보관함": "보관함" };
   const NAV_HEADING = { "오늘의 데스크": "오늘의 업무", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터맵", "보관함": "보관함" };
   const READY = '[data-testid="page-heading"], [data-testid="save-status"], [data-testid="interview-studio"], .writer-workspace, [data-testid="backup-export"]';
   const go = async (title) => {
@@ -1045,7 +1045,7 @@ try {
   assert.ok(knowledge.files.every((file) => file.backlink_count > 0));
   await snapshot('prototype-ux-map');
   await go("녹음 파일");
-  await see("STT 인터뷰 전사 & AI 요약");
+  await see("오디오 전사 & AI요약");
   // 녹음 전사: 파일 → 코어 /api/interview/transcribe → 백엔드 /ai/audio/transcriptions(multipart) → 화자별 대화
   await page.locator('input[type="file"]').setInputFiles({ name: "stub.m4a", mimeType: "audio/mp4", buffer: Buffer.from("stub audio") });
   await see("스텁 답변입니다");

@@ -615,7 +615,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   };
 
   return (
-    <div className="relative w-full max-w-[1440px] space-y-2 animate-float-in text-[#292929]" data-testid="format-converter">
+    <div className="relative w-full space-y-2 animate-float-in text-[#292929]" data-testid="format-converter">
       <div className="[&>header]:pb-1! [&>header]:mb-1!">
         <PageHeader page="convert" />
       </div>

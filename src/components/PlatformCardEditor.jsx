@@ -87,9 +87,9 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
   },[rootNode]);
   const fixedWidth=24+24+88+24+44,popupRoom=12+300+16;// 미리보기 틀 여백·간격·썸네일 열·버튼 열 + 팝업 자리(최소 300px)
   const spare=room?room.width-fixedWidth-Math.max(0,popupRoom-room.gap):432;
-  const previewWidth=Math.round(Math.max(160,Math.min(432,spare)));
+  const previewWidth=Math.round(Math.max(160,Math.min(520,spare)));// 넓은 화면에서는 팝업 자리를 남기고 빈 폭만큼 키운다(최대 520px)
   // 가운데 정렬하면 오른쪽 여유가 줄어 팝업이 넘치므로, 자리가 넉넉할 때만 가운데에 둔다
-  const roomy=room?(room.width-fixedWidth-432)/2>=Math.max(0,popupRoom-room.gap):true;
+  const roomy=room?(room.width-fixedWidth-previewWidth)/2>=Math.max(0,popupRoom-room.gap):true;
   useEffect(()=>{
     let cancelled=false;
     if(photo)photoDataUrl(photo).then(url=>{if(!cancelled)setPreviewPhoto({key:photoKey(photo),url});}).catch(e=>{if(!cancelled){setPreviewPhoto(null);setError(e.message);}});

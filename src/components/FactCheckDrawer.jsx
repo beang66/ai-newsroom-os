@@ -22,10 +22,11 @@ import { supportedClaimRanges } from "../api/claim-details.js";
 import { markTable } from "../lib/evidenceTable.js";
 import { core } from "../api/core.js";
 import { buildChecks, verifiedPercent, FACT_CATEGORY_EVENT } from "./ArticleCheckModal";
+import { FACT_TONE, FactIcon, NEUTRAL_CHIP, toneOf } from "./FactVerdict";
 
 const STATE_STYLE = {
-  ok: "bg-[#dcfce7] text-[#16a34a]",
-  warn: "bg-[#fef9c3] text-[#ca8a04]",
+  ok: "bg-[#ebf3fb] text-[#1f6fb2]",
+  warn: "bg-[#fff7df] text-[#c58a00]",
   idle: "bg-stone-100 text-stone-400",
 };
 
@@ -62,12 +63,6 @@ const indexBadge = (index) => {
 
 // 모든 자료는 코어(/api/materials/extract)가 텍스트를 뽑고 원본을 암호화 저장소에 보관한다 → 기사 sources 에 등록
 const mb = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-const VERDICT_BADGE = {
-  SUPPORTED: ["팩트 일치", "bg-emerald-50 text-emerald-700 border-emerald-200"],
-  CONFLICT: ["자료와 불일치", "bg-rose-50 text-rose-700 border-rose-200"],
-  EVIDENCE_GAP: ["근거 부족", "bg-amber-50 text-amber-800 border-amber-200"],
-};
-const REVIEW_BADGE = ["검토 필요", "bg-slate-100 text-slate-700 border-slate-200"];
 
 /**
  * 팩트체크 및 근거자료 검증 우측 슬라이더(Drawer) 컴포넌트
@@ -109,10 +104,10 @@ export default function FactCheckDrawer({
   // 분류별 모아보기(UI): 검증률의 분류 버튼이 FACT_CATEGORY_EVENT 를 보내면 아래 카드 목록을 그 분류만 보여 준다(검증률·분류별 개수는 전체 기준 그대로)
   const GROUP_TITLE = { SUPPORTED: "팩트 일치", CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요" };
   const GROUP_TONE = {
-    SUPPORTED: "border-emerald-200 bg-emerald-50/70 text-emerald-800",
-    CONFLICT: "border-rose-200 bg-rose-50/70 text-rose-800",
-    EVIDENCE_GAP: "border-amber-200 bg-amber-50/70 text-amber-900",
-    REVIEW: "border-violet-200 bg-violet-50/70 text-violet-800",
+    SUPPORTED: FACT_TONE.SUPPORTED.panel,
+    CONFLICT: FACT_TONE.CONFLICT.panel,
+    EVIDENCE_GAP: FACT_TONE.EVIDENCE_GAP.panel,
+    REVIEW: FACT_TONE.REVIEW.panel,
   };
   const groupOf = (verdict) => (["SUPPORTED", "CONFLICT", "EVIDENCE_GAP"].includes(verdict) ? verdict : "REVIEW");
   const [categoryFilter, setCategoryFilter] = useState(null);
@@ -212,7 +207,7 @@ export default function FactCheckDrawer({
       {/* 상단 헤더 */}
       <div className="p-4 md:p-5 border-b border-slate-200/90 flex items-center justify-between bg-slate-50/70">
         <h2 className="text-sm md:text-base font-extrabold text-slate-900">
-          팩트체크 & 근거자료 검증
+          팩트체크
         </h2>
 
         <button
@@ -270,7 +265,7 @@ export default function FactCheckDrawer({
                         cx="48"
                         cy="48"
                         r={radius}
-                        stroke="#84cc16"
+                        stroke="#1f6fb2"
                         strokeWidth="7"
                         strokeDasharray={circumference}
                         strokeDashoffset={strokeDashoffset}
@@ -466,7 +461,7 @@ export default function FactCheckDrawer({
             <div className="space-y-2">
               <div className="min-w-0">
                 <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <CheckCircle2 className="w-4 h-4 text-[#1f6fb2]" />
                   실시간 팩트체크 및 근거자료 대조표 ({evidenceList.length}건)
                 </span>
                 <p className="text-[11px] text-slate-400 mt-0.5">
@@ -490,7 +485,7 @@ export default function FactCheckDrawer({
                 onClick={() => factCheck.recheck()}
                 disabled={!factCheck.recheckCount || factCheck.recheckBusy || isAnalyzing}
                 title="검토 필요·관련 근거가 있는 근거 부족 문장만 OpenAI 로 다시 판정(임시 시험 기능)"
-                className="px-2.5 py-1 text-[11px] font-bold rounded-full border border-violet-300 text-violet-700 hover:bg-violet-50 cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                className="px-2.5 py-1 text-[11px] font-bold rounded-full border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-default"
               >
                 {factCheck.recheckBusy ? "AI 재판정 중…" : `AI 재판정 ${factCheck.recheckCount}건 (임시)`}
               </button>
@@ -540,14 +535,14 @@ export default function FactCheckDrawer({
                 >
                   {/* 카드 헤더: 상태 및 일치율 */}
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${(VERDICT_BADGE[item.verdict] || REVIEW_BADGE)[1]}`}>
-                      {item.status === "verified" ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
-                      {(VERDICT_BADGE[item.verdict] || REVIEW_BADGE)[0]}
+                    <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${toneOf(item.verdict).badge}`}>
+                      <FactIcon verdict={item.verdict} />
+                      {toneOf(item.verdict).label}
                       {item.verdict === "SUPPORTED" && item.details?.length > 0 && " · 세부 확인 필요"}
                       {item.matchRate != null && ` (${item.matchRate}%)`}
                     </span>
                     {item.judgedBy === "external" && (
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">AI 재판정</span>
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border ${NEUTRAL_CHIP}`}><Sparkles className="w-3 h-3" aria-hidden="true" />AI 재판정</span>
                     )}
                     <button type="button" data-testid="factcheck-card-toggle" onClick={() => toggleCard(item.id)}
                       aria-expanded={!collapsed.has(item.id)} title={collapsed.has(item.id) ? "근거 펼치기" : "근거 접기"}
@@ -587,13 +582,13 @@ export default function FactCheckDrawer({
                   )}
 
                   {item.details?.length > 0 && (
-                    <div className="border-l-2 border-amber-400 pl-3 py-1 space-y-1.5" data-testid="claim-details">
-                      <p className="text-[10px] font-extrabold text-amber-900">날짜·기관·주체 근거 확인</p>
+                    <div className="border-l-2 border-[#1f6fb2] pl-3 py-1 space-y-1.5" data-testid="claim-details">
+                      <p className="text-[10px] font-extrabold text-[#134a78]">날짜·기관·주체 근거 확인</p>
                       <div className="space-y-1">
                         {item.details.map((d) => (
                           <div key={d.start} className="text-[11px] flex flex-wrap items-center gap-x-2 text-slate-700">
                             <strong className="text-slate-900 font-bold">{d.text}</strong>
-                            <span className="text-amber-800 text-[10px] font-medium bg-amber-50 px-1.5 py-0.5 rounded">{d.label}</span>
+                            <span className="text-[#134a78] text-[10px] font-medium bg-[#ebf3fb] px-1.5 py-0.5 rounded">{d.label}</span>
                             {d.reference && (
                               <span className="break-all text-slate-400 text-[10px]">
                                 ({d.location === 'title' ? '자료명' : '원문'}: {d.reference})
@@ -667,7 +662,7 @@ function EvidenceQuote({ item }) {
   const shown = all ? rows : rows.slice(0, ROWS);
   const width = Math.max(...rows.map((r) => r.cells.length));
   const head = header && (header.length > width ? header : ["", ...header]); // 칸 하나 더면 첫 칸은 행 이름 열 제목
-  const hitTone = ok ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900";
+  const hitTone = ok ? "bg-[#cfe3f7] text-[#134a78]" : "bg-[#fbd5c1] text-[#8a2c08]";
   return (
     <div className="space-y-1 text-slate-800" data-testid="evidence-table">
       {caption.map((c, k) => <p key={k} className="text-[10px] font-bold text-slate-500 break-words">{c}</p>)}
@@ -676,7 +671,7 @@ function EvidenceQuote({ item }) {
           {head && <thead><tr className="text-slate-500">{head.map((h, k) => <th key={k} className={`px-1.5 py-1 font-bold whitespace-nowrap ${k ? "text-right" : "text-left"}`}>{h}</th>)}</tr></thead>}
           <tbody>
             {shown.map((row, r) => (
-              <tr key={r} className={`border-t border-slate-100 ${row.hit ? (ok ? "bg-emerald-50" : "bg-rose-50") : ""}`}>
+              <tr key={r} className={`border-t border-slate-100 ${row.hit ? (ok ? "bg-[#ebf3fb]" : "bg-[#fdeee6]") : ""}`}>
                 <th scope="row" className="px-1.5 py-1 text-left font-bold whitespace-nowrap">{row.label}</th>
                 {row.cells.map((c, k) => <td key={k} className="px-1.5 py-1 text-right whitespace-nowrap"><span className={c.hit ? `${hitTone} rounded-sm px-0.5 font-bold` : ""}>{c.text}</span></td>)}
               </tr>
@@ -710,14 +705,14 @@ function Marked({ text, spans = [], sentence = false, ok = false }) {
   marks.forEach((s, i) => {
     if (s.start < cursor) return;
     inner.push(text.slice(cursor, s.start));
-    inner.push(<mark key={i} title={s.title} className={`${s.detail ? "bg-amber-200 text-amber-950" : ok ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900"} not-italic font-bold rounded-sm px-0.5`}>{text.slice(s.start, s.end)}</mark>);
+    inner.push(<mark key={i} title={s.title} className={`${s.detail ? "bg-[#cfe3f7] text-[#134a78] underline decoration-dotted decoration-[#1f6fb2] underline-offset-4" : ok ? "bg-[#cfe3f7] text-[#134a78]" : "bg-[#fbd5c1] text-[#8a2c08]"} not-italic font-bold rounded-sm px-0.5`}>{text.slice(s.start, s.end)}</mark>);
     cursor = s.end;
   });
   inner.push(text.slice(cursor, to));
   return (
     <>
       {text.slice(0, from)}
-      {sentence ? <span className={`${ok ? "bg-emerald-50" : "bg-amber-100"} rounded-sm`}>{inner}</span> : inner}
+      {sentence ? <span className={`${ok ? "bg-[#ebf3fb]" : "bg-[#fff7df]"} rounded-sm`}>{inner}</span> : inner}
       {text.slice(to)}
     </>
   );

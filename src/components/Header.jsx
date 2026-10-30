@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from "react";
 import { Bell, ChevronDown, FileText } from "lucide-react";
 import AutoLoginToggle from "./AutoLoginToggle";
 import { openExportFolder } from "../api/editorial";
-import logoUrl from "../assets/ai-newsroom-logo.png";
 
 export default function Header({ 
   currentArticleTitle = "AI 반도체 개척자들... 초거대 AI 시대의 차세대 주도권 경쟁", 
@@ -18,7 +17,8 @@ export default function Header({
   storageStatus,
   switching,
   session,
-  applySession
+  applySession,
+  isDesk = false // 오늘의 데스크 화면: 알림·로그인만 보이고 헤더 바탕(흰색)은 없다
 }) {
   const [internalLoggedIn, setInternalLoggedIn] = useState(false);
   const loggedIn = isLoggedIn !== undefined ? isLoggedIn : internalLoggedIn;
@@ -86,28 +86,30 @@ export default function Header({
   }, [showStoragePopup]);
 
   return (
-    <div className="newsroom-header w-full pl-6 md:pl-8 pr-6 md:pr-8 pt-3.5 pb-2">
+    // 헤더 바: 도형(캡슐) 없이 한 줄 바로 채우고, 색과 아래 실선은 왼쪽 사이드바(index.css .newsroom-sidebar > div)와 같다
+    <div
+      className="newsroom-header w-full pl-6 md:pl-8 pr-6 md:pr-8 py-2.5 mb-2"
+      style={isDesk ? undefined : {
+        background: "rgba(255, 255, 255, 0.9)",
+        backdropFilter: "blur(24px)",
+        WebkitBackdropFilter: "blur(24px)",
+        borderBottom: "1px solid rgba(16, 42, 67, 0.10)", // 단순한 실선으로만 본문과 구분한다
+      }}
+    >
       {/* 저장 상태는 알림창 안에만 보이지만, 보조기기와 화면 시험이 읽을 수 있게 같은 문구를 화면 밖에 항상 둔다 */}
       <span className="sr-only" role="status" data-testid="storage-status">{switching ? "현재 원고를 저장하고 작업을 전환합니다…" : storageStatus}</span>
       <header className="w-full flex items-center justify-between z-10 relative gap-3">
         
-        {/* 1. Left Brand */}
-        <div className="flex items-center">
-          <h1 className="select-none leading-none">
-            <img src={logoUrl} alt="AI NEWSROOM" className="block h-[18px] w-auto" draggable={false} />
-          </h1>
-        </div>
-
-        {/* 2. Center Active Article Capsule (프로필 바와 동일한 h-10 높이 및 스타일 규격) */}
-        <div className="absolute left-1/2 -translate-x-1/2 h-10 bg-white/85 backdrop-blur-md border border-black/5 rounded-full px-3.5 hidden lg:flex items-center gap-2 shadow-[0_2px_12px_rgba(0,0,0,0.03)] max-w-2xl">
-          <div className="w-6 h-6 rounded-full bg-[#292929] text-white flex items-center justify-center flex-shrink-0">
-            <FileText className="w-3 h-3 text-slate-300" />
-          </div>
-          <span className="text-xs text-[#999999] flex-shrink-0 font-medium">현재 작업:</span>
+        {/* 1. 왼쪽: 편집 중인 기사 (도형 없이 아이콘 + 글자만). 로고는 왼쪽 사이드바 위로 옮겼다.
+            제목은 알림 앞까지 남는 폭을 모두 써서, 너무 길지 않으면 끝까지 보인다 */}
+        {!isDesk && (
+        <div className="h-10 hidden lg:flex items-center gap-2 min-w-0 flex-1">
+          <FileText className="w-4 h-4 text-slate-500 flex-shrink-0" />
+          <span className="text-[13px] text-[#999999] flex-shrink-0 font-medium">현재 작업:</span>
 
           {/* 작성 중인 기사 제목: 커서 올리면 제목의 풀네임이 사이드로 표시 */}
-          <div className="relative group flex items-center">
-            <span className="text-xs font-extrabold text-[#292929] truncate max-w-[240px] cursor-pointer hover:text-blue-600 transition-colors">
+          <div className="relative group flex items-center min-w-0">
+            <span className="text-sm font-extrabold text-[#292929] truncate cursor-pointer hover:text-blue-600 transition-colors">
               {currentArticleTitle}
             </span>
             {/* 사이드로 뜨는 제목 풀네임 툴팁 말풍선 */}
@@ -120,9 +122,10 @@ export default function Header({
           </div>
 
         </div>
+        )}
 
         {/* 3. Right Notifications & Login/User Profile Capsule */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-shrink-0 ml-auto">
           {/* 알림 버튼 Capsule (저장 상태 및 계정 설정 기능) */}
           <div className="relative h-10 w-10" ref={storagePopupRef}>
             <button 
@@ -134,7 +137,8 @@ export default function Header({
                 }
                 setShowStoragePopup((prev) => !prev);
               }}
-              className={`group/btn absolute right-0 top-0 h-10 min-w-[40px] rounded-full bg-white/85 backdrop-blur-md border border-black/5 text-[#666666] hover:text-[#292929] hover:bg-white flex flex-row-reverse items-center overflow-hidden transition-all duration-300 ease-out shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-lg cursor-pointer active:scale-95 ${peek || showStoragePopup ? "w-[300px] z-30" : "w-10 hover:w-[300px] z-10 hover:z-30"}`}
+              // 헤더와 같은 색 바탕: 펼쳐진 저장 상태 글자가 왼쪽의 기사 제목과 겹쳐 보이지 않게 가린다(테두리·도형 없음)
+              className={`group/btn absolute right-0 top-0 h-10 min-w-[40px] ${isDesk ? "" : "bg-white"} text-[#666666] hover:text-[#292929] flex flex-row-reverse items-center overflow-hidden transition-all duration-300 ease-out cursor-pointer active:scale-95 ${peek || showStoragePopup ? "w-[300px] z-30" : "w-10 hover:w-[300px] z-10 hover:z-30"}`}
               title="저장 내역 및 알림"
               aria-expanded={showStoragePopup}
             >
@@ -204,18 +208,18 @@ export default function Header({
           {/* 로그인하기, 회원가입하기 버튼 (처음 화면: 우측 상단) 
               누르면 '김동아 기자' 버튼으로 생성 및 전환됨 */}
           {!loggedIn ? (
-            <div className="flex items-center gap-1.5 bg-white/85 backdrop-blur-md border border-black/5 rounded-full p-1 shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => onOpenAuth?.("login")}
-                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 hover:text-black hover:bg-slate-100/80 rounded-full transition cursor-pointer active:scale-95"
+                className="px-2 py-1.5 text-xs font-bold text-slate-600 hover:text-black transition cursor-pointer active:scale-95"
               >
                 로그인하기
               </button>
               <button
                 type="button"
                 onClick={() => onOpenAuth?.("signup")}
-                className="px-3.5 py-1.5 text-xs font-bold bg-[#292929] hover:bg-black text-white rounded-full transition shadow-xs cursor-pointer active:scale-95"
+                className="px-2 py-1.5 text-xs font-extrabold text-[#292929] hover:text-black transition cursor-pointer active:scale-95"
               >
                 회원가입하기
               </button>
@@ -226,7 +230,7 @@ export default function Header({
               <button 
                 type="button"
                 onClick={() => setShowUserDropdown(!showUserDropdown)}
-                className="bg-white/85 backdrop-blur-md border border-black/5 rounded-full px-3.5 py-1.5 flex items-center gap-2 shadow-[0_2px_12px_rgba(0,0,0,0.03)] cursor-pointer hover:bg-white transition active:scale-95 animate-in fade-in zoom-in-95 duration-200"
+                className="px-1 py-1.5 flex items-center gap-2 cursor-pointer hover:opacity-80 transition active:scale-95 animate-in fade-in zoom-in-95 duration-200"
                 title="기자 정보"
               >
                 <span className="text-xs font-extrabold text-[#292929]">{reporterName}</span>

@@ -10,6 +10,7 @@ import {
   ChevronsLeft,
   ChevronRight
 } from "lucide-react";
+import logoUrl from "../assets/ai-newsroom-logo.png";
 
 // 사용자 첨부 이미지와 100% 동일한 AI 스파클 별 아이콘 (4각 별 + 우측 상단 플러스 + 좌측 하단 점)
 function AiSparkleStarIcon({ className = "w-5 h-5", strokeWidth = 2.2 }) {
@@ -69,22 +70,19 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
   };
 
   return (
-    <aside className="newsroom-sidebar sticky top-4 self-start z-30 select-none flex flex-col items-center flex-shrink-0 transition-all duration-300 ease-out">
+    <aside className="newsroom-sidebar fixed left-0 top-0 h-screen z-40 select-none flex flex-col flex-shrink-0 transition-all duration-300 ease-out">
+      {/* 화면 왼쪽 끝에 붙은 직사각형 패널(위에서 아래까지). 모양은 index.css 의 .newsroom-sidebar > div 가 정한다 */}
       <div
-        className={`relative flex flex-col transition-all duration-300 ease-out ${isExpanded
+        className={`relative h-full overflow-y-auto flex flex-col transition-all duration-300 ease-out ${isExpanded
           ? "w-[285px] md:w-[300px] p-5"
           : "w-[72px] md:w-[76px] py-5 px-3 items-center"
           }`}
         style={{
-          minHeight: "calc(100vh - 90px)",
-          background: isExpanded ? "rgba(255, 255, 255, 0.78)" : "rgba(255, 255, 255, 0.72)",
+          background: "rgba(255, 255, 255, 0.9)",
           backdropFilter: "blur(24px)",
           WebkitBackdropFilter: "blur(24px)",
-          border: "1px solid rgba(255, 255, 255, 0.8)",
-          boxShadow: isExpanded
-            ? "0 16px 40px rgba(40, 35, 25, 0.09)"
-            : "0 10px 32px rgba(40, 35, 25, 0.07)",
-          borderRadius: isExpanded ? "38px" : "42px"
+          borderRight: "1px solid rgba(16, 42, 67, 0.10)",
+          borderRadius: 0
         }}
       >
 
@@ -92,20 +90,16 @@ export default function Sidebar({ isCollapsed, setIsCollapsed, activeTab, setAct
             1. 상단 로고 및 펼치기/접기 헤더
            ────────────────────────────────────────── */}
         {isExpanded ? (
-          /* [펼친 상태 상단 헤더]: 배경 박스 없이 스파클 아이콘 + AI Newsroom + [« 접기 버튼] */
+          /* [펼친 상태 상단 헤더]: AI NEWSROOM 로고(예전에는 화면 왼쪽 위 헤더에 있었다) + [« 접기 버튼] */
           <div className="flex items-center justify-between w-full mb-6 pt-1 px-1">
             <button
               onClick={() => setActiveTab("writer")}
-              className="flex items-center gap-2.5 transition cursor-pointer group text-left"
-              title="메뉴"
+              className="flex items-center transition cursor-pointer text-left"
+              title="AI NEWSROOM"
             >
-              <AiSparkleStarIcon className="w-6 h-6 text-slate-400 group-hover:text-slate-300 drop-shadow-[0_0_6px_rgba(180,195,210,0.5)] group-hover:scale-110 transition-all" strokeWidth={2.4} />
-              <span
-                className="text-base font-extrabold text-[#292929] tracking-tight"
-                style={{ fontFamily: "'Plus Jakarta Sans', 'Pretendard', sans-serif" }}
-              >
-                메뉴
-              </span>
+              <h1 className="select-none leading-none">
+                <img src={logoUrl} alt="AI NEWSROOM" className="block h-[18px] w-auto" draggable={false} />
+              </h1>
             </button>
 
             {/* 깔끔한 접기 버튼 («) */}

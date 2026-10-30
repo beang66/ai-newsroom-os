@@ -233,7 +233,7 @@ try {
   const see = (text) => page.getByText(text, { exact: false }).first().waitFor({ timeout: 10_000 });
   // 사이드바 버튼 title(내 사이드바)과 화면 제목(page-heading, 데이터 navigation.js)은 이름이 다르다.
   // 기사 작성·인터뷰 화면은 상단 제목 대신 자체 작업 화면(저장 상태 표시 / 녹취 화면)이 열린다.
-  const NAV_BUTTON = { "오늘의 데스크": "오늘의 데스크", "기사 작성": "기사 작성", "녹음 파일": "인터뷰 & 오디오", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터 맵", "보관함": "보관함" };
+  const NAV_BUTTON = { "오늘의 데스크": "오늘의 데스크", "기사 작성": "기사 작성", "녹음 파일": "오디오 전사 & AI요약", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터 맵", "보관함": "보관함" };
   const NAV_HEADING = { "오늘의 데스크": "오늘의 업무", "플랫폼 변환": "콘텐츠 변환", "데이터맵": "데이터맵", "보관함": "보관함" };
   const READY = '[data-testid="page-heading"], [data-testid="save-status"], [data-testid="interview-studio"], .writer-workspace, [data-testid="backup-export"]';
   const go = async (title) => {
@@ -708,8 +708,8 @@ try {
   await body.locator("figure[data-photo-id] img").first().waitFor(); // 본문에 사진이 들어간다
 
   // 4. 작성·검토 → 팩트체크 서랍
-  await page.getByText("기사 팩트체크 & 근거자료").first().click();
-  await see("팩트체크 & 근거자료 검증");
+  await page.getByTestId("factcheck-toggle").click();
+  await page.getByRole("heading", { name: "팩트체크", exact: true }).waitFor({ timeout: 10_000 });
   // 텍스트 자료 → 코어 runFactcheck. 모델·런타임이 없는 PC 에서는 설치 안내가 나와야 한다
   const factcheckReady = (await (await fetch(`${BASE}/api/factcheck/status`)).json()).ready;
   // PDF·HWP·DOCX 는 코어가 추출한다 — 깨진 파일이면 파일 목록에 사유가 보여야 한다
@@ -739,7 +739,7 @@ try {
     }
     await factToggle.click();
     await page.waitForFunction(() => document.querySelector('[data-testid="factcheck-toggle"]')?.getAttribute("aria-pressed") === "true");
-    await see("팩트체크 & 근거자료 검증");
+    await page.getByRole("heading", { name: "팩트체크", exact: true }).waitFor({ timeout: 10_000 });
   }
   // 이미 검증한 문장은 다시 보내지 않는다 — 문장 하나를 덧붙이면 그 문장만 코어로
   if (factcheckReady) {
@@ -1045,7 +1045,7 @@ try {
   assert.ok(knowledge.files.every((file) => file.backlink_count > 0));
   await snapshot('prototype-ux-map');
   await go("녹음 파일");
-  await see("STT 인터뷰 전사 & AI 요약");
+  await see("오디오 전사 & AI요약");
   // 녹음 전사: 파일 → 코어 /api/interview/transcribe → 백엔드 /ai/audio/transcriptions(multipart) → 화자별 대화
   await page.locator('input[type="file"]').setInputFiles({ name: "stub.m4a", mimeType: "audio/mp4", buffer: Buffer.from("stub audio") });
   await see("스텁 답변입니다");
@@ -1106,7 +1106,7 @@ try {
   await page.getByTestId("models-summary").getByText(/모든 모델이 설치되어 있습니다/).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, "좁은 화면에서 환경 설정 화면이 가로로 넘칩니다");
   await go("기사 작성");
-  await page.getByRole("button", { name: "기사 팩트체크 & 근거자료", exact: true }).click();
+  await page.getByTestId("factcheck-toggle").click();
   const drawer = page.getByRole("complementary", { name: "팩트체크 및 근거자료" });
   await drawer.waitFor();
   const drawerBounds = await drawer.boundingBox();
@@ -1135,7 +1135,7 @@ try {
   // 보관함 탐색기: 기사를 골라 오른쪽 미리보기의 '열기'로 편집기에 연다
   await page.getByTestId('archive-view').locator('[data-item-key^="article:"]').filter({ hasText: '스텁 제목 둘' }).first().click();
   await page.getByTestId('archive-view').getByLabel('선택한 자료 미리보기').getByRole('button',{name:'열기',exact:true}).click();
-  await page.waitForFunction(() => document.querySelector('input[placeholder="기사 제목을 입력하세요"]')?.value === '스텁 제목 둘');
+  await page.waitForFunction(() => document.querySelector('textarea[placeholder="기사 제목을 입력하세요"]')?.value === '스텁 제목 둘');
   assert.ok(((await body.innerText()).trim()).includes('전환 직전 보존 문장'));
   // 전환 저장이 실패하면 현재 원고를 버리거나 새 기사로 넘어가지 않는다.
   await page.route('**/api/articles/save', (route) => reply(route, { error: '전환 저장 테스트 오류' }, 503));
@@ -1181,7 +1181,7 @@ try {
   const selectStored=async id=>{
     const view=await previewStored(id);
     await view.getByLabel('선택한 자료 미리보기').getByRole('button',{name:'열기',exact:true}).click();
-    await page.waitForFunction(title=>document.querySelector('input[placeholder="기사 제목을 입력하세요"]')?.value===title,dbTitles.get(id));
+    await page.waitForFunction(title=>document.querySelector('textarea[placeholder="기사 제목을 입력하세요"]')?.value===title,dbTitles.get(id));
     await go('플랫폼 변환');
   };
   await selectStored(linkedId);

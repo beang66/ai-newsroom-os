@@ -1,5 +1,5 @@
 /* 기사 작성 화면 글꼴 — main 과 같이 Pretendard(번들). index.css 의 .writer-workspace 제목 명조 지정보다 우선하도록 선택자를 한 번 더 겹친다. */
-.writer-workspace.writer-workspace input[class*="text-2xl"],
+.writer-workspace.writer-workspace :is(input, textarea)[class*="text-2xl"],
 .writer-workspace.writer-workspace [contenteditable="true"] {
   font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif !important;
 }

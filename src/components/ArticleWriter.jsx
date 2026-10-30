@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import FactCheckDrawer from "./FactCheckDrawer";
 import { useFactCheck } from "./EditorialAssist";
 import { toStudioArticle, plainContent, escapeHtml } from "../lib/studioArticle.js";
@@ -6,6 +6,7 @@ import { paint, clearPaint, hitTest, locate } from "../lib/factHighlights.js";
 import { suggestHeadlines, suggestSubtitles } from "../services/assistService";
 import PhotoSideDrawer from "./PhotoSideDrawer";
 import PhotoEditorView from "./PhotoEditorView";
+import { VerdictBadge, NEUTRAL_CHIP } from "./FactVerdict";
 import SourceSearch from "./SourceSearch";
 import VersionHistoryModal from "./VersionHistoryModal";
 import DongaPreview, { dongaPreviewDocument } from "./DongaPreview.jsx";
@@ -203,8 +204,9 @@ export default function ArticleWriter({
   const [reviewIdx, setReviewIdx] = useState(0);
   const reviewAt = Math.min(reviewIdx, Math.max(0, factCheckIssues.length - 1));
   const currentIssue = factCheckIssues[reviewAt];
-  const MARK_LABEL = { CONFLICT: "자료와 불일치", EVIDENCE_GAP: "근거 부족", REVIEW: "검토 필요", EXTERNAL_REQUIRED: "검토 필요" };
   const factIssueCount = factCheckIssues.length;
+  const factConflictCount = factCheckIssues.filter((item) => item.verdict === "CONFLICT").length; // 고칠 문장
+  const factToCheckCount = factIssueCount - factConflictCount; // 확인할 문장(근거 부족·검토 필요)
   const factCheckSummary = useMemo(() => (factCheck.results.length
     ? { total: factCheck.results.length, counts: factCheck.results.reduce((acc, item) => ({ ...acc, [item.verdict]: (acc[item.verdict] || 0) + 1 }), {}) }
     : null), [factCheck.results]);
@@ -448,6 +450,34 @@ export default function ArticleWriter({
   const [toastMessage, setToastMessage] = useState("");
   const closeTimerRef = useRef(null);
   const popupRef = useRef(null);
+  // 제목 칸 높이를 글 줄 수에 맞춘다: 글이 바뀔 때와 칸 폭이 바뀔 때(패널 크기 조절·창 크기) 모두
+  const titleElRef = useRef(null);
+  const titleResizeRef = useRef(null);
+  const fitTitle = () => {
+    const el = titleElRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`; // 밑줄(테두리) 두께까지 더해야 마지막 줄이 가려지지 않는다
+  };
+  const titleInputRef = useCallback((el) => {
+    titleResizeRef.current?.disconnect();
+    titleElRef.current = el;
+    if (!el) return;
+    fitTitle();
+    titleResizeRef.current = new ResizeObserver(fitTitle);
+    titleResizeRef.current.observe(el);
+  }, []);
+  useLayoutEffect(fitTitle, [article.title]);
+  // 팩트체크 말풍선이 본문 카드 밖으로 나가 잘리지 않게: 그린 뒤 실제 크기를 재서 카드 안으로 당긴다(본문 글은 가려도 된다)
+  useLayoutEffect(() => {
+    const popup = popupRef.current;
+    const editor = editorRef.current;
+    if (!popup || !editor) return;
+    const overflowRight = hoverCardPos.left + popup.offsetWidth - (editor.clientWidth - 8);
+    popup.style.left = `${Math.max(8, hoverCardPos.left - Math.max(0, overflowRight))}px`;
+    const extraHeight = popup.offsetHeight - 44; // 위치 계산(barHeight)은 한 줄 높이를 기준으로 한다
+    popup.style.top = `${Math.max(6, hoverCardPos.top - Math.max(0, extraHeight))}px`;
+  }, [hoveredIssue, hoverCardPos]);
 
   // 팩트체크 결과 표시: 본문 DOM 은 건드리지 않고 글자 구간에만 색을 입힌다(src/lib/factHighlights.js).
   // 결과가 바뀌거나 본문이 바뀌면 다시 칠하고, 오래된 표시는 남기지 않는다.
@@ -879,9 +909,11 @@ export default function ArticleWriter({
           const source = String(updatedPhoto.source || "").trim();
           figcaption.innerText = [caption ? `▲ ${caption}` : "", source ? `(출처: ${source})` : ""].filter(Boolean).join(" ");
         }
+        // 업데이터가 실행될 때는 동기화 효과가 본문을 옛 내용으로 되돌린 뒤일 수 있으므로 먼저 읽어 둔다.
+        const nextContent = bodyInputRef.current.innerHTML;
         setArticle((prev) => ({
           ...prev,
-          content: bodyInputRef.current.innerHTML
+          content: nextContent
         }));
       }
     }
@@ -1126,14 +1158,14 @@ export default function ArticleWriter({
         insertAfter = true;
       }
 
-      // 심플한 검정색 & 투명감 있는 실버 스타일 사진 인디케이터
+      // 검정색 점선 사진 인디케이터
       let indicator = bodyInputRef.current.querySelector(".photo-drop-indicator");
       if (!indicator) {
         indicator = document.createElement("div");
         indicator.className =
-          "photo-drop-indicator my-3 h-1.5 rounded-full bg-slate-900/85 backdrop-blur-md shadow-[0_2px_8px_rgba(0,0,0,0.2)] border border-slate-300/40 flex items-center justify-center pointer-events-none select-none transition-all";
+          "photo-drop-indicator my-3 h-0 border-t-2 border-dashed border-slate-900 flex items-center justify-center pointer-events-none select-none transition-all";
         indicator.innerHTML =
-          '<span class="px-2.5 py-0.5 rounded-full bg-stone-900 text-white text-[9px] font-bold shadow-sm border border-stone-600/40">📍 텍스트 끝 지점에 사진 배치</span>';
+          '<span class="px-2.5 py-0.5 rounded-full bg-stone-900 text-white text-[9px] font-bold shadow-sm border border-stone-600/40">텍스트 끝 지점에 사진 배치</span>';
       }
 
       if (placeAtStart) {
@@ -1472,14 +1504,14 @@ export default function ArticleWriter({
 
                 {/* 기사 헤드라인 영역 */}
                 <div className="space-y-2 relative group">
-                  {/* 기사 제목 텍스트 바로 위에 위치한 카테고리 선택 및 저장 이력 상태 */}
-                  <div className="flex items-center justify-between">
+                  {/* 기사 제목 텍스트 바로 위에 위치한 카테고리 선택 및 저장 이력 상태 (좁아지면 버튼 글자는 꺾지 않고 줄째로 넘긴다) */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center">
                     <div className="relative" ref={categoryMenuRef}>
                       <button
                         type="button"
                         onClick={() => setIsCategoryOpen(!isCategoryOpen)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 hover:bg-white text-slate-800 text-xs font-bold transition cursor-pointer select-none border border-white/90 shadow-[0_2px_12px_rgba(0,0,0,0.04)] backdrop-blur-md active:scale-95"
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 hover:bg-white text-slate-800 text-xs font-bold whitespace-nowrap transition cursor-pointer select-none border border-white/90 shadow-[0_2px_12px_rgba(0,0,0,0.04)] backdrop-blur-md active:scale-95"
                         title="기사 카테고리 선택"
                       >
                         <Check className="w-3.5 h-3.5 text-slate-800 stroke-[2.8]" />
@@ -1533,7 +1565,7 @@ export default function ArticleWriter({
                           onClick={handleTopArchive}
                           disabled={topBusy}
                           data-testid="writer-archive"
-                          className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-bold text-stone-700 hover:bg-stone-50 transition cursor-pointer disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-bold whitespace-nowrap text-stone-700 hover:bg-stone-50 transition cursor-pointer disabled:opacity-50"
                         >
                           <Archive className="w-3.5 h-3.5" aria-hidden="true" />
                           보관
@@ -1545,7 +1577,7 @@ export default function ArticleWriter({
                           onClick={handleTopSave}
                           disabled={topBusy}
                           data-testid="writer-save-top"
-                          className="inline-flex items-center gap-1.5 rounded-full bg-[#101010] px-3 py-1 text-[11px] font-bold text-white transition cursor-pointer hover:bg-black disabled:opacity-60"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-[#101010] px-3 py-1 text-[11px] font-bold whitespace-nowrap text-white transition cursor-pointer hover:bg-black disabled:opacity-60"
                         >
                           <Save className="w-3.5 h-3.5" aria-hidden="true" />
                           {topBusy ? "저장 중…" : "저장하기"}
@@ -1572,12 +1604,15 @@ export default function ArticleWriter({
                   </div>
 
                   <div className="relative">
-                    <input
-                      type="text"
+                    {/* 제목은 한 줄 값이지만, 칸이 좁아지면(팩트체크 패널을 넓힐 때 등) 잘리지 않고 다음 줄로 넘어가도록 textarea 로 둔다 */}
+                    <textarea
+                      ref={titleInputRef}
+                      rows={1}
                       value={article.title}
-                      onChange={(e) => setArticle({ ...article, title: e.target.value })}
+                      onChange={(e) => setArticle({ ...article, title: e.target.value.replace(/[\r\n]+/g, " ") })}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
                       placeholder="기사 제목을 입력하세요"
-                      className="w-full text-2xl md:text-3xl lg:text-[32px] font-black tracking-tight leading-snug border-b border-slate-200 pb-3 outline-none transition-colors bg-transparent text-slate-950 font-black"
+                      className="block w-full resize-none overflow-hidden [word-break:keep-all] [overflow-wrap:anywhere] text-2xl md:text-3xl lg:text-[32px] font-black tracking-tight leading-snug border-b border-slate-200 pb-3 outline-none transition-colors bg-transparent text-slate-950 font-black"
                     />
                   </div>
 
@@ -1722,10 +1757,10 @@ export default function ArticleWriter({
 
                 {/* 순서형 검사(main): 문제 문장을 한 건씩 넘겨 본다 */}
                 {review && currentIssue && (
-                  <div data-testid="factcheck-review" className="mb-3 rounded-xl border border-rose-200 bg-rose-50/70 px-4 py-3 text-sm">
+                  <div data-testid="factcheck-review" className="mb-3 rounded-xl border border-slate-200 border-l-[3px] border-l-slate-800 bg-white px-4 py-3 text-sm">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-black text-rose-700">AI 팩트체크 순서형 검사 ({reviewAt + 1} / {factIssueCount})</span>
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-rose-700 border border-rose-200">{MARK_LABEL[currentIssue.verdict] || "검토 필요"}</span>
+                      <span className="text-xs font-black text-slate-900">AI 팩트체크 순서형 검사 ({reviewAt + 1} / {factIssueCount})</span>
+                      <VerdictBadge verdict={currentIssue.verdict} />
                     </div>
                     <p className="mt-2 font-semibold text-slate-900">{currentIssue.claimText}</p>
                     {currentIssue.comment && <p className="mt-1 text-xs text-slate-600"><b>발생 이유</b> {currentIssue.comment}</p>}
@@ -1749,8 +1784,13 @@ export default function ArticleWriter({
                     <span>본문 작성 영역 (자유 작성 및 서식 적용)</span>
                     <div className="flex items-center gap-3">
                       {showFactMarks && (factCheck.busy || factCheck.results.length > 0) && (
-                        <span data-testid="factcheck-status" className={`text-[11px] font-bold ${factIssueCount ? "text-rose-600" : "text-emerald-600"}`}>
-                          {factCheck.busy ? (factCheck.progress ? `팩트체크 중… ${factCheck.progress.done}/${factCheck.progress.total}문장` : "팩트체크 중…") : factIssueCount ? `확인 필요 ${factIssueCount}문장` : "팩트체크 통과"}
+                        <span data-testid="factcheck-status" className={`inline-flex items-center gap-3 text-[11px] font-bold ${factCheck.busy ? "text-slate-500" : factIssueCount ? "" : "text-[#134a78]"}`}>
+                          {factCheck.busy ? (factCheck.progress ? `팩트체크 중… ${factCheck.progress.done}/${factCheck.progress.total}문장` : "팩트체크 중…") : factIssueCount ? (
+                            <>
+                              {factConflictCount > 0 && <span className="inline-flex items-center gap-1.5 text-[#8a2c08]"><span className="h-2.5 w-2.5 rounded-full bg-[#c9440e]" aria-hidden="true" />고칠 문장 {factConflictCount}개</span>}
+                              {factToCheckCount > 0 && <span className="inline-flex items-center gap-1.5 text-[#6e4a00]"><span className="h-2.5 w-2.5 rounded-full bg-[#c58a00]" aria-hidden="true" />확인할 문장 {factToCheckCount}개</span>}
+                            </>
+                          ) : "검사 완료"}
                         </span>
                       )}
                       <span>공백 포함 {(article.content || "").replace(/<[^>]*>/g, "").length.toLocaleString()}자</span>
@@ -1768,17 +1808,20 @@ export default function ArticleWriter({
                       style={{
                         top: `${hoverCardPos.top}px`,
                         left: `${hoverCardPos.left}px`,
+                        maxWidth: "calc(100% - 16px)",
                         background: "rgba(255, 255, 255, 0.96)",
                         boxShadow: "0 12px 30px -4px rgba(15, 23, 42, 0.16), 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06)",
                       }}
                       className="fact-gradient-popup absolute z-50 inline-flex items-center gap-2.5 px-3 py-1.5 rounded-lg backdrop-blur-md text-slate-800 cursor-pointer select-none transition-all duration-200 ease-out hover:scale-[1.01] active:scale-[0.99] border border-slate-200/90 shadow-lg animate-in fade-in slide-in-from-bottom-1"
                       title={hoveredIssue.suggestion ? "클릭하거나 우측 체크를 누르면 본문이 수정됩니다" : "클릭하면 본문 문장이 선택되어 바로 수정할 수 있습니다"}
                     >
-                      <span className="flex items-center text-[11px] font-bold text-slate-800 bg-slate-100 border border-slate-200/90 px-2 py-0.5 rounded-md whitespace-nowrap flex-shrink-0">
-                        {hoveredIssue.suggestion ? "AI 제안" : hoveredIssue.type}
-                      </span>
+                      {hoveredIssue.suggestion ? (
+                        <span className={`flex items-center text-[11px] font-bold border px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 ${NEUTRAL_CHIP}`}>AI 제안</span>
+                      ) : (
+                        <VerdictBadge verdict={hoveredIssue.verdict} className="flex-shrink-0" />
+                      )}
 
-                      <span className="text-xs text-slate-800 font-medium truncate max-w-[240px] sm:max-w-[320px] md:max-w-[380px]" title={hoveredIssue.suggestion || hoveredIssue.reason}>
+                      <span className="text-xs text-slate-800 font-medium leading-snug whitespace-normal break-words min-w-0 max-w-[240px] sm:max-w-[320px] md:max-w-[380px]" title={hoveredIssue.suggestion || hoveredIssue.reason}>
                         {hoveredIssue.suggestion ? `"${hoveredIssue.suggestion}"` : hoveredIssue.reason}
                       </span>
 
@@ -2127,28 +2170,22 @@ export default function ArticleWriter({
           </div>
         )}
 
-        {/* 기사 작성 화면과 팩트체크 박스 사이 크기 조절 | 핸들 (메인 화면 중앙에 작은 사이즈로 배치) */}
-        {viewMode !== "preview" && activeSidePanel === "factcheck" && (
-          <div
-            className="hidden lg:flex flex-shrink-0 relative z-30 select-none items-center justify-center w-4 self-stretch"
-            title="좌우 크기 조절 (드래그)"
-          >
-            <button
-              type="button"
-              onMouseDown={handleSplitMouseDown}
-              className="sticky top-1/2 -translate-y-1/2 flex items-center justify-center w-4 h-10 rounded-full bg-white border border-slate-300 shadow-sm hover:border-blue-500 hover:shadow-md cursor-col-resize transition-all group active:scale-95 text-[11px] font-mono font-bold text-slate-500 hover:text-blue-600"
-            >
-              |
-            </button>
-          </div>
-        )}
-
         {viewMode !== "preview" && activeSidePanel === "factcheck" && (
           <div
             style={typeof window !== "undefined" && window.innerWidth >= 1024 ? { width: `calc((${100 - factCheckSplitRatio} * (100% - 250px)) / 100)`, flex: "none" } : undefined}
             className="w-full lg:w-auto min-w-0 lg:min-w-[280px] flex-shrink-0 z-20 sticky top-6 self-start max-w-full"
             onClick={handleDrawerCardClick}
           >
+            {/* 기사 작성 화면과 팩트체크 박스 사이 크기 조절 바: 팩트체크 박스 왼쪽 가장자리 세로 가운데에 붙인 얇은 막대(칸 사이 간격 안에 놓인다) */}
+            <button
+              type="button"
+              onMouseDown={handleSplitMouseDown}
+              title="좌우 크기 조절 (드래그)"
+              aria-label="좌우 크기 조절"
+              className="hidden lg:flex absolute top-1/2 -translate-y-1/2 -left-[14px] z-30 w-3 h-14 items-center justify-center cursor-col-resize select-none group"
+            >
+              <span className="block w-1 h-10 rounded-full bg-slate-300 group-hover:bg-slate-500 group-active:bg-slate-700 transition-colors" />
+            </button>
             <FactCheckDrawer
               className="w-full"
               onClose={() => {
@@ -2275,7 +2312,7 @@ export default function ArticleWriter({
                 <button
                   type="button"
                   data-testid="factcheck-toggle"
-                  aria-label="기사 팩트체크 & 근거자료"
+                  aria-label="팩트체크"
                   aria-pressed={activeSidePanel === "factcheck"}
                   onClick={() => {
                     if (activeSidePanel === "factcheck") {
@@ -2296,7 +2333,7 @@ export default function ArticleWriter({
                 >
                   <ShieldCheck className="w-4.5 h-4.5 flex-shrink-0 text-slate-700" />
                   <span className="text-xs font-bold whitespace-nowrap pl-2 pr-2.5 opacity-0 max-w-0 group-hover:max-w-[180px] group-hover:opacity-100 transition-all duration-200 overflow-hidden select-none">
-                    기사 팩트체크 & 근거자료
+                    팩트체크
                   </span>
                 </button>
               </div>

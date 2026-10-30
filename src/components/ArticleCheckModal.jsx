@@ -1,16 +1,17 @@
 import React from "react";
 import { Check, MoreHorizontal } from "lucide-react";
+import { FACT_TONE } from "./FactVerdict";
 
-// 검증 항목은 main 의 팩트체크 판정 기준(서랍 배지와 같은 이름·색)으로 나눈다.
-//  팩트 일치(SUPPORTED, 초록) · 자료와 불일치(CONFLICT, 빨강) · 근거 부족(EVIDENCE_GAP, 노랑) · 검토 필요(REVIEW·EXTERNAL_REQUIRED·UNAVAILABLE, 보라)
+// 검증 항목은 main 의 팩트체크 판정 기준(서랍 배지와 같은 이름·색)으로 나눈다. 색은 FactVerdict.jsx 한곳에서 정한다.
+//  팩트 일치(SUPPORTED, 파랑) · 자료와 불일치(CONFLICT, 주홍) · 근거 부족(EVIDENCE_GAP, 황토) · 검토 필요(REVIEW·EXTERNAL_REQUIRED·UNAVAILABLE, 황토)
 // 항목의 버튼을 누르면 FACT_CATEGORY_EVENT 가 발생하고, 기사 작성 화면이 그 분류의 문장만 모아 보여 준다.
 export const FACT_CATEGORY_EVENT = "factcheck-category";
 
 const CATEGORIES = [
-  { key: "SUPPORTED", title: "팩트 일치", tone: "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100", count: (c) => c.SUPPORTED || 0 },
-  { key: "CONFLICT", title: "자료와 불일치", tone: "text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100", count: (c) => c.CONFLICT || 0 },
-  { key: "EVIDENCE_GAP", title: "근거 부족", tone: "text-amber-800 bg-amber-50 border-amber-200 hover:bg-amber-100", count: (c) => c.EVIDENCE_GAP || 0 },
-  { key: "REVIEW", title: "검토 필요", tone: "text-violet-700 bg-violet-50 border-violet-200 hover:bg-violet-100", count: (c) => (c.REVIEW || 0) + (c.EXTERNAL_REQUIRED || 0) + (c.UNAVAILABLE || 0) },
+  { key: "SUPPORTED", title: "팩트 일치", tone: FACT_TONE.SUPPORTED.category, count: (c) => c.SUPPORTED || 0 },
+  { key: "CONFLICT", title: "자료와 불일치", tone: FACT_TONE.CONFLICT.category, count: (c) => c.CONFLICT || 0 },
+  { key: "EVIDENCE_GAP", title: "근거 부족", tone: FACT_TONE.EVIDENCE_GAP.category, count: (c) => c.EVIDENCE_GAP || 0 },
+  { key: "REVIEW", title: "검토 필요", tone: FACT_TONE.REVIEW.category, count: (c) => (c.REVIEW || 0) + (c.EXTERNAL_REQUIRED || 0) + (c.UNAVAILABLE || 0) },
 ];
 
 /**
@@ -50,8 +51,8 @@ export function verifiedPercent(summary) {
 }
 
 const STATE_STYLE = {
-  ok: "bg-[#dcfce7] text-[#16a34a]",
-  warn: "bg-[#fef9c3] text-[#ca8a04]",
+  ok: "bg-[#ebf3fb] text-[#1f6fb2]",
+  warn: "bg-[#fff7df] text-[#c58a00]",
   idle: "bg-stone-100 text-stone-400",
 };
 

@@ -143,13 +143,13 @@ try {
   await nav("데이터 맵"); await heading("데이터맵");
   await nav("보관함"); await heading("보관함");
   await page.getByTestId("archive-view").waitFor();
-  await nav("인터뷰 & 오디오");
-  await page.getByText("저장된 전사 불러오기").waitFor();
+  await nav("오디오 전사 & AI요약");
+  await page.getByLabel("파일명 검색").waitFor();
   step("콘텐츠 변환·데이터맵·보관함·인터뷰 화면 이동");
 
   // 3. 기사 작성: 분류·세부 분류, 제목·본문, 수동 저장(Ctrl+S)
   await nav("기사 작성");
-  const title = page.locator('.writer-workspace input[class*="text-2xl"]');
+  const title = page.locator('.writer-workspace textarea[class*="text-2xl"]');
   await title.waitFor();
   await title.fill("스모크 테스트 기사");
   await page.locator('[contenteditable="true"]').first().fill(`반도체 수출이 크게 늘었다. ${"본문 문장입니다. ".repeat(12)}`);
@@ -167,14 +167,14 @@ try {
   await page.locator('button[title="기사 카테고리 선택"]').click();
   await page.getByRole("button", { name: "사회", exact: true }).click();
   assert.equal(await page.getByTestId("article-subcategory").count(), 0, "세부 분류 선택칸은 없다");
-  const saveText = page.locator("p[role=status]");
-  await page.waitForFunction(() => /임시 저장됨|저장됨/.test(document.querySelector("p[role=status]")?.textContent || ""), null, { timeout: 15_000 });
+  const saveText = page.getByTestId("storage-status");
+  await page.waitForFunction(() => /임시 저장됨|저장됨/.test(document.querySelector("[data-testid=storage-status]")?.textContent || ""), null, { timeout: 15_000 });
   await page.keyboard.press("Control+s");
   await page.waitForFunction(() => /저장됨 · \d+번째 이력/.test(document.body.innerText), null, { timeout: 15_000 });
   assert.match(await saveText.textContent(), /저장됨/);
   await page.getByTestId("save-notice").waitFor();
   await page.getByTestId("save-notice").waitFor({ state: "detached", timeout: 5_000 });
-  const writerSave = page.getByTestId("writer-save");
+  const writerSave = page.getByTestId("writer-save-top");
   assert.equal(await writerSave.evaluate((button) => {
     const editor = document.querySelector('.writer-workspace [contenteditable="true"]');
     let canvas = editor?.parentElement;
@@ -237,6 +237,18 @@ try {
   await insertedPhoto.dragTo(editor, { targetPosition: { x: 20, y: 4 } });
   assert.equal(await editor.evaluate((element) => element.firstChild?.nodeName), "FIGURE", "사진을 본문 맨 위에 정확히 끌어 놓을 수 있다");
   assert.match(await editor.innerText(), /반도체 수출이 크게 늘었다/, "사진 이동 뒤에도 본문은 유지된다");
+  // 본문에 이미 있는 사진을 다시 편집해 "본문에 넣기": 본문의 사진이 새 편집본으로 바뀌어야 한다(옛 사진으로 되돌아가지 않는다)
+  const srcBeforeReedit = await insertedPhoto.locator("img").getAttribute("src");
+  await insertedPhoto.hover();
+  await insertedPhoto.locator('[data-action="edit-photo"]').click();
+  await page.getByTestId("image-editor").waitFor();
+  await page.getByRole("button", { name: "16:9", exact: true }).click();
+  await page.getByTestId("image-editor").locator("textarea").fill("다시 편집한 사진");
+  await page.getByTestId("image-apply").click();
+  await page.getByTestId("image-editor").waitFor({ state: "detached" });
+  await editor.locator("figcaption").filter({ hasText: "다시 편집한 사진" }).waitFor();
+  assert.equal(await editor.locator("figure[data-photo-id]").count(), 1, "같은 사진은 새로 넣지 않고 바꾼다");
+  assert.notEqual(await editor.locator("figure[data-photo-id] img").getAttribute("src"), srcBeforeReedit, "본문의 사진이 새 편집본으로 바뀐다");
   await page.getByRole("button", { name: "동아일보DB" }).click();
   for (const label of ["전체", "최신순", "오래된순"]) await page.getByRole("button", { name: label, exact: true }).waitFor();
   step("사진 첨부: 자동 추천 → 키워드 클릭 시 검색, 사진 편집(표시 범위·모자이크 유지·편집본 파일·본문 삽입), 사진을 본문 맨 위로 이동, 동아일보 DB 정렬");
@@ -264,24 +276,27 @@ try {
     process.exit(0);
   }
 
-  // 7. 인터뷰 STT: 저장된 전사 → 왼쪽은 화자 박스, 오른쪽 통합 텍스트는 통글 하나, 복사
-  await nav("인터뷰 & 오디오");
-  await page.getByText("저장된 전사 불러오기").click();
+  // 7. 인터뷰 STT: 저장된 전사 → 화자별 박스, 같은 칸에서 통합 텍스트(통글)로 전환, 복사
+  await nav("오디오 전사 & AI요약");
   await page.getByText("smoke.m4a").first().click();
-  await page.getByTestId("unified-text").waitFor();
-  const unified = page.getByTestId("unified-text");
+  await page.getByTestId("speaker-name-seg-1").waitFor();
   await page.waitForFunction(() => /\(2개 단락\)/.test(document.body.innerText));
-  assert.equal(await page.getByTestId("text-mode-plain").count() + await page.getByTestId("text-mode-speaker").count(), 0, "통합 텍스트는 형태를 고르는 버튼이 없다");
-  assert.equal(await unified.locator("p").count(), 1, "통합 텍스트는 통글 한 덩어리");
-  assert.equal(await unified.getAttribute("data-mode"), null);
+  // 통합 텍스트는 화자별 전사 칸의 전환 버튼으로 본다(예전에는 오른쪽에 따로 있었다)
+  const toUnified = () => page.getByRole("button", { name: "통합텍스트로 전환" }).click();
+  const toSpeakers = () => page.getByRole("button", { name: "화자별 전사로 전환" }).click();
+  await toUnified();
+  await page.locator("#box_unified_text_seg-1").waitFor();
+  assert.match(await page.locator("#box_unified_text_seg-1").innerText(), /^AI 기자가 나온다는/, "통합 텍스트는 화자 표시 없이 글만 보인다");
+  await toSpeakers();
+  await page.getByTestId("speaker-name-seg-1").waitFor();
   assert.match(await page.getByTestId("speaker-name-seg-1").innerText(), /화자 1/, "왼쪽은 화자별 박스");
   assert.match(await page.getByTestId("speaker-name-seg-2").innerText(), /화자 2/);
   await page.getByRole("button", { name: "전체 복사" }).click();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   assert.match(copied, /^AI 기자가 나온다는 얘기 들어보셨죠\. 네, 들어봤습니다\. 근데 취재는 사람이 해야 합니다\.$/, "복사도 통글(화자 표시 없음)");
-  step("STT: 왼쪽은 화자별 박스, 오른쪽 통합 텍스트는 통글 하나로 고정(복사도 통글)");
+  step("STT: 화자별 박스, 같은 칸에서 통합 텍스트로 전환(복사는 통글)");
 
-  // 7-2. 다시듣기: 왼쪽 위 재생 영역의 파형을 누르면 그 위치로 이동하고, 오른쪽 통합 텍스트를 눌러도 이동·재생하지 않는다
+  // 7-2. 다시듣기: 왼쪽 위 재생 영역의 파형을 누르면 그 위치로 이동하고, 통합 텍스트를 눌러도 이동·재생하지 않는다
   const wave = page.getByTestId("audio-waveform");
   const waveBox = await wave.boundingBox();
   const waveAt = (fraction) => ({ x: waveBox.x + 16 + (waveBox.width - 32) * fraction, y: waveBox.y + waveBox.height / 2 });
@@ -292,18 +307,26 @@ try {
   await page.getByText("00:00:03", { exact: true }).first().waitFor();            // 3.5초(화면은 내림해서 표시)
   await page.mouse.click(waveAt(0.5).x, waveAt(0.5).y);
   await page.getByText("00:00:07", { exact: true }).first().waitFor();
-  await page.locator("#unified_text_seg-1").click();                               // 오른쪽 글자(시작 0초)를 눌러도
+  await toUnified();
+  await page.locator("#box_unified_text_seg-1").click();                           // 통합 텍스트 글자(시작 0초)를 눌러도
   await page.waitForTimeout(300);
-  assert.equal(await wave.getAttribute("aria-valuenow"), "7", "오른쪽 통합 텍스트를 눌러도 위치가 바뀌지 않는다");
-  assert.equal(await page.getByText("재생 중", { exact: true }).count(), 0, "오른쪽 통합 텍스트를 눌러도 재생이 시작되지 않는다");
+  assert.equal(await wave.getAttribute("aria-valuenow"), "7", "통합 텍스트를 눌러도 위치가 바뀌지 않는다");
+  assert.equal(await page.getByText("재생 중", { exact: true }).count(), 0, "통합 텍스트를 눌러도 재생이 시작되지 않는다");
+  await toSpeakers();
   await wave.focus();
   await page.keyboard.press("ArrowLeft");                                           // 키보드로도 이동(5초)
   await page.getByText("00:00:02", { exact: true }).first().waitFor();
-  step("다시듣기: 왼쪽 위 파형을 눌러 그 위치로 이동(키보드 포함), 오른쪽 통합 텍스트는 눌러도 재생·이동하지 않음");
+  step("다시듣기: 왼쪽 위 파형을 눌러 그 위치로 이동(키보드 포함), 통합 텍스트는 눌러도 재생·이동하지 않음");
 
   // 7-3. 텍스트 수정바: 왼쪽 박스의 글을 드래그하면 형광펜·수정 막대가 뜨고, 형광펜과 고친 글이 저장된다
   const shot = (name, fullPage = true) => process.env.UI_SMOKE_SHOTS ? page.screenshot({ path: path.join(process.env.UI_SMOKE_SHOTS, `${name}.png`), fullPage }) : null; // 화면 모양 확인용(선택)
-  const savedState = () => page.getByTestId("speaker-save-state").filter({ hasText: "수정 내용 저장됨" }).waitFor();
+  // 저장 상태 문구("수정 내용 저장됨")는 화면에서 빠졌으므로, 코어에 새 수정 저장 요청이 왔는지로 확인한다
+  let seenSpeakerPosts = speakerPosts.length;
+  const savedState = async () => {
+    for (let i = 0; i < 150 && speakerPosts.length <= seenSpeakerPosts; i += 1) await sleep(100);
+    assert.ok(speakerPosts.length > seenSpeakerPosts, "수정 내용이 저장된다");
+    seenSpeakerPosts = speakerPosts.length;
+  };
   const selectInBox = async (boxId, startChar, endChar) => {
     await page.getByTestId(`box-text-${boxId}`).evaluate((el, [from, to]) => {
       const locate = (offset) => {                                             // 형광펜으로 글 노드가 쪼개져 있어도 글자 위치로 찾는다
@@ -329,19 +352,21 @@ try {
   assert.equal(await page.getByTestId("text-toolbar").count(), 0, "드래그하기 전에는 수정바가 없다");
   await selectInBox("seg-1", 0, 6);                                            // "AI 기자가"
   await page.getByTestId("text-toolbar").waitFor();
-  assert.equal(await page.getByTestId("mark-yellow").count() + await page.getByTestId("mark-orange").count() + await page.getByTestId("mark-blue").count(), 3);
+  assert.equal(await page.getByTestId("mark-yellow").count() + await page.getByTestId("mark-green").count() + await page.getByTestId("mark-pink").count(), 3);
   assert.equal(await wave.getAttribute("aria-valuenow"), "2", "글을 드래그하는 동안 박스가 재생·이동하지 않는다(앞 단계에서 2초로 옮겨 둠)");
   await shot("text-toolbar", false);                                           // 창 크기를 바꾸지 않는 사진(수정바가 닫히지 않는다)
-  await page.getByTestId("mark-orange").click();
+  await page.getByTestId("mark-green").click();
   await savedState();
-  assert.deepEqual(speakerPosts.at(-1).marks, { "seg-1": [{ s: 0, e: 6, c: "orange" }] });
+  assert.deepEqual(speakerPosts.at(-1).marks, { "seg-1": [{ s: 0, e: 6, c: "green" }] });
   assert.equal(await page.getByTestId("text-toolbar").count(), 0, "칠하면 수정바가 닫힌다");
   assert.equal(await page.getByTestId("box-text-seg-1").locator("mark").innerText(), "AI 기자가");
-  assert.equal(await page.locator("#unified_text_seg-1 mark").first().innerText(), "AI 기자가", "오른쪽 통글에도 형광펜이 보인다");
+  await toUnified();
+  assert.equal(await page.locator("#box_unified_text_seg-1 mark").first().innerText(), "AI 기자가", "통합 텍스트에도 형광펜이 보인다");
+  await toSpeakers();
   await selectInBox("seg-2", 0, 2);
-  await page.getByTestId("mark-blue").click();
+  await page.getByTestId("mark-pink").click();
   await savedState();
-  assert.deepEqual(speakerPosts.at(-1).marks["seg-2"], [{ s: 0, e: 2, c: "blue" }]);
+  assert.deepEqual(speakerPosts.at(-1).marks["seg-2"], [{ s: 0, e: 2, c: "pink" }]);
   // 칠한 부분의 일부를 드래그해 지우기: "AI 기자가" 중 "기자" 부분을 지운다(주황이 둘로 나뉜다)
   await page.getByTestId("box-text-seg-1").evaluate((el) => {
     const mark = el.querySelector("mark").firstChild;
@@ -355,10 +380,10 @@ try {
   await page.getByTestId("box-text-seg-1").dispatchEvent("mouseup", { bubbles: true });
   await page.getByTestId("mark-clear").click();
   await savedState();
-  assert.deepEqual(speakerPosts.at(-1).marks["seg-1"], [{ s: 0, e: 3, c: "orange" }, { s: 5, e: 6, c: "orange" }]);
-  step("텍스트 수정바: 글을 드래그하면 형광펜 색·지우기·수정 막대가 뜨고, 칠한 형광펜이 저장되며 오른쪽 통글에도 보인다");
+  assert.deepEqual(speakerPosts.at(-1).marks["seg-1"], [{ s: 0, e: 3, c: "green" }, { s: 5, e: 6, c: "green" }]);
+  step("텍스트 수정바: 글을 드래그하면 형광펜 색·지우기·수정 막대가 뜨고, 칠한 형광펜이 저장되며 통합 텍스트에도 보인다");
 
-  // 수정: 드래그한 부분이 선택된 채 글 수정칸이 열리고, 저장하면 박스 글과 오른쪽 통글·복사가 고친 글이 된다
+  // 수정: 드래그한 부분이 선택된 채 글 수정칸이 열리고, 저장하면 박스 글과 통합 텍스트·복사가 고친 글이 된다
   await selectInBox("seg-1", 0, 3);
   await page.getByTestId("text-edit-start").click();
   const textBox = page.getByTestId("text-editor-input");
@@ -369,11 +394,13 @@ try {
   await savedState();
   assert.equal(speakerPosts.at(-1).texts["seg-1"], "인공지능 기자가 나온다는 얘기 들어보셨죠.");
   // 칠했던 "AI "(0~3)의 "AI"를 "인공지능"으로 바꿨으니 바꾼 말도 칠해지고(0~5), 글자 번호 5~6 의 칠은 이동하지 않고 그 자리에 남아 이어 붙는다
-  assert.deepEqual(speakerPosts.at(-1).marks["seg-1"], [{ s: 0, e: 6, c: "orange" }], "칠한 글 안의 수정은 칠에 반영되고, 앞쪽 수정으로 다른 칠이 이동하지는 않는다");
+  assert.deepEqual(speakerPosts.at(-1).marks["seg-1"], [{ s: 0, e: 6, c: "green" }], "칠한 글 안의 수정은 칠에 반영되고, 앞쪽 수정으로 다른 칠이 이동하지는 않는다");
   assert.deepEqual(await page.getByTestId("box-text-seg-1").locator("mark").evaluateAll((els) => els.map((el) => el.textContent)), ["인공지능 기"], "바꾼 말까지 칠해져 있다");
-  assert.deepEqual(speakerPosts.at(-1).marks["seg-2"], [{ s: 0, e: 2, c: "blue" }], "다른 박스의 형광펜은 그대로");
+  assert.deepEqual(speakerPosts.at(-1).marks["seg-2"], [{ s: 0, e: 2, c: "pink" }], "다른 박스의 형광펜은 그대로");
   assert.match(await page.getByTestId("box-text-seg-1").innerText(), /^인공지능 기자가/);
-  assert.match(await unified.innerText(), /^인공지능 기자가 나온다는 얘기 들어보셨죠\. 네, 들어봤습니다/);
+  await toUnified();
+  assert.match(await page.locator("#box_unified_text_seg-1").innerText(), /^인공지능 기자가 나온다는 얘기 들어보셨죠\./);
+  await toSpeakers();
   await page.getByRole("button", { name: "전체 복사" }).click();
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), /^인공지능 기자가 나온다는 얘기 들어보셨죠\. 네, 들어봤습니다/);
   await selectInBox("seg-1", 0, 2);                                            // 취소: Esc
@@ -388,7 +415,7 @@ try {
   await page.getByTestId("text-editor-save").click();
   await savedState();
   assert.equal(speakerPosts.at(-1).texts, undefined, "원문과 같아지면 고친 기록이 없다");
-  assert.deepEqual(speakerPosts.at(-1).marks["seg-1"], [{ s: 0, e: 4, c: "orange" }], "원문으로 되돌리면 칠한 글 안의 수정만큼 칠이 줄어든다(이동하지 않는다)");
+  assert.deepEqual(speakerPosts.at(-1).marks["seg-1"], [{ s: 0, e: 4, c: "green" }], "원문으로 되돌리면 칠한 글 안의 수정만큼 칠이 줄어든다(이동하지 않는다)");
   assert.match(await page.getByTestId("box-text-seg-1").innerText(), /^AI 기자가 나온다는/);
   for (const boxId of ["seg-1", "seg-2"]) {                                    // 남은 형광펜을 지워 다음 단계를 깨끗한 상태로 시작한다
     const length = (await page.getByTestId(`box-text-${boxId}`).evaluate((el) => el.textContent.length));
@@ -400,9 +427,9 @@ try {
   step("텍스트 수정바: 수정(드래그한 부분 선택된 채로 열림, 저장·Esc 취소·원문으로), 칠한 글 안에서 고친 만큼 형광펜이 늘거나 줄고 앞쪽 수정으로는 이동하지 않는다");
 
   // 8. 화자 프로필: CLOVA 가 나눈 박스는 그대로 두고 이름만 바꾼다. 프로필 아이콘에서만 작은 메뉴가 열린다.
+  // ("화자 수정하기"(여러 박스 한꺼번에)·"원본으로" 버튼은 2026-10-19 화면에서 뺐다 — 아이콘 메뉴로만 고친다)
   const boxNames = async () => [await page.getByTestId("speaker-name-seg-1").innerText(), await page.getByTestId("speaker-name-seg-2").innerText()];
-  const boxesText = (n) => page.waitForFunction((count) => new RegExp(`\\(${count}개 단락\\)`).test(document.body.innerText), n);
-  await page.getByTestId("speaker-edit-start").waitFor();
+  const boxesText = (n) => page.waitForFunction((count) => new RegExp(`\(${count}개 단락\)`).test(document.body.innerText), n);
   assert.match(await page.getByTestId("speaker-name-seg-1").innerText(), /화자 1/, "박스 맨 앞에 프로필 아이콘과 이름");
   assert.equal(await page.getByTestId("speaker-editor").count(), 0, "누르기 전에는 메뉴가 닫혀 있다");
   assert.equal(await page.getByText("이 단락은 누가 말했나요?").count(), 0, "안내 문구는 없다");
@@ -435,57 +462,18 @@ try {
   await page.getByTestId("speaker-badge-seg-1").click();
   step("화자 프로필: 고친 이름과 원래 이름이 메뉴 목록에 남는다");
 
-  await page.getByTestId("speaker-reset").click();
-  await boxesText(2);
-  assert.deepEqual(speakerPosts.at(-1), { names: {}, merge: {}, assign: {} });
-  assert.deepEqual(await boxNames(), ["화자 1", "화자 2"]);
-  step("화자 프로필: 원본으로");
-
+  // 목록에서 눌러 고른다(이름을 적지 않아도 된다). 원본으로 되돌리는 버튼이 없어 이름을 합친 뒤에 확인한다
   await page.getByTestId("speaker-badge-seg-2").click();
-  assert.match(await page.getByTestId("speaker-roster-1").innerText(), /화자 1/);
-  assert.match(await page.getByTestId("speaker-roster-2").innerText(), /화자 2/);
-  await page.getByTestId("speaker-roster-1").click();                          // 목록에서 눌러 고른다(이름을 적지 않아도 된다)
+  await page.getByTestId("speaker-roster-1").click();
   await savedState();
   assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "1", "seg-3": "1" });
   await boxesText(2);
-  assert.deepEqual(await boxNames(), ["화자 1", "화자 1"]);
-  await page.getByTestId("speaker-reset").click();
-  await boxesText(2);
+  assert.deepEqual(await boxNames(), ["김 기자", "김 기자"]);
   step("화자 프로필: 메뉴 목록에서 눌러 고르면 그 박스가 그 화자의 말로 바뀐다");
 
-  await page.getByTestId("speaker-edit-start").click();
-  await page.getByTestId("speaker-edit-bar").waitFor();
-  assert.equal(await page.evaluate(() => document.querySelector("audio")?.paused ?? true), true, "화자 수정하기를 누르면 재생이 멈춘다");
-  assert.equal(await page.getByTestId("speaker-badge-seg-1").isDisabled(), true, "수정하기 중에는 프로필 메뉴를 열지 않는다");
-  assert.equal(await page.getByTestId("speaker-bulk-apply").isDisabled(), true, "고른 박스가 없으면 적용할 수 없다");
-  await page.getByTestId("speaker-pick-seg-2").check();
-  await page.getByTestId("speaker-bulk-name").fill("취재원");
-  await page.getByTestId("speaker-bulk-apply").click();
-  await savedState();
-  assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "custom-1", "seg-3": "custom-1" });
-  await page.getByTestId("speaker-pick-seg-1").check();
-  await page.getByTestId("speaker-pick-seg-2").check();
-  await shot("speaker-bulk-edit");
-  assert.match(await page.getByTestId("speaker-picked-count").innerText(), /2개 선택됨/);
-  await page.getByTestId("speaker-bulk-roster-custom-1").click();              // 목록의 이름을 눌러 이름 칸을 채운다
-  assert.equal(await page.getByTestId("speaker-bulk-name").inputValue(), "취재원");
-  await page.getByTestId("speaker-bulk-name").fill("발표자");
-  await page.getByTestId("speaker-bulk-apply").click();
-  await boxesText(2);
-  await savedState();
-  assert.deepEqual(speakerPosts.at(-1).assign, { "seg-2": "custom-2", "seg-3": "custom-2", "seg-1": "custom-2" });
-  assert.match(await page.getByTestId("speaker-picked-count").innerText(), /0개 선택됨/, "적용 뒤 선택이 풀린다");
-  await page.getByTestId("speaker-select-all").click();
-  assert.match(await page.getByTestId("speaker-picked-count").innerText(), /2개 선택됨/);
-  await page.getByTestId("speaker-edit-done").click();
-  assert.equal(await page.getByTestId("speaker-edit-bar").count(), 0);
-  assert.deepEqual(await boxNames(), ["발표자", "발표자"]);
-  step("화자 프로필: 화자 수정하기 → 재생 멈춤, 박스를 여러 개 골라 한 번에 이름 적용(박스는 그대로)");
-
-  await page.getByText("저장된 전사 불러오기").click();
   await page.getByText("smoke.m4a").first().click();
   await page.getByTestId("speaker-name-seg-1").waitFor();
-  assert.match(await page.getByTestId("speaker-name-seg-1").innerText(), /발표자/);
+  assert.deepEqual(await boxNames(), ["김 기자", "김 기자"]);
   step("화자 프로필: 저장된 전사를 다시 열어도 수정이 유지된다");
 
   assert.deepEqual(pageErrors, [], `브라우저 오류: ${pageErrors.join(" | ")}`);

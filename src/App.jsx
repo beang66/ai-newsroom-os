@@ -642,7 +642,10 @@ export default function App() {
   const [isPhotoEditing, setIsPhotoEditing] = useState(false);
 
   return (
-    <div className={`newsroom-app min-h-screen flex flex-col font-sans selection:bg-[#8ECAE6]/40 selection:text-slate-900 text-[#292929] relative overflow-x-hidden ${isReaderPreview ? "bg-white" : "bg-transparent"}`}>
+    <div className={`newsroom-app min-h-screen flex flex-col font-sans selection:bg-[#8ECAE6]/40 selection:text-slate-900 text-[#292929] relative overflow-x-hidden transition-[padding] duration-300 ease-out ${isReaderPreview ? "bg-white" : "bg-transparent"} ${
+      // 왼쪽 끝에 고정된 사이드바(Sidebar.jsx) 너비만큼 헤더·작업 화면을 오른쪽으로 민다
+      isPhotoEditing || loginPage ? "" : isSidebarCollapsed ? "pl-[72px] md:pl-[76px]" : "pl-[285px] md:pl-[300px]"
+    }`}>
       {/* ──────────────────────────────────────────────────────────
           Soft Ambient Gradient Background Layer (콘텐츠 뒤 고정 앰비언트 레이어)
           - 상단 Soft Blue (rgba(190, 220, 255, 0.25))
@@ -678,6 +681,7 @@ export default function App() {
           switching={switching}
           session={session}
           applySession={applySession}
+          isDesk={activeTab === "desk"}
         />
       )}
 

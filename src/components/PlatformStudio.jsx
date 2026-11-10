@@ -7,6 +7,7 @@ import {
   Hash,
   Loader2,
   RefreshCw,
+  RotateCcw,
   Save,
   Sliders,
   Sparkles,
@@ -339,12 +340,15 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
     }
   };
 
+  const clearedRunIdRef = useRef(null);
+
   // only: 한 항목만 만들 때(["instagram"] / ["card_news"]). 없으면 왼쪽에서 체크한 항목 전부
   const runGeneration = async (only) => {
     if (pending.current) return;
     const list = Array.isArray(only) ? only : targets;
     if (!article.title?.trim() || !article.content?.trim()) { setGenerationError('기사 제목과 본문을 먼저 작성해 주세요.'); blocked('platform_run','MISSING_TITLE_BODY'); return; }
     if (!list.length) { setGenerationError('생성할 플랫폼 또는 카드뉴스를 선택해 주세요.'); blocked('platform_run','NO_TARGET'); return; }
+    clearedRunIdRef.current = null;
     pending.current=true;setGenerating(true);setMessage('');setGenerationError('');setRequestSource({title:article.title});
     setProgress(Object.fromEntries(list.map(target=>[target,'고정본 준비 중'])));
     const source=sourceText(article);
@@ -374,9 +378,9 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
       try{
         const listed=await listPlatformRuns(watchedId);
         const latest=listed.runs?.[0];
-        if(cancelled||!latest)return;
+        if(cancelled||!latest||latest.id===clearedRunIdRef.current)return;
         const run=await getPlatformRun(latest.id);
-        if(cancelled)return;
+        if(cancelled||run.id===clearedRunIdRef.current)return;
         setStoredRun(run);
         const active=run.status==='queued'||run.status==='running';
         setLastRun({id:run.id,revision_no:run.revision_no,snapshot_id:run.snapshot_id});
@@ -454,9 +458,79 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
   };
   const addCardPhoto=(photo,cardId)=>{
     if(!live.current.cardNews?.cards.some(card=>card.card_id===cardId))return;
-    updateCardNews(current=>invalidateDraft({...current,cards:current.cards.map(card=>card.card_id===cardId?{...card,photoId:photo.id,image:undefined}:card)}));
-    const expectedId=articleId(live.current.article);
-    setArticle(previous=>articleId(previous)!==expectedId?previous:{...previous,photos:[...(previous.photos||[]).filter(item=>item.id!==photo.id),photo]});
+    const current=live.current;
+    const nextPhotos=[...(current.article.photos||[]).filter(item=>item.id!==photo.id),photo];
+    const nextArticle={...current.article,photos:nextPhotos};
+    const nextCards=invalidateDraft({
+      ...current.cardNews,
+      cards:current.cardNews.cards.map(card=>card.card_id===cardId?{...card,photoId:photo.id,image:undefined,rendered_image:undefined,render_error:undefined,validation_status:"needs_recheck"}:card),
+    });
+    const nextDrafts=Object.fromEntries(Object.entries(current.drafts).map(([key,value])=>[key,invalidateDraft(value)]));
+    origin.current={...origin.current,photos:fingerprint(nextPhotos)};
+    live.current={...current,article:nextArticle,drafts:nextDrafts,cardNews:nextCards};
+    setDrafts(nextDrafts);
+    setCardNews(nextCards);
+    const expectedId=articleId(current.article);
+    setArticle(previous=>articleId(previous)!==expectedId?previous:{
+      ...previous,
+      photos:nextPhotos,
+      platformDrafts:{...(previous.platformDrafts||{}),...nextDrafts},
+      cardNews:nextCards,
+    });
+  };
+
+  // 원고 & 배포 설정 블록의 모든 내용(생성된 원고, 카드뉴스, 플랫폼·키워드·편집 방향 설정 등)을 초기화한다.
+  const handleResetStudioSettings=()=>{
+    if(generating||applying||keywordLoading)return;
+    const defaultPlatforms=["instagram","threads"];
+    clearedRunIdRef.current=storedRun?.id||lastRun?.id||null;
+    setDrafts({});
+    setCardNews(null);
+    setSelectedPlatforms(defaultPlatforms);
+    setIncludeCardNews(false);
+    setSelectedKeywords([]);
+    setKeywordCandidates([]);
+    setCustomKeyword("");
+    setRequirements("");
+    setPreviousConditions(null);
+    setProgress({});
+    setMessage("");
+    setGenerationError("");
+    setLocalDraftNotice(null);
+    setLastRun(null);
+    setStoredRun(null);
+    setPreviewError("");
+    setApplyError("");
+    setActiveView("instagram");
+    const emptyPreview={article:{articleId:"",title:"",subtitle:"",content:"",url:""},subtitle:""};
+    previewLive.current=emptyPreview;
+    setPreview(emptyPreview);
+    setApplied(null);
+    live.current={
+      ...live.current,
+      drafts:{},
+      cardNews:null,
+      requirements:"",
+      selectedKeywords:[],
+      selectedPlatforms:defaultPlatforms,
+      includeCardNews:false,
+    };
+    if(setArticle){
+      const expected=live.current.article;
+      setArticle(previous=>articleId(previous)!==articleId(expected)?previous:{
+        ...previous,
+        platformDrafts:{},
+        cardNews:null,
+        platformGeneration:{
+          ...(previous.platformGeneration||{}),
+          selectedPlatforms:defaultPlatforms,
+          includeCardNews:false,
+          selectedKeywords:[],
+          requirements:"",
+          previous_conditions:null,
+        },
+      });
+    }
   };
 
   const copyDraft = async (platform) => {
@@ -668,7 +742,7 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
         </div>
       </div>
 
-      {pickerOpen&&<PlatformArticlePicker currentArticleId={articleId(article)} onConfirm={handleConfirmPicker} onClose={()=>setPickerOpen(false)}/>}
+      {pickerOpen&&<PlatformArticlePicker currentArticleId={articleId(preview?.article)||articleId(article)} onConfirm={handleConfirmPicker} onClose={()=>setPickerOpen(false)}/>}
       {localDraftPickerOpen && (
         <LocalDraftPicker
           onSelect={handleSelectLocalDraft}
@@ -716,6 +790,19 @@ export default function PlatformStudio({ article, setArticle, flush, onOpenArtic
                 </h2>
               </div>
             </div>
+            {leftPanelTab === "settings" && (
+              <button
+                type="button"
+                data-testid="reset-studio-settings"
+                disabled={generating || applying || keywordLoading || sourceLoading}
+                onClick={handleResetStudioSettings}
+                title="생성된 원고, 카드뉴스, 선택 키워드 및 배포 설정을 모두 초기화합니다."
+                className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-zinc-600 shadow-xs transition hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              >
+                <RotateCcw className="h-3 w-3" />
+                <span>초기화</span>
+              </button>
+            )}
           </div>
 
           {/* 상단 탭 전환 세그먼트 버튼 ([원고 & 설정] / [원고 검수 · 결과] / [로컬 앱 연결]) */}

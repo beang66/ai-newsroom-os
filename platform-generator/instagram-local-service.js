@@ -107,9 +107,11 @@ function createInstagramService({ chromium, profileDir, clock = Date.now } = {})
     const accountId = cookies.find(cookie => cookie.name === 'ds_user_id')?.value;
     if (!hasSession || !accountId) return { connected: false, reason: 'login_required' };
     const username = await page.evaluate(() => {
-      const links = [...document.querySelectorAll('a[href]')].filter(a =>
-        /^(프로필|Profile)$/.test((a.getAttribute('aria-label') || a.innerText || '').trim()) ||
+      const all = [...document.querySelectorAll('a[href]')].filter(a =>
+        /^(프로필|Profile)+$/i.test((a.getAttribute('aria-label') || a.innerText || '').replace(/\s+/g, '')) ||
         [...a.querySelectorAll('img')].some(img => /님의 프로필 사진|profile picture/i.test(img.alt || '')));
+      const nav = all.filter(a => !a.closest('main, article'));
+      const links = nav.length ? nav : all;
       const names = [...new Set(links.map(a => {
         const match = /^\/([A-Za-z0-9_.]+)\/$/.exec(new URL(a.href).pathname);
         return match?.[1];
@@ -162,7 +164,11 @@ function createInstagramService({ chromium, profileDir, clock = Date.now } = {})
       log('공식 로그인 창 열기');
       const currentPage = await openBrowser();
       // 기존 로그인/작성 화면을 보존한다. 새 빈 페이지만 공식 화면으로 이동한다.
-      if(currentPage.url()==='about:blank')await currentPage.goto(SNS_ENDPOINTS.instagram, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      const currentUrl = currentPage.url();
+      if (!currentUrl || currentUrl === 'about:blank' || !currentUrl.includes('instagram.com')) {
+        await currentPage.goto(SNS_ENDPOINTS.instagram, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      }
+      await currentPage.bringToFront();
       return { success: true, message: 'Chrome의 Instagram 화면에서 직접 로그인해 주세요. 로그인 상태를 자동으로 확인합니다. 기존 작성창은 유지합니다.' };
     }),
     status: async () => {
@@ -206,7 +212,7 @@ function createInstagramService({ chromium, profileDir, clock = Date.now } = {})
       try {
         if (!emptyPhotoDialog) {
           log('새 게시물 열기');
-          const labels = ['만들기', 'Create', '새 게시물', 'New post', 'New Post', '새 게시물 만들기', 'Create new post'];
+          const labels = ['만들기', 'Create', '새 게시물', 'New post', 'New Post', '새 게시물 만들기', 'Create new post', '게시물', 'Post'];
           if (!await namedClick(page, labels)) {
             throw new Error('만들기 메뉴를 찾지 못했습니다. 전용 Instagram 창의 왼쪽 ＋ → 게시물을 눌러 빈 사진 선택창을 연 뒤 앱의 3번 버튼을 다시 눌러주세요.');
           }

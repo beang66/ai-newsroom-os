@@ -1,6 +1,6 @@
 import {Component,useEffect,useLayoutEffect,useRef,useState} from "react";
 import {createPortal} from "react-dom";
-import {ArrowDown,ArrowLeft,ArrowRight,ArrowUp,Blend,Image as ImageIcon,LayoutGrid,Layers,RotateCcw,Square} from "lucide-react";
+import {ArrowDown,ArrowLeft,ArrowRight,ArrowUp,Blend,Copy,Image as ImageIcon,LayoutGrid,Layers,RotateCcw,Square} from "lucide-react";
 import PhotoSearch from "./photo/PhotoSearch.jsx";
 import {importPhoto,dongaPhotoData,trackPhotoDownload,exportFiles,imageExtension} from "../api/editorial.js";
 import ExportNotice from "./ExportNotice.jsx";
@@ -68,7 +68,7 @@ function CardPreview({card,index,total,photo,previewPhoto,onEdit,onMove,width=43
 export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,preparing=false}) {
   const [activeIndex,setActiveIndex]=useState(0),[rendering,setRendering]=useState(false),[error,setError]=useState("");
   const [searching,setSearching]=useState(false),[anchor,setAnchor]=useState(null),[layoutAnchor,setLayoutAnchor]=useState(null),[shadeAnchor,setShadeAnchor]=useState(null),[exported,setExported]=useState(null);
-  const [uploadDragging,setUploadDragging]=useState(false);
+  const [uploadDragging,setUploadDragging]=useState(false),[appliedAllNotice,setAppliedAllNotice]=useState(false);
   const live=useRef({draft,article});useLayoutEffect(()=>{live.current={draft,article};},[draft,article]);
   const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const cards=Array.isArray(draft?.cards)?draft.cards:[],index=activeIndex<cards.length?activeIndex:0,active=cards[index];
@@ -76,6 +76,9 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
     ||(active.content!==undefined&&(!active.content||typeof active.content!=='object'||Array.isArray(active.content))));
   const photo=active&&!invalid?selectedCardPhoto(active,article):null;
   const [previewPhoto,setPreviewPhoto]=useState(null);
+  const rawPhotoUrl=photo?.url||photo?.data||'';
+  const directPhotoUrl=typeof rawPhotoUrl==='string'&&rawPhotoUrl.startsWith('data:image/')?rawPhotoUrl:'';
+  const effectivePreviewPhoto=previewPhoto?.key===photoKey(photo)?previewPhoto:(directPhotoUrl?{key:photoKey(photo),url:directPhotoUrl}:null);
   // 창이 좁으면 카드 미리보기를 줄여, 오른쪽 버튼 옆 팝업(최소 320px)이 들어갈 자리를 남긴다.
   const [rootNode,setRootNode]=useState(null),[room,setRoom]=useState(null);
   useLayoutEffect(()=>{
@@ -111,6 +114,28 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
   const shadeReset=()=>patchCard(card=>({photoPresentation:{...CardTemplate.normalizePhoto({presentation:{...photo?.presentation,...card.photoPresentation}}),direction:'bottom',strength:86}}),false);
   const editText=(field,text)=>patchCard(card=>({content:{...(card.content||card),[field]:text}}));
   const movePart=(field,point)=>patchCard(card=>({text_positions:{...CardModel.positions(card.text_positions),[field]:{x:point.x,y:point.y}}}));
+  // 현재 선택된 카드의 이미지를 다른 모든 장(카드)에도 동일하게 적용한다.
+  const applyPhotoToAllCards=()=>{
+    if(!photo||cards.length<=1)return;
+    setError('');
+    const sharedPhotoId=active.photoId||photo.id||undefined;
+    const sharedImage=active.photoId?undefined:(active.image||photo);
+    const sharedPresentation=active.photoPresentation?structuredClone(active.photoPresentation):undefined;
+    onChange(current=>invalidateDraft({
+      ...current,
+      cards:current.cards.map(card=>card&&typeof card==='object'?{
+        ...card,
+        photoId:sharedPhotoId,
+        image:sharedImage,
+        ...(sharedPresentation?{photoPresentation:structuredClone(sharedPresentation)}:{}),
+        rendered_image:undefined,
+        render_error:undefined,
+        validation_status:"needs_recheck",
+      }:card),
+    }));
+    setAppliedAllNotice(true);
+    window.setTimeout(()=>setAppliedAllNotice(false),2000);
+  };
   const makeImage=async()=>{
     if(cards.some(card=>!card||typeof card!=='object')){setError('다른 카드의 데이터 형식을 먼저 확인해 주세요.');return;}
     const copy=structuredClone(active),origin=structuredClone(draft),key=renderKey(copy,photo,origin),source=sourceText(article);
@@ -148,9 +173,24 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
     <div className={`flex flex-col sm:flex-row items-center sm:items-start ${roomy?'justify-center':'sm:justify-start'} gap-6`}>
       <div className="flex flex-col items-center gap-2">
         <div className="rounded-none shadow-sm">
-          <CardPreviewBoundary card={active} page={index+1}><CardPreview card={active} index={index} total={cards.length} photo={photo} previewPhoto={previewPhoto} onEdit={editText} onMove={movePart} width={previewWidth}/></CardPreviewBoundary>
+          <CardPreviewBoundary card={active} page={index+1}><CardPreview card={active} index={index} total={cards.length} photo={photo} previewPhoto={effectivePreviewPhoto} onEdit={editText} onMove={movePart} width={previewWidth}/></CardPreviewBoundary>
         </div>
-        <button type="button" data-testid="card-reset-positions" onClick={()=>patchCard(()=>({text_positions:{}}))} className="text-[11px] font-bold text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline cursor-pointer">텍스트 위치 초기화</button>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <button type="button" data-testid="card-reset-positions" onClick={()=>patchCard(()=>({text_positions:{}}))} className="text-[11px] font-bold text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline cursor-pointer">텍스트 위치 초기화</button>
+          {photo&&cards.length>1&&(
+            <>
+              <span className="text-[10px] text-slate-300" aria-hidden="true">|</span>
+              <button
+                type="button"
+                data-testid="card-apply-photo-all"
+                onClick={applyPhotoToAllCards}
+                className="text-[11px] font-bold text-slate-700 underline-offset-2 hover:text-slate-950 hover:underline cursor-pointer"
+              >
+                {appliedAllNotice?'✓ 다른 장에도 동일 이미지 적용됨':'다른 장에도 이미지 동일 적용'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
       <div className="flex flex-row sm:flex-col gap-3 overflow-x-auto sm:overflow-y-auto max-h-[564px] p-1">
         {cards.map((c,i)=>{const on=c===active,head=c?.content?.headline||c?.headline||'제목 없음',key=c?.content?.keyword||c?.keyword||'',body=c?.content?.answer||c?.content?.body||c?.body||c?.content?.detail||c?.detail||'';
@@ -196,6 +236,17 @@ export default function PlatformCardEditor({draft,article,onChange,onAddPhoto,pr
           className="mt-2 flex h-11 w-11 items-center justify-center rounded-2xl border border-[#DDD6CB] bg-white text-slate-700 shadow-sm transition hover:scale-105 hover:bg-[#FAF8F5] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 cursor-pointer"
         >
           <Blend className="h-5 w-5" strokeWidth={1.6} aria-hidden="true"/>
+        </button>
+        <button
+          type="button"
+          disabled={!photo||cards.length<=1}
+          onClick={applyPhotoToAllCards}
+          aria-label="다른 장에 이미지 동일하게 추가"
+          title={appliedAllNotice?'모든 장에 동일 이미지가 적용되었습니다':'다른 장에 이미지 동일하게 추가'}
+          data-testid="card-apply-photo-all-btn"
+          className="mt-2 flex h-11 w-11 items-center justify-center rounded-2xl border border-[#DDD6CB] bg-white text-slate-700 shadow-sm transition hover:scale-105 hover:bg-[#FAF8F5] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 cursor-pointer"
+        >
+          <Copy className="h-5 w-5" strokeWidth={1.6} aria-hidden="true"/>
         </button>
       </div>
     </div>

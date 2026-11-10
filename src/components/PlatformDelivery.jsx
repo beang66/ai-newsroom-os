@@ -88,11 +88,8 @@ function useSnsConnection(platform,browser,paused,onClosed) {
     }
     if(connect&&!focused){
      focused=true;
-     if(!result.connected&&!result.pending){
-      await snsAction(platform,'connect',{browser:isInstagram?'chrome':browser});if(!active())return;
-      opened=true;again();return;
-     }
-     opened=true;
+     await snsAction(platform,'connect',{browser:isInstagram?'chrome':browser});if(!active())return;
+     opened=true;again();return;
     }
     if(result.reason==='browser_closed'){
      connecting.current=false;

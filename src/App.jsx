@@ -120,7 +120,7 @@ export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
   const backupChecked = useRef(false);
   const snapshotOf = (a) => JSON.stringify([a.title, a.subtitle, a.content, a.linkedSources, a.linkedInterviews, a.status,
-    a.platformDrafts, a.cardNews, a.platformGeneration, a.category, a.subcategory, (a.sources || []).map((source) => source.id)]);
+    a.platformDrafts, a.cardNews, a.platformGeneration, a.category, a.subcategory, (a.sources || []).map((source) => source.id), (a.photos || []).map((photo) => photo.id)]);
   const savedIdRef = useRef(null); // 가장 최근에 Core 에 저장된 기사 ID(렌더를 기다리지 않고 바로 읽는다)
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
@@ -221,7 +221,7 @@ export default function App() {
     // 저장 대상 필드가 바뀔 때만(articleId·revisionNo 같은 저장 결과로는 다시 저장하지 않는다)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [article.title, article.subtitle, article.content, article.linkedSources, article.linkedInterviews, article.status,
-    article.platformDrafts, article.cardNews, article.platformGeneration, article.category, article.subcategory, article.sources, flush]);
+    article.platformDrafts, article.cardNews, article.platformGeneration, article.category, article.subcategory, article.sources, article.photos, flush]);
 
   // 강제 종료·Core 저장 실패에 대비해, 바뀐 원고를 0.3초 뒤 이 PC 에 암호화해 둔다(계정·키를 알 때만).
   useEffect(() => {
@@ -230,7 +230,7 @@ export default function App() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [article.title, article.subtitle, article.content, article.linkedSources, article.linkedInterviews, article.status,
-    article.platformDrafts, article.cardNews, article.platformGeneration, article.category, article.subcategory, article.sources]);
+    article.platformDrafts, article.cardNews, article.platformGeneration, article.category, article.subcategory, article.sources, article.photos]);
 
   // 창을 닫거나 화면이 숨겨질 때, 저장되지 않은 변경이 있으면 지금 저장한다.
   useEffect(() => {

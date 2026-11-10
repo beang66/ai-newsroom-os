@@ -33,7 +33,7 @@ export function fromCoreDraft(draft, fallback) {
     content: editorHtml(typeof draft.content === "string" ? draft.content : (draft.bodyHtml || "")),
     linkedSources: draft.linkedSources || [],
     linkedInterviews: draft.linkedInterviews || [],
-    photos: draft.photos || [],
+    photos: (draft.photos || []).map((photo) => ({ ...photo, url: photo.url || photo.data || "" })),
     status: draft.status || "작성 중",
   };
 }

@@ -34,6 +34,51 @@ function node(id, kind, fields) {
   };
 }
 
+const AGENCY_TAGS = new Set(["한국은행", "국가데이터처", "산업통상부", "고용노동부", "국토교통부", "금융감독원"]);
+const TOPIC_RULES = [
+  ["한국은행", ["한국은행", "한은"]],
+  ["국가데이터처", ["국가데이터처", "통계청"]],
+  ["산업통상부", ["산업통상부", "산업부"]],
+  ["고용노동부", ["고용노동부"]],
+  ["국토교통부", ["국토교통부"]],
+  ["금융감독원", ["금융감독원", "금감원"]],
+  ["성장·국민소득", ["성장률", "국민소득", "국민총소득", "gni", "gdp", "경제전망", "저축률", "경제 성장", "0.6% 성장", "2분기"]],
+  ["수출·무역", ["수출", "수입", "수출입", "무역수지", "경상수지", "국제수지"]],
+  ["반도체·제조업", ["반도체", "제조업", "자동차", "광학기기", "기계류", "산업활동", "기업경기", "컴퓨터", "생산"]],
+  ["물가·소비", ["소비자물가", "생산자물가", "물가", "소비심리", "소비자동향", "온라인쇼핑", "민간소비", "소매판매", "소비", "내수", "거래"]],
+  ["고용·노동", ["고용동향", "고용률", "취업자", "실업률", "사업체노동력", "종사자", "임금", "청년층"]],
+  ["인구·사회", ["인구동향", "출생아", "합계출산율", "고령자", "사망원인", "사망자", "인구"]],
+  ["외환·금융", ["외환보유액", "외화예금", "환율", "달러", "금리", "외국인", "증권투자", "주식", "채권"]],
+  ["건설·부동산", ["주택통계", "주택", "인허가", "건설업", "건설투자", "토목건설", "부동산"]],
+];
+
+function normFilename(value) {
+  return String(value || "")
+    .normalize("NFC")
+    .replace(/[\s_()（）[\]「」『』·.,/-]+/g, "")
+    .toLowerCase();
+}
+
+function extractTagsFromText(text) {
+  const lower = String(text || "").normalize("NFC").toLowerCase();
+  const matched = [];
+  for (const [label, keywords] of TOPIC_RULES) {
+    if (keywords.some((kw) => lower.includes(kw.toLowerCase()))) {
+      matched.push(label);
+    }
+  }
+  return matched;
+}
+
+function folderOfPath(path) {
+  const raw = String(path || "").normalize("NFC");
+  const idx = raw.lastIndexOf("/");
+  if (idx <= 0) return "";
+  const dir = raw.slice(0, idx);
+  const parts = dir.split("/");
+  return (parts[parts.length - 1] || "").toLowerCase();
+}
+
 export function projectKnowledgeMap(payload) {
   if (!payload || !Array.isArray(payload.articles) || !Array.isArray(payload.sources) || !Array.isArray(payload.edges))
     throw new Error("Core knowledge-map 응답 형식이 올바르지 않습니다.");
@@ -105,8 +150,12 @@ export function projectKnowledgeMap(payload) {
       path: file.path || "",
       outgoingCount: Number(file.outgoing_count) || 0,
       backlinkCount: Number(file.backlink_count) || 0,
-      outgoing: outgoingById.get(file.id) || [],
-      backlinks: backlinksById.get(file.id) || [],
+      outgoing: [...(outgoingById.get(file.id) || [])],
+      backlinks: [...(backlinksById.get(file.id) || [])],
+      coreTags: Array.isArray(file.tags) ? file.tags : [],
+      primaryTags: Array.isArray(file.primary_tags) ? file.primary_tags : [],
+      pdfRefs: Array.isArray(file.pdf_refs) ? file.pdf_refs : [],
+      folderMentions: Array.isArray(file.folder_mentions) ? file.folder_mentions : [],
     });
   }
   for (const missing of Array.isArray(payload.unresolved) ? payload.unresolved : [])
@@ -129,7 +178,14 @@ export function projectKnowledgeMap(payload) {
     if (!key) continue;
     item.itemKey = key;
     item.label = aliases[key] || item.label;
-    item.tags = tags[key] || [];
+    const textTags = extractTagsFromText(`${item.label} ${item.summary} ${item.path || ""}`);
+    const mergedTags = new Set([...(tags[key] || []), ...(item.coreTags || []), ...textTags]);
+    item.tags = [...mergedTags];
+    if (!item.primaryTags || !item.primaryTags.length) {
+      item.primaryTags = textTags;
+    } else {
+      item.primaryTags = [...new Set([...item.primaryTags, ...textTags])];
+    }
     item.folderIds = folderItems[key] || [];
     item.favorite = favorites.has(key);
   }
@@ -157,6 +213,130 @@ export function projectKnowledgeMap(payload) {
     seen.add(id);
     edges.push({ id, source: link.source, target: link.target, relation: "missing-link" });
   }
+
+  // 명시적 위키링크 외에 원자료 참조·폴더 언급·공통 주제 태그로 연관된 노드들을 연결한다
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+  const seenPairs = new Set(edges.map((e) => [e.source, e.target].sort().join("::")));
+  const addRelatedEdge = (sourceId, targetId, relation, reason = "") => {
+    if (!sourceId || !targetId || sourceId === targetId || !byId.has(sourceId) || !byId.has(targetId)) return false;
+    const pairKey = [sourceId, targetId].sort().join("::");
+    if (seenPairs.has(pairKey)) return false;
+    seenPairs.add(pairKey);
+    const id = `rel:${sourceId}:${targetId}`;
+    edges.push({ id, source: sourceId, target: targetId, relation });
+    const srcNode = nodeMap.get(sourceId);
+    const tgtNode = nodeMap.get(targetId);
+    if (srcNode?.kind === "note" && tgtNode?.kind === "note" && !srcNode.placeholder && !tgtNode.placeholder) {
+      const linkObj = {
+        id: `rel:${sourceId}:${targetId}`,
+        source: sourceId,
+        target: targetId,
+        resolved: true,
+        relation: "links_to",
+        kind: "related",
+        raw_text: reason || tgtNode.label,
+        target_ref: tgtNode.path || tgtNode.label,
+      };
+      srcNode.outgoing.push(linkObj);
+      tgtNode.backlinks.push(linkObj);
+      srcNode.outgoingCount = srcNode.outgoing.length;
+      tgtNode.backlinkCount = tgtNode.backlinks.length;
+    }
+    return true;
+  };
+
+  const articleNodes = nodes.filter((n) => n.kind === "article");
+  const sourceNodes = nodes.filter((n) => n.kind === "source");
+  const noteNodes = nodes.filter((n) => n.kind === "note" && !n.placeholder);
+
+  // 1. 원자료(PDF 등) ↔ 해당 원자료를 본문에 명시하거나 핵심 주제가 일치하는 취재 노트 연결
+  for (const src of sourceNodes) {
+    const normSrc = normFilename(src.label);
+    const srcDomain = (src.primaryTags || []).filter((t) => !AGENCY_TAGS.has(t));
+    for (const noteItem of noteNodes) {
+      const matchedPdf = normSrc && Array.isArray(noteItem.pdfRefs) && noteItem.pdfRefs.some((ref) => ref === normSrc || ref.includes(normSrc) || normSrc.includes(ref));
+      const commonDomain = srcDomain.filter((t) => (noteItem.primaryTags || []).includes(t));
+      const commonAll = (src.tags || []).filter((t) => (noteItem.primaryTags || []).includes(t));
+      if (matchedPdf || (commonDomain.length >= 1 && commonAll.length >= 2)) {
+        addRelatedEdge(src.id, noteItem.id, "article-source");
+        if (src.articleId) {
+          addRelatedEdge(src.articleId, noteItem.id, "article-source");
+        }
+      }
+    }
+  }
+
+  // 2. 기사 ↔ 핵심 주제를 공유하는 취재 노트 연결
+  for (const art of articleNodes) {
+    const artDomain = (art.primaryTags || []).filter((t) => !AGENCY_TAGS.has(t));
+    if (!artDomain.length) continue;
+    for (const noteItem of noteNodes) {
+      const noteDomain = (noteItem.primaryTags || []).filter((t) => !AGENCY_TAGS.has(t));
+      const sharedDomain = artDomain.filter((t) => noteDomain.includes(t));
+      if (sharedDomain.length >= 2) {
+        addRelatedEdge(art.id, noteItem.id, "article-source");
+      }
+    }
+  }
+
+  // 3. 본문에서 하위 폴더를 언급한 목차·개요 문서(README 등) 또는 상위 폴더 README.md ↔ 해당 폴더 노트 연결
+  const notesByFolder = new Map();
+  for (const noteItem of noteNodes) {
+    const folder = folderOfPath(noteItem.path);
+    if (!folder) continue;
+    if (!notesByFolder.has(folder)) notesByFolder.set(folder, []);
+    notesByFolder.get(folder).push(noteItem);
+  }
+  const indexNotes = new Set();
+  for (const noteItem of noteNodes) {
+    const normPath = String(noteItem.path || "").normalize("NFC").replace(/\\/g, "/");
+    const lowerPath = normPath.toLowerCase();
+    const isIndexFile = lowerPath.endsWith("/readme.md") || lowerPath.endsWith("/index.md") || lowerPath === "readme.md" || lowerPath === "index.md";
+    if (isIndexFile && normPath.includes("/")) {
+      const rootDir = normPath.slice(0, normPath.lastIndexOf("/") + 1).toLowerCase();
+      const children = noteNodes.filter((other) => other.id !== noteItem.id && String(other.path || "").normalize("NFC").replace(/\\/g, "/").toLowerCase().startsWith(rootDir));
+      if (children.length >= 2) {
+        indexNotes.add(noteItem.id);
+        for (const child of children) {
+          addRelatedEdge(noteItem.id, child.id, "links-to", `세트 목차 · ${noteItem.label}`);
+        }
+      }
+    }
+    for (const mentionedFolder of noteItem.folderMentions || []) {
+      for (const targetNote of notesByFolder.get(mentionedFolder) || []) {
+        addRelatedEdge(noteItem.id, targetNote.id, "links-to", `폴더 참조 · ${mentionedFolder}`);
+      }
+    }
+  }
+
+  // 4. 취재 노트 상호 간 핵심 주제·발표기관 연관 연결 (노트당 상위 3개)
+  const contentNotes = noteNodes.filter((n) => !indexNotes.has(n.id) && !(n.folderMentions && n.folderMentions.length >= 5));
+  for (const noteA of contentNotes) {
+    const aPrimaryDomain = (noteA.primaryTags || []).filter((t) => !AGENCY_TAGS.has(t));
+    const aPrimaryAgency = (noteA.primaryTags || []).filter((t) => AGENCY_TAGS.has(t));
+    const aAllDomain = (noteA.tags || []).filter((t) => !AGENCY_TAGS.has(t));
+    if (!aPrimaryDomain.length && !aPrimaryAgency.length) continue;
+    const candidates = [];
+    for (const noteB of contentNotes) {
+      if (noteA.id === noteB.id) continue;
+      const bPrimaryDomain = (noteB.primaryTags || []).filter((t) => !AGENCY_TAGS.has(t));
+      const bPrimaryAgency = (noteB.primaryTags || []).filter((t) => AGENCY_TAGS.has(t));
+      const bAllDomain = (noteB.tags || []).filter((t) => !AGENCY_TAGS.has(t));
+      const sharedPrimaryDomain = aPrimaryDomain.filter((t) => bPrimaryDomain.includes(t));
+      const sharedPrimaryAgency = aPrimaryAgency.filter((t) => bPrimaryAgency.includes(t));
+      const sharedAllDomain = aAllDomain.filter((t) => bAllDomain.includes(t));
+      const score = sharedPrimaryDomain.length * 4 + sharedPrimaryAgency.length * 2 + sharedAllDomain.length;
+      if (score >= 4 && (sharedPrimaryDomain.length >= 1 || (sharedPrimaryAgency.length >= 1 && sharedAllDomain.length >= 2))) {
+        const sharedLabels = [...new Set([...sharedPrimaryDomain, ...sharedPrimaryAgency, ...sharedAllDomain])];
+        candidates.push({ target: noteB, score, reason: `공통 맥락 · ${sharedLabels.slice(0, 3).join(", ")}` });
+      }
+    }
+    candidates.sort((a, b) => b.score - a.score || a.target.id.localeCompare(b.target.id));
+    for (const item of candidates.slice(0, 3)) {
+      addRelatedEdge(noteA.id, item.target.id, "links-to", item.reason);
+    }
+  }
+
   nodes.forEach((n, i) => Object.assign(n, position(i, nodes.length)));
   return { nodes, edges, projects: [], meta: { mode: "knowledge-map", workspaceId: payload.workspace_id || null } };
 }

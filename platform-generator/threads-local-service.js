@@ -27,7 +27,10 @@ function createThreadsService({chromium,profileDir,clock=Date.now}={}){
   if(!context||!page||page.isClosed())return {connected:false,reason:'browser_closed'};
   if(!['threads.com','www.threads.com','threads.net','www.threads.net'].includes(new URL(page.url()).hostname))return {connected:false,reason:'threads_page_required'};
   const username=await page.evaluate(()=>{
-   const candidates=[...document.querySelectorAll('a[href]')].filter(a=>/^(프로필|Profile)$/.test((a.getAttribute('aria-label')||a.innerText||'').trim())||[...a.querySelectorAll('svg')].some(svg=>/^(프로필|Profile)$/.test(svg.getAttribute('aria-label')||'')));
+   const isProfile=a=>/^(프로필|Profile)+$/i.test((a.getAttribute('aria-label')||a.innerText||'').replace(/\s+/g,''))||[...a.querySelectorAll('span')].some(s=>/^(프로필|Profile)$/i.test((s.innerText||'').trim()))||[...a.querySelectorAll('svg')].some(svg=>/^(프로필|Profile)$/i.test(svg.getAttribute('aria-label')||''));
+   const all=[...document.querySelectorAll('a[href]')].filter(isProfile);
+   const nav=all.filter(a=>!a.closest('main,article'));
+   const candidates=nav.length?nav:all;
    const names=[...new Set(candidates.map(a=>/^\/@([A-Za-z0-9_.]+)\/?$/.exec(new URL(a.href).pathname)?.[1]).filter(Boolean))];return names.length===1?names[0]:null;
   });
   if(!username)return {connected:false,reason:'profile_not_identified'};
@@ -77,7 +80,7 @@ function createThreadsService({chromium,profileDir,clock=Date.now}={}){
    try{
     await page.bringToFront();
     if(!await page.getByRole('dialog').count()){
-     if(!await clickNamed(page,['만들기','Create','새 스레드','New thread','새 게시물','New post','무슨 생각을 하고 계신가요?','What\'s new?']))throw new Error('새 글 버튼을 찾지 못했습니다. Threads 창에서 새 게시물 작성창을 직접 열고 다시 준비해주세요.');
+     if(!await clickNamed(page,['텍스트 필드가 비어 있습니다. 입력하여 새 게시물을 작성해보세요.','새로운 소식을 공유해보세요.','무슨 생각을 하고 계신가요?','What\'s new?','새 스레드','New thread','새 게시물','New post','만들기','Create']))throw new Error('새 글 버튼을 찾지 못했습니다. Threads 창에서 새 게시물 작성창을 직접 열고 다시 준비해주세요.');
      await page.getByRole('dialog').waitFor({state:'visible',timeout:8000});
     }
     const scope=await dialog(),field=textbox(scope);

@@ -30,28 +30,39 @@ function Avatar({ size = 36 }) {
   );
 }
 
+const photoKey = (photo) => [photo?.id, photo?.url, photo?.data].filter(Boolean).join("|");
+
 /** 카드뉴스 한 장의 미리보기(첨부 이미지 자리). 카드 편집기와 같은 템플릿으로 그린다. */
 export function CardThumb({ card, index, total, article, width = THUMB_W }) {
   const photo = selectedCardPhoto(card, article);
+  const key = photoKey(photo);
+  const rawUrl = photo?.url || photo?.data || "";
+  const directUrl = typeof rawUrl === "string" && rawUrl.startsWith("data:image/") ? rawUrl : "";
   const [preview, setPreview] = useState(null);
   useEffect(() => {
     let cancelled = false;
-    setPreview(null);
-    if (photo) photoDataUrl(photo).then((url) => { if (!cancelled) setPreview({ photo, url }); }).catch(() => {});
+    if (!photo || directUrl) {
+      setPreview(null);
+      return () => { cancelled = true; };
+    }
+    photoDataUrl(photo).then((url) => { if (!cancelled) setPreview({ key, url }); }).catch(() => { if (!cancelled) setPreview(null); });
     return () => { cancelled = true; };
-  }, [photo]);
+  }, [key, directUrl]);
+  const resolvedUrl = directUrl || (preview?.key === key ? preview.url : "");
   const normalized = CardModel.normalize({
     ...card,
-    image: photo && preview?.photo === photo ? { ...photo, url: preview.url, photographer: photo.photographer || photo.source, profile: photo.profile || photo.sourceUrl } : undefined,
+    role: card?.role || CardModel.roleAt(index, total),
+    image: photo && resolvedUrl ? { ...photo, url: resolvedUrl, photographer: photo.photographer || photo.source, profile: photo.profile || photo.sourceUrl } : undefined,
     page: index + 1,
     total_pages: total,
   });
-  const html = `<!doctype html><html lang="ko"><meta charset="utf-8"><style>body{margin:0}${CardTemplate.css}</style>${CardTemplate.markup(normalized)}<script>(${CardTemplate.fitCard.toString()})();</script></html>`;
+  const html = `<!doctype html><html lang="ko"><meta charset="utf-8"><style>body{margin:0}${CardTemplate.css}</style>${CardTemplate.markup(normalized)}<script>(function(){const fit=${CardTemplate.fitCard.toString()};fit();Promise.all([document.fonts?document.fonts.ready:Promise.resolve(),...[...document.images].map(img=>img.decode?img.decode().catch(()=>{}):Promise.resolve())]).then(()=>fit());})();</script></html>`;
   const cardW = width || THUMB_W;
   const scale = cardW / CARD_W;
+  const presentationKey = JSON.stringify(photo?.presentation || card?.photoPresentation || {});
   return (
     <div className="group relative shrink-0 overflow-hidden rounded-none border-0 bg-black shadow-sm" style={{ width: cardW, height: Math.round(CARD_H * scale) }} data-testid="threads-card">
-      <iframe title={`카드 ${index + 1} 미리보기`} sandbox="allow-scripts" srcDoc={html} tabIndex={-1}
+      <iframe key={`${card?.card_id || index}:${key}:${Boolean(resolvedUrl)}:${presentationKey}`} title={`카드 ${index + 1} 미리보기`} sandbox="allow-scripts" srcDoc={html} tabIndex={-1}
         style={{ width: CARD_W, height: CARD_H, border: 0, transform: `scale(${scale})`, transformOrigin: "top left", pointerEvents: "none" }} />
       <div className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm" aria-hidden="true">
         <X className="h-3.5 w-3.5" />

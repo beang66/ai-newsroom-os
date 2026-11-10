@@ -225,8 +225,54 @@ def _placeholder_id(key):
     return str(uuid.uuid5(ids.TEAM_NAMESPACE, 'app-core:knowledge-placeholder:' + key))
 
 
+def _norm_filename(name):
+    return re.sub(r'[\s_()（）\[\]「」『』·.,/-]+', '', unicodedata.normalize('NFC', str(name or ''))).casefold()
+
+
+_TOPIC_RULES = [
+    ('한국은행', ('한국은행', '한은')),
+    ('국가데이터처', ('국가데이터처', '통계청')),
+    ('산업통상부', ('산업통상부', '산업부')),
+    ('고용노동부', ('고용노동부',)),
+    ('국토교통부', ('국토교통부',)),
+    ('금융감독원', ('금융감독원', '금감원')),
+    ('성장·국민소득', ('성장률', '국민소득', '국민총소득', 'gni', 'gdp', '경제전망', '저축률', '경제 성장')),
+    ('수출·무역', ('수출', '수입', '수출입', '무역수지', '경상수지', '국제수지')),
+    ('반도체·제조업', ('반도체', '제조업', '자동차', '광학기기', '기계류', '생산', '산업활동', '기업경기')),
+    ('물가·소비', ('소비자물가', '생산자물가', '물가', '소비심리', '소비자동향', '온라인쇼핑', '민간소비', '소매판매', '소비')),
+    ('고용·노동', ('고용동향', '고용률', '취업자', '실업률', '사업체노동력', '종사자', '임금', '청년층')),
+    ('인구·사회', ('인구동향', '출생아', '합계출산율', '고령자', '사망원인', '사망자', '인구')),
+    ('외환·금융', ('외환보유액', '외화예금', '환율', '달러', '금리', '외국인', '증권투자', '주식', '채권')),
+    ('건설·부동산', ('주택통계', '주택', '인허가', '건설업', '건설투자', '토목건설', '부동산')),
+]
+_PDF_REF = re.compile(r'([^\s`|()\[\]<>]+?\.pdf)', re.IGNORECASE)
+
+
+def _extract_metadata(path, title, content, all_folders):
+    """노트 본문과 제목·경로에서 주제 태그, 참조 PDF 파일명, 하위 폴더 언급을 추출한다."""
+    text = unicodedata.normalize('NFC', f'{path}\n{title}\n{content or ""}')
+    lower = text.casefold()
+    # 헤더·요약 영역(상단 25줄)에 등장하는 주제는 핵심 주제로 가중치를 둔다
+    head_text = '\n'.join((content or '').splitlines()[:25])
+    head_lower = unicodedata.normalize('NFC', f'{path}\n{title}\n{head_text}').casefold()
+    tags = []
+    primary_tags = []
+    for label, keywords in _TOPIC_RULES:
+        if any(k.strip().casefold() in lower for k in keywords):
+            tags.append(label)
+        if any(k.strip().casefold() in head_lower for k in keywords):
+            primary_tags.append(label)
+    pdf_refs = sorted({_norm_filename(m.group(1)) for m in _PDF_REF.finditer(content or '') if m.group(1)})
+    my_folder = unicodedata.normalize('NFC', posixpath.dirname(path).split('/')[-1]).casefold() if '/' in path else ''
+    folder_mentions = [
+        folder for folder in all_folders
+        if folder and folder != my_folder and len(folder) >= 4 and folder in lower
+    ]
+    return tags, primary_tags, pdf_refs, folder_mentions
+
+
 def map_items(db):
-    rows = db.execute('SELECT id, path, title, updated_at, role FROM knowledge_files ORDER BY path_key').fetchall()
+    rows = db.execute('SELECT id, path, title, updated_at, role, content FROM knowledge_files ORDER BY path_key').fetchall()
     links = db.execute('SELECT l.source_id, l.ordinal, l.kind, l.raw_text, l.target_ref, l.fragment, '
                        'l.target_id, l.target_key, l.line, l.is_embed FROM knowledge_links l '
                        'ORDER BY l.source_id, l.ordinal').fetchall()
@@ -244,9 +290,19 @@ def map_items(db):
                            'relation': 'links_to', 'kind': kind, 'raw_text': raw,
                            'target_ref': ref, 'fragment': fragment, 'line': line,
                            'is_embed': bool(embed)})
-    files = [{'id': ident, 'path': path, 'title': title, 'updated_at': updated, 'role': role,
-              'outgoing_count': outgoing.get(ident, 0), 'backlink_count': incoming.get(ident, 0)}
-             for ident, path, title, updated, role in rows]
+    all_folders = sorted({
+        unicodedata.normalize('NFC', posixpath.dirname(path).split('/')[-1]).casefold()
+        for _, path, _, _, _, _ in rows if '/' in path
+    })
+    files = []
+    for ident, path, title, updated, role, content in rows:
+        tags, primary_tags, pdf_refs, folder_mentions = _extract_metadata(path, title, content, all_folders)
+        files.append({
+            'id': ident, 'path': path, 'title': title, 'updated_at': updated, 'role': role,
+            'outgoing_count': outgoing.get(ident, 0), 'backlink_count': incoming.get(ident, 0),
+            'tags': tags, 'primary_tags': primary_tags,
+            'pdf_refs': pdf_refs, 'folder_mentions': folder_mentions,
+        })
     return files, list(unresolved.values()), file_links
 
 

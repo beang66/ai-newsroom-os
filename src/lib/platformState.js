@@ -74,15 +74,12 @@ export function draftText(platform, draft) {
 
 /** SNS 작성창 채우기 버튼을 지금 누를 수 없는 이유(화면 안내 문구) 목록 — 비면 누를 수 있다.
  *  이전 원문 결과나 불러온 초안도 작성창 채우기가 가능하도록 허용한다. */
-export function prepareBlockers({ platform, draft, cards, attach, busy, preparing, checking, evidenceMismatch, evidenceAck }) {
+export function prepareBlockers({ platform, draft, busy, preparing, checking, evidenceMismatch, evidenceAck }) {
   const name = platform === "threads" ? "Threads" : "Instagram", out = [];
   if (busy) out.push(`${name} 작성창을 채우는 중입니다.`);
   else if (preparing) out.push("플랫폼 원고를 생성하는 중입니다. 생성이 끝나면 누를 수 있습니다.");
   if (checking) out.push(`${name} 로그인 연결 상태를 확인하는 중입니다. 확인이 끝나면 누를 수 있습니다.`);
   if (!draft) out.push(`${name} 원고가 없습니다. '원고 & 설정'에서 원고를 생성하거나 초안을 불러와 주세요.`);
-  if (platform === "instagram" && (!attach || !cards?.cards?.length)) {
-    out.push("Instagram은 카드 이미지가 필요합니다. 카드뉴스를 포함하고 '현재 카드뉴스 첨부'를 켜 주세요.");
-  }
   if (evidenceMismatch && !evidenceAck) out.push("원문과 일치하지 않는 근거가 표시되어 있습니다. 위 경고에서 내용을 확인한 뒤 '확인했습니다'를 체크해 주세요.");
   return out;
 }

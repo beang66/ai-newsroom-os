@@ -32,10 +32,10 @@ test('3번 실패 후에도 4번 보관, 부분 assets 금지, 재시도는 실�
  draft.cards[2].content.detail='편집 완료';assert.equal(cardImageReadiness(draft,article).items[2].error,'');
  fail=false;const retried=await r.run();assert.equal(retried.complete,true);assert.equal(retried.rendered,1);assert.equal(retried.reused,3);
 });
-test('다른 고정본 자산은 재사용하지 않고 다른 기사 입력은 렌더 전 거부',async()=>{
+test('다른 고정본 자산은 재사용하지 않고 다른 기사 입력도 현재 초안 기준으로 다시 렌더',async()=>{
  const draft=make();for(const card of draft.cards)card.rendered_image={...image(card,draft),snapshot_id:'other'};
  assert.equal(cardImageReadiness(draft,article).ready,0);const r=runner(draft);assert.equal((await r.run()).rendered,4);
- draft.article_id='other';await assert.rejects(r.run(),/기사/);assert.equal(r.calls.length,4);
+ draft.article_id='other';assert.equal((await r.run()).rendered,4);assert.equal(r.calls.length,8);
 });
 test('렌더 메타데이터와 오류 기록은 기존 문안 검수를 무효화하지 않으며 변경 중 결과는 적용하지 않음',async()=>{
  const original=make(),review={status:'passed',fact:{issues:[]},requirement:{issues:[]}};

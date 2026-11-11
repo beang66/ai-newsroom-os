@@ -104,13 +104,14 @@ test('편집실 조회는 기존 Core ID·부제 존재 여부를 보존하고 �
   changed=true;await assert.rejects(getStudioArticle(id),/조회 중 기사가 변경/);
  }finally{if(previous===undefined)delete globalThis.window;else globalThis.window=previous;}
 });
-test('기사·고정본을 조용히 섞지 않고 카드 편집과 원본 변경을 구분',()=>{
+test('기사·고정본·원본 변경 시에도 불러온 초안과 카드 편집을 그대로 작성창 준비에 허용',()=>{
  assert.doesNotThrow(()=>assertSameSource(draft,draft,article));
- assert.throws(()=>assertSameSource({...draft,article_id:'other'},draft,article),/기사/);
- assert.throws(()=>assertSameSource(draft,{...draft,snapshot_id:'other'},article),/고정본/);
- assert.throws(()=>assertSameSource(draft,draft,{...article,content:'변경된 원문입니다.'}),/원본/);
- assert.throws(()=>assertSameSource(draft,draft,{...article,subtitle:'새 부제'}),/원본/);
- assert.throws(()=>assertSameSource(draft,draft,{...article,url:'https://example.test/new'}),/원본/);
+ assert.doesNotThrow(()=>assertSameSource({...draft,article_id:'other'},draft,article));
+ assert.doesNotThrow(()=>assertSameSource(draft,{...draft,snapshot_id:'other'},article));
+ assert.doesNotThrow(()=>assertSameSource(draft,draft,{...article,content:'변경된 원문입니다.'}));
+ assert.doesNotThrow(()=>assertSameSource(draft,draft,{...article,subtitle:'새 부제'}));
+ assert.doesNotThrow(()=>assertSameSource(draft,draft,{...article,url:'https://example.test/new'}));
+ assert.throws(()=>assertSameSource(null,draft,article),/원고/);
  const edited=structuredClone(draft);edited.cards[0].content.detail='사용자 편집';assert.doesNotThrow(()=>assertSameSource(edited,null,article));
 });
 test('본문·사진 바이트·출처·위치·순서 변경은 이전 렌더를 무효화',()=>{
@@ -133,7 +134,7 @@ test('부제 표시와 생성 입력은 별개이고 미지원 기록은 숨김,
  const result={...draft,generation_source:sourceText(ui)};
  assert.doesNotThrow(()=>assertSameSource(result,result,ui));
  assert.equal(result.generation_input.article.subtitle,undefined);
- assert.throws(()=>assertSameSource(result,result,{...ui,content:article.content}),/원본/);
+ assert.doesNotThrow(()=>assertSameSource(result,result,{...ui,content:article.content}));
 });
 test('검수 상태는 편집 뒤 재검수 필요이고 렌더 메타데이터만으로 무효화하지 않음',()=>{
  const ready={...draft,validation_status:'passed',validation_review:{key:fingerprint(draft),result:{status:'passed'}}};
@@ -179,7 +180,7 @@ test('생성 카드의 빈 사진 메타데이터는 사진 없이 렌더하고 
 });
 
 
-test('작성창 채우기: 막는 이유 목록이 예전 disabled 조건과 모든 조합에서 같고, 겹친 이유를 모두 알려 준다', () => {
+test('작성창 채우기: 이전 원문 결과나 불러온 초안도 허용하고, 원고 유무·작업 중·근거 확인 조건만 검사한다', () => {
   const article = {articleId: 'a1', title: '제목', subtitle: '', content: '<p>본문</p>', url: ''};
   const src = sourceText(article);
   const drafts = [null, {article_id: 'a1', generation_source: src, snapshot_id: 's1'}, {article_id: 'a2', generation_source: src, snapshot_id: 's1'},
@@ -190,23 +191,19 @@ test('작성창 채우기: 막는 이유 목록이 예전 disabled 조건과 모
   let checked = 0;
   for (const draft of drafts) for (const cards of cardsList) for (const attach of bools) for (const busy of bools) for (const preparing of bools)
     for (const checking of bools) for (const evidenceMismatch of bools) for (const evidenceAck of bools) {
-      // PlatformDelivery 가 예전에 쓰던 식 그대로
-      const currentDraft = !!draft && draft.article_id === articleId(article) && sameGenerationSource(draft, article);
-      const currentCards = !!cards && cards.article_id === articleId(article) && sameGenerationSource(cards, article);
-      const sameBundle = !cards || (cards.article_id === draft?.article_id && (cards.snapshot_id || null) === (draft?.snapshot_id || null));
-      const old = busy || preparing || checking || !currentDraft || (attach && cards && (!currentCards || !sameBundle)) || (evidenceMismatch && !evidenceAck);
+      const blocked = busy || preparing || checking || !draft || (evidenceMismatch && !evidenceAck);
       const reasons = prepareBlockers({platform: 'instagram', draft, cards, article, attach, busy, preparing, checking, evidenceMismatch, evidenceAck});
-      assert.equal(reasons.length > 0, !!old);
+      assert.equal(reasons.length > 0, !!blocked);
       checked++;
     }
   assert.equal(checked, 4 * 4 * 2 ** 6);
-  // 불러온 초안이 이전 원문 결과이고 근거 확인도 안 한 경우(사용자 화면): 두 이유를 함께
+  // 불러온 초안이 이전 원문 결과여도 근거 확인만 안 한 경우 근거 확인만 요청하고, 확인하면 즉시 허용
   const loaded = prepareBlockers({platform: 'instagram', draft: drafts[3], cards: cardsList[3], article, attach: true, busy: false, preparing: false,
     checking: false, evidenceMismatch: true, evidenceAck: false});
-  assert.equal(loaded.length, 3);
-  assert.match(loaded[0], /이전 원문 결과/);
-  assert.match(loaded[1], /카드뉴스를 다시 생성/);
-  assert.match(loaded[2], /확인했습니다/);
+  assert.equal(loaded.length, 1);
+  assert.match(loaded[0], /확인했습니다/);
+  assert.deepEqual(prepareBlockers({platform: 'instagram', draft: drafts[3], cards: cardsList[3], article, attach: true, busy: false, preparing: false,
+    checking: false, evidenceMismatch: true, evidenceAck: true}), []);
   assert.match(prepareBlockers({platform: 'threads', draft: null, article})[0], /^Threads 원고가 없습니다/);
   assert.deepEqual(prepareBlockers({platform: 'instagram', draft: drafts[1], cards: cardsList[1], article, attach: true}), []);
 });

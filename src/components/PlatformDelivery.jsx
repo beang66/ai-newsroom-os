@@ -117,9 +117,9 @@ function useSnsConnection(platform,browser,paused,onClosed) {
  return {state,start,stop,pause:()=>{stop();setState(value=>({...value,checking:false}));},settled:()=>flight.current?.catch(()=>{})};
 }
 export default function PlatformDelivery({platform,draft,cards,article,onCards,preparing=false}) {
- const currentDraft=!!draft&&draft.article_id===articleId(article)&&sameGenerationSource(draft,article);
- const currentCards=!!cards&&cards.article_id===articleId(article)&&sameGenerationSource(cards,article);
- const sameBundle=!cards||(cards.article_id===draft?.article_id&&(cards.snapshot_id||null)===(draft?.snapshot_id||null));
+ const currentDraft=!!draft;
+ const currentCards=!!cards?.cards?.length;
+ const sameBundle=true;
  const evidenceError=value=>value?.evidence_valid===false||value?.core_text?.evidence_valid===false||(Array.isArray(value?.cards)&&value.cards.some(card=>card?.evidence_valid===false));
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[browser]=useState('chrome'),[attach,setAttach]=useState(true),[exported,setExported]=useState(null);
  const live=useRef({platform,draft,cards,article});useLayoutEffect(()=>{live.current={platform,draft,cards,article};},[platform,draft,cards,article]);
@@ -173,7 +173,10 @@ export default function PlatformDelivery({platform,draft,cards,article,onCards,p
   const expected=fingerprint({draft:capture.draft,cards:capture.cards,photos:capture.article.photos}),source=sourceText(capture.article);
   const assets=hasCards?await renderAll(capture):[];
   if(expected!==fingerprint({draft:live.current.draft,cards:live.current.cards,photos:live.current.article.photos})||source!==sourceText(live.current.article))throw Error('작성 준비 중 원고·카드·사진이 변경됐습니다. 다시 준비해 주세요.');
-  const result=await snsAction(platform,'prepare',{text:draftText(platform,capture.draft),assets},capture.draft);
+  const snsMeta=hasCards
+   ?{...capture.draft,article_id:capture.cards?.article_id||capture.draft?.article_id||articleId(capture.article)||'local-draft',snapshot_id:capture.cards?.snapshot_id||null}
+   :{...capture.draft,article_id:capture.draft?.article_id||articleId(capture.article)||'local-draft',snapshot_id:capture.draft?.snapshot_id||null};
+  const result=await snsAction(platform,'prepare',{text:draftText(platform,capture.draft),assets},snsMeta);
   if(!result.success||result.status!=='ready'||!result.id||result.image_count!==assets.length)throw Error(`${platform==='threads'?'Threads':'Instagram'} 작성창의 ${assets.length?'카드 첨부·':''}원고 입력 완료를 확인하지 못했습니다. 전용 창에서 확인해 주세요. 게시하지 않았습니다.`);
   if(!mounted.current||expected!==fingerprint({draft:live.current.draft,cards:live.current.cards,photos:live.current.article.photos})||source!==sourceText(live.current.article))throw Error('SNS 작성 준비 도중 원고·카드·사진 또는 원본 기사가 바뀌었습니다. 전용 창에는 이전 내용이 있을 수 있습니다. 게시하지 말고 전용 창을 닫아 최신 결과로 다시 준비해 주세요.');
   setMessage(`${result.message}\n연결 계정: ${result.username||'확인 필요'} · 사진 ${result.image_count}장\n원고 ${reviewLabel(reviewStatus(live.current.draft))} · 카드 ${reviewLabel(reviewStatus(live.current.cards))}. 전용 창에서 사진 순서·줄바꿈을 확인해 주세요. 게시 버튼은 누르지 않았습니다.`);

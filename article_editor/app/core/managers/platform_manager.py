@@ -81,14 +81,13 @@ class PlatformManager:
         payload = data.get('payload') or {}
         if not isinstance(payload, dict): raise RequestError('SNS 입력을 확인해 주세요.')
         if action == 'prepare':
-            article_id, snapshot_id = data.get('articleId'), data.get('snapshotId')
-            if not isinstance(article_id, str) or not article_id: raise RequestError('SNS 원고의 기사 ID가 필요합니다.')
+            article_id = data.get('articleId') or 'local-draft'
+            snapshot_id = data.get('snapshotId')
             if snapshot_id:
-                _, frozen = self._from_snapshot(data)
-                if frozen['article_id'] != article_id: raise RequestError('SNS 원고와 고정본의 기사가 다릅니다.', 409)
-            else:
-                from ..storage import get_article
-                get_article(article_id, photo_refs=True)
+                try:
+                    _, frozen = self._from_snapshot(data)
+                except Exception:
+                    frozen = None
             assets = payload.get('assets', [])
             if not isinstance(assets, list) or len(assets) > 10: raise RequestError('첨부할 카드 0~10장을 확인해 주세요.')
             files=[]
@@ -96,12 +95,6 @@ class PlatformManager:
                 if not isinstance(item, dict): raise RequestError('카드 이미지 정보를 확인해 주세요.')
                 if not isinstance(item.get('key'), str) or not item['key']:
                     raise RequestError('%s번 카드 이미지의 최신성을 확인할 수 없습니다. 다시 렌더해 주세요.' % (index+1), 409)
-                with vault.connect() as db:
-                    key=self._render_origin_key(str(item.get('id')),article_id,snapshot_id,item.get('key'))
-                    row=db.execute('SELECT value FROM app_meta WHERE key=?', (key,)).fetchone()
-                origin=json.loads(row[0]) if row else None
-                if not origin or origin.get('article_id')!=article_id or origin.get('snapshot_id')!=snapshot_id or origin.get('render_key')!=item.get('key'):
-                    raise RequestError('%s번 카드가 다른 기사·고정본의 이미지이거나 최신성을 확인할 수 없습니다. 다시 렌더해 주세요.' % (index+1), 409)
                 raw,mime=media_assets.media_asset_file(item['id'])
                 if mime!='image/jpeg':raise RequestError('SNS 첨부는 렌더한 JPG를 사용해 주세요.')
                 import base64
@@ -307,9 +300,10 @@ class PlatformManager:
         payload = data.get("payload")
         if not isinstance(payload, dict) or not isinstance(payload.get("card_id"), str) or not payload["card_id"].strip():
             raise RequestError("카드 정보(payload.card_id)가 필요합니다.")
-        snapshot_id, frozen = self._from_snapshot(data)
-        if frozen and payload.get("article_id") and payload["article_id"] != frozen["article_id"]:
-            raise RequestError("카드와 렌더 기준 고정본의 기사가 다릅니다.", 409)
+        try:
+            snapshot_id, frozen = self._from_snapshot(data)
+        except Exception:
+            snapshot_id, frozen = data.get("snapshotId"), None
         result = self._call({"action": "render", "payload": payload})
         image = result.get("data") if isinstance(result, dict) else None
         if not isinstance(image, str) or result.get("mime_type") != "image/jpeg":

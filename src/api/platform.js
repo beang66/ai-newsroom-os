@@ -137,15 +137,17 @@ export const blobToDataUrl = blob => new Promise((resolve,reject) => {
 export async function renderStoredCard(card, article, draft) {
   const photo=selectedCardPhoto(card,article);
   if(card.photoId&&!photo)throw Error("선택한 사진이 기사에서 삭제됐습니다. 사진을 다시 선택해 주세요.");
-  const key=renderKey(card,photo,draft);
+  const effectiveArticleId=draft?.article_id||articleId(article)||"local-draft";
+  const effectiveDraft={...draft,article_id:effectiveArticleId};
+  const key=renderKey(card,photo,effectiveDraft);
   const payload=cardRenderPayload(card,photo?{...photo,url:await photoDataUrl(photo)}:null);
   payload.page=draft.cards.findIndex(item=>item.card_id===card.card_id)+1;
   payload.total_pages=draft.cards.length;
-  payload.article_id=draft.article_id;
+  payload.article_id=effectiveArticleId;
   payload.render_key=key;
   const result=await core.renderPlatformCard(payload,draft.snapshot_id);
   if (!result?.asset?.local_uri) throw Error("카드 이미지 보관에 실패했습니다.");
-  return {id:result.asset.id,uri:result.asset.local_uri,object_ref:result.asset.object_ref,key,article_id:draft.article_id,snapshot_id:draft.snapshot_id||null};
+  return {id:result.asset.id,uri:result.asset.local_uri,object_ref:result.asset.object_ref,key,article_id:effectiveArticleId,snapshot_id:draft.snapshot_id||null};
 }
 async function assetBytes(rendered) {
   const asset=rendered.object_ref?rendered:await core.getMediaAsset(rendered.id);

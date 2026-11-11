@@ -1,14 +1,37 @@
+<div align="center">
+  <h1 align="center">
+    AI Newsroom OS
+    <br />
+    <br />
+    <img src="docs/images/screen-writer.webp" alt="기사 작성 화면" width="880">
+  </h1>
+</div>
 
-# AI Newsroom OS
+<p align="center">
+  <img src="https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=white" alt="React 19.2">
+  <img src="https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white" alt="Vite 8.3">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/Node.js-Express_5-339933?logo=nodedotjs&logoColor=white" alt="Node.js Express 5">
+  <img src="https://img.shields.io/badge/SQLCipher-local_DB-003B57?logo=sqlite&logoColor=white" alt="SQLCipher local DB">
+  <img src="https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform Windows">
+  <img src="https://img.shields.io/badge/Team-Finally_·_5-222222" alt="Team Finally · 5">
+</p>
 
-![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
-![Node.js](https://img.shields.io/badge/Node.js-Express_5-339933?logo=node.js&logoColor=white)
-![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)
+## Introduction
 
-기사 한 건이 발행되기까지 기자가 오가는 프로그램을 하나의 작업 공간으로 묶은 **로컬 설치형 뉴스룸 앱**입니다.
-취재자료·녹취·팩트체크·기사 작성·플랫폼 변환·보관을 **기사 ID 하나**로 연결하고, 원고는 내 PC의 암호화 저장소(SQLCipher)에 둡니다.
+기사 한 건이 발행되기까지 기자가 오가는 프로그램을 하나의 작업 공간으로 묶은 **로컬 설치형 뉴스룸 앱**입니다. 취재자료 · 녹취 · 팩트체크 · 기사 작성 · 플랫폼 변환 · 보관을 **기사 ID 하나**로 연결하고, 원고는 내 PC의 암호화 저장소(SQLCipher)에 둡니다.
+
+- **판정은 기자가, AI는 근거만**
+
+> 팩트체크는 본문에서 확인할 문장을 뽑고, 등록한 근거자료에서 근거를 찾아 문장별로 보여 줍니다. 최종 판단은 기자가 합니다.
+
+- **기사 ID 하나로 잇는 흐름**
+
+> 따로 만든 기능(녹취, 작성, 변환, 보관)이 같은 기사 ID를 기준으로 읽고 씁니다.
+
+- **원고는 내 PC에**
+
+> 원고는 로컬 암호화 DB에 두고, 외부 AI와 CMS는 인증된 원격 프록시를 거칩니다.
 
 ## Screenshots
 

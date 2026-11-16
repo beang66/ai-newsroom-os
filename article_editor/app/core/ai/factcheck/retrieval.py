@@ -151,7 +151,8 @@ class VectorCache:
     """Persistent model/role/text keyed embedding cache — 암호화 저장소(vault)의 embedding_vectors 테이블.
 
     자료 조각(document) 벡터는 자료를 지울 때 함께 지운다(sources.delete_source).
-    ponytail: 팩트체크 질의(query) 벡터와 화면에서 올린 임시 자료의 벡터는 어느 자료에도 묶이지 않아 계속 쌓인다(한 개 약 4KB).
+    주의: 팩트체크 질의(query) 및 임시 자료의 벡터는 자료(source) 관계로 정리되지 않아 캐시에 누적될 수 있다.
+    개별 벡터 크기는 임베딩 차원·dtype에 따라 달라진다.
     용량이 문제되면 source_chunks 가 참조하지 않는 오래된 벡터를 정리한다."""
 
     def __init__(self, encoder: QwenEncoder | None = None):

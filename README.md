@@ -1,5 +1,10 @@
+# ai-newsroom-os
 
-# AI Newsroom OS
+> **README 구조 개편:** 2026-11-16 · 기존 설명·명령·이미지·원저작자 표기를 보존하고, 제품·의사결정·검증 기준으로 재배열했습니다. **이번 작업에서는 앱이나 테스트를 재실행하지 않았습니다.** 기재된 성과는 원본 README의 주장입니다.
+
+**읽는 순서:** 0~2 제품 설명 → 3~4 설계 판단 → 5~8 실행·검증·권리 → 9 다음 단계.
+
+## 0. 30초 요약·실행 상태
 
 ![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white)
@@ -10,7 +15,13 @@
 기사 한 건이 발행되기까지 기자가 오가는 프로그램을 하나의 작업 공간으로 묶은 **로컬 설치형 뉴스룸 앱**입니다.
 취재자료·녹취·팩트체크·기사 작성·플랫폼 변환·보관을 **기사 ID 하나**로 연결하고, 원고는 내 PC의 암호화 저장소(SQLCipher)에 둡니다.
 
-## Screenshots
+## 1. 사용자 문제·프로젝트 목표
+
+> **확인 필요:** 누가 어떤 문제를 겪는지, 사용자 인터뷰·관찰·분석 근거 또는 명시적 가설을 기록.
+
+## 2. 핵심 사용 흐름·기능
+
+### Screenshots
 
 | 기사 작성 | 팩트체크 |
 |---|---|
@@ -20,7 +31,7 @@
 | **데이터맵** | **보관함** |
 | ![데이터맵](docs/images/screen-datamap.webp) | ![보관함](docs/images/screen-archive.webp) |
 
-## Features
+### Features
 
 - **오늘의 데스크** — 상태별 기사 건수, 지금 집중할 기사, 확인할 것, 마감 큐
 - **기사 작성** — 제목·부제·본문 직접 작성 + AI 제안, 사진 검색·출처 표기, 사진 편집(비율·모자이크)
@@ -33,7 +44,9 @@
 - **환경 설정** — 로컬 AI 모델(ONNX) 설치, 사용자 자료 암호화 백업·복구
 - **저장** — 자동 저장(작업본 1칸)·수동 저장(새 리비전)·송고(CMS 성공 시에만 기록)를 분리
 
-## Tech Stack
+## 3. 시스템 구조·데이터·기술
+
+### Tech Stack
 
 **Frontend (`src/`):** React 19.2, Vite 8.3, Tailwind CSS 4, lucide-react, Pele (Mermaid → SVG), @ssabrojs/hwpxjs, oxlint
 
@@ -45,7 +58,7 @@
 
 **External Services:** OpenAI, NAVER CLOVA Speech, Cloudflare Workers AI, Supabase (Auth·Postgres·Storage), Unsplash, CMS 송고 API
 
-## Architecture
+### Architecture
 
 ```text
 src/ (React UI)
@@ -60,7 +73,13 @@ platform-generator/     backend/ + Supabase
 
 화면은 Core API 하나만 부르고, 외부 AI와 CMS는 반드시 인증된 원격 프록시를 거칩니다. 프론트(웹뷰)는 로그인 토큰을 알지 못하며 Core 메모리에만 둡니다.
 
-## Run Locally
+## 4. 핵심 의사결정·대안
+
+> **확인 필요:** 채택안/대안/선택 이유와 검증 가능한 설계 변경 근거가 있으면 기입.
+
+## 5. 설치·실행·배포
+
+### Run Locally
 
 Python과 Node.js가 필요합니다.
 
@@ -96,7 +115,7 @@ npm ci
 npm start   # http://localhost:3001
 ```
 
-## Environment Variables
+### Environment Variables
 
 **프론트 (`.env`, `.env.example` 참고)**
 
@@ -122,7 +141,7 @@ npm start   # http://localhost:3001
 
 나머지 선택 변수(`RATE_LIMIT_PER_MIN`, `CLOVA_RATE_PER_MIN` 등)는 [backend/README.md](backend/README.md)를 참고하세요.
 
-## Running Tests
+### Running Tests
 
 ```powershell
 npm test                                   # UI·API 계약 회귀
@@ -133,20 +152,19 @@ npm --prefix article_editor run test:python  # Python 코어
 npm run test:ui                            # 화면 테스트 (Edge + 가짜 백엔드 + 임시 저장소)
 ```
 
-## Deployment
+### Deployment
 
 - **원격 프록시**: [render.yaml](render.yaml) Blueprint로 Render에 배포합니다. Render → New → Blueprint → 이 저장소를 선택하고 비밀값만 입력합니다.
 - **Supabase**: `article_editor/integration/`의 SQL 스크립트(`supabase_setup.sql`, `supabase_article_shares.sql`, `supabase_transfer_bucket.sql`)를 SQL Editor에서 한 번 실행합니다. 모두 기존 객체를 지우지 않는 추가형입니다.
 - **Windows EXE**: PyInstaller로 패키징합니다. [article_editor/packaging/README.md](article_editor/packaging/README.md)를 참고하세요.
 
-## Documentation
+## 6. 검증·측정 결과
 
-- [저장 설계](docs/STORAGE_DESIGN.md)
-- [백엔드 프록시](backend/README.md)
-- [EXE 패키징](article_editor/packaging/README.md)
-- [시스템 구조·ERD·API·OpenAPI](docs/architecture/)
+> **확인 필요:** 시험일·버전·표본·성공/실패·재현 로그와 실사용 성과 여부를 분리해 기록.
 
-## Authors
+## 7. 담당 역할·협업
+
+### Authors
 
 **Team Finally**
 
@@ -157,3 +175,20 @@ npm run test:ui                            # 화면 테스트 (Edge + 가짜 백
 | 박소현 | UI/UX / Transcript | 전체 화면 UI/UX, STT·녹취 |
 | 고서연 | Authoring / Media | 기사 작성·저장·송고, 제목·부제, 사진 |
 | 이정민 | Distribution | 플랫폼 원고·카드뉴스, 검수, Renderer |
+
+## 8. 한계·보안·라이선스
+
+> **확인 필요:** 실행/보안/개인정보/데이터·이미지·소스 라이선스 및 미완료 범위를 확인.
+
+## 9. 다음 단계·참고 문서
+
+### Documentation
+
+- [저장 설계](docs/STORAGE_DESIGN.md)
+- [백엔드 프록시](backend/README.md)
+- [EXE 패키징](article_editor/packaging/README.md)
+- [시스템 구조·ERD·API·OpenAPI](docs/architecture/)
+
+---
+
+> 표준: [Vault README 가이드](https://github.com/beang66/Vault/blob/main/wiki/concepts/GitHub%20README%20%EA%B0%80%EC%9D%B4%EB%93%9C%20%E2%80%94%20%EC%A0%9C%ED%92%88%C2%B7%EC%9D%98%EC%82%AC%EA%B2%B0%EC%A0%95%C2%B7%EA%B2%80%EC%A6%9D.md). 확인 필요는 구현 완료를 의미하지 않습니다.

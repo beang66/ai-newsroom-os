@@ -110,8 +110,8 @@ def _retrieve_qwen_candidates(claim, node, all_chunks, limit=DEFAULT_K, indexes=
     return rank_chunks(claim, candidates, limit=limit, index=index, query_vector=query_vector, exclude=exclude)
 
 
-# 한 주장에 판정기를 돌리는 최대 후보 수. 근거가 없는 주장은 후보를 전부 판정해 가장 오래 걸린다(건당 ~1초).
-# ponytail: 검색 상위 5개로 제한(기본). 정확도 우선이면 FACTCHECK_JUDGE_K=10.
+# 한 주장에 대해 개별 판정할 검색 후보의 상한. 기본값은 5이며 FACTCHECK_JUDGE_K로 조정한다.
+# 후보를 늘리면 더 많은 근거를 검사하지만 판정 호출 수와 지연 시간도 증가할 수 있다.
 JUDGE_LIMIT = max(1, int(os.environ.get('FACTCHECK_JUDGE_K', '5') or 5))
 
 

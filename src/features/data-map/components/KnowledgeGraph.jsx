@@ -15,6 +15,7 @@ export default memo(function KnowledgeGraph({
   selected,
   context,
   onSelect,
+  priorities = {},
   expanded,
   onExpand,
 }) {
@@ -400,18 +401,18 @@ export default memo(function KnowledgeGraph({
               return (
                 <line
                   key={e.id}
-                  className={`graph-edge ${hoveredEdge || strong ? "is-strong" : ""}`}
+                  className={`graph-edge ${hoveredEdge || strong ? "is-strong" : ""} ${strong ? "is-direct" : ""}`}
                   x1={a.x}
                   y1={a.y}
                   x2={b.x}
                   y2={b.y}
-                  strokeWidth={strong || hoveredEdge ? 1.4 : 0.8}
+                  strokeWidth={strong ? 2.7 : hoveredEdge ? 1.8 : 0.8}
                   strokeDasharray={e.relation === "missing-link" ? "4 3" : undefined}
                   opacity={
                     hovered && hovered !== selected?.id
-                      ? hoveredEdge ? 0.78 : 0.035
+                      ? hoveredEdge ? 0.84 : 0.035
                       : selected
-                        ? strong ? 0.72 : within ? 0.25 : 0.045
+                        ? strong ? 0.94 : within ? 0.28 : 0.045
                         : 0.32
                   }
                 />
@@ -426,6 +427,7 @@ export default memo(function KnowledgeGraph({
             const labelLimit = screenScale < 0.45 ? 11 : 23;
             const article = n.category === "article";
             const hub = hubs.has(n.id);
+            const priority = priorities[n.id] === "high";
             const visibleLabel =
               (hub && !selected && screenScale >= 0.4) || // 작게 그려질 때는 허브 라벨도 겹치므로 숨긴다
               active ||
@@ -462,8 +464,11 @@ export default memo(function KnowledgeGraph({
                 onBlur={() => setHovered(null)}
               >
                 <circle cx={pos.x} cy={pos.y} r={size + 9} fill="transparent" />
-                {(active || isHovered) && (
-                  <circle className="node-ring" cx={pos.x} cy={pos.y} r={size + 7} />
+                {(active || isHovered || priority || (selected && connected)) && (
+                  <circle
+                    className={`node-ring ${priority && !active ? "is-priority" : ""} ${selected && connected && !active ? "is-connected" : ""}`}
+                    cx={pos.x} cy={pos.y} r={size + (priority ? 9 : 7)}
+                  />
                 )}
                 {/* ── 중앙 글로우 포인트 (Diffused Glow): 부드러운 파스텔 빛 번짐 ── */}
                 <circle
@@ -510,6 +515,11 @@ export default memo(function KnowledgeGraph({
         <div className="graph-empty">검색 조건에 맞는 노드가 없습니다.</div>
       )}
       <div className="graph-bottom">
+        <div className="graph-legend" aria-label="관계망 범례">
+          <span><i className="legend-edge" /> 선택 자료의 직접 연결</span>
+          <span><i className="legend-priority" /> 우선 검토</span>
+          <span><i className="legend-missing" /> 미확보 링크</span>
+        </div>
         <div className="graph-controls">
           <label>
             <input

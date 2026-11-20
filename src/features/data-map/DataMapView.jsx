@@ -27,6 +27,7 @@ import ResourceTable from "./components/ResourceTable.jsx";
 import ResourceReader from "./components/ResourceReader.jsx";
 import MapViews from "./components/MapViews.jsx";
 import { droppedFiles, hasDroppedFiles } from "../../lib/fileDrop.js";
+import { reviewPriorityStorageKey } from "./domain/reviewPriority.js";
 import "./data-map.css";
 
 // Data Map — 보관함 화면의 data-map-slot 안에 들어가는 기능 화면.
@@ -69,6 +70,28 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
     [notes, setNotes] = useState({}),
     [saved, setSaved] = useState([]);
   const deferredQuery = useDeferredValue(query);
+  const priorityStorageKey = useMemo(
+    () => reviewPriorityStorageKey(workspaceId), [workspaceId],
+  );
+  const [priorityOverrides, setPriorityOverrides] = useState({});
+  const reviewPriorities = useMemo(() => {
+    if (priorityOverrides[priorityStorageKey]) return priorityOverrides[priorityStorageKey];
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(priorityStorageKey) || "{}");
+      return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+    } catch {
+      return {};
+    }
+  }, [priorityStorageKey, priorityOverrides]);
+  const setReviewPriority = (id, priority) => {
+    const next = { ...reviewPriorities };
+    if (priority === "high" || priority === "later") next[id] = priority;
+    else delete next[id];
+    setPriorityOverrides((current) => ({ ...current, [priorityStorageKey]: next }));
+    try { window.localStorage.setItem(priorityStorageKey, JSON.stringify(next)); } catch {
+      // Storage may be unavailable in embedded/webview environments; session state still works.
+    }
+  };
   useEffect(() => {
     const controller = new AbortController();
     setGraph(null);
@@ -273,6 +296,7 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
               selected={selected}
               context={context}
               onSelect={choose}
+              priorities={reviewPriorities}
               expanded={expanded}
               onExpand={() => setExpanded(!expanded)}
             />
@@ -331,6 +355,8 @@ export default function DataMapView({ api = dataMapApi, workspaceId, articleId }
                 onProject={filterProject}
                 onKind={(id) => { setKind(id); setSelectedId(null); }}
                 categoryCounts={categoryCounts}
+                priorities={reviewPriorities}
+                onPriority={setReviewPriority}
                 onClear={() => choose(null)}
               />
             </>

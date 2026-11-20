@@ -297,3 +297,36 @@
 @media (prefers-reduced-motion: reduce) {
   .dm-root * { transition: none !important; animation: none !important; }
 }
+
+/* User-tested DataMap review affordances — action before exploratory density. */
+.dm-root .dm-next-actions {
+  display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border-soft);
+  border-radius: 16px; background: var(--bg-canvas);
+}
+.dm-root .dm-next-actions .section-label { margin: 0; }
+.dm-root .dm-action-buttons { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.dm-root .dm-action-buttons button, .dm-root .dm-action-disabled {
+  display: inline-flex; justify-content: flex-start; align-items: center; gap: 8px;
+  min-height: 36px; padding: 8px 12px; border: 1px solid var(--border-soft);
+  border-radius: 10px; background: var(--bg-card); font-size: 12px; font-weight: 700; text-align: left;
+}
+.dm-root .dm-action-buttons button:hover:not(:disabled) { border-color: var(--map-purple); }
+.dm-root .dm-action-buttons .dm-primary-action { background: var(--text-primary); color: white; }
+.dm-root .dm-action-buttons button.is-priority { border-color: var(--accent-orange); background: color-mix(in srgb, var(--accent-orange) 15%, white); }
+.dm-root .dm-action-disabled { color: var(--text-muted); font-weight: 400; cursor: not-allowed; }
+.dm-root .dm-action-footnote { color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.dm-root .review-tag {
+  padding: 3px 7px; border-radius: 8px; background: var(--bg-canvas);
+  color: var(--text-secondary); font-size: 10px; font-weight: 750; white-space: nowrap;
+}
+.dm-root .review-tag.high { color: var(--text-primary); background: color-mix(in srgb, var(--accent-orange) 25%, white); }
+.dm-root .dm-priority-queue { padding: 10px; border: 1px solid var(--border-soft); border-radius: 12px; }
+.dm-root .node-ring.is-connected { stroke: var(--map-purple); stroke-width: 1.8; opacity: 0.95; }
+.dm-root .node-ring.is-priority { stroke: var(--accent-orange); stroke-width: 2.2; }
+.dm-root .graph-edge.is-direct { stroke: var(--map-purple); }
+.dm-root .graph-bottom { justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dm-root .graph-legend { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 10px; color: var(--text-secondary); }
+.dm-root .graph-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.dm-root .graph-legend i { display: inline-block; width: 15px; height: 0; border-top: 2px solid var(--map-purple); }
+.dm-root .graph-legend .legend-priority { width: 9px; height: 9px; border: 2px solid var(--accent-orange); border-radius: 50%; }
+.dm-root .graph-legend .legend-missing { border-top: 2px dashed var(--text-muted); }
